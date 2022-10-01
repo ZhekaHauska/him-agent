@@ -1,0 +1,62 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: tp_observations
+method: bayes
+metric:
+  name: loss
+  goal: minimize
+parameters:
+  temporal_pooler.:
+    value: ablation_utp
+  seed.:
+    value: ...
+
+  # ====== receptive field ======
+  temporal_poolers..ablation_utp.potentialPct:
+    values:
+      - 0.1
+      - 0.18
+      - 0.26
+
+  # ====== pooling window ======
+  temporal_poolers..ablation_utp.decayTimeConst:
+    values:
+      - 5
+      - 10
+      - 15
+
+  # ====== boosting ======
+  temporal_poolers..ablation_utp.boostStrength:
+    values:
+      - 0.2
+      - 0.5
+      - 1.0
+  temporal_poolers..ablation_utp.dutyCyclePeriod:
+    values:
+      - 3000
+      - 8000
+      - 13000
+
+
+#  # ====== TM ======
+#  temporal_memory..cells_per_column:
+#    values:
+#      - 8
+#      - 12
+#
+#  # Enable or not FB connections
+#  temporal_memory..fb_sds:
+#    values:
+#      - ...
+#      - ???
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/observations.yaml

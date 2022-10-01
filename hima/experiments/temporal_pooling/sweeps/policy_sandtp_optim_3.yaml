@@ -1,0 +1,79 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: tp_policy
+method: grid
+parameters:
+  temporal_pooler.:
+    value: sandwich_tp
+  seed.:
+    values: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+
+  # for hyperparameter search we don't need too much logging and too much learning
+  run_setups..full.policy_repeats:
+    value: 10
+  run_setups..full.epochs:
+    value: 10
+  run_setups..full.log_epoch_schedule:
+    value: 5
+  run_setups..full.log_repeat_schedule:
+    value: 5
+  # ... and reduced pipeline (no 3rd TP)
+  pipeline.:
+    value:
+      - generator
+      - temporal_memory
+      - temporal_pooler
+      - temporal_memory_2
+      - temporal_pooler_2
+
+  # ====== pooling window ======
+  temporal_poolers..sandwich_tp.pooling_decay:
+    values:
+      - 0.04
+      - 0.07
+  temporal_poolers..sandwich_tp.pooling_decay_r:
+    values:
+      - 1.0
+      - 2.0
+
+  temporal_poolers..sandwich_tp.only_upper:
+    values: [True, False]
+
+  temporal_poolers..sandwich_tp.max_intermediate_used:
+    values:
+      - 8
+      - 16
+      - ...
+
+
+#  temporal_poolers..sandwich_tp.lower_sp_conf.synPermActiveInc:
+#    values:
+#      - 0.1
+#      - 0.05
+#      - 0.02
+#  temporal_poolers..sandwich_tp.lower_sp_conf.synPermInactiveDec:
+#    values:
+#      - 0.01
+#      - 0.02
+#      - 0.005
+#  temporal_poolers..sandwich_tp.upper_sp_conf.synPermActiveInc:
+#    values:
+#      - 0.1
+#      - 0.05
+#      - 0.02
+#  temporal_poolers..sandwich_tp.upper_sp_conf.synPermInactiveDec:
+#    values:
+#      - 0.01
+#      - 0.02
+#      - 0.005
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/policy.yaml

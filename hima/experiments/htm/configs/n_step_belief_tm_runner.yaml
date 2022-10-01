@@ -1,0 +1,13 @@
+log: True
+logger: local
+project_name: n_step_belief_tm
+model: 'logs/model_env_treasured-elevator-146_2000.pkl'
+
+# initial state
+policy: 1
+state: 1
+use_ptsm: True  # for debug only
+
+n_steps: 10
+mc_iterations: 200
+seed: 32049

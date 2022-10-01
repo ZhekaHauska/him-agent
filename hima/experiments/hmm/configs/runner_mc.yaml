@@ -1,0 +1,11 @@
+log: True
+project_name: 'mpg_hmm_test'
+run_tag: 'monte_carlo'
+n_episodes: 5000
+update_rate: 4999
+smf_dist: 0.02
+
+hmm_conf: 'configs/hmm/hmm_mc.yaml'
+mpg_conf: 'configs/mpg/mpg_default.yaml'
+
+seed: 5389

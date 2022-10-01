@@ -1,0 +1,91 @@
+_type_: exhaustible.resource
+agent: motiv
+project: test_striatum
+
+log: True
+path_to_store_logs: '/tmp'  # important: change, if you are Windows user
+
+gif_schedule: 0
+animation_fps: 3
+
+scenario:
+  seed: 96337 #2681, 3703
+  n_episodes: 10000
+  goals_per_task: 100
+  tasks_per_level: 10
+  agent_fixed_positions: [ [ 1, 2 ], [ 1, 6 ], [ 7, 2 ], [ 7, 6 ] ]
+  door_positions: [ [4, 2], [1, 4], [4, 6], [7, 4] ]
+
+environment:
+  shape_xy: [9, 9]
+
+  actions_cost:
+    base_cost: -0.005
+    weights:
+      stay: 2.0
+      turn: 1.0
+      move: 1.0
+  actions:
+    - move right
+    - move down
+    - move left
+    - move up
+
+  rendering:
+    view_rectangle: [[-2, -2], [2, 2]]
+
+  areas:
+#    rendering: False
+    n_types: 5
+
+  obstacle:
+#    rendering: False
+    density: 0.1
+    map_name: 'maps/four_rooms_9x9.map'
+
+  food:
+#    rendering: False
+    n_items: 1
+    reward: 1.
+    positions: [ [ 4, 6 ] ]
+
+  agent:
+    positions: [ [ 1, 2 ], [ 7, 2 ], [ 7, 6 ], [ 1, 6 ] ]
+    change_position: true
+    direction: up
+    rendering:
+      what:
+        - position
+  #      - view direction
+      bucket_size: 1
+
+  terminate:
+    episode_max_steps: 200
+    early_stop: true
+    n_items_to_collect: 1
+
+agent_config:
+  seed: 54484
+  amygdala:
+    gamma: 0.9
+    alpha: 0.01
+    lambda_: 0.9
+    with_reset: True
+    filter_factor: 0.1
+  striatum:
+    field_size: 100
+    beta: 0.01
+    synapse_threshold: 0.5
+    potential_pct: 0.9
+    connected_pct: 0.5
+    d1_pct: 0.5
+    stimulus_threshold: 1
+    active_neurons: 40
+    syn_increment: 0.1
+    syn_decrement: 0.01
+  policy:
+    gamma: 0.999
+    alpha: 0.1
+    lambda_: 0.8
+    with_reset: True
+    temperature: 0.1

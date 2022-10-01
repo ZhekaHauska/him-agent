@@ -1,0 +1,7 @@
+<component name="CopyrightManager">
+  <copyright>
+    <option name="keyword" value="(Copyright \(c\))|(Institute&quot; (AIRI); Moscow)|(Licensed)|(All rights reserved.)|(\w*)" />
+    <option name="notice" value="Copyright (c) 2022 Autonomous Non-Profit Organization &quot;Artificial Intelligence Research &#10;Institute&quot; (AIRI); Moscow Institute of Physics and Technology (National Research University). &#10;All rights reserved.&#10; &#10;Licensed under the AGPLv3 license. See LICENSE in the project root for license information." />
+    <option name="myName" value="HIMA-AIRI-MIPT" />
+  </copyright>
+</component>

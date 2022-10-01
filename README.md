@@ -1,5 +1,7 @@
 # Hierarchical Intrinsically Motivated Agent - HIMA
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7133430.svg)](https://doi.org/10.5281/zenodo.7133430)
+
 - [Hierarchical Intrinsically Motivated Agent - HIMA](#hierarchical-intrinsically-motivated-agent---hima)
   - [The Repository](#the-repository)
   - [Hierarchical Intrinsically Motivated Agent](#hierarchical-intrinsically-motivated-agent)
@@ -8,9 +10,9 @@
   - [Repository structure](#repository-structure)
   - [Run examples](#run-examples)
     - [How to run HIMA agent](#how-to-run-hima-agent)
-      - [Run one experiment](#run-one-experiment)
-      - [Run Sweep](#run-sweep)
-    - [Non-HIMA Q-learning agent](#non-hima-q-learning-agent)
+    - [Run one experiment](#run-one-experiment)
+    - [Run Sweep](#run-sweep)
+  - [Cite us](#cite-us)
   - [License](#license)
 
 ## The Repository
@@ -26,32 +28,31 @@ The Hierarchical Intrinsically Motivated Agent (HIMA) is an algorithm that is in
 - The Dreaming component models circuits of the brain responsible for the initiation of planning via the model of the environment in the neocortex, improving the learning speed.
 - The Empowerment module is in charge of producing intrinsic motivation signal utilizing the environmental model learned by the neocortex to guide exploration to the most promising states first.
 
-A detailed description of HIMA model is provided in the [supporting paper](https://www.doi.org/10.1186/s40708-022-00156-6).
+A detailed description of HIMA model is provided in the [supporting paper](http://dx.doi.org/10.1186/s40708-022-00156-6).
 
 ![HIMA Architecture](assets/hima_arch.png)
 
 ## Links
 
-- Supporting [paper](https://www.doi.org/10.1186/s40708-022-00156-6)
+- Supporting [paper](http://dx.doi.org/10.1186/s40708-022-00156-6)
 - Contributors [guide](./CONTRIBUTING.md)
-- Cumulative project's [readme](./htm_rl/htm_rl/README.md)
 - Introductory [materials](./intro.md)
 
 ## Quick install
 
 There're two setup guides:
 
-- [quick & short version](#quick-install) is here. It's recommended for `htm_rl` library users.
-- [extended version](./install.md/#install-requirements) is for contributors or if you have troubles with this version.
+- [quick & short version](#quick-install) is here below.
+- [extended version](./install.md).
 
-Before cloning the repository, make sure Git LFS is installed (see [help](./install.md/#git-lfs)). Then:
+Before cloning the repository, make sure Git LFS is installed (see [help](./install.md#step-2-install-git-lfs)). Then:
 
 ```bash
-# create env with required packages via conda, then activate it
+# create new env with the required packages via conda, then activate it
 conda create --name hima python=3.9 numpy matplotlib jupyterlab ruamel.yaml tqdm wandb mock imageio seaborn
 conda activate hima
 
-# install packages, that cannot be installed with conda, with pip
+# install with pip the packages that cannot be installed with conda
 pip install hexy prettytable "pytest>=4.6.5"
 
 # git clone our `htm.core` fork to an arbitrary place and pip install it from sources
@@ -59,19 +60,16 @@ pip install hexy prettytable "pytest>=4.6.5"
 cd <where to clone>
 git clone https://github.com/ZhekaHauska/htm.core.git
 cd htm.core
-pip install --use-feature=in-tree-build .
+pip install .
 
-#  cd to the htm_rl subdirectory in project root and install htm_rl package
-cd <hima_project_root>/htm_rl
+#  cd to the hima subdirectory in the project root and install hima package
+cd <hima_project_root>
 pip install -e .
 ```
 
 ## Repository structure
 
-- `notebooks/` - Jupyter Notebooks
-- `tools/` - 3rd party tools and scripts
-- `watcher/` - our visualization tool for HTM SP and TM.
-- `htm_rl/` - HIMA package `htm_rl` sources (e.g. set it as sources root in PyCharm)
+- `hima/` - HIMA package sources
 
 ## Run examples
 
@@ -79,27 +77,31 @@ pip install -e .
 
 Sign up to [wandb](https://wandb.ai/) and get access token in your profile settings to authorize locally further on.
 
-#### Run one experiment
+### Run one experiment
 
 ``` bash
-# cd to package sources root
-cd <hima_project_root>/htm_rl/htm_rl
+# cd to the package sources root
+cd <hima_project_root>/hima
+
+# cd to the hima experiments directory
+cd experiments/hima/scripts
 
 # replace <config name> with the config filename without extension
-python agents/htm/htm_agent.py experiments/htm_agent/configs/<config_name>
+python run_agent.py <environment>/<config_name>
 ```
 
-Do not forget to change `entity` parameter in corresponding config file to match your [wandb](https://wandb.ai/) login. When wandb asks you to login for the first time, use your access token obtained earlier.
+Do not forget to change `entity` parameter in the corresponding config file to match your [wandb](https://wandb.ai/) login. When wandb asks you to login for the first time, use your access token obtained earlier.
 
-#### Run Sweep
+### Run Sweep
 
 Wandb [sweep](https://docs.wandb.ai/guides/sweeps) runs series of experiments with different seeds and parameters.
 
 ```bash
-# cd to package sources root
-cd <hima_project_root>/htm_rl/htm_rl
+# cd to the package sources root
+cd <hima_project_root>/hima
 
-cd experiments/htm_agent
+# cd to the hima experiments directory
+cd experiments/hima
 
 # replace <sweep config name> with the sweep config filename without extension
 wandb sweep sweep/<sweep config name>
@@ -108,18 +110,43 @@ wandb sweep sweep/<sweep config name>
 python scripts/run_agents.py -n n_processes -c "wandb agent <sweep id>"
 ```
 
-### Non-HIMA Q-learning agent
+## Cite us
 
-```bash
-# cd to package sources root
-cd <hima_project_root>/htm_rl/htm_rl/
+If you use this repository in your research or wish to cite it, please make a reference to this piece of software:
 
-# cd to the 5x5_pos experiments
-cd experiments/5x5_pos/
+```latex
+@software{petr_kuderov_2022_7133430,
+  author       = {Petr Kuderov and
+                  Evgenij Dzhivelikyan and
+                  Artem Latyshev and
+                  Aleksandr I. Panov},
+  title        = {{AIRI-Institute/him-agent: Hierarchical 
+                   Intrinsically Motivated Agent Planning Behavior
+                   with Dreaming in Grid Environments}},
+  month        = mar,
+  year         = 2022,
+  publisher    = {Zenodo},
+  version      = {v3.2-hima-airi},
+  doi          = {10.5281/zenodo.7133430},
+  url          = {https://doi.org/10.5281/zenodo.7133430}
+}
+```
 
-# runs random agent and Q-learning agent with learned model 
-# on 5x5 env with an agent position as the observation
-python ../../run_experiment.py -c debug -e pos -a rnd qmb
+or to the supporting paper:
+
+```latex
+@article{Dzhivelikian_Latyshev_Kuderov_Panov_2022,
+  title        = {Hierarchical intrinsically motivated agent planning behavior with dreaming in grid environments},
+  volume       = {9},
+  rights       = {All rights reserved},
+  issn         = {2198-4026},
+  doi          = {10.1186/s40708-022-00156-6},
+  number       = {1},
+  journal      = {Brain Informatics},
+  author       = {Dzhivelikian, Evgenii and Latyshev, Artem and Kuderov, Petr and Panov, Aleksandr I.},
+  year         = {2022},
+  month        = {Apr},
+  pages        = {8},
 ```
 
 ## License

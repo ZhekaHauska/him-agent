@@ -1,0 +1,6 @@
+cells_per_column: 10
+lr: 0.1
+learning_mode: bw_base
+batch_size: 100
+initialization: dirichlet
+alpha: 0.1

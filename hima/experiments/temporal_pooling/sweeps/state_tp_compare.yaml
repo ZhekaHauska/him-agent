@@ -1,0 +1,44 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: tp_observations
+method: grid
+parameters:
+  seed.:
+    values: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
+
+  # for the full comparison we could need almost full logging and learning
+  run_setups..full.sequence_repeats:
+    value: 10
+  run_setups..full.epochs:
+    value: 10
+  run_setups..full.log_epoch_schedule:
+    value: 4
+  run_setups..full.log_repeat_schedule:
+    value: 5
+
+  # ... and reduced pipeline (no 3rd TP)
+  pipeline.:
+    value:
+      - generator
+      - spatial_pooler
+      - temporal_memory
+      - temporal_pooler
+      - temporal_memory_2
+      - temporal_pooler_2
+
+  temporal_pooler.:
+    values:
+      - union_tp
+      - sandwich_tp
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/observations.yaml
+

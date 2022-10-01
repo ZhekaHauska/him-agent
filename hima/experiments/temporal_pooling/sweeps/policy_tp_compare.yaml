@@ -1,0 +1,68 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: tp_policy
+method: grid
+parameters:
+  seed.:
+    values: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
+
+  # for hyperparameter search we don't need too much logging and too much learning
+  run_setups..full.policy_repeats:
+    value: 10
+  run_setups..full.epochs:
+    value: 10
+  run_setups..full.log_epoch_schedule:
+    value: 4
+  run_setups..full.log_repeat_schedule:
+    value: 5
+  # ... and reduced pipeline (no 3rd TP)
+  pipeline.:
+    value:
+      - generator
+      - temporal_memory
+      - temporal_pooler
+      - temporal_memory_2
+      - temporal_pooler_2
+
+  temporal_pooler.:
+    values:
+      - ablation_utp
+      - sandwich_tp
+
+  generator..policy_similarity:
+    values:
+      - 0.1
+      - 0.35
+      - 0.6
+
+#  run_setups..full.n_states:
+#    values:
+#      - 15
+#      - 30
+#      - 60
+#
+#  run_setups..full.n_actions:
+#    values:
+#      - 4
+#      - 12
+#
+#  run_setups..full.policy_repeats:
+#    values:
+#      - 2
+#      - 10
+#  run_setups..full.epochs:
+#    value: ...
+#  run_setups..full.total_repeats:
+#    value: 80
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/policy.yaml
+

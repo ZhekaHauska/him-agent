@@ -1,0 +1,35 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: tp_policy
+method: grid
+parameters:
+  temporal_pooler.:
+    value: sandwich_tp
+
+  seed.:
+    values: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
+
+  temporal_poolers..sandwich_tp.lower_sp_conf.potentialPct:
+    values:
+      - 0.25
+      - 0.35
+      - 0.5
+      - 0.65
+
+  temporal_poolers..sandwich_tp.upper_sp_conf.potentialPct:
+    values:
+      - 0.25
+      - 0.35
+      - 0.5
+      - 0.65
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/policy.yaml

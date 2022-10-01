@@ -1,5 +1,3 @@
-# >>>>>>>>> conda requirements
-python>=3.8
 numpy
 matplotlib
 jupyterlab
@@ -8,20 +6,9 @@ tqdm
 wandb
 imageio
 seaborn
-#   htm.core dependencies
-mock
+pygame
 
-# <<<<<<<<< conda requirements
-
-
-# >>>>>>>>> pip requirements
-#   htm.core dependencies
-hexy
-prettytable
-pytest>=4.6.5
-
-# <<<<<<<<< pip requirements
-
-
-# >>>>>>>>> install from sources
-#   install our fork of the htm.core (see README)
+# Install also (see `install.md`):
+#   1. Our fork of the htm.core
+#   2. [Optional] CoppeliaSim + PyRep
+#   3. [Optional] AnimalAI

@@ -1,0 +1,379 @@
+_type_: tp.layered
+project: tp_layered
+log: True    # wandb logging
+
+run_setup: full
+#policy_selection_rule: ordered
+seed: 42
+debug: False
+
+stats_and_metrics:
+  mae_normalization: no
+  symmetrical_similarity: False
+  distribution_metrics: pmf
+  online_similarity_decay: 1.
+  pmf_decay: 1.
+  loss_normalization: False
+  loss_layer_discount: 0.75
+
+pipeline:
+  - ___.input -> gen.output
+#  - gen.output -> sp1.feedforward
+  - gen.output -> tp1.feedforward
+#  - ???.output -> sp2.feedforward
+  - ???.output -> ___.output
+
+track_streams:
+  gen.output:
+    - sdr
+    - cross.offline.el
+    - cross.online.el
+  sp1.output:
+    - sdr
+    - cross.offline.el
+    - cross.online.el
+  tp1.output:
+    - sdr
+    - cross.offline.el
+    - cross.online.el
+
+diff_stats:
+  off_on_el:
+    - gen.output/epoch/sim_mx_off_el
+    - gen.output/epoch/sim_mx_on_el
+  offline_el:
+    - gen.output/epoch/sim_mx_off_el
+    - sp1.output/epoch/sim_mx_off_el
+    - tp1.output/epoch/sim_mx_off_el
+  online_el:
+    - gen.output/epoch/sim_mx_on_el
+    - sp1.output/epoch/sim_mx_on_el
+    - tp1.output/epoch/sim_mx_on_el
+
+loss:
+#  - sp1.output/epoch/sim_mx_on_el_mae
+#  - sp1.output/epoch/mean_pmf_coverage
+  - tp1.output/epoch/sim_mx_on_el_mae
+  - tp1.output/epoch/mean_pmf_coverage
+
+charts:
+#  - sp1.output/epoch/sim_mx_on_el_mae
+#  - sp1.output/epoch/mean_pmf_coverage
+#  - sp1.output/epoch/sim_mx_off_el_mae
+  - tp1.output/epoch/sim_mx_on_el_mae
+  - tp1.output/epoch/mean_pmf_coverage
+  - tp1.output/epoch/sim_mx_off_el_mae
+
+blocks:
+  gen:
+    _type_family_: generator
+    _base_config_: synthetic_sequences
+    n_values: 30
+    value_encoder: random
+  sp1:
+    _type_family_: spatial_pooler
+    _base_config_: default
+    output_sds: [400, 16]
+    boostStrength: 0.
+    potentialPct: 0.6
+  tp1:
+    _type_family_: temporal_pooler
+    _base_config_: default
+    reset_on_activation: False
+    pooling_window: 10
+    decay: ...
+    activation_threshold: 0.01
+    rand_decay_max_ratio: 1.0
+    not_predicted_weight: 0.7
+  sp2:
+    _type_family_: spatial_pooler
+    _base_config_: wide
+    output_sds: [500, 0.1]
+
+generator:
+  synthetic_sequences:
+    _type_: synthetic_sequences
+    sequence_length: 40
+    n_values: 8
+    active_size: 10
+    value_encoder: random
+    sequence_similarity: 0.35
+    sequence_similarity_std: 0.35
+    seed: ???
+
+  synthetic_policies:
+    _type_: synthetic_policies
+    n_states: 40
+    n_actions: 8
+    active_size: 10
+    state_encoder: random
+    action_encoder: random
+    policy_similarity: 0.35
+    policy_similarity_std: 0.35
+    seed: ???
+
+run_setups:
+  simple:
+    n_sequences: 5
+    steps_per_sequence: 10
+    sequence_repeats: 3
+    epochs: 4
+    # FIXME: to ???
+    total_repeats: ...
+    sp_output_sds: [400, 10]
+    tp_output_sds: [400, 10]
+    log_repeat_schedule: 3
+    log_epoch_schedule: 2
+
+  full:
+    n_sequences: 10
+    steps_per_sequence: 30
+    sequence_repeats: 10
+    epochs: 10
+    total_repeats: ...
+    sp_output_sds: [500, 16]
+    tp_output_sds: [1000, 25]
+    log_repeat_schedule: 5
+    log_epoch_schedule: 2
+
+encoder:
+  bucket:
+    _type_: int_bucket
+    n_values: ???
+    bucket_size: ???
+  random:
+    _type_: int_random
+    n_values: ???
+    space_compression: .5
+    active_size: ???
+    sds: ...
+    seed: ???
+
+temporal_pooler:
+  default:
+    sds: ???
+    reset_on_activation: False
+    pooling_window: ???
+    decay: ???
+    activation_threshold: ???
+    rand_decay_max_ratio: 1.0
+    not_predicted_weight: 0.7
+    seed: ???
+
+spatial_pooler:
+  wide:
+    _base_config_: default
+    potentialPct: 0.1
+    boostStrength: 0.5
+    dutyCyclePeriod: 5000
+    minPctOverlapDutyCycle: 0.0002
+
+  default:
+    ff_sds: ???
+    output_sds: ???
+
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.6
+    globalInhibition: True
+    # output
+    columnDimensions: ???
+    localAreaDensity: ???
+
+    boostStrength: 0.2
+    dutyCyclePeriod: 20000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 3
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    wrapAround: False
+
+temporal_poolers:
+  union_tp:
+    _type_: UnionTp
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.5
+    globalInhibition: True
+    # intermediate
+    localAreaDensity: ???
+    # output
+    columnDimensions: ???
+    maxUnionActivity: ???
+
+    activeOverlapWeight: 1
+    predictedActiveOverlapWeight: 2
+    exciteFunctionType: Logistic
+    decayFunctionType: Exponential
+    decayTimeConst: 10.0
+    synPermPredActiveInc: 0.1
+    synPermPreviousPredActiveInc: 0.05
+    historyLength: 20
+    minHistory: 3
+    boostStrength: 1.0
+    dutyCyclePeriod: 40000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 1
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    wrapAround: False
+
+  ablation_utp:
+    _type_: AblationUtp
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.18
+    globalInhibition: True
+    # intermediate
+    localAreaDensity: ???
+    # output
+    columnDimensions: ???
+    maxUnionActivity: ???
+
+    activeOverlapWeight: 1
+    predictedActiveOverlapWeight: 2
+    exciteFunctionType: Logistic
+    decayFunctionType: Exponential
+    decayTimeConst: 15.0
+    historyLength: 6
+    minHistory: 3
+    boostStrength: 0.6
+    dutyCyclePeriod: 8000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 1
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    synPermPredActiveInc: 0.1
+    synPermPreviousPredActiveInc: 0.02
+    wrapAround: False
+    # ablation
+    first_boosting: True
+    second_boosting: True
+    untemporal_learning: True
+    union_learning: True
+    history_learning: True
+
+  custom_utp:
+    _type_: CustomUtp
+    seed: ???
+    # input
+    inputDimensions: ???
+    # intermediate
+    sparsity: 0.004
+    # output
+    columnDimensions: ???
+    union_sdr_sparsity: ???
+
+    potentialRadius: ???
+    initial_pooling: 0.5
+    pooling_decay: 0.1
+    permanence_inc: 0.1
+    permanence_dec: 0.01
+    active_weight: 0.5
+    predicted_weight: 2.0
+    receptive_field_sparsity: 0.5
+    activation_threshold: 0.6
+    history_length: 20
+    prev_perm_inc: 0.05
+
+  sandwich_tp:
+    _type_: SandwichTp
+    seed: ???
+    initial_pooling: 0.75
+    pooling_decay: 0.04
+
+    pooling_decay_r: 1.
+    only_upper: False
+    max_intermediate_used: ...
+
+    lower_sp_conf:
+      # input
+      inputDimensions: ???
+      potentialRadius: ???
+      potentialPct: 0.08
+      globalInhibition: True
+      # output
+      # check bigger
+      columnDimensions: ???
+      localAreaDensity: ???
+
+      boostStrength: 0.25
+      dutyCyclePeriod: 10000
+      minPctOverlapDutyCycle: 0.0002
+      numActiveColumnsPerInhArea: 0
+      stimulusThreshold: 1
+      synPermConnected: 0.5
+      synPermActiveInc: 0.1
+      synPermInactiveDec: 0.005
+      wrapAround: False
+    upper_sp_conf:
+      # input: lower output
+      inputDimensions: ???
+      potentialRadius: ???
+      potentialPct: 0.12
+      globalInhibition: True
+      # output
+      columnDimensions: ???
+      localAreaDensity: ???
+
+      boostStrength: 0.25
+      dutyCyclePeriod: 4000
+      minPctOverlapDutyCycle: 0.0002
+      numActiveColumnsPerInhArea: 0
+      stimulusThreshold: 1
+      synPermConnected: 0.5
+      synPermActiveInc: 0.05
+      synPermInactiveDec: 0.01
+      wrapAround: False
+
+
+temporal_memory:
+  ff_sds: ???
+  columns: ???
+  cells_per_column: 12
+  prune_zero_synapses: True
+  timeseries: False
+  anomaly_window: 1000
+  confidence_window: 1000
+  sm_ac: 0.99
+  seed: ???
+
+  bc_sds: ???
+  context_cells: ???
+  basal_context:
+    sample_size: ???
+    activation_threshold: 0.85
+    learning_threshold: 0.5
+    max_synapses_per_segment: 1.2
+    max_segments_per_cell: 32
+    initial_permanence: 0.46
+    connected_threshold: 0.5
+    permanence_increment: 0.1
+    permanence_decrement: 0.05
+    predicted_segment_decrement: 0.001
+
+  fb_sds: ???
+  feedback_cells: ???
+  apical_feedback:
+    sample_size: ???
+    activation_threshold: 0.85
+    learning_threshold: 0.6
+    max_synapses_per_segment: 1.2
+    max_segments_per_cell: 32
+    initial_permanence: 0.46
+    connected_threshold: 0.5
+    permanence_increment: 0.05
+    permanence_decrement: 0.02
+    predicted_segment_decrement: 0.001

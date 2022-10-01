@@ -1,0 +1,20 @@
+log: False
+save_model: False
+project_name: 'mpg_tm_test'
+epochs: 100
+update_rate: 200
+
+bucket_size: 4
+min_pattern_distance: 0.1
+use_feedback: True
+
+# state logger for visualization
+debug_tm_state: True
+state_log_path: logs/tm_state
+chunk_size: 20
+
+tm_type: 'hybrid_naive_bayes'
+tm_conf: 'configs/tm/hybrid_naive_bayes_default.yaml'
+mpg_conf: 'configs/mpg/mmpg_default.yaml'
+
+seed: 90831

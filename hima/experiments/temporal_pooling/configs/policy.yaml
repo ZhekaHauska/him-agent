@@ -1,0 +1,289 @@
+_type_: tp.policy
+project: tp_policy
+log: True    # wandb logging
+
+run_setup: full
+policy_selection_rule: ordered
+temporal_pooler: ablation_utp
+seed: 42
+debug: False
+
+pipeline:
+  - generator
+#  - spatial_pooler
+  - temporal_memory
+  - temporal_pooler
+#  - spatial_pooler_2
+  - temporal_memory_2
+  - temporal_pooler_2
+#  - spatial_pooler_3
+#  - temporal_memory_3
+  - temporal_pooler_3
+
+run_setups:
+  simple:
+    n_policies: 3
+    n_states: 10
+    n_actions: 4
+    steps_per_policy: ...
+    policy_repeats: 3
+    epochs: 2
+    total_repeats: ...
+    sp_output_sds: [400, 10]
+    tp_output_sds: [400, 10]
+    log_repeat_schedule: 3
+    log_epoch_schedule: 2
+
+  full:
+    n_policies: 10
+    n_states: 40
+    n_actions: 8
+    steps_per_policy: ...
+    policy_repeats: 10
+    epochs: 10
+    total_repeats: ...
+    sp_output_sds: [500, 16]
+    tp_output_sds: [1000, 25]
+    log_repeat_schedule: 5
+    log_epoch_schedule: 2
+
+stats_and_metrics:
+  normalization: mean
+  prefix_similarity_discount: 1.
+  loss_on_mae: True
+  loss_layer_discount: 0.75
+  symmetrical_similarity: False
+
+generator:
+  _type_: synthetic
+  n_states: ???
+  n_actions: ???
+  active_size: 10
+  state_encoder: random
+  action_encoder: random
+  policy_similarity: 0.35
+  policy_similarity_std: 0.35
+  seed: ???
+
+encoders:
+  bucket:
+    _type_: int_bucket
+    n_values: ???
+    bucket_size: ???
+  random:
+    _type_: int_random
+    n_values: ???
+    space_compression: .75
+    active_size: ???
+    sds: ...
+    seed: ???
+
+temporal_poolers:
+  union_tp:
+    _type_: UnionTp
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.5
+    globalInhibition: True
+    # intermediate
+    localAreaDensity: ???
+    # output
+    columnDimensions: ???
+    maxUnionActivity: ???
+
+    activeOverlapWeight: 1
+    predictedActiveOverlapWeight: 2
+    exciteFunctionType: Logistic
+    decayFunctionType: Exponential
+    decayTimeConst: 10.0
+    synPermPredActiveInc: 0.1
+    synPermPreviousPredActiveInc: 0.05
+    historyLength: 20
+    minHistory: 3
+    boostStrength: 1.0
+    dutyCyclePeriod: 40000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 1
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    wrapAround: False
+
+  ablation_utp:
+    _type_: AblationUtp
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.18
+    globalInhibition: True
+    # intermediate
+    localAreaDensity: ???
+    # output
+    columnDimensions: ???
+    maxUnionActivity: ???
+
+    activeOverlapWeight: 1
+    predictedActiveOverlapWeight: 2
+    exciteFunctionType: Logistic
+    decayFunctionType: Exponential
+    decayTimeConst: 15.0
+    historyLength: 6
+    minHistory: 3
+    boostStrength: 0.6
+    dutyCyclePeriod: 8000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 1
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    synPermPredActiveInc: 0.1
+    synPermPreviousPredActiveInc: 0.02
+    wrapAround: False
+    # ablation
+    first_boosting: True
+    second_boosting: True
+    untemporal_learning: True
+    union_learning: True
+    history_learning: True
+
+  custom_utp:
+    _type_: CustomUtp
+    seed: ???
+    # input
+    inputDimensions: ???
+    # intermediate
+    sparsity: 0.004
+    # output
+    columnDimensions: ???
+    union_sdr_sparsity: ???
+
+    potentialRadius: ???
+    initial_pooling: 0.5
+    pooling_decay: 0.1
+    permanence_inc: 0.1
+    permanence_dec: 0.01
+    active_weight: 0.5
+    predicted_weight: 2.0
+    receptive_field_sparsity: 0.5
+    activation_threshold: 0.6
+    history_length: 20
+    prev_perm_inc: 0.05
+
+  sandwich_tp:
+    _type_: SandwichTp
+    seed: ???
+    initial_pooling: 0.75
+    pooling_decay: 0.04
+
+    pooling_decay_r: 1.
+    only_upper: False
+    max_intermediate_used: ...
+
+    lower_sp_conf:
+      # input
+      inputDimensions: ???
+      potentialRadius: ???
+      potentialPct: 0.08
+      globalInhibition: True
+      # output
+      # check bigger
+      columnDimensions: ???
+      localAreaDensity: ???
+
+      boostStrength: 0.25
+      dutyCyclePeriod: 10000
+      minPctOverlapDutyCycle: 0.0002
+      numActiveColumnsPerInhArea: 0
+      stimulusThreshold: 1
+      synPermConnected: 0.5
+      synPermActiveInc: 0.1
+      synPermInactiveDec: 0.005
+      wrapAround: False
+    upper_sp_conf:
+      # input: lower output
+      inputDimensions: ???
+      potentialRadius: ???
+      potentialPct: 0.12
+      globalInhibition: True
+      # output
+      columnDimensions: ???
+      localAreaDensity: ???
+
+      boostStrength: 0.25
+      dutyCyclePeriod: 4000
+      minPctOverlapDutyCycle: 0.0002
+      numActiveColumnsPerInhArea: 0
+      stimulusThreshold: 1
+      synPermConnected: 0.5
+      synPermActiveInc: 0.05
+      synPermInactiveDec: 0.01
+      wrapAround: False
+
+
+temporal_memory:
+  ff_sds: ???
+  columns: ???
+  cells_per_column: 12
+  prune_zero_synapses: True
+  timeseries: False
+  anomaly_window: 1000
+  confidence_window: 1000
+  sm_ac: 0.99
+  seed: ???
+
+  bc_sds: ???
+  context_cells: ???
+  basal_context:
+    sample_size: ???
+    activation_threshold: 0.85
+    learning_threshold: 0.5
+    max_synapses_per_segment: 1.2
+    max_segments_per_cell: 32
+    initial_permanence: 0.46
+    connected_threshold: 0.5
+    permanence_increment: 0.1
+    permanence_decrement: 0.05
+    predicted_segment_decrement: 0.001
+
+  fb_sds: ???
+  feedback_cells: ???
+  apical_feedback:
+    sample_size: ???
+    activation_threshold: 0.85
+    learning_threshold: 0.6
+    max_synapses_per_segment: 1.2
+    max_segments_per_cell: 32
+    initial_permanence: 0.46
+    connected_threshold: 0.5
+    permanence_increment: 0.05
+    permanence_decrement: 0.02
+    predicted_segment_decrement: 0.001
+
+spatial_pooler:
+  ff_sds: ???
+  output_sds: ???
+
+  seed: ???
+  # input
+  inputDimensions: ???
+  potentialRadius: ???
+  potentialPct: 0.25
+  globalInhibition: True
+  # output
+  columnDimensions: ???
+  localAreaDensity: ???
+
+  boostStrength: 0.5
+  dutyCyclePeriod: 5000
+  minPctOverlapDutyCycle: 0.0002
+  numActiveColumnsPerInhArea: 0
+  stimulusThreshold: 3
+  synPermConnected: 0.5
+  synPermActiveInc: 0.1
+  synPermInactiveDec: 0.01
+  wrapAround: False

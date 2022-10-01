@@ -1,0 +1,20 @@
+simple_config: &simple_config
+  g_kernel_size: 12
+  g_stride: 2
+  g_sigma_x: 4
+  g_sigma_y: 4
+  g_lambda_: 8
+  g_filters: 8
+  activity_level: 0.3
+
+
+
+complex_config: &complex_config
+  g_kernel_size: 12
+  g_stride: 6
+  g_sigma: 19.2
+  activity_level: 0.6
+
+v1_config:
+  simple_configs: [*simple_config]
+  complex_config: *complex_config

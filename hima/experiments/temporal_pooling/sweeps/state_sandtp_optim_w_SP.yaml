@@ -1,0 +1,72 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: tp_observations
+method: bayes
+metric:
+  name: loss
+  goal: minimize
+parameters:
+  temporal_pooler.:
+    value: sandwich_tp
+  seed.:
+    value: ...
+  pipeline.:
+    value: [generator, spatial_pooler, temporal_memory, temporal_pooler, temporal_memory_2, temporal_pooler_2, temporal_pooler_3]
+
+  # ====== receptive field ======
+  temporal_poolers..sandwich_tp.lower_sp_conf.potentialPct:
+    min: 0.05
+    max: 0.2
+  temporal_poolers..sandwich_tp.upper_sp_conf.potentialPct:
+    min: 0.05
+    max: 0.2
+
+  # ====== pooling window ======
+  temporal_poolers..sandwich_tp.pooling_decay:
+    min: 0.01
+    max: 0.3
+
+  # ====== boosting ======
+  temporal_poolers..sandwich_tp.lower_sp_conf.boostStrength:
+    min: 0.1
+    max: 1.0
+  temporal_poolers..sandwich_tp.lower_sp_conf.dutyCyclePeriod:
+    min: 1000
+    max: 20000
+  temporal_poolers..sandwich_tp.upper_sp_conf.boostStrength:
+    min: 0.1
+    max: 1.0
+  temporal_poolers..sandwich_tp.upper_sp_conf.dutyCyclePeriod:
+    min: 1000
+    max: 20000
+
+
+  # ====== TM ======
+  temporal_memory..cells_per_column:
+    values:
+      - 8
+      - 12
+
+  # Enable or not FB connections
+  temporal_memory..fb_sds:
+    values:
+      - ...
+      - ???
+
+  spatial_pooler..potentialPct:
+    min: 0.1
+    max: 0.25
+  spatial_pooler..boostStrength:
+    min: 0.05
+    max: 1.0
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/observations.yaml
