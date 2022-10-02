@@ -72,7 +72,7 @@ class CHMMBasic:
             self.log_transition_factors = np.log(self.transition_probs)
             self.log_state_prior = np.log(self.state_prior)
 
-        self.forward_message = self.state_prior
+        self.forward_message = None
 
         self.stats_trans_mat = self.transition_probs
         self.stats_state_prior = self.state_prior
@@ -114,7 +114,6 @@ class CHMMBasic:
         obs_factor[states_for_obs] = 1
 
         new_forward_message = self.prediction * obs_factor
-        new_forward_message /= np.sum(new_forward_message)
 
         if learn:
             if self.learning_mode == 'mc':
@@ -148,12 +147,13 @@ class CHMMBasic:
             self.prediction = self.state_prior
         else:
             self.prediction = np.dot(self.forward_message, self.transition_probs)
-        prediction = np.reshape(self.prediction, (self.n_columns, self.cells_per_column))
+        prediction = self.prediction / self.prediction.sum()
+        prediction = np.reshape(prediction, (self.n_columns, self.cells_per_column))
         prediction = prediction.sum(axis=-1)
         return prediction
 
     def reset(self):
-        self.forward_message = self.state_prior
+        self.forward_message = None
         self.active_state = None
         self.prediction = None
         self.is_first = True
@@ -165,46 +165,51 @@ class CHMMBasic:
         )
 
     def _baum_welch_learning(self):
-        # TODO carefully check details
-        # TODO it doesn't match baseline!
-        new_priors = np.zeros_like(self.state_prior)
-        new_transition_matrix = np.zeros_like(self.transition_probs)
+        new_prior_stats = np.zeros_like(self.state_prior)
+        new_transition_stats = np.zeros_like(self.transition_probs)
 
         for observations, forward_messages in zip(self.obs_sequences, self.fm_sequences):
-            states_for_obs = self._obs_state_to_hidden(observations[-1])
-            obs_factor = np.zeros(self.n_states)
-            obs_factor[states_for_obs] = 1
-            backward_message = obs_factor / len(states_for_obs)
-
+            backward_message = np.ones(self.n_states)
             backward_messages = [backward_message]
 
-            for observation in observations[::-1][1:]:
+            for observation in observations[1:][::-1]:
                 states_for_obs = self._obs_state_to_hidden(observation)
                 obs_factor = np.zeros(self.n_states)
                 obs_factor[states_for_obs] = 1
 
-                backward_message = np.dot(backward_message, self.transition_probs.T) * obs_factor
-                backward_message /= np.sum(backward_message)
-                backward_messages.append(backward_message)
+                backward_message = np.dot(backward_message * obs_factor, self.transition_probs.T)
+                backward_messages.append(copy(backward_message))
 
             # priors
             states_for_obs = self._obs_state_to_hidden(observations[0])
             obs_factor = np.zeros(self.n_states)
             obs_factor[states_for_obs] = 1
-            new_priors += self.state_prior * obs_factor * backward_messages[-1]
+
+            posterior = self.state_prior * obs_factor * backward_messages[-1]
+            posterior /= posterior.sum()
+
+            new_prior_stats += posterior
 
             # transitions
             backward_messages = backward_messages[::-1]
 
             for i, forward_message in enumerate(forward_messages[:-1]):
+                states_for_obs = self._obs_state_to_hidden(observations[i+1])
+                obs_factor = np.zeros(self.n_states)
+                obs_factor[states_for_obs] = 1
+
                 forward_message = forward_message.reshape((-1, 1))
                 backward_message = backward_messages[i+1].reshape((1, -1))
-                new_transition_matrix += forward_message * self.transition_probs * backward_message
+                obs_factor = obs_factor.reshape((1, -1))
+
+                posterior = forward_message * self.transition_probs * obs_factor * backward_message
+                posterior /= posterior.sum()
+                new_transition_stats += posterior
 
         # update
-        self.stats_trans_mat += self.lr * (new_transition_matrix - self.stats_trans_mat)
+        self.stats_trans_mat += self.lr * (new_transition_stats - self.stats_trans_mat)
 
-        self.stats_state_prior += self.lr * (new_priors - self.stats_state_prior)
+        self.stats_state_prior += self.lr * (new_prior_stats - self.stats_state_prior)
 
         self.transition_probs = self.stats_trans_mat / self.stats_trans_mat.sum(axis=1).reshape((-1, 1))
         self.state_prior = self.stats_state_prior / self.stats_state_prior.sum()
@@ -232,11 +237,13 @@ class CHMMBasic:
     def _monte_carlo_learning(self, new_forward_message, states_for_obs):
         prev_state = self.active_state
 
-        predicted_state = self._rng.choice(self.states, p=self.prediction)
+        prediction = self.prediction / self.prediction.sum()
+        predicted_state = self._rng.choice(self.states, p=prediction)
 
         wrong_prediction = not np.in1d(predicted_state, states_for_obs)
 
         if wrong_prediction:
+            new_forward_message /= new_forward_message.sum()
             next_state = self._rng.choice(self.states, p=new_forward_message)
         else:
             next_state = predicted_state
