@@ -10,7 +10,7 @@ from hmmlearn.hmm import MultinomialHMM
 from copy import copy
 
 
-L_MODE = Literal['bw', 'mc', 'bw_base']
+L_MODE = Literal['bw', 'bw_base', 'bw_iter', 'htm']
 INI_MODE = Literal['dirichlet', 'normal', 'uniform']
 
 EPS = 1e-15
@@ -25,7 +25,7 @@ class CHMMBasic:
             temp: float = 1.0,
             regularization: float = 0.1,
             batch_size: int = 1,
-            learning_mode: L_MODE = 'mc',
+            learning_mode: L_MODE = 'htm',
             initialization: INI_MODE = 'uniform',
             sigma: float = 1.0,
             alpha: float = 1.0,
@@ -116,8 +116,10 @@ class CHMMBasic:
         new_forward_message = self.prediction * obs_factor
 
         if learn:
-            if self.learning_mode == 'mc':
-                self._monte_carlo_learning(new_forward_message, states_for_obs)
+            if self.learning_mode == 'htm':
+                self._htm_like_learning(new_forward_message, states_for_obs)
+            elif self.learning_mode == 'bw_iter':
+                self._iterative_baum_welch_learning(obs_factor)
             elif (self.learning_mode == 'bw') or (self.learning_mode == 'bw_base'):
                 if self.is_first and (len(self.observations) > 0):
                     self.obs_sequences.append(copy(self.observations))
@@ -234,7 +236,19 @@ class CHMMBasic:
         self.model.transmat_ = self.transition_probs
         self.model.startprob_ = self.state_prior
 
-    def _monte_carlo_learning(self, new_forward_message, states_for_obs):
+    def _iterative_baum_welch_learning(self, obs_factor):
+        if self.is_first:
+            posterior = self.state_prior * obs_factor
+            posterior /= posterior.sum()
+            self.stats_state_prior += posterior
+            self.state_prior = self.stats_state_prior / self.stats_state_prior.sum()
+        else:
+            posterior = self.forward_message.reshape((-1, 1)) * self.transition_probs * obs_factor.reshape((1, -1))
+            posterior /= posterior.sum()
+            self.stats_trans_mat += posterior
+            self.transition_probs = self.stats_trans_mat / self.stats_trans_mat.sum(axis=1).reshape((-1, 1))
+
+    def _htm_like_learning(self, new_forward_message, states_for_obs):
         prev_state = self.active_state
 
         prediction = self.prediction / self.prediction.sum()
