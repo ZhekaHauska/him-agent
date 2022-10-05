@@ -38,23 +38,17 @@ parameters:
 #      - True
   blocks..tp1.sparsity:
     values:
-#      - 8
-#      - 10
-      - 12
-      - 16
-      - 20
-      - 30
-      - 0.99
+      - 13
+      - 15
   blocks..tp1.pooling_window:
     values:
-      - 2
+      - 3
       - 5
-      - 10
+      - 7
   blocks..tp1.rand_decay_max_ratio:
     values:
-      - 1.0
-      - 1.25
-      - 1.5
+      - 1.2
+      - 1.3
 
 command:
   - ${env}
