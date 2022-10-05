@@ -1,5 +1,5 @@
 _type_: tp.layered
-project: tp_layered
+project: stp_layered
 log: True    # wandb logging
 
 run_setup: full
@@ -80,6 +80,7 @@ blocks:
     _type_family_: temporal_pooler
     _base_config_: default
     reset_on_activation: False
+    sparsity: 10
     pooling_window: 10
     decay: ...
     activation_threshold: 0.01

@@ -4,8 +4,6 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Any
-
 import numpy as np
 
 from hima.common.sdr import SparseSdr
@@ -13,7 +11,6 @@ from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.metrics import entropy
 from hima.experiments.temporal_pooling.new.stats.tracker import Tracker, TMetrics
-
 
 SdrSequence = list[SparseSdr]
 SetSdrSequence = list[set[int]]
