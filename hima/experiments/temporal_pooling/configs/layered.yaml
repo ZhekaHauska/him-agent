@@ -3,7 +3,6 @@ project: stp_layered
 log: True    # wandb logging
 
 run_setup: full
-#policy_selection_rule: ordered
 seed: 42
 debug: False
 
@@ -19,7 +18,8 @@ stats_and_metrics:
 pipeline:
   - ___.input -> gen.output
 #  - gen.output -> sp1.feedforward
-  - gen.output -> tp1.feedforward
+#  - gen.output -> tp1.feedforward
+  - gen.output -> stp1.feedforward
 #  - ???.output -> sp2.feedforward
   - ???.output -> ___.output
 
@@ -36,6 +36,10 @@ track_streams:
     - sdr
     - cross.offline.el
     - cross.online.el
+  stp1.output:
+    - sdr
+    - cross.offline.el
+    - cross.online.el
 
 diff_stats:
   off_on_el:
@@ -45,24 +49,31 @@ diff_stats:
     - gen.output/epoch/sim_mx_off_el
     - sp1.output/epoch/sim_mx_off_el
     - tp1.output/epoch/sim_mx_off_el
+    - stp1.output/epoch/sim_mx_off_el
   online_el:
     - gen.output/epoch/sim_mx_on_el
     - sp1.output/epoch/sim_mx_on_el
     - tp1.output/epoch/sim_mx_on_el
+    - stp1.output/epoch/sim_mx_on_el
 
 loss:
 #  - sp1.output/epoch/sim_mx_on_el_mae
 #  - sp1.output/epoch/mean_pmf_coverage
-  - tp1.output/epoch/sim_mx_on_el_mae
-  - tp1.output/epoch/mean_pmf_coverage
+#  - tp1.output/epoch/sim_mx_on_el_mae
+#  - tp1.output/epoch/mean_pmf_coverage
+  - stp1.output/epoch/sim_mx_on_el_mae
+  - stp1.output/epoch/mean_pmf_coverage
 
 charts:
 #  - sp1.output/epoch/sim_mx_on_el_mae
 #  - sp1.output/epoch/mean_pmf_coverage
 #  - sp1.output/epoch/sim_mx_off_el_mae
-  - tp1.output/epoch/sim_mx_on_el_mae
-  - tp1.output/epoch/mean_pmf_coverage
-  - tp1.output/epoch/sim_mx_off_el_mae
+#  - tp1.output/epoch/sim_mx_on_el_mae
+#  - tp1.output/epoch/mean_pmf_coverage
+#  - tp1.output/epoch/sim_mx_off_el_mae
+  - stp1.output/epoch/sim_mx_on_el_mae
+  - stp1.output/epoch/mean_pmf_coverage
+  - stp1.output/epoch/sim_mx_off_el_mae
 
 blocks:
   gen:
@@ -86,6 +97,11 @@ blocks:
     activation_threshold: 0.01
     rand_decay_max_ratio: 1.0
     not_predicted_weight: 0.7
+  stp1:
+    _type_family_: spatiotemporal_pooler
+    _base_config_: sandwich_tp
+    ff_sds: ???
+    output_sds: [400, 16]
   sp2:
     _type_family_: spatial_pooler
     _base_config_: wide
@@ -193,7 +209,7 @@ spatial_pooler:
     synPermInactiveDec: 0.01
     wrapAround: False
 
-temporal_poolers:
+spatiotemporal_pooler:
   union_tp:
     _type_: UnionTp
     seed: ???
@@ -265,29 +281,6 @@ temporal_poolers:
     untemporal_learning: True
     union_learning: True
     history_learning: True
-
-  custom_utp:
-    _type_: CustomUtp
-    seed: ???
-    # input
-    inputDimensions: ???
-    # intermediate
-    sparsity: 0.004
-    # output
-    columnDimensions: ???
-    union_sdr_sparsity: ???
-
-    potentialRadius: ???
-    initial_pooling: 0.5
-    pooling_decay: 0.1
-    permanence_inc: 0.1
-    permanence_dec: 0.01
-    active_weight: 0.5
-    predicted_weight: 2.0
-    receptive_field_sparsity: 0.5
-    activation_threshold: 0.6
-    history_length: 20
-    prev_perm_inc: 0.05
 
   sandwich_tp:
     _type_: SandwichTp
