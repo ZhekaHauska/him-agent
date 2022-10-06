@@ -9,151 +9,133 @@ from typing import Any
 import numpy as np
 from htm.bindings.sdr import SDR
 
-from hima.common.config_utils import extracted_type, resolve_init_params, resolve_absolute_quantity
+from hima.common.config_utils import (
+    extracted_type, resolve_init_params, resolve_absolute_quantity,
+    extracted
+)
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
+from hima.experiments.temporal_pooling.new.blocks.graph import Block
 
 
-class TemporalPoolerBlockStats(BlockStats):
-    seq_stats: SdrSequenceStats
+class SpatiotemporalPoolerBlock(Block):
+    family = "spatiotemporal_pooler"
 
-    def __init__(self, output_sds: Sds):
-        super(TemporalPoolerBlockStats, self).__init__(output_sds)
-        self.seq_stats = SdrSequenceStats(self.output_sds)
+    FEEDFORWARD = 'feedforward'
+    OUTPUT = 'output'
+    supported_streams = {FEEDFORWARD, OUTPUT}
 
-    def update(self, current_output_sdr: SparseSdr):
-        self.seq_stats.update(current_output_sdr)
+    stp: Any
+    _active_input: SDR
+    _active_output: SDR
 
-    def step_metrics(self) -> dict[str, Any]:
-        return self.seq_stats.step_metrics()
+    def __init__(self, id: int, name: str, **stp_config):
+        super(SpatiotemporalPoolerBlock, self).__init__(id, name)
 
-    def final_metrics(self) -> dict[str, Any]:
-        return self.seq_stats.final_metrics()
+        stp_config, ff_sds, output_sds = extracted(stp_config, 'ff_sds', 'output_sds')
 
+        self.register_stream(self.FEEDFORWARD).resolve_sds(ff_sds)
+        self.register_stream(self.OUTPUT).resolve_sds(output_sds)
 
-class TemporalPoolerBlock:
-    id: int
-    name: str
-    feedforward_sds: Sds
-    output_sds: Sds
+        self._stp_config = stp_config
 
-    output_sdr: SparseSdr
-    tp: Any
-    stats: TemporalPoolerBlockStats
+    def build(self, **kwargs):
+        stp_config = self._stp_config
+        ff_sds = self.streams[self.FEEDFORWARD].sds
+        output_sds = self.streams[self.OUTPUT].sds
 
-    _input_active_cells: SDR
-    _input_predicted_cells: SDR
+        self.stp = resolve_stp(self._stp_config, feedforward_sds=ff_sds, output_sds=output_sds)
 
-    def __init__(self, feedforward_sds: Sds, output_sds: Sds, tp: Any):
-        self.feedforward_sds = feedforward_sds
-        self.output_sds = output_sds
-        self.tp = tp
-        self.stats = TemporalPoolerBlockStats(self.output_sds)
-
-        self.output_sdr = []
-        self._input_active_cells = SDR(self.feedforward_sds.size)
-        self._input_predicted_cells = SDR(self.feedforward_sds.size)
-
-    @property
-    def tag(self) -> str:
-        return f'{self.id}_tp'
+        self._active_input = SDR(ff_sds.size)
+        self._active_output = SDR(output_sds.size)
 
     def reset(self):
-        self.tp.reset()
-        self.output_sdr = []
+        self.stp.reset()
+        super(SpatiotemporalPoolerBlock, self).reset()
 
-    def reset_stats(self, stats: TemporalPoolerBlockStats = None):
-        if stats is None:
-            self.stats = TemporalPoolerBlockStats(self.output_sds)
-        else:
-            self.stats = stats
+    def compute(self, data: dict[str, SparseSdr], **kwargs):
+        self._compute(**data, **kwargs)
 
-    def compute(self, active_input: SparseSdr, predicted_input: SparseSdr, learn: bool):
-        self._input_active_cells.sparse = active_input.copy()
-        self._input_predicted_cells.sparse = predicted_input.copy()
+    def _compute(
+            self, feedforward: SparseSdr, learn: bool, predicted_feedforward: SparseSdr = None
+    ):
+        self._active_input.sparse = feedforward.copy()
+        assert predicted_feedforward is None, 'Not implemented'
 
-        output_sdr: SDR = self.tp.compute(
-            self._input_active_cells, self._input_predicted_cells, learn
+        output_sdr: SDR = self.stp.compute(
+            self._active_input, self._active_input, learn
         )
-        self.output_sdr = np.array(output_sdr.sparse, copy=True)
-
-        self.stats.update(self.output_sdr)
-        return self.output_sdr
+        self.streams[self.OUTPUT].sdr = np.array(output_sdr.sparse, copy=True)
 
 
-def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
-    tp_config, tp_type = extracted_type(tp_config)
+def resolve_stp(stp_config, feedforward_sds: Sds, output_sds: Sds):
+    stp_config, stp_type = extracted_type(stp_config)
 
-    if tp_type == 'UnionTp':
+    if stp_type == 'UnionTp':
         from hima.modules.htm.spatial_pooler import UnionTemporalPooler
-        tp_config = resolve_init_params(
-            tp_config,
+        stp_config = resolve_init_params(
+            stp_config,
             inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
             columnDimensions=output_sds.shape, maxUnionActivity=output_sds.sparsity,
-            potentialRadius=feedforward_sds.size, seed=seed
+            potentialRadius=feedforward_sds.size
         )
-        tp = UnionTemporalPooler(**tp_config)
+        stp = UnionTemporalPooler(**stp_config)
 
-    elif tp_type == 'AblationUtp':
+    elif stp_type == 'AblationUtp':
         from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
-        tp_config = resolve_init_params(
-            tp_config,
+        stp_config = resolve_init_params(
+            stp_config,
             inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
             columnDimensions=output_sds.shape, maxUnionActivity=output_sds.sparsity,
-            potentialRadius=feedforward_sds.size, seed=seed
+            potentialRadius=feedforward_sds.size
         )
-        tp = AblationUtp(**tp_config)
+        stp = AblationUtp(**stp_config)
 
-    elif tp_type == 'CustomUtp':
+    elif stp_type == 'CustomUtp':
         from hima.experiments.temporal_pooling.custom_utp import CustomUtp
-        tp_config = resolve_init_params(
-            tp_config,
+        stp_config = resolve_init_params(
+            stp_config,
             inputDimensions=feedforward_sds.shape,
-            columnDimensions=output_sds.shape, union_sdr_sparsity=output_sds.sparsity,
-            seed=seed
+            columnDimensions=output_sds.shape, union_sdr_sparsity=output_sds.sparsity
         )
-        tp = CustomUtp(**tp_config)
+        stp = CustomUtp(**stp_config)
 
-    elif tp_type == 'SandwichTp':
+    elif stp_type == 'SandwichTp':
         from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
-        tp_config = resolve_init_params(tp_config, seed=seed)
 
         # hacky hack to set pooling restriction propagated to upper SP
-        if 'max_intermediate_used' in tp_config and tp_config['max_intermediate_used'] is not None:
+        if 'max_intermediate_used' in stp_config and stp_config['max_intermediate_used'] is not None:
             # FIXME: due to the wandb bug https://github.com/wandb/client/issues/3555 I have to
             # explicitly use only the float (i.e. relative) version that counts in active sizes
-            tp_config['max_intermediate_used'] = resolve_absolute_quantity(
-                float(tp_config['max_intermediate_used']),
-                feedforward_sds.active_size if tp_config['only_upper'] else output_sds.active_size
+            stp_config['max_intermediate_used'] = resolve_absolute_quantity(
+                float(stp_config['max_intermediate_used']),
+                feedforward_sds.active_size if stp_config['only_upper'] else output_sds.active_size
             )
 
-        if not tp_config['only_upper']:
-            tp_config['lower_sp_conf'] = resolve_init_params(
-                tp_config['lower_sp_conf'],
+        if not stp_config['only_upper']:
+            stp_config['lower_sp_conf'] = resolve_init_params(
+                stp_config['lower_sp_conf'],
                 inputDimensions=feedforward_sds.shape,
                 columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
                 potentialRadius=feedforward_sds.size
             )
-            tp_config['upper_sp_conf'] = resolve_init_params(
-                tp_config['upper_sp_conf'],
+            stp_config['upper_sp_conf'] = resolve_init_params(
+                stp_config['upper_sp_conf'],
                 inputDimensions=output_sds.shape,
                 columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
                 potentialRadius=output_sds.size
             )
         else:
-            tp_config['upper_sp_conf'] = resolve_init_params(
-                tp_config['upper_sp_conf'],
+            stp_config['upper_sp_conf'] = resolve_init_params(
+                stp_config['upper_sp_conf'],
                 inputDimensions=feedforward_sds.shape,
                 columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
                 potentialRadius=output_sds.size
             )
 
-        tp = SandwichTp(**tp_config)
+        stp = SandwichTp(**stp_config)
 
     else:
-        raise KeyError(f'Temporal Pooler type "{tp_type}" is not supported')
+        raise KeyError(f'Temporal Pooler type "{stp_type}" is not supported')
 
-    tp_block = TemporalPoolerBlock(feedforward_sds=feedforward_sds, output_sds=output_sds, tp=tp)
-    return tp_block
+    return stp

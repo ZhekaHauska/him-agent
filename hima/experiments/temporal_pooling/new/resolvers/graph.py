@@ -56,11 +56,13 @@ class BlockRegistryResolver:
         )
         from hima.experiments.temporal_pooling.new.resolvers.sp import SpatialPoolerResolver
         from hima.experiments.temporal_pooling.new.resolvers.tp import TemporalPoolerResolver
+        from hima.experiments.temporal_pooling.new.resolvers.stp import SpatiotemporalPoolerResolver
 
         return {
             DataGeneratorResolver.family: DataGeneratorResolver(),
             SpatialPoolerResolver.family: SpatialPoolerResolver(),
-            TemporalPoolerResolver.family: TemporalPoolerResolver()
+            TemporalPoolerResolver.family: TemporalPoolerResolver(),
+            SpatiotemporalPoolerResolver.family: SpatiotemporalPoolerResolver(),
         }
 
     def __getitem__(self, item: str) -> Block:

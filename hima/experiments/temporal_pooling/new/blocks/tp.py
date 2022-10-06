@@ -11,10 +11,12 @@ from hima.experiments.temporal_pooling.new.stp.temporal_pooler import TemporalPo
 
 
 class TemporalPoolerBlock(Block):
+    family = 'temporal_pooler'
+
     FEEDFORWARD = 'feedforward'
     OUTPUT = 'output'
-
     supported_streams = {FEEDFORWARD, OUTPUT}
+
     tp: TemporalPooler
 
     def __init__(self, id: int, name: str, **tp_config):
@@ -44,11 +46,12 @@ class TemporalPoolerBlock(Block):
 
     def reset(self, **kwargs):
         self.tp.reset()
+        super(TemporalPoolerBlock, self).reset(**kwargs)
 
     def compute(self, data: dict[str, SparseSdr], **kwargs):
         self._compute(**data)
 
-    def _compute( self, feedforward: SparseSdr, predicted_feedforward: SparseSdr = None):
+    def _compute(self, feedforward: SparseSdr, predicted_feedforward: SparseSdr = None):
         self.streams[self.OUTPUT].sdr = self.tp.compute(
             feedforward=feedforward,
             predicted_feedforward=predicted_feedforward,

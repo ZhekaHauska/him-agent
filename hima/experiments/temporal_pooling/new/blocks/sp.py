@@ -15,10 +15,10 @@ from hima.experiments.temporal_pooling.new.blocks.graph import Block
 
 
 class SpatialPoolerBlock(Block):
+    family = "spatial_pooler"
+
     FEEDFORWARD = 'feedforward'
     OUTPUT = 'output'
-
-    family = "spatial_pooler"
     supported_streams = {FEEDFORWARD, OUTPUT}
 
     sp: Any
@@ -45,9 +45,8 @@ class SpatialPoolerBlock(Block):
             inputDimensions=ff_sds.shape, potentialRadius=ff_sds.size,
             columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
         )
-        self.sp = SpatialPooler(
-            **sp_config
-        )
+        self.sp = SpatialPooler(**sp_config)
+
         self._active_input = SDR(ff_sds.size)
         self._active_output = SDR(output_sds.size)
 

@@ -6,24 +6,26 @@
 
 from hima.common.config_utils import TConfig, resolve_init_params
 from hima.experiments.temporal_pooling.new.blocks.graph import Block
-from hima.experiments.temporal_pooling.new.blocks.tp import TemporalPoolerBlock
+from hima.experiments.temporal_pooling.new.blocks.stp import SpatiotemporalPoolerBlock
 from hima.experiments.temporal_pooling.new.resolvers.graph import BlockResolver
 
 
-class TemporalPoolerResolver(BlockResolver):
-    family = TemporalPoolerBlock.family
+class SpatiotemporalPoolerResolver(BlockResolver):
+    family = SpatiotemporalPoolerBlock.family
 
     @staticmethod
     def resolve(
             global_config: TConfig, config: TConfig, block_id: int, block_name: str, **kwargs
     ) -> Block:
-        return TemporalPoolerResolver._resolve(
-            tp_config=config,
+        return SpatiotemporalPoolerResolver._resolve(
+            stp_config=config,
             block_id=block_id, block_name=block_name,
             **kwargs
         )
 
     @staticmethod
-    def _resolve(tp_config: TConfig, block_id: int, block_name: str, **induction_registry) -> Block:
-        tp_config = resolve_init_params(tp_config, **induction_registry)
-        return TemporalPoolerBlock(id=block_id, name=block_name, **tp_config)
+    def _resolve(
+            stp_config: TConfig, block_id: int, block_name: str, **induction_registry
+    ) -> Block:
+        stp_config = resolve_init_params(stp_config, **induction_registry)
+        return SpatiotemporalPoolerBlock(id=block_id, name=block_name, **stp_config)
