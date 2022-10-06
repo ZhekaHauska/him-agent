@@ -9,7 +9,7 @@ import numpy as np
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import isnone
+from hima.common.utils import isnone, safe_divide
 from hima.experiments.temporal_pooling.new.stats.metrics import (
     standardize_sample_distribution,
     sequence_similarity_elementwise, distribution_similarity, DISTR_SIM_PMF,
@@ -201,7 +201,7 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
                 )
 
         # store mean similarity
-        mean_similarity = similarity_sum / n_seq_elements
+        mean_similarity = safe_divide(similarity_sum, n_seq_elements, default=similarity_sum)
         for j in range(self.n_sequences):
             if self.sequences[j] is None:
                 continue
@@ -237,7 +237,7 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
 
         similarity_sum = np.zeros(self.n_sequences)
         prefix_histogram = np.zeros(self.sds.size)
-        prefix_histogram_sum = 0
+        prefix_histogram_sum: float = 0.
 
         # calculate similarity for every prefix pmf against all stored pmfs
         prefix_pmf = 1
@@ -257,7 +257,7 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
 
         # FIXME: use online_similarity_decay
         # update mean similarity for the entire `current_seq_id` row
-        mean_similarity = similarity_sum / n_seq_elements
+        mean_similarity = safe_divide(similarity_sum, n_seq_elements, default=similarity_sum)
         for j in range(self.n_sequences):
             if self.pmfs[j] is None:
                 continue
@@ -267,7 +267,7 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
         # because in real time we can only compare to the already seen sequences
         self.pmfs[self.current_seq_id] = prefix_pmf
 
-    def _update_pmf(self, sdr: SparseSdr, histogram: SeqHistogram, histogram_sum: float):
+    def _update_pmf(self, sdr: SparseSdr, histogram: SeqHistogram, histogram_sum: float) -> float:
         if self.pmf_decay < 1.:
             # discount preserving `hist / step = 1 * active_size`
             histogram *= self.pmf_decay
