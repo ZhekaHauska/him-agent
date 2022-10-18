@@ -23,8 +23,9 @@ class DCHMM:
             n_obs_states: int,
             cells_per_column: int,
             n_vars_per_factor: int,
+            initial_log_factor_value: float = 0,
             lr: float = 0.01,
-            alpha: float = 0.01,
+            regularization: float = 0.01,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
             segment_prune_threshold: float = 0.001,
@@ -63,16 +64,21 @@ class DCHMM:
         self.segment_activation_threshold = n_vars_per_factor
 
         self.lr = lr
-        self.alpha = alpha
+        self.regularization = regularization
 
         # low probability clipping
         self.cell_activation_threshold = cell_activation_threshold
 
         self.active_cells = SDR(self.total_cells)
+        # reserve first state for each variable as reset state
+        self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
+
         self.forward_messages = np.zeros(
             self.total_cells,
             dtype=REAL64_DTYPE
         )
+        self.forward_messages[self.active_cells.sparse] = 1
+
         self.prediction = None
 
         self.connections = Connections(
@@ -81,8 +87,10 @@ class DCHMM:
         )
 
         # each segment corresponds to a factor value
-        self.log_factor_values_per_segment = np.zeros(
+        self.initial_log_factor_value = initial_log_factor_value
+        self.log_factor_values_per_segment = np.full(
             self.total_cells * self.max_segments_per_cell,
+            fill_value=self.initial_log_factor_value,
             dtype=REAL64_DTYPE
         )
 
@@ -108,6 +116,19 @@ class DCHMM:
         self.factor_vars = self.factor_vars.reshape(
             (self.max_factors, n_vars_per_factor)
         )
+
+    def reset(self):
+        # reserve first state for each variable as reset state
+        self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
+
+        self.forward_messages = np.zeros(
+            self.total_cells,
+            dtype=REAL64_DTYPE
+        )
+
+        self.forward_messages[self.active_cells.sparse] = 1
+
+        self.prediction = None
 
     def predict(self):
         # filter dendrites that have low activation likelihood
@@ -167,6 +188,8 @@ class DCHMM:
         self.prediction = prediction
 
     def observe(self, observation: np.ndarray, learn: bool = True):
+        assert self.prediction is not None
+
         cells_in_columns = self._get_cells_in_columns(observation)
         obs_factor = np.zeros_like(self.forward_messages)
         obs_factor[cells_in_columns] = 1
@@ -234,10 +257,14 @@ class DCHMM:
 
     def _update_factors(self, segments_to_reinforce, segments_to_punish):
         w = self.log_factor_values_per_segment[segments_to_reinforce]
-        self.log_factor_values_per_segment[segments_to_reinforce] += self.lr * (1 - self.alpha * w)
+        self.log_factor_values_per_segment[
+            segments_to_reinforce
+        ] += self.lr * (1 - self.regularization * w)
 
         w = self.log_factor_values_per_segment[segments_to_punish]
-        self.log_factor_values_per_segment[segments_to_punish] -= self.lr * self.alpha * w
+        self.log_factor_values_per_segment[
+            segments_to_punish
+        ] -= self.lr * self.regularization * w
 
         segments = np.concatenate(
                 segments_to_punish,
@@ -246,7 +273,7 @@ class DCHMM:
 
         w = self.log_factor_values_per_segment[segments]
 
-        segments_to_prune = segments[w < self.segment_prune_threshold]
+        segments_to_prune = segments[np.abs(w) < self.segment_prune_threshold]
 
         return segments_to_prune
 
@@ -280,12 +307,7 @@ class DCHMM:
 
         wrong_predictions = ~np.isin(next_cells, cells_for_obs)
         wrong_predicted_vars = np.flatnonzero(
-            np.sum(
-                wrong_predictions.reshape(
-                    (self.n_hidden_vars, self.n_hidden_states)
-                ),
-                axis=-1
-            )
+            wrong_predictions
         )
 
         # resample cells for wrong predictions
@@ -293,7 +315,7 @@ class DCHMM:
             (self.n_hidden_vars, self.n_hidden_states)
         )[wrong_predictions]
 
-        new_forward_message /= new_forward_message.sum()
+        new_forward_message /= new_forward_message.sum(axis=-1).reshape(-1, 1)
 
         next_states2 = self._sample_categorical_variables(
             new_forward_message

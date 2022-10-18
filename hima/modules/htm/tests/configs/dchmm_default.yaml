@@ -2,8 +2,10 @@ n_obs_vars: 4
 n_obs_states: 3
 cells_per_column: 4
 n_vars_per_factor: 2
-permanence_connected_threshold: 0.5
+initial_log_factor_value: 0.0
+lr: 0.01
+regularization: 0.01
 cell_activation_threshold: 0.001
 max_segments_per_cell: 15
-prune_zero_synapses: True
+segment_prune_threshold: 0.001
 seed: 223
