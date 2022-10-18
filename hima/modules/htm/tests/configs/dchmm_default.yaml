@@ -1,0 +1,9 @@
+n_obs_vars: 4
+n_obs_states: 3
+cells_per_column: 4
+n_vars_per_factor: 2
+permanence_connected_threshold: 0.5
+cell_activation_threshold: 0.001
+max_segments_per_cell: 15
+prune_zero_synapses: True
+seed: 223
