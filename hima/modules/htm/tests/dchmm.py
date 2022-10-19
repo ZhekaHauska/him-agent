@@ -56,5 +56,5 @@ class TestDCHMM(TestCase):
 
         self.assert_(np.all(next_active_cells < self.dchmm.total_cells))
 
-
-
+    def test_prediction(self):
+        self.dchmm.predict()

@@ -143,7 +143,7 @@ class DCHMM:
         )
 
         active_segments = np.flatnonzero(num_connected >= self.segment_activation_threshold)
-        predictive_cells = np.unique(self.connections.mapSegmentsToCells(active_segments))
+        cells_for_active_segments = self.connections.mapSegmentsToCells(active_segments)
 
         # base activity level
         message_norm = self.forward_messages.reshape(
@@ -153,39 +153,45 @@ class DCHMM:
         base = message_norm[self.factor_vars]
         base = np.prod(base, axis=-1)
 
+        prediction = np.tile(base, (self.total_cells, 1))
+
         # deviation activity
-        sorting_inxs = np.argsort(predictive_cells)
+        if len(active_segments) > 0:
+            # group segments by cells
+            sorting_inxs = np.argsort(cells_for_active_segments)
 
-        segments_in_use = active_segments[sorting_inxs]
-        cell_for_segment = predictive_cells[sorting_inxs]
+            segments_in_use = active_segments[sorting_inxs]
+            cell_for_segment = cells_for_active_segments[sorting_inxs]
 
-        cells_with_segments, split_inxs_by_cell = np.unique(cell_for_segment, return_index=True)
+            factor_for_segment = self.factor_for_segment[segments_in_use]
+            shifted_factor_value = np.exp(
+                self.log_factor_values_per_segment[segments_in_use]
+            ) - 1
 
-        segments_in_use_by_cell = np.split(segments_in_use, split_inxs_by_cell)
+            likelihood = self.forward_messages[self.receptive_fields[segments_in_use]]
+            likelihood = np.prod(likelihood, axis=-1)
+            likelihood *= shifted_factor_value
 
-        factor_for_segment = self.factor_for_segment[segments_in_use_by_cell]
-        shifted_factor_value = np.exp(
-            self.log_factor_values_per_segment[segments_in_use_by_cell]
-        ) - 1
+            factor_for_segment_spec = cell_for_segment * self.max_factors + factor_for_segment
 
-        likelihood = self.forward_messages[self.receptive_fields[segments_in_use_by_cell]]
-        # TODO check the axis
-        likelihood = np.prod(likelihood, axis=-1)
-        likelihood *= shifted_factor_value
+            # group segments by factors
+            sorting_inxs = np.argsort(factor_for_segment_spec)
+            factor_for_segment_spec = factor_for_segment_spec[sorting_inxs]
+            likelihood = likelihood[sorting_inxs]
 
-        # group by factors
-        sorting_inxs = np.argsort(factor_for_segment, axis=-1)
-        factor_for_segment = factor_for_segment[sorting_inxs]
-        likelihood = likelihood[sorting_inxs]
-        _, splt_inxs = np.unique(sorting_inxs, return_index=True)
-        likelihood = np.split(likelihood, factor_for_segment)
-        deviation = likelihood.sum(axis=-1)
+            factors_spec, split_inxs = np.unique(factor_for_segment_spec, return_index=True)
 
-        prediction = base
-        prediction[cells_with_segments] += deviation
-        prediction /= prediction.sum()
+            deviation = np.add.reduceat(likelihood, split_inxs)
 
-        self.prediction = prediction
+            prediction = prediction.flatten()
+            prediction[factors_spec] += deviation
+            prediction = prediction.reshape((self.total_cells, -1))
+
+        prediction = prediction.prod(axis=-1)
+        prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
+        prediction /= prediction.sum(axis=-1).reshape((-1, 1))
+
+        self.prediction = prediction.flatten()
 
     def observe(self, observation: np.ndarray, learn: bool = True):
         assert self.prediction is not None
