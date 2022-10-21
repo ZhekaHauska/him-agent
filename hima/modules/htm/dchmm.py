@@ -46,9 +46,10 @@ class DCHMM:
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
-        self.total_cells = self.n_hidden_vars * self.n_hidden_states
-
         self.max_segments_per_cell = max_segments_per_cell
+        self.total_cells = self.n_hidden_vars * self.n_hidden_states
+        self.total_segments = self.total_cells * self.max_segments_per_cell
+        self.n_columns = self.n_obs_vars * self.n_obs_states
 
         # number of variables assigned to a segment
         self.n_vars_per_factor = n_vars_per_factor
@@ -89,17 +90,17 @@ class DCHMM:
         # each segment corresponds to a factor value
         self.initial_log_factor_value = initial_log_factor_value
         self.log_factor_values_per_segment = np.full(
-            self.total_cells * self.max_segments_per_cell,
+            self.total_segments,
             fill_value=self.initial_log_factor_value,
             dtype=REAL64_DTYPE
         )
 
         self.factor_for_segment = np.zeros(
-            self.total_cells * self.max_segments_per_cell,
+            self.total_segments,
             dtype=UINT_DTYPE
         )
         self.receptive_fields = np.zeros(
-            (self.total_cells * self.max_segments_per_cell, self.n_vars_per_factor),
+            (self.total_segments, self.n_vars_per_factor),
             dtype=UINT_DTYPE
         )
 
@@ -130,7 +131,7 @@ class DCHMM:
 
         self.prediction = None
 
-    def predict(self):
+    def predict_cells(self):
         # filter dendrites that have low activation likelihood
         active_cells = SDR(self.total_cells)
         active_cells.sparse = np.flatnonzero(
@@ -193,6 +194,12 @@ class DCHMM:
 
         self.prediction = prediction.flatten()
 
+    def predict_columns(self):
+        assert self.prediction is not None
+
+        prediction = self.prediction.reshape((self.n_columns, self.cells_per_column))
+        return prediction.sum(axis=-1)
+
     def observe(self, observation: np.ndarray, learn: bool = True):
         assert self.prediction is not None
 
@@ -218,7 +225,6 @@ class DCHMM:
             )
 
             new_segments = self._grow_new_segments(
-                self.connections,
                 cells_to_grow_new_segments,
                 self.active_cells.sparse
             )
@@ -242,8 +248,12 @@ class DCHMM:
 
     def _calculate_learning_segments(self, prev_active_cells, next_active_cells):
         # determine which segments are learning and growing
+        active_cells = SDR(self.total_cells)
+        active_cells.sparse = prev_active_cells
+
         num_connected, num_potential = self.connections.computeActivityFull(
-            prev_active_cells
+            active_cells,
+            False
         )
 
         active_segments = np.flatnonzero(num_connected >= self.segment_activation_threshold)
@@ -273,8 +283,10 @@ class DCHMM:
         ] -= self.lr * self.regularization * w
 
         segments = np.concatenate(
-                segments_to_punish,
-                segments_to_reinforce
+                [
+                    segments_to_punish,
+                    segments_to_reinforce
+                ]
             )
 
         w = self.log_factor_values_per_segment[segments]
@@ -333,7 +345,7 @@ class DCHMM:
         # replace wrong predicted cells with resampled
         next_cells[wrong_predictions] = next_cells2
 
-        return next_cells
+        return next_cells.astype(UINT_DTYPE)
 
     def _sample_categorical_variables(self, probs):
         gammas = self._rng.uniform(size=probs.shape[0]).reshape((-1, 1))
@@ -354,7 +366,6 @@ class DCHMM:
 
     def _grow_new_segments(
             self,
-            connections: Connections,
             new_segment_cells,
             growth_candidates,
     ):
@@ -364,12 +375,12 @@ class DCHMM:
             variables = self.factor_vars[factor_id]
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
 
-            new_segment = connections.createSegment(cell, self.max_segments_per_cell)
+            new_segment = self.connections.createSegment(cell, self.max_segments_per_cell)
             self.factor_for_segment[new_segment] = factor_id
 
             new_segments.append(new_segment)
 
-            connections.growSynapses(
+            self.connections.growSynapses(
                 new_segment,
                 candidates,
                 0.6,
