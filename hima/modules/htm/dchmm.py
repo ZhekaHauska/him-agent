@@ -251,7 +251,7 @@ class DCHMM:
         active_cells = SDR(self.total_cells)
         active_cells.sparse = prev_active_cells
 
-        num_connected, num_potential = self.connections.computeActivityFull(
+        num_connected = self.connections.computeActivity(
             active_cells,
             False
         )
@@ -263,7 +263,9 @@ class DCHMM:
         segments_to_learn = np.isin(cells_for_active_segments, next_active_cells)
         segments_to_punish = ~segments_to_learn
 
-        cells_to_grow_new_segments = ~np.isin(next_active_cells, cells_for_active_segments)
+        cells_to_grow_new_segments = next_active_cells[
+            ~np.isin(next_active_cells, cells_for_active_segments)
+        ]
 
         return (
             segments_to_learn.astype(UINT_DTYPE),
