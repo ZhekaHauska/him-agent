@@ -25,6 +25,7 @@ class DCHMM:
             n_vars_per_factor: int,
             initial_log_factor_value: float = 0,
             lr: float = 0.01,
+            gamma: float = 1.0,
             regularization: float = 0.01,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
@@ -65,6 +66,7 @@ class DCHMM:
         self.segment_activation_threshold = n_vars_per_factor
 
         self.lr = lr
+        self.gamma = gamma
         self.regularization = regularization
 
         # low probability clipping
@@ -279,7 +281,7 @@ class DCHMM:
         w = self.log_factor_values_per_segment[segments_to_reinforce]
         self.log_factor_values_per_segment[
             segments_to_reinforce
-        ] += self.lr * (1 - self.regularization * w)
+        ] += self.lr * (np.exp(-self.gamma*w) - self.regularization * w)
 
         w = self.log_factor_values_per_segment[segments_to_punish]
         self.log_factor_values_per_segment[
