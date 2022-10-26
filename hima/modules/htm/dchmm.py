@@ -80,6 +80,7 @@ class DCHMM:
         )
         self.forward_messages[self.active_cells.sparse] = 1
 
+        self.next_forward_messages = None
         self.prediction = None
 
         self.connections = Connections(
@@ -128,7 +129,7 @@ class DCHMM:
         )
 
         self.forward_messages[self.active_cells.sparse] = 1
-
+        self.next_forward_messages = None
         self.prediction = None
 
     def predict_cells(self):
@@ -189,9 +190,10 @@ class DCHMM:
             prediction = prediction.reshape((self.total_cells, -1))
 
         prediction = prediction.prod(axis=-1)
+        self.next_forward_messages = prediction.flatten()
+
         prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
         prediction /= prediction.sum(axis=-1).reshape((-1, 1))
-
         self.prediction = prediction.flatten()
 
     def predict_columns(self):
@@ -201,17 +203,16 @@ class DCHMM:
         return prediction.sum(axis=-1)
 
     def observe(self, observation: np.ndarray, learn: bool = True):
-        assert self.prediction is not None
+        assert self.next_forward_messages is not None
 
         cells_in_columns = self._get_cells_in_columns(observation)
         obs_factor = np.zeros_like(self.forward_messages)
         obs_factor[cells_in_columns] = 1
 
-        new_forward_messages = self.prediction * obs_factor
+        self.next_forward_messages *= obs_factor
 
         if learn:
             next_active_cells = self._sample_cells(
-                new_forward_messages,
                 cells_in_columns
             )
 
@@ -244,7 +245,7 @@ class DCHMM:
 
             self.active_cells.sparse = next_active_cells
 
-        self.forward_messages = new_forward_messages
+        self.forward_messages = self.next_forward_messages
 
     def _calculate_learning_segments(self, prev_active_cells, next_active_cells):
         # determine which segments are learning and growing
@@ -314,7 +315,7 @@ class DCHMM:
 
         return cells[mask]
 
-    def _sample_cells(self, new_forward_message, cells_for_obs):
+    def _sample_cells(self, cells_for_obs):
         # sample predicted distribution
         next_states = self._sample_categorical_variables(
             self.prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
@@ -332,7 +333,7 @@ class DCHMM:
         )
 
         # resample cells for wrong predictions
-        new_forward_message = new_forward_message.reshape(
+        new_forward_message = self.next_forward_messages.reshape(
             (self.n_hidden_vars, self.n_hidden_states)
         )[wrong_predictions]
 
