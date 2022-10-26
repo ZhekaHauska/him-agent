@@ -5,6 +5,7 @@ initial_log_factor_value: 0
 lr: 1.0
 gamma: 0.1
 regularization: 0.01
+punishment: 0.001
 cell_activation_threshold: 0.0001
 max_segments_per_cell: 100
 segment_prune_threshold: 0.0001

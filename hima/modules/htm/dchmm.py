@@ -27,6 +27,7 @@ class DCHMM:
             lr: float = 0.01,
             gamma: float = 1.0,
             regularization: float = 0.01,
+            punishment: float = 0.0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
             segment_prune_threshold: float = 0.001,
@@ -43,7 +44,9 @@ class DCHMM:
         self.n_hidden_vars = n_obs_vars
 
         self.n_obs_states = n_obs_states
-        self.n_hidden_states = cells_per_column*n_obs_states
+        # plus reset state
+        self.n_hidden_states = cells_per_column*n_obs_states + 1
+        self.reset_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
@@ -51,6 +54,9 @@ class DCHMM:
         self.total_cells = self.n_hidden_vars * self.n_hidden_states
         self.total_segments = self.total_cells * self.max_segments_per_cell
         self.n_columns = self.n_obs_vars * self.n_obs_states
+
+        self.filter_reset_states_mask = np.ones(self.total_cells, dtype=bool)
+        self.filter_reset_states_mask[self.reset_states] = False
 
         # number of variables assigned to a segment
         self.n_vars_per_factor = n_vars_per_factor
@@ -68,13 +74,14 @@ class DCHMM:
         self.lr = lr
         self.gamma = gamma
         self.regularization = regularization
+        self.punishment = punishment
 
         # low probability clipping
         self.cell_activation_threshold = cell_activation_threshold
 
         self.active_cells = SDR(self.total_cells)
-        # reserve first state for each variable as reset state
-        self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
+        # set all variables to the reset state
+        self.active_cells.sparse = self.reset_states
 
         self.forward_messages = np.zeros(
             self.total_cells,
@@ -123,7 +130,7 @@ class DCHMM:
 
     def reset(self):
         # reserve first state for each variable as reset state
-        self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
+        self.active_cells.sparse = self.reset_states
 
         self.forward_messages = np.zeros(
             self.total_cells,
@@ -192,8 +199,10 @@ class DCHMM:
             prediction = prediction.reshape((self.total_cells, -1))
 
         prediction = prediction.prod(axis=-1)
-        self.next_forward_messages = prediction.flatten()
+        self.next_forward_messages = prediction.copy()
 
+        # prevent reset states prediction
+        prediction[self.reset_states] = 0
         prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
         prediction /= prediction.sum(axis=-1).reshape((-1, 1))
         self.prediction = prediction.flatten()
@@ -201,21 +210,22 @@ class DCHMM:
     def predict_columns(self):
         assert self.prediction is not None
 
-        prediction = self.prediction.reshape((self.n_columns, self.cells_per_column))
+        prediction = self.prediction[self.filter_reset_states_mask]
+        prediction = prediction.reshape((self.n_columns, self.cells_per_column))
         return prediction.sum(axis=-1)
 
     def observe(self, observation: np.ndarray, learn: bool = True):
         assert self.next_forward_messages is not None
 
-        cells_in_columns = self._get_cells_in_columns(observation)
+        cells = self._get_cells_for_observation(observation)
         obs_factor = np.zeros_like(self.forward_messages)
-        obs_factor[cells_in_columns] = 1
+        obs_factor[cells] = 1
 
         self.next_forward_messages *= obs_factor
 
         if learn:
             next_active_cells = self._sample_cells(
-                cells_in_columns
+                cells
             )
 
             (
@@ -283,10 +293,9 @@ class DCHMM:
             segments_to_reinforce
         ] += self.lr * (np.exp(-self.gamma*w) - self.regularization * w)
 
-        w = self.log_factor_values_per_segment[segments_to_punish]
         self.log_factor_values_per_segment[
             segments_to_punish
-        ] -= self.lr * self.regularization * w
+        ] -= self.punishment
 
         segments = np.concatenate(
                 [
@@ -301,11 +310,18 @@ class DCHMM:
 
         return segments_to_prune
 
-    def _get_cells_in_columns(self, columns):
-        return (
-                    (columns * self.cells_per_column).reshape((-1, 1)) +
-                    np.arange(self.cells_per_column, dtype=UINT_DTYPE)
+    def _get_cells_for_observation(self, obs_states):
+        vars_for_obs_states = obs_states // self.n_obs_states
+        cells_in_columns = (
+                (obs_states * self.cells_per_column + vars_for_obs_states).reshape((-1, 1)) +
+                np.arange(self.cells_per_column, dtype=UINT_DTYPE)
                 ).flatten()
+
+        vars_without_states = ~np.isin(np.arange(self.n_obs_vars), vars_for_obs_states)
+        reset_states = self.reset_states[vars_without_states]
+
+        cells = np.concatenate([reset_states, cells_in_columns])
+        return cells
 
     def _filter_cells_by_vars(self, cells, variables):
         cells_in_vars = (
