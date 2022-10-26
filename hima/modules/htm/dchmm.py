@@ -260,8 +260,9 @@ class DCHMM:
 
         cells_for_active_segments = self.connections.mapSegmentsToCells(active_segments)
 
-        segments_to_learn = np.isin(cells_for_active_segments, next_active_cells)
-        segments_to_punish = ~segments_to_learn
+        mask = np.isin(cells_for_active_segments, next_active_cells)
+        segments_to_learn = active_segments[mask]
+        segments_to_punish = active_segments[~mask]
 
         cells_to_grow_new_segments = next_active_cells[
             ~np.isin(next_active_cells, cells_for_active_segments)
