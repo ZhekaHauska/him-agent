@@ -5,7 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 from hima.modules.htm.dchmm import DCHMM
-from hima.envs.mpg import MarkovProcessGrammar, MultiMarkovProcessGrammar
+from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
 import numpy as np
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
@@ -25,7 +25,7 @@ class MPGTest:
         conf['hmm']['seed'] = self.seed
         conf['mpg']['seed'] = self.seed
 
-        self.mpg = MarkovProcessGrammar(**conf['mpg'])
+        self.mpg = MultiMarkovProcessGrammar(**conf['mpg'])
 
         conf['hmm']['n_obs_states'] = len(self.mpg.alphabet)
         self.hmm = DCHMM(**conf['hmm'])
@@ -35,6 +35,16 @@ class MPGTest:
         self.log_update_rate = conf['run']['update_rate']
         self.save_model = conf['run']['save_model']
         self.logger = logger
+
+        if self.logger is not None:
+            im_name = f'/tmp/mpg_{self.logger.name}.png'
+            draw_mpg(
+                im_name,
+                self.mpg.transition_probs,
+                self.mpg.transition_letters
+            )
+
+            self.logger.log({'mpg': wandb.Image(im_name)})
 
     def run(self):
         dist = np.zeros((len(self.mpg.states), len(self.mpg.alphabet)))
@@ -169,6 +179,17 @@ class MMPGTest:
         self.save_model = conf['run']['save_model']
         self.logger = logger
 
+        if self.logger is not None:
+            for i in range(self.n_policies):
+                self.mpg.set_policy(i)
+                im_name = f'/tmp/policy_{i}_{self.logger.name}.png'
+                draw_mpg(
+                    im_name,
+                    self.mpg.transition_probs,
+                    self.mpg.transition_letters
+                )
+                self.logger.log({f'mpg_policy_{i}': wandb.Image(im_name)})
+
     def run(self):
         dist = np.zeros((self.n_policies, len(self.mpg.states), len(self.mpg.alphabet)))
         dist_disp = np.zeros((self.n_policies, len(self.mpg.states), len(self.mpg.alphabet)))
@@ -292,7 +313,10 @@ class MMPGTest:
 
         if self.logger is not None and self.save_model:
             name = self.logger.name
-            with open(f"logs/model_{name}.pkl", 'wb') as file:
+
+            np.save(f'logs/dist_{name}.npy', dist)
+
+            with open(f"logs/models/model_{name}.pkl", 'wb') as file:
                 pickle.dump((self.mpg, self.hmm), file)
 
 
