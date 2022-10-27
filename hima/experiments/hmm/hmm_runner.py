@@ -5,7 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 from hima.modules.hmm import CHMMBasic
-from hima.envs.mpg import MarkovProcessGrammar
+from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
 import numpy as np
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
@@ -24,7 +24,7 @@ class HMMRunner:
         conf['hmm']['seed'] = self.seed
         conf['mpg']['seed'] = self.seed
 
-        self.mpg = MarkovProcessGrammar(**conf['mpg'])
+        self.mpg = MultiMarkovProcessGrammar(**conf['mpg'])
 
         conf['hmm']['n_columns'] = len(self.mpg.alphabet)
         self.hmm = CHMMBasic(**conf['hmm'])
@@ -33,6 +33,16 @@ class HMMRunner:
         self.smf_dist = conf['run']['smf_dist']
         self.log_update_rate = conf['run']['update_rate']
         self.logger = logger
+
+        if self.logger is not None:
+            im_name = f'/tmp/mpg_{self.logger.name}.png'
+            draw_mpg(
+                im_name,
+                self.mpg.transition_probs,
+                self.mpg.transition_letters
+            )
+
+            self.logger.log({'mpg': wandb.Image(im_name)})
 
     def run(self):
         dist = np.zeros((len(self.mpg.states), len(self.mpg.alphabet)))

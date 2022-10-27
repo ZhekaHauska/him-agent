@@ -5,7 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 import numpy as np
-
+import pygraphviz as pgv
 
 class MarkovProcessGrammar:
     def __init__(
@@ -129,3 +129,17 @@ class MultiMarkovProcessGrammar(MarkovProcessGrammar):
         super(MultiMarkovProcessGrammar, self).reset()
         self.current_policy = self.initial_policy
         self.set_policy(self.initial_policy)
+
+
+def draw_mpg(path, transition_probs, transition_letters):
+    g = pgv.AGraph(strict=False, directed=True)
+    for i in range(transition_probs.shape[0]):
+        for j in range(transition_probs.shape[1]):
+            prob = transition_probs[i][j]
+            letter = transition_letters[i][j]
+            if prob > 0:
+                g.add_edge(i, j, label=f'{letter}:{prob}')
+
+    g.layout(prog='dot')
+    g.draw(path)
+
