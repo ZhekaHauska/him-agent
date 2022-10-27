@@ -199,6 +199,9 @@ class DCHMM:
             prediction = prediction.reshape((self.total_cells, -1))
 
         prediction = prediction.prod(axis=-1)
+        prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
+        prediction /= prediction.sum(axis=-1).reshape((-1, 1))
+        prediction = prediction.flatten()
         self.next_forward_messages = prediction.copy()
 
         # prevent reset states prediction
