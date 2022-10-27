@@ -138,7 +138,7 @@ def draw_mpg(path, transition_probs, transition_letters):
             prob = transition_probs[i][j]
             letter = transition_letters[i][j]
             if prob > 0:
-                g.add_edge(i, j, label=f'{letter}:{prob}')
+                g.add_edge(i, j, label=f'{letter}:{round(prob, 2)}')
 
     g.layout(prog='dot')
     g.draw(path)
