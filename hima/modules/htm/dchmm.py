@@ -31,6 +31,7 @@ class DCHMM:
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
             segment_prune_threshold: float = 0.001,
+            loop_sequence: bool = False,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -44,9 +45,21 @@ class DCHMM:
         self.n_hidden_vars = n_obs_vars
 
         self.n_obs_states = n_obs_states
+
         # plus reset state
         self.n_hidden_states = cells_per_column*n_obs_states + 1
-        self.reset_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
+
+        self.loop_sequence = loop_sequence
+
+        if self.loop_sequence:
+            self.n_spec_states = 1
+            self.reset_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
+            self.terminal_states = np.empty(0, dtype=UINT_DTYPE)
+        else:
+            self.n_spec_states = 2
+            self.n_hidden_states += 1  # plus terminal state
+            self.reset_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 2
+            self.terminal_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
@@ -57,6 +70,9 @@ class DCHMM:
 
         self.filter_reset_states_mask = np.ones(self.total_cells, dtype=bool)
         self.filter_reset_states_mask[self.reset_states] = False
+
+        self.filter_terminal_states_mask = np.ones(self.total_cells, dtype=bool)
+        self.filter_terminal_states_mask[self.terminal_states] = False
 
         # number of variables assigned to a segment
         self.n_vars_per_factor = n_vars_per_factor
@@ -129,7 +145,6 @@ class DCHMM:
         )
 
     def reset(self):
-        # reserve first state for each variable as reset state
         self.active_cells.sparse = self.reset_states
 
         self.forward_messages = np.zeros(
@@ -199,13 +214,16 @@ class DCHMM:
             prediction = prediction.reshape((self.total_cells, -1))
 
         prediction = prediction.prod(axis=-1)
+
+        if not self.loop_sequence:
+            # prevent reset states prediction
+            prediction[self.reset_states] = 0
+
         prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
         prediction /= prediction.sum(axis=-1).reshape((-1, 1))
         prediction = prediction.flatten()
         self.next_forward_messages = prediction.copy()
 
-        # prevent reset states prediction
-        prediction[self.reset_states] = 0
         prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
         prediction /= prediction.sum(axis=-1).reshape((-1, 1))
         self.prediction = prediction.flatten()
@@ -213,7 +231,8 @@ class DCHMM:
     def predict_columns(self):
         assert self.prediction is not None
 
-        prediction = self.prediction[self.filter_reset_states_mask]
+        filter_special_states = self.filter_reset_states_mask & self.filter_terminal_states_mask
+        prediction = self.prediction[filter_special_states]
         prediction = prediction.reshape((self.n_columns, self.cells_per_column))
         return prediction.sum(axis=-1)
 
@@ -316,14 +335,21 @@ class DCHMM:
     def _get_cells_for_observation(self, obs_states):
         vars_for_obs_states = obs_states // self.n_obs_states
         cells_in_columns = (
-                (obs_states * self.cells_per_column + vars_for_obs_states).reshape((-1, 1)) +
+                (
+                        obs_states * self.cells_per_column +
+                        self.n_spec_states * vars_for_obs_states
+                ).reshape((-1, 1)) +
                 np.arange(self.cells_per_column, dtype=UINT_DTYPE)
-                ).flatten()
+            ).flatten()
 
         vars_without_states = ~np.isin(np.arange(self.n_obs_vars), vars_for_obs_states)
-        reset_states = self.reset_states[vars_without_states]
 
-        cells = np.concatenate([reset_states, cells_in_columns])
+        if self.loop_sequence:
+            empty_states = self.reset_states[vars_without_states]
+        else:
+            empty_states = self.terminal_states[vars_without_states]
+
+        cells = np.concatenate([empty_states, cells_in_columns])
         return cells
 
     def _filter_cells_by_vars(self, cells, variables):

@@ -219,7 +219,7 @@ class MMPGTest:
                 letter = self.mpg.next_state()
 
                 if letter is None:
-                    break
+                    obs_state = np.empty(0, dtype='uint32')
                 else:
                     obs_state = np.array(
                         [
@@ -231,6 +231,9 @@ class MMPGTest:
                 self.hmm.predict_cells()
                 column_probs = self.hmm.predict_columns()[:self.n_obs_states]
                 self.hmm.observe(obs_state, learn=True)
+
+                if letter is None:
+                    break
 
                 # metrics
                 # 1. surprise

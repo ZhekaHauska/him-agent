@@ -9,3 +9,4 @@ punishment: 0.001
 cell_activation_threshold: 0.0001
 max_segments_per_cell: 100
 segment_prune_threshold: 0.0001
+loop_sequence: True

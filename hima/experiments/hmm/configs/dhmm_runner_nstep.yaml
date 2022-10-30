@@ -1,12 +1,12 @@
-log: True
+log: False
 project_name: 'mmpg_dhmm_nstep_test'
 run_tag: null
 
-model_path: 'logs/models/model_kind-sunset-9.pkl'
+model_path: null
 n_steps: 10
 
 experiment: nstep
 hmm_conf: 'configs/dhmm/dchmm_policy.yaml'
 mpg_conf: 'configs/mpg/mmpg_default.yaml'
 
-seed: 11330
+seed: null
