@@ -321,8 +321,97 @@ class MMPGTest:
 
 
 class NStepTest:
-    def __init__(self, logger, conf, model):
-        self.mpg, self.hmm = model
+    def __init__(self, logger, conf):
+        with open(conf['run']['model_path'], 'rb') as file:
+            self.mpg, self.hmm = pickle.load(file)
+
+        self.n_steps = conf['run']['n_steps']
+        self.n_obs_states = len(self.mpg.alphabet)
+        self.logger = logger
+        self._rng = np.random.default_rng(conf['run']['seed'])
+        self.mpg.reset()
+
+        if self.logger is not None:
+            im_name = f'/tmp/mpg_{self.logger.name}.png'
+            draw_mpg(
+                im_name,
+                self.mpg.transition_probs,
+                self.mpg.transition_letters
+            )
+
+            self.logger.log({'mpg': wandb.Image(im_name)})
+
+    def run(self):
+        self.hmm.reset()
+        self.mpg.reset()
+
+        k = int(np.ceil(np.sqrt(self.n_steps)))
+        fig, axs = plt.subplots(k, k, figsize=(10, 10))
+        fig.tight_layout(pad=3.0)
+
+        for step in range(self.n_steps):
+            true_dist = self.mpg.predict_letters(from_state=0, steps=step)
+            true_dist = np.append(true_dist, np.clip(1 - true_dist.sum(), 0, 1))
+
+            self.hmm.predict_cells()
+            predicted_dist = self.hmm.predict_columns()[:self.n_obs_states]
+            predicted_dist = np.append(predicted_dist, np.clip(1 - predicted_dist.sum(), 0, 1))
+
+            kl_div = rel_entr(true_dist, predicted_dist).sum()
+
+            if step == 0:
+                labels = ['Predicted', 'True']
+                letter = self.mpg.next_state()
+                obs_state = np.array(
+                    [
+                        self.mpg.char_to_num[letter],
+                        self.mpg.current_policy + self.hmm.n_obs_states
+                    ]
+                )
+                self.hmm.observe(obs_state, learn=False)
+            else:
+                labels = [None, None]
+                self.hmm.forward_messages = self.hmm.next_forward_messages
+
+            if self.logger is not None:
+                self.logger.log(
+                    {
+                        'main_metrics/dkl': kl_div
+                    },
+                    step=step
+                )
+
+            tick_labels = self.mpg.alphabet.copy()
+            tick_labels.append('∅')
+
+            ax = axs[step // k][step % k]
+            ax.grid()
+            ax.set_ylim(0, 1)
+            ax.bar(
+                np.arange(predicted_dist.shape[0]),
+                predicted_dist,
+                tick_label=tick_labels,
+                color=(0.7, 1.0, 0.3),
+                label=labels[0]
+            )
+
+            ax.bar(
+                np.arange(true_dist.shape[0]),
+                true_dist,
+                tick_label=tick_labels,
+                color=(0.8, 0.5, 0.5),
+                alpha=0.6,
+                label=labels[1]
+            )
+
+            ax.set_title(f'steps: {step + 1}; KL: {np.round(kl_div, 2)}')
+
+        fig.legend(loc=7)
+
+        if self.logger is not None:
+            self.logger.log({f'density/n_step_letter_predictions': wandb.Image(fig)})
+        else:
+            plt.show()
 
 
 def main(config_path):
@@ -379,6 +468,8 @@ def main(config_path):
         runner = MPGTest(logger, config)
     elif experiment == 'mmpg':
         runner = MMPGTest(logger, config)
+    elif experiment == 'nstep':
+        runner = NStepTest(logger, config)
     else:
         raise ValueError
 
@@ -386,4 +477,4 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    main('configs/dhmm_runner.yaml')
+    main('configs/dhmm_runner_nstep.yaml')
