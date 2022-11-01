@@ -8,4 +8,4 @@ smf_dist: 0.005
 hmm_conf: 'configs/hmm/hmm_mc.yaml'
 mpg_conf: 'configs/mpg/mmpg_default.yaml'
 
-seed: 34321
+seed: null

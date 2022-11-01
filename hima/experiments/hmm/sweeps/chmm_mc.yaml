@@ -1,6 +1,6 @@
 project: chmm_hp_search
 entity: hauska
-program: hmm_simple.py
+program: hmm_runner.py
 method: grid
 metric:
   name: main_metrics/total_surprise
@@ -8,15 +8,19 @@ metric:
 parameters:
   run.seed:
     values: [43228, 78273, 83207]
+  mpg.initial_policy:
+    values: [0, 1, 2, 3, 4]
   hmm.learning_mode:
-    values: ['mc']
+    values: ['htm']
   hmm.lr:
-    values: [0.1, 0.5, 1.0]
+    values: [1.0]
   hmm.regularization:
-    values: [0.05, 0.1, 0.5]
+    values: [0.05]
+  hmm.gamma:
+    values: [0.0]
 command:
   - ${env}
   - python
   - ${program}
-  - configs/runner_mc.yaml
+  - configs/hmm_runner.yaml
   - ${args}
