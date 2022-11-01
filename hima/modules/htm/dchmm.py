@@ -7,6 +7,7 @@ from hima.modules.htm.connections import Connections
 from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
 import numpy as np
+from typing import Optional
 
 EPS = 1e-24
 INT_TYPE = "int32"
@@ -32,8 +33,11 @@ class DCHMM:
             max_segments_per_cell: int = 255,
             segment_prune_threshold: float = 0.001,
             loop_sequence: bool = False,
+            log_self_loop_factor: Optional[float] = None,
             seed: int = None,
     ):
+        assert loop_sequence or (log_self_loop_factor is not None)
+
         self._rng = np.random.default_rng(seed)
 
         if seed:
@@ -50,6 +54,7 @@ class DCHMM:
         self.n_hidden_states = cells_per_column*n_obs_states + 1
 
         self.loop_sequence = loop_sequence
+        self.log_self_loop_factor = log_self_loop_factor
 
         if self.loop_sequence:
             self.n_spec_states = 1
@@ -218,6 +223,10 @@ class DCHMM:
         if not self.loop_sequence:
             # prevent reset states prediction
             prediction[self.reset_states] = 0
+
+            # self-loop factor for terminal states
+            m = self.forward_messages[self.terminal_states]
+            prediction[self.terminal_states] *= base + m * (np.exp(self.log_self_loop_factor) - 1)
 
         prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
         prediction /= prediction.sum(axis=-1).reshape((-1, 1))

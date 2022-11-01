@@ -328,6 +328,10 @@ class NStepTest:
         with open(conf['run']['model_path'], 'rb') as file:
             self.mpg, self.hmm = pickle.load(file)
 
+        log_self_loop_factor = conf['run'].get('log_self_loop_factor')
+        if log_self_loop_factor is not None:
+            self.hmm.log_self_loop_factor = log_self_loop_factor
+
         self.n_steps = conf['run']['n_steps']
         self.n_obs_states = len(self.mpg.alphabet)
         self.logger = logger

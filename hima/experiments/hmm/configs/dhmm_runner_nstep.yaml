@@ -5,6 +5,9 @@ run_tag: null
 model_path: null
 n_steps: 10
 
+# parameter overrides
+log_self_loop_factor: 2.65
+
 experiment: nstep
 hmm_conf: 'configs/dhmm/dchmm_policy.yaml'
 mpg_conf: 'configs/mpg/mmpg_default.yaml'
