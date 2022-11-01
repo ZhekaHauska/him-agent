@@ -270,6 +270,7 @@ class MMPGTest:
                 )
 
                 if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
+                    # distributions
                     kl_divs = rel_entr(true_dist, dist).sum(axis=-1)
 
                     n_states = len(self.mpg.states)
@@ -313,6 +314,59 @@ class MMPGTest:
                             )
 
                             plt.close(fig)
+
+                    # factors and segments
+                    n_segments = np.zeros(self.hmm.total_cells)
+                    max_factor_value = np.zeros(self.hmm.total_cells)
+                    for cell in range(self.hmm.total_cells):
+                        segments = self.hmm.connections.segmentsForCell(cell)
+
+                        if len(segments) > 0:
+                            value = self.hmm.log_factor_values_per_segment[segments].max()
+                        else:
+                            value = 0
+
+                        n_segments[cell] = len(segments)
+                        max_factor_value[cell] = value
+
+                    n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
+                    n_segments = np.pad(
+                        n_segments, 
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        'constant',
+                        constant_values=-1
+                    ).flatten()
+                    n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
+
+                    max_factor_value = max_factor_value.reshape((-1, self.hmm.n_hidden_states))
+                    max_factor_value = np.pad(
+                        max_factor_value,
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        'constant',
+                        constant_values=-1
+                    ).flatten()
+                    max_factor_value = max_factor_value.reshape((-1, self.hmm.cells_per_column)).T
+
+                    self.logger.log(
+                        {
+                            'factors/n_segments': wandb.Image(sns.heatmap(
+                                n_segments
+                            ))
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+                    self.logger.log(
+                        {
+                            'factors/max_factor_value': wandb.Image(
+                                sns.heatmap(
+                                    max_factor_value
+                                )
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
 
         if self.logger is not None and self.save_model:
             name = self.logger.name
@@ -484,4 +538,4 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    main('configs/dhmm_runner_nstep.yaml')
+    main('configs/dhmm_runner_policies.yaml')
