@@ -31,6 +31,7 @@ class DCHMM:
             punishment: float = 0.0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
+            max_segments_for_spec_state: int = 1000,
             segment_prune_threshold: float = 0.001,
             loop_sequence: bool = False,
             log_self_loop_factor: Optional[float] = None,
@@ -69,8 +70,12 @@ class DCHMM:
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
         self.max_segments_per_cell = max_segments_per_cell
+        self.max_segments_for_spec_state = max_segments_for_spec_state
         self.total_cells = self.n_hidden_vars * self.n_hidden_states
-        self.total_segments = self.total_cells * self.max_segments_per_cell
+        self.total_segments = (
+                (self.n_hidden_states - self.n_spec_states) * self.max_segments_per_cell +
+                self.n_spec_states * self.max_segments_for_spec_state
+        )
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
         self.filter_reset_states_mask = np.ones(self.total_cells, dtype=bool)
@@ -231,11 +236,9 @@ class DCHMM:
         prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
         prediction /= prediction.sum(axis=-1).reshape((-1, 1))
         prediction = prediction.flatten()
-        self.next_forward_messages = prediction.copy()
+        self.next_forward_messages = prediction
 
-        prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
-        prediction /= prediction.sum(axis=-1).reshape((-1, 1))
-        self.prediction = prediction.flatten()
+        self.prediction = prediction.copy()
 
     def predict_columns(self):
         assert self.prediction is not None
@@ -435,7 +438,12 @@ class DCHMM:
             variables = self.factor_vars[factor_id]
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
 
-            new_segment = self.connections.createSegment(cell, self.max_segments_per_cell)
+            if self.filter_terminal_states_mask[cell] and self.filter_reset_states_mask[cell]:
+                max_segments = self.max_segments_per_cell
+            else:
+                max_segments = self.max_segments_for_spec_state
+
+            new_segment = self.connections.createSegment(cell, max_segments)
             self.factor_for_segment[new_segment] = factor_id
 
             new_segments.append(new_segment)
