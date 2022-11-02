@@ -3,47 +3,21 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+
 import os
-import sys
-import traceback
 from argparse import ArgumentParser
 from copy import deepcopy
 from multiprocessing import Process
-from typing import Callable, Any, Optional, Type
 
 import wandb
 from matplotlib import pyplot as plt
-from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import (
-    TConfig, TConfigOverrideKV, extracted, read_config, parse_arg,
-    override_config, extracted_type
+from hima.common.config import extracted, override_config, TKeyPathValue
+from hima.common.run.argparse import parse_arg
+from hima.common.run.entrypoint import (
+    TExperimentRunnerRegistry, resolve_experiment_runner, read_config
 )
 from hima.common.utils import isnone
-
-TRunEntryPoint = Callable[[TConfig], None]
-TExperimentRunnerRegistry = dict[str, Type['Runner']]
-
-
-class Runner:
-    config: TConfig
-    logger: Optional[Run]
-
-    def __init__(
-            self, config: TConfig,
-            log: bool = False, project: str = None,
-            **unpacked_config: Any
-    ):
-        self.config = config
-
-        self.logger = None
-        if log:
-            self.logger = wandb.init(project=project)
-            # we have to pass the config with update instead of init because of sweep runs
-            self.logger.config.update(self.config)
-
-    def run(self) -> None:
-        ...
 
 
 class Sweep:
@@ -56,13 +30,13 @@ class Sweep:
 
     # sweep runs' shared config
     shared_run_config: dict
-    shared_run_config_overrides: list[TConfigOverrideKV]
+    shared_run_config_overrides: list[TKeyPathValue]
 
     def __init__(
             self, sweep_id: str, config: dict, n_agents: int,
             experiment_runner_registry: TExperimentRunnerRegistry,
-            shared_config_overrides: list[TConfigOverrideKV],
-            run_arg_parser: ArgumentParser = None,
+            shared_config_overrides: list[TKeyPathValue],
+            run_arg_parser: ArgumentParser
     ):
         config, run_command_args, wandb_project = extracted(config, 'command', 'project')
         self.config = config
@@ -71,8 +45,7 @@ class Sweep:
         self.experiment_runner_registry = experiment_runner_registry
 
         shared_config_filepath = self._extract_agents_shared_config_filepath(
-            parser=run_arg_parser or get_run_command_arg_parser(),
-            run_command_args=run_command_args
+            parser=run_arg_parser, run_command_args=run_command_args
         )
         self.shared_run_config = read_config(shared_config_filepath)
         self.shared_run_config_overrides = shared_config_overrides
@@ -115,6 +88,8 @@ class Sweep:
         try:
             self._run_provided_config()
         except Exception as _:
+            import traceback
+            import sys
             # catch it only to print traces to the terminal as wandb doesn't do it in Agents!
             print(traceback.print_exc(), file=sys.stderr)
             # finish explicitly with error code (NB: I tend to think it's not necessary here)
@@ -132,6 +107,7 @@ class Sweep:
         # passed via wandb.config, hence we take it and apply all overrides:
         # while concatenating overrides, the order DOES matter: run params, then args
         run = wandb.init()
+        wandb.init()
         sweep_overrides = list(map(parse_arg, run.config.items()))
         config_overrides = sweep_overrides + self.shared_run_config_overrides
 
@@ -158,62 +134,3 @@ def turn_off_gui_for_matplotlib():
     # you will encounter kernel core errors. To prevent it we tell matplotlib to
     # not touch GUI at all in each of the spawned sub-processes.
     plt.switch_backend('Agg')
-
-
-def set_single_threaded_math():
-    os.environ['OMP_NUM_THREADS'] = '1'
-    os.environ['MKL_NUM_THREADS'] = '1'
-
-
-def get_run_command_arg_parser() -> ArgumentParser:
-    parser = ArgumentParser()
-    # todo: add examples
-    # todo: remove --sweep ?
-    parser.add_argument('-c', '--config', dest='config_filepath', required=True)
-    parser.add_argument('-e', '--entity', dest='wandb_entity', required=False, default=None)
-    parser.add_argument('--sweep', dest='wandb_sweep', action='store_true', default=False)
-    parser.add_argument('--sweep_id', dest='wandb_sweep_id', default=None)
-    parser.add_argument('-n', '--n_sweep_agents', type=int, default=None)
-    return parser
-
-
-def run_experiment(
-        run_command_parser: ArgumentParser,
-        experiment_runner_registry: TExperimentRunnerRegistry
-) -> None:
-    args, unknown_args = run_command_parser.parse_known_args()
-
-    config = read_config(args.config_filepath)
-    config_overrides = list(map(parse_arg, unknown_args))
-
-    if args.wandb_entity:
-        # overwrite wandb entity for the run
-        os.environ['WANDB_ENTITY'] = args.wandb_entity
-
-    # prevent math parallelization as it usually only slows things down for us
-    set_single_threaded_math()
-
-    if args.wandb_sweep:
-        Sweep(
-            sweep_id=args.wandb_sweep_id,
-            config=config,
-            n_agents=args.n_sweep_agents,
-            experiment_runner_registry=experiment_runner_registry,
-            shared_config_overrides=config_overrides,
-            run_arg_parser=run_command_parser,
-        ).run()
-    else:
-        override_config(config, config_overrides)
-        runner = resolve_experiment_runner(config, experiment_runner_registry)
-        runner.run()
-
-
-def resolve_experiment_runner(
-        config: TConfig,
-        experiment_runner_registry: TExperimentRunnerRegistry
-) -> Runner:
-    config, experiment_type = extracted_type(config)
-    runner = experiment_runner_registry.get(experiment_type, None)
-
-    assert runner, f'Experiment runner type "{experiment_type}" is not supported'
-    return runner(config, **config)

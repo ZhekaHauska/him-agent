@@ -3,7 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from hima.common.config_utils import extracted_type, resolve_init_params, TConfig
+from hima.common.config import extracted_type, resolve_init_params, TConfig
 
 
 def resolve_data_generator(config: TConfig, **induction_registry):

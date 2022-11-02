@@ -4,9 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.common.run_utils import (
-    get_run_command_arg_parser, run_experiment
-)
+from hima.common.run.entrypoint import run_experiment, get_run_command_arg_parser
 from hima.experiments.motivation.test_empowerment import GwEmpowermentTest
 from hima.experiments.motivation.test_striatum import GwStriatumTest
 from hima.experiments.motivation.test_td_lambda import GwTDLambdaTest

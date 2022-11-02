@@ -4,7 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.common.config_utils import extracted, is_resolved_value
+from hima.common.config import is_resolved_value, extracted
 from hima.common.sdr import SparseSdr
 from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
 from hima.experiments.temporal_pooling.new.stp.temporal_pooler import TemporalPooler

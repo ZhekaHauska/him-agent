@@ -9,8 +9,8 @@ from typing import Optional
 import numpy as np
 from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import TConfig, resolve_value
-from hima.common.run_utils import Runner
+from hima.common.config import resolve_value, TConfig
+from hima.common.run.runner import Runner
 from hima.common.sds import Sds
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.new.run_setup_resolver import (

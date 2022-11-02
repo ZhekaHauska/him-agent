@@ -4,9 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.common.run_utils import (
-    get_run_command_arg_parser, run_experiment
-)
+from hima.common.run.entrypoint import run_experiment, get_run_command_arg_parser
 from hima.experiments.temporal_pooling.new.test_on_obs_layered import ObservationsLayeredExperiment
 from hima.experiments.temporal_pooling.test_on_policies import PoliciesExperiment
 from hima.experiments.temporal_pooling.test_on_states import ObservationsExperiment

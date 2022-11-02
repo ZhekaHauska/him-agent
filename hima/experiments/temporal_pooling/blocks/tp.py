@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 from htm.bindings.sdr import SDR
 
-from hima.common.config_utils import extracted_type, resolve_init_params, resolve_absolute_quantity
+from hima.common.config import extracted_type, resolve_init_params, resolve_absolute_quantity
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats

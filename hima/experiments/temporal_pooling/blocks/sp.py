@@ -9,7 +9,7 @@ import numpy as np
 from htm.bindings.algorithms import SpatialPooler
 from htm.bindings.sdr import SDR
 
-from hima.common.config_utils import resolve_init_params, extracted
+from hima.common.config import resolve_init_params, extracted
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats

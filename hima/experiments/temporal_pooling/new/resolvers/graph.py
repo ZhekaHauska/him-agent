@@ -7,8 +7,8 @@
 from abc import ABC
 from typing import Optional, Any
 
-from hima.common.config_utils import (
-    extracted_family, resolve_nested_configs, TConfig, is_resolved_value, resolve_value
+from hima.common.config import (
+    extracted_family, resolve_nested_configs, is_resolved_value, resolve_value, TConfig
 )
 from hima.common.sds import Sds
 from hima.common.utils import isnone

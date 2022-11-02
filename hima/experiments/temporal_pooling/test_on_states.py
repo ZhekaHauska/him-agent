@@ -8,8 +8,8 @@ from typing import Optional, Union, Any
 
 from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import TConfig
-from hima.common.run_utils import Runner
+from hima.common.config import TConfig
+from hima.common.run.runner import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed

@@ -20,8 +20,8 @@ from htm.bindings.algorithms import SpatialPooler
 from htm.bindings.sdr import SDR
 
 from hima.common.sdr import SparseSdr
-from hima.common.run_utils import Runner
-from hima.common.config_utils import TConfig
+from hima.common.run.runner import Runner
+from hima.common.config import TConfig
 from hima.common.plot_utils import transform_fig_to_image
 
 from hima.modules.empowerment import Empowerment

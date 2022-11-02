@@ -99,7 +99,7 @@ blocks:
     not_predicted_weight: 0.7
   stp1:
     _type_family_: spatiotemporal_pooler
-    _base_config_: sandwich_tp
+    _base_config_: ablation_utp
     ff_sds: ???
     output_sds: [400, 16]
   sp2:
@@ -264,8 +264,8 @@ spatiotemporal_pooler:
     decayTimeConst: 15.0
     historyLength: 6
     minHistory: 3
-    boostStrength: 0.6
-    dutyCyclePeriod: 8000
+    boostStrength: 0.1
+    dutyCyclePeriod: 20000
     minPctOverlapDutyCycle: 0.0002
     numActiveColumnsPerInhArea: 0
     stimulusThreshold: 1
@@ -296,7 +296,7 @@ spatiotemporal_pooler:
       # input
       inputDimensions: ???
       potentialRadius: ???
-      potentialPct: 0.08
+      potentialPct: 0.12
       globalInhibition: True
       # output
       # check bigger

@@ -8,7 +8,7 @@ from typing import Union, Optional
 
 import numpy as np
 
-from hima.common.config_utils import is_resolved_value
+from hima.common.config import is_resolved_value
 
 
 class Sds:

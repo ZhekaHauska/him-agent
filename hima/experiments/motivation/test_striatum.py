@@ -12,8 +12,8 @@ from hima.envs.biogwlab.env import BioGwLabEnvironment
 from hima.envs.biogwlab.environment import Environment
 from hima.envs.env import unwrap
 
-from hima.common.run_utils import Runner
-from hima.common.config_utils import TConfig
+from hima.common.run.runner import Runner
+from hima.common.config import TConfig
 from hima.common.plot_utils import transform_fig_to_image
 from hima.agents.motivation.agent import Agent
 from collections import Counter

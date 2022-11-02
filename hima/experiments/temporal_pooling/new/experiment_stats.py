@@ -12,7 +12,7 @@ import wandb
 from matplotlib import pyplot as plt
 from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import TConfig
+from hima.common.config import TConfig
 from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
 from hima.experiments.temporal_pooling.new.stats.metrics import (
     multiplicative_loss

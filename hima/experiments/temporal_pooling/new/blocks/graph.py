@@ -6,7 +6,7 @@
 from abc import ABC, abstractmethod
 from typing import Union
 
-from hima.common.config_utils import (
+from hima.common.config import (
     resolve_value, is_resolved_value, get_unresolved_value
 )
 from hima.common.sdr import SparseSdr
