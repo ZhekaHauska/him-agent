@@ -66,7 +66,7 @@ class MPGTest:
                 letter = self.mpg.next_state()
 
                 if letter is None:
-                    break
+                    obs_state = np.empty(0, dtype='uint32')
                 else:
                     obs_state = np.array(
                         [self.mpg.char_to_num[letter]]
@@ -75,7 +75,10 @@ class MPGTest:
                 self.hmm.predict_cells()
                 column_probs = self.hmm.predict_columns()
                 self.hmm.observe(obs_state, learn=True)
-
+                
+                if letter is None:
+                    break
+                    
                 # metrics
                 # 1. surprise
                 active_columns = np.arange(self.hmm.n_columns) == obs_state
@@ -152,8 +155,68 @@ class MPGTest:
 
                         plt.close(fig)
 
+                        # factors and segments
+                        n_segments = np.zeros(self.hmm.total_cells)
+                        sum_factor_value = np.zeros(self.hmm.total_cells)
+                        for cell in range(self.hmm.total_cells):
+                            segments = self.hmm.connections.segmentsForCell(cell)
+
+                            if len(segments) > 0:
+                                value = self.hmm.log_factor_values_per_segment[segments].sum()
+                            else:
+                                value = 0
+
+                            n_segments[cell] = len(segments)
+                            sum_factor_value[cell] = value
+
+                        n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
+                        n_segments = np.pad(
+                            n_segments,
+                            ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                            'constant',
+                            constant_values=0
+                        ).flatten()
+                        n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
+
+                        sum_factor_value = sum_factor_value.reshape((-1, self.hmm.n_hidden_states))
+                        sum_factor_value = np.pad(
+                            sum_factor_value,
+                            ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                            'constant',
+                            constant_values=0
+                        ).flatten()
+                        sum_factor_value = sum_factor_value.reshape(
+                            (-1, self.hmm.cells_per_column)
+                        ).T
+
+                        self.logger.log(
+                            {
+                                'factors/n_segments': wandb.Image(
+                                    sns.heatmap(
+                                        n_segments
+                                    )
+                                )
+                            },
+                            step=i
+                        )
+                        plt.close('all')
+                        self.logger.log(
+                            {
+                                'factors/sum_factor_value': wandb.Image(
+                                    sns.heatmap(
+                                        sum_factor_value
+                                    )
+                                )
+                            },
+                            step=i
+                        )
+                        plt.close('all')
+
         if self.logger is not None and self.save_model:
             name = self.logger.name
+
+            np.save(f'logs/dist_{name}.npy', dist)
+
             with open(f"logs/model_{name}.pkl", 'wb') as file:
                 pickle.dump((self.mpg, self.hmm), file)
 
@@ -317,35 +380,35 @@ class MMPGTest:
 
                     # factors and segments
                     n_segments = np.zeros(self.hmm.total_cells)
-                    max_factor_value = np.zeros(self.hmm.total_cells)
+                    sum_factor_value = np.zeros(self.hmm.total_cells)
                     for cell in range(self.hmm.total_cells):
                         segments = self.hmm.connections.segmentsForCell(cell)
 
                         if len(segments) > 0:
-                            value = self.hmm.log_factor_values_per_segment[segments].max()
+                            value = self.hmm.log_factor_values_per_segment[segments].sum()
                         else:
                             value = 0
 
                         n_segments[cell] = len(segments)
-                        max_factor_value[cell] = value
+                        sum_factor_value[cell] = value
 
                     n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
                     n_segments = np.pad(
                         n_segments, 
                         ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
                         'constant',
-                        constant_values=-1
+                        constant_values=0
                     ).flatten()
                     n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
 
-                    max_factor_value = max_factor_value.reshape((-1, self.hmm.n_hidden_states))
-                    max_factor_value = np.pad(
-                        max_factor_value,
+                    sum_factor_value = sum_factor_value.reshape((-1, self.hmm.n_hidden_states))
+                    sum_factor_value = np.pad(
+                        sum_factor_value,
                         ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
                         'constant',
-                        constant_values=-1
+                        constant_values=0
                     ).flatten()
-                    max_factor_value = max_factor_value.reshape((-1, self.hmm.cells_per_column)).T
+                    sum_factor_value = sum_factor_value.reshape((-1, self.hmm.cells_per_column)).T
 
                     self.logger.log(
                         {
@@ -358,9 +421,9 @@ class MMPGTest:
                     plt.close('all')
                     self.logger.log(
                         {
-                            'factors/max_factor_value': wandb.Image(
+                            'factors/sum_factor_value': wandb.Image(
                                 sns.heatmap(
-                                    max_factor_value
+                                    sum_factor_value
                                 )
                             )
                         },
@@ -383,8 +446,12 @@ class NStepTest:
             self.mpg, self.hmm = pickle.load(file)
 
         log_self_loop_factor = conf['run'].get('log_self_loop_factor')
+        policy = conf['run'].get('policy')
+
         if log_self_loop_factor is not None:
             self.hmm.log_self_loop_factor = log_self_loop_factor
+        if policy is not None:
+            self.mpg.initial_policy = policy
 
         self.n_steps = conf['run']['n_steps']
         self.n_obs_states = len(self.mpg.alphabet)
@@ -538,4 +605,4 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    main('configs/dhmm_runner_policies.yaml')
+    main('configs/dhmm_runner_single.yaml')
