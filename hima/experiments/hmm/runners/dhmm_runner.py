@@ -232,6 +232,12 @@ class MMPGTest:
 
         self.n_policies = self.mpg.policy_transition_probs.shape[0]
         self.n_obs_states = len(self.mpg.alphabet)
+
+        if None in self.mpg.alphabet:
+            self.n_obs_states = len(self.mpg.alphabet) - 1
+        else:
+            self.n_obs_states = len(self.mpg.alphabet)
+
         conf['hmm']['n_obs_states'] = max(self.n_obs_states, self.n_policies)
 
         self.hmm = DCHMM(**conf['hmm'])
@@ -239,6 +245,7 @@ class MMPGTest:
         self.n_episodes = conf['run']['n_episodes']
         self.smf_dist = conf['run']['smf_dist']
         self.log_update_rate = conf['run']['update_rate']
+        self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
         self.logger = logger
 
@@ -276,6 +283,8 @@ class MMPGTest:
             policy = self.mpg.rng.integers(self.n_policies)
             self.mpg.set_policy(policy)
 
+            steps = 0
+
             while True:
                 prev_state = self.mpg.current_state
 
@@ -295,19 +304,20 @@ class MMPGTest:
                 column_probs = self.hmm.predict_columns()[:self.n_obs_states]
                 self.hmm.observe(obs_state, learn=True)
 
-                if letter is None:
-                    break
-
                 # metrics
-                # 1. surprise
-                active_columns = np.arange(self.hmm.n_obs_states) == obs_state[0]
-                surprise = - np.sum(np.log(column_probs[active_columns]))
-                surprise += - np.sum(np.log(1 - column_probs[~active_columns]))
+                if letter is not None:
+                    # 1. surprise
+                    active_columns = np.arange(self.hmm.n_obs_states) == obs_state[0]
+                    surprise = - np.sum(np.log(column_probs[active_columns]))
+                    surprise += - np.sum(np.log(1 - column_probs[~active_columns]))
 
-                surprises.append(surprise)
-                total_surprise += surprise
+                    surprises.append(surprise)
+                    total_surprise += surprise
 
                 # 2. distribution
+                if None in self.mpg.alphabet:
+                    column_probs = np.append(column_probs, 1 - column_probs.sum())
+
                 delta = column_probs - dist[policy][prev_state]
                 dist_disp[policy][prev_state] += self.smf_dist * (
                         np.power(delta, 2) - dist_disp[policy][prev_state])
@@ -321,6 +331,14 @@ class MMPGTest:
                 dkls.append(dkl)
                 total_dkl += dkl
 
+                steps += 1
+
+                if letter is None:
+                    break
+
+                if steps >= self.max_steps:
+                    break
+
             if self.logger is not None:
                 self.logger.log(
                     {
@@ -328,6 +346,7 @@ class MMPGTest:
                         'main_metrics/dkl': np.array(np.abs(dkls)).mean(),
                         'main_metrics/total_surprise': total_surprise,
                         'main_metrics/total_dkl': total_dkl,
+                        'main_metrics/steps': steps,
                         'connections/n_segments': self.hmm.connections.numSegments()
                     }, step=i
                 )
@@ -338,6 +357,9 @@ class MMPGTest:
 
                     n_states = len(self.mpg.states)
                     k = int(np.ceil(np.sqrt(n_states)))
+
+                    tick_labels = self.mpg.alphabet.copy()
+                    tick_labels = ['∅' if x is None else x for x in tick_labels]
 
                     for pol in range(self.n_policies):
                         fig, axs = plt.subplots(k, k)
@@ -353,7 +375,7 @@ class MMPGTest:
                             ax.bar(
                                 np.arange(dist[pol][n].shape[0]),
                                 dist[pol][n],
-                                tick_label=self.mpg.alphabet,
+                                tick_label=tick_labels,
                                 label='TM',
                                 color=(0.7, 1.0, 0.3),
                                 capsize=4,
@@ -363,7 +385,7 @@ class MMPGTest:
                             ax.bar(
                                 np.arange(dist[pol][n].shape[0]),
                                 true_dist[pol][n],
-                                tick_label=self.mpg.alphabet,
+                                tick_label=tick_labels,
                                 color='#8F754F',
                                 alpha=0.6,
                                 label='True'
@@ -457,7 +479,7 @@ class NStepTest:
             self.mpg.initial_policy = policy
 
         self.n_steps = conf['run']['n_steps']
-        self.n_obs_states = len(self.mpg.alphabet)
+        self.n_obs_states = self.hmm.n_obs_states
         self.logger = logger
         self._rng = np.random.default_rng(conf['run']['seed'])
         self.mpg.reset()
@@ -482,11 +504,12 @@ class NStepTest:
 
         for step in range(self.n_steps):
             true_dist = self.mpg.predict_letters(from_state=0, steps=step)
-            true_dist = np.append(true_dist, np.clip(1 - true_dist.sum(), 0, 1))
 
             self.hmm.predict_cells()
             predicted_dist = self.hmm.predict_columns()[:self.n_obs_states]
-            predicted_dist = np.append(predicted_dist, np.clip(1 - predicted_dist.sum(), 0, 1))
+
+            if len(true_dist) > len(predicted_dist):
+                predicted_dist = np.append(predicted_dist, 1 - predicted_dist.sum())
 
             kl_div = rel_entr(true_dist, predicted_dist).sum()
 
@@ -513,7 +536,7 @@ class NStepTest:
                 )
 
             tick_labels = self.mpg.alphabet.copy()
-            tick_labels.append('∅')
+            tick_labels = ['∅' if x is None else x for x in tick_labels]
 
             ax = axs[step // k][step % k]
             ax.grid()
@@ -608,4 +631,4 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    main('configs/dhmm_runner_single.yaml')
+    main('configs/dhmm_runner_nstep.yaml')
