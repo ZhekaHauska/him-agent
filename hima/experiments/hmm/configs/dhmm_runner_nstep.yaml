@@ -6,8 +6,7 @@ model_path: null
 n_steps: 10
 
 # parameter overrides
-log_self_loop_factor: 2.65
-policy: 0
+policy: 2
 
 experiment: nstep
 hmm_conf: 'configs/dhmm/dchmm_policy.yaml'

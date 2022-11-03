@@ -7,6 +7,7 @@
 import numpy as np
 import pygraphviz as pgv
 
+
 class MarkovProcessGrammar:
     def __init__(
             self,

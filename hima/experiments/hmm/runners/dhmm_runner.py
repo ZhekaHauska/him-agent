@@ -450,6 +450,9 @@ class NStepTest:
 
         if log_self_loop_factor is not None:
             self.hmm.log_self_loop_factor = log_self_loop_factor
+        else:
+            max_factor = self.hmm.log_factor_values_per_segment.max()
+            self.hmm.log_self_loop_factor = max_factor
         if policy is not None:
             self.mpg.initial_policy = policy
 
