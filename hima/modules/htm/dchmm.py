@@ -72,10 +72,12 @@ class DCHMM:
         self.max_segments_per_cell = max_segments_per_cell
         self.max_segments_for_spec_state = max_segments_for_spec_state
         self.total_cells = self.n_hidden_vars * self.n_hidden_states
+
         self.total_segments = (
                 (self.n_hidden_states - self.n_spec_states) * self.max_segments_per_cell +
                 self.n_spec_states * self.max_segments_for_spec_state
-        )
+        ) * self.n_hidden_vars
+
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
         self.filter_reset_states_mask = np.ones(self.total_cells, dtype=bool)
