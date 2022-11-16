@@ -6,6 +6,8 @@
 
 from hima.modules.htm.dchmm import DCHMM
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
+from hima.envs.pinball.pinball import Pinball
+
 import numpy as np
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
@@ -16,6 +18,7 @@ import os
 import sys
 import ast
 import pickle
+import imageio
 
 
 class MPGTest:
@@ -23,9 +26,9 @@ class MPGTest:
         self.seed = conf['run']['seed']
 
         conf['hmm']['seed'] = self.seed
-        conf['mpg']['seed'] = self.seed
+        conf['env']['seed'] = self.seed
 
-        self.mpg = MultiMarkovProcessGrammar(**conf['mpg'])
+        self.mpg = MultiMarkovProcessGrammar(**conf['env'])
 
         conf['hmm']['n_obs_states'] = len(self.mpg.alphabet)
         self.hmm = DCHMM(**conf['hmm'])
@@ -226,9 +229,9 @@ class MMPGTest:
         self.seed = conf['run']['seed']
 
         conf['hmm']['seed'] = self.seed
-        conf['mpg']['seed'] = self.seed
+        conf['env']['seed'] = self.seed
 
-        self.mpg = MultiMarkovProcessGrammar(**conf['mpg'])
+        self.mpg = MultiMarkovProcessGrammar(**conf['env'])
 
         self.n_policies = self.mpg.policy_transition_probs.shape[0]
         self.n_obs_states = len(self.mpg.alphabet)
@@ -568,6 +571,177 @@ class NStepTest:
             plt.show()
 
 
+class PinballTest:
+    def __init__(self, logger, conf):
+        self.seed = conf['run']['seed']
+
+        conf['hmm']['seed'] = self.seed
+        conf['env']['seed'] = self.seed
+
+        self.env = Pinball(**conf['env'])
+
+        obs = self.env.obs()
+        self.obs_shape = (obs.shape[0], obs.shape[1])
+        self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
+        self.n_obs_states = 1
+
+        conf['hmm']['n_obs_states'] = self.n_obs_states
+        conf['hmm']['n_obs_vars'] = self.n_obs_vars
+
+        self.hmm = DCHMM(**conf['hmm'])
+
+        self.n_episodes = conf['run']['n_episodes']
+        self.log_update_rate = conf['run']['update_rate']
+        self.max_steps = conf['run']['max_steps']
+        self.save_model = conf['run']['save_model']
+        self.log_fps = conf['run']['log_gif_fps']
+        self.logger = logger
+
+    def run(self):
+        total_surprise = 0
+
+        for i in range(self.n_episodes):
+            self.env.reset()
+            self.hmm.reset()
+
+            surprises = []
+
+            steps = 0
+
+            prev_im = self.preprocess(self.env.obs())
+            if (self.logger is not None) and (i % self.log_update_rate == 0):
+                writer = imageio.get_writer(
+                    f'/tmp/{self.logger.name}_ep{i}.gif',
+                    mode='I',
+                    fps=self.log_fps
+                )
+            else:
+                writer = None
+
+            self.env.act((0.5, 5))
+
+            while True:
+                im = self.preprocess(self.env.obs())
+                thresh = im.mean()
+                diff = np.abs(im - prev_im) >= thresh
+                prev_im = im.copy()
+
+                obs_state = np.flatnonzero(diff)
+
+                self.hmm.predict_cells()
+                column_probs = self.hmm.predict_columns()
+
+                self.hmm.observe(obs_state, learn=True)
+                # metrics
+                # 1. surprise
+                active_columns = np.isin(np.arange(self.hmm.n_obs_vars), obs_state)
+                surprise = - np.sum(np.log(column_probs[active_columns]))
+                surprise += - np.sum(np.log(1 - column_probs[~active_columns]))
+
+                surprises.append(surprise)
+                total_surprise += surprise
+                # 2. image
+                if (writer is not None) and (i % self.log_update_rate == 0):
+                    im = np.hstack(
+                        [
+                            diff.astype(np.uint8)*255,
+                            (column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)
+                        ]
+                    )
+                    writer.append_data(im)
+
+                steps += 1
+                if steps >= self.max_steps:
+                    if writer is not None:
+                        writer.close()
+
+                    break
+
+            if self.logger is not None:
+                self.logger.log(
+                    {
+                        'main_metrics/surprise': np.array(surprises).mean(),
+                        'main_metrics/total_surprise': total_surprise,
+                        'main_metrics/steps': steps,
+                        'connections/n_segments': self.hmm.connections.numSegments()
+                    }, step=i
+                )
+
+                if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
+                    self.logger.log(
+                        {
+                            'gifs/prediction': wandb.Video(
+                                f'/tmp/{self.logger.name}_ep{i}.gif'
+                            )
+                        },
+                        step=i
+                    )
+                    # factors and segments
+                    n_segments = np.zeros(self.hmm.total_cells)
+                    sum_factor_value = np.zeros(self.hmm.total_cells)
+                    for cell in range(self.hmm.total_cells):
+                        segments = self.hmm.connections.segmentsForCell(cell)
+
+                        if len(segments) > 0:
+                            value = self.hmm.log_factor_values_per_segment[segments].sum()
+                        else:
+                            value = 0
+
+                        n_segments[cell] = len(segments)
+                        sum_factor_value[cell] = value
+
+                    n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
+                    n_segments = np.pad(
+                        n_segments,
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        'constant',
+                        constant_values=0
+                    ).flatten()
+                    n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
+
+                    sum_factor_value = sum_factor_value.reshape((-1, self.hmm.n_hidden_states))
+                    sum_factor_value = np.pad(
+                        sum_factor_value,
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        'constant',
+                        constant_values=0
+                    ).flatten()
+                    sum_factor_value = sum_factor_value.reshape((-1, self.hmm.cells_per_column)).T
+
+                    self.logger.log(
+                        {
+                            'factors/n_segments': wandb.Image(sns.heatmap(
+                                n_segments
+                            ))
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+                    self.logger.log(
+                        {
+                            'factors/sum_factor_value': wandb.Image(
+                                sns.heatmap(
+                                    sum_factor_value
+                                )
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+
+        if self.logger is not None and self.save_model:
+            name = self.logger.name
+
+            with open(f"logs/models/model_{name}.pkl", 'wb') as file:
+                pickle.dump(self.hmm, file)
+
+    def preprocess(self, image):
+        gray_im = image.sum(axis=-1)
+        gray_im /= gray_im.max()
+
+        return gray_im
+
+
 def main(config_path):
     if len(sys.argv) > 1:
         config_path = sys.argv[1]
@@ -580,8 +754,8 @@ def main(config_path):
     with open(config['run']['hmm_conf'], 'r') as file:
         config['hmm'] = yaml.load(file, Loader=yaml.Loader)
 
-    with open(config['run']['mpg_conf'], 'r') as file:
-        config['mpg'] = yaml.load(file, Loader=yaml.Loader)
+    with open(config['run']['env_conf'], 'r') as file:
+        config['env'] = yaml.load(file, Loader=yaml.Loader)
 
     for arg in sys.argv[2:]:
         key, value = arg.split('=')
@@ -624,6 +798,8 @@ def main(config_path):
         runner = MMPGTest(logger, config)
     elif experiment == 'nstep':
         runner = NStepTest(logger, config)
+    elif experiment == 'pinball':
+        runner = PinballTest(logger, config)
     else:
         raise ValueError
 
@@ -631,4 +807,4 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    main('configs/dhmm_runner_nstep.yaml')
+    main('configs/dhmm_runner_pinball.yaml')
