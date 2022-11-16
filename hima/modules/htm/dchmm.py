@@ -225,18 +225,14 @@ class DCHMM:
             prediction[factors_spec] += deviation
             prediction = prediction.reshape((self.total_cells, -1))
 
-        prediction = prediction.prod(axis=-1)
+        log_prediction = np.log(prediction)
+        log_prediction = log_prediction.sum(axis=-1)
+        # rescale
+        log_prediction -= log_prediction.min()
 
-        if not self.loop_sequence:
-            # prevent reset states prediction
-            prediction[self.reset_states] = 0
-
-            # self-loop factor for terminal states
-            m = self.forward_messages[self.terminal_states]
-            prediction[self.terminal_states] *= base + m * (np.exp(self.log_self_loop_factor) - 1)
-
-        prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
-        prediction /= prediction.sum(axis=-1).reshape((-1, 1))
+        prediction = np.exp(log_prediction).reshape((self.n_hidden_vars, self.n_hidden_states))
+        norm = prediction.sum(axis=-1).reshape((-1, 1))
+        prediction /= norm
         prediction = prediction.flatten()
         self.next_forward_messages = prediction
 
