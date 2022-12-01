@@ -1,5 +1,7 @@
 cells_per_column: 10
-n_vars_per_factor: 10
+n_vars_per_factor: 200
+factor_activation_threshold: 10  # number of active variables in a receptive field to active factor
+factors_per_var: 10
 initial_log_factor_value: 1
 lr: 1.0
 gamma: 0.1

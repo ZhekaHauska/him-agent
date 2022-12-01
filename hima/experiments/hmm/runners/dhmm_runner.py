@@ -587,6 +587,7 @@ class PinballTest:
 
         conf['hmm']['n_obs_states'] = self.n_obs_states
         conf['hmm']['n_obs_vars'] = self.n_obs_vars
+        conf['hmm']['shape'] = self.obs_shape
 
         self.hmm = DCHMM(**conf['hmm'])
 

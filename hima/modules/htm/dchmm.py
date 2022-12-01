@@ -6,7 +6,6 @@
 from hima.modules.htm.connections import Connections
 from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
-from hima.common.utils import softmax
 
 import numpy as np
 from typing import Optional
@@ -17,6 +16,11 @@ UINT_DTYPE = "uint32"
 REAL_DTYPE = "float32"
 REAL64_DTYPE = "float64"
 _TIE_BREAKER_FACTOR = 1e-24
+
+
+def softmax(x, beta=1.0):
+    e_x = np.exp(beta * (x - x.mean()))
+    return e_x / e_x.sum()
 
 
 class DCHMM:
@@ -86,7 +90,7 @@ class DCHMM:
         ) * self.n_hidden_vars
 
         self.factors_per_var = factors_per_var
-        self.total_factors = self.n_hidden_states * self.factors_per_var
+        self.total_factors = self.n_hidden_vars * self.factors_per_var
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
@@ -193,7 +197,7 @@ class DCHMM:
 
         active_vars = SDR(self.n_hidden_vars)
 
-        active_vars.sparse = active_cells // self.n_hidden_states
+        active_vars.sparse = np.unique(active_cells.sparse // self.n_hidden_states)
         num_active_vars_per_factor = self.factor_connections.computeActivity(
             active_vars, False
         )
@@ -203,77 +207,94 @@ class DCHMM:
 
         active_factors = np.flatnonzero(num_active_vars_per_factor > 0)
 
-        # base activity level
-        message_norm = self.forward_messages.reshape(
-            (self.n_hidden_vars, self.n_hidden_states)
-        ).sum(axis=-1)
+        if len(active_factors) > 0:
+            # base activity level
+            message_norm = self.forward_messages.reshape(
+                (self.n_hidden_vars, self.n_hidden_states)
+            ).sum(axis=-1)
 
-        base = message_norm[self.factor_vars[active_factors]]
-        # base per factor
-        base = self._log_product(base, axis=-1)
+            base = message_norm[self.factor_vars[active_factors]]
+            # base per factor
+            log_base = np.sum(np.log(base), axis=-1)
+            # для каждой переменной может быть несколько факторов
+            # поэтому здесь возможны дубликаты
+            vars_for_factors = self.factor_connections.mapSegmentsToCells(
+                active_factors
+            )
+            # здесь и подавно будут дубликаты
+            cells_for_factor_vars = self._get_cells_in_vars(vars_for_factors)
 
-        vars_for_factors = self.factor_connections.mapSegmentsToCells(
-            active_factors
-        )
-
-        cells_for_factor_vars = self._get_cells_in_vars(vars_for_factors)
-
-        base_for_cells = np.repeat(base[active_factors], self.n_hidden_states)
-        factors_for_cells = np.repeat(active_factors, self.n_hidden_states)
-
-        cell_factor_id_per_cell = factors_for_cells * self.n_hidden_states + cells_for_factor_vars
-
-        # deviation activity
-        if len(active_segments) > 0:
-            factors_for_active_segments = self.factor_for_segment[active_segments]
-
-            shifted_factor_value = np.exp(
-                self.log_factor_values_per_segment[active_segments]
-            ) - 1
-
-            likelihood = self.forward_messages[self.receptive_fields[active_segments]]
-            likelihood = self._log_product(likelihood, axis=-1)
-
-            # advantage per segment
-            advantage = likelihood * shifted_factor_value
-
-            cell_factor_id_per_segment = (
-                    factors_for_active_segments * self.n_hidden_states + cells_for_active_segments
+            log_base_for_cells = np.repeat(log_base[active_factors], self.n_hidden_states)
+            factors_for_cells = np.repeat(active_factors, self.n_hidden_states)
+            # может ли быть так, что пары (клетка, фактор) повторяются? - похоже, что они уникальны
+            #
+            cell_factor_id_per_cell = (
+                factors_for_cells * self.total_cells + cells_for_factor_vars
             )
 
-            # group segments by factors
-            sorting_inxs = np.argsort(cell_factor_id_per_segment)
-            cell_factor_id_per_segment = cell_factor_id_per_segment[sorting_inxs]
-            advantage = advantage[sorting_inxs]
+            # deviation activity
+            if len(active_segments) > 0:
+                factors_for_active_segments = self.factor_for_segment[active_segments]
+                # TODO here overflow is encountered
+                shifted_factor_value = np.expm1(self.log_factor_values_per_segment[active_segments])
 
-            cell_factor_id_deviation, reduce_inxs = np.unique(
-                cell_factor_id_per_segment, return_index=True
+                likelihood = self.forward_messages[self.receptive_fields[active_segments]]
+                log_likelihood = np.sum(np.log(likelihood), axis=-1)
+
+                # advantage per segment
+                log_advantage = log_likelihood + np.log(shifted_factor_value)
+
+                cell_factor_id_per_segment = (
+                        factors_for_active_segments * self.total_cells
+                        + cells_for_active_segments
+                )
+
+                # group segments by factors
+                sorting_inxs = np.argsort(cell_factor_id_per_segment)
+                cell_factor_id_per_segment = cell_factor_id_per_segment[sorting_inxs]
+                log_advantage = log_advantage[sorting_inxs]
+
+                cell_factor_id_deviation, reduce_inxs = np.unique(
+                    cell_factor_id_per_segment, return_index=True
+                )
+
+                # deviation per factor and cell
+                # approximate log sum with max
+                log_deviation = np.maximum.reduceat(log_advantage, reduce_inxs)
+                # TODO in cell_factor_id_per_cell duplicates
+                deviation_mask = np.isin(cell_factor_id_per_cell, cell_factor_id_deviation)
+                log_base_for_cells[deviation_mask] = np.logaddexp(
+                    log_base_for_cells[deviation_mask], log_deviation
+                )
+
+            sort_inxs = np.argsort(cells_for_factor_vars)
+            log_base_for_cells = log_base_for_cells[sort_inxs]
+            cells_for_factor_vars = cells_for_factor_vars[sort_inxs]
+
+            cells_with_factors, reduce_inxs = np.unique(cells_for_factor_vars, return_index=True)
+
+            log_prediction_for_cells_with_factors = np.add.reduceat(
+                log_base_for_cells, indices=reduce_inxs
             )
 
-            # deviation per factor and cell
-            deviation = np.add.reduceat(advantage, reduce_inxs)
+            log_prediction = np.zeros(self.total_cells)
 
-            deviation_mask = np.isin(cell_factor_id_per_cell, cell_factor_id_deviation)
-            base_for_cells[deviation_mask] += deviation
+            log_prediction[cells_with_factors] = log_prediction_for_cells_with_factors
+        else:
+            log_prediction = np.zeros(self.total_cells)
 
-        sort_inxs = np.argsort(cells_for_factor_vars)
-        base_for_cells = base_for_cells[sort_inxs]
-        cells_for_factor_vars = cells_for_factor_vars[sort_inxs]
+        log_prediction = log_prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
 
-        cells_with_factors, reduce_inxs = np.unique(cells_for_factor_vars, return_index=True)
+        # rescale
+        log_prediction -= log_prediction.min(axis=-1).reshape((-1, 1))
 
-        prediction_for_cells_with_factors = self._log_product(
-            base_for_cells, indices=reduce_inxs
-        )
+        norm = np.exp(log_prediction).sum(axis=-1).reshape((-1, 1))
+        prediction = np.exp(log_prediction) / norm
 
-        prediction = np.zeros(self.total_cells)
-
-        prediction[cells_with_factors] = prediction_for_cells_with_factors
-
-        prediction = prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
-        norm = prediction.sum(axis=-1).reshape((-1, 1))
-        prediction /= norm
         prediction = prediction.flatten()
+
+        assert ~np.any(np.isnan(prediction))
+
         self.next_forward_messages = prediction
 
         self.prediction = prediction.copy()
@@ -454,6 +475,8 @@ class DCHMM:
         return next_cells.astype(UINT_DTYPE)
 
     def _sample_categorical_variables(self, probs):
+        assert np.allclose(probs.sum(axis=-1), 1)
+
         gammas = self._rng.uniform(size=probs.shape[0]).reshape((-1, 1))
 
         dist = np.cumsum(probs, axis=-1)
@@ -490,19 +513,27 @@ class DCHMM:
         )
 
         new_segments = list()
+
         for cell in new_segment_cells:
             # get factors for cell
             var = cell // self.n_hidden_states
-            cell_factors = self.factor_connections.segmentsForCell(var)
+            cell_factors = np.array(
+                self.factor_connections.segmentsForCell(var)
+            )
 
             # sample factors by their activity
             # TODO score factors by their predictive ability, remove factor if it cause errors a lot
-            num_active = num_active_vars_per_factor[cell_factors]
-            active_factors = cell_factors[num_active >= self.factor_activation_threshold]
+            if len(cell_factors) > 0:
+                num_active = num_active_vars_per_factor[cell_factors]
+                active_factors_mask = num_active >= self.factor_activation_threshold
+                active_factors = cell_factors[active_factors_mask]
+                num_active = num_active[active_factors_mask]
+            else:
+                active_factors = []
 
             if len(active_factors) > 0:
                 factor_id = self._rng.choice(active_factors, size=1, p=softmax(num_active))
-                variables = self.factor_connections.presynapticCellsForSegment(factor_id)
+                variables = self.factor_vars[factor_id]
             else:
                 # select cells for a new factor
                 # TODO check factor intersections
@@ -528,7 +559,7 @@ class DCHMM:
                     maxSegmentsPerCell=self.factors_per_var
                 )
 
-                self.connections.growSynapses(
+                self.factor_connections.growSynapses(
                     factor_id,
                     variables,
                     0.6,
