@@ -216,18 +216,14 @@ class DCHMM:
             base = message_norm[self.factor_vars[active_factors]]
             # base per factor
             log_base = np.sum(np.log(base), axis=-1)
-            # для каждой переменной может быть несколько факторов
-            # поэтому здесь возможны дубликаты
             vars_for_factors = self.factor_connections.mapSegmentsToCells(
                 active_factors
             )
-            # здесь и подавно будут дубликаты
             cells_for_factor_vars = self._get_cells_in_vars(vars_for_factors)
 
             log_base_for_cells = np.repeat(log_base[active_factors], self.n_hidden_states)
             factors_for_cells = np.repeat(active_factors, self.n_hidden_states)
-            # может ли быть так, что пары (клетка, фактор) повторяются? - похоже, что они уникальны
-            #
+
             cell_factor_id_per_cell = (
                 factors_for_cells * self.total_cells + cells_for_factor_vars
             )
@@ -261,7 +257,7 @@ class DCHMM:
                 # deviation per factor and cell
                 # approximate log sum with max
                 log_deviation = np.maximum.reduceat(log_advantage, reduce_inxs)
-                # TODO in cell_factor_id_per_cell duplicates
+
                 deviation_mask = np.isin(cell_factor_id_per_cell, cell_factor_id_deviation)
                 log_base_for_cells[deviation_mask] = np.logaddexp(
                     log_base_for_cells[deviation_mask], log_deviation
