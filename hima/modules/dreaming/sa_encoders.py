@@ -48,9 +48,10 @@ class SpSaEncoder(SaEncoder):
             action_encoder.get('bucket_size', 0)
         )
         self.action_encoder = IntBucketEncoder(n_values=env.n_actions, **action_encoder)
-        self.s_a_concatenator = SdrConcatenator(input_sources=[
-            self.state_sp,
-            self.action_encoder
+        self.s_a_concatenator = SdrConcatenator(
+            sdr_spaces=[
+            self.state_sp.output_sdr_size,
+            self.action_encoder.output_sdr_size
         ])
         self.sa_sp = SpatialPooler(input_source=self.s_a_concatenator, seed=seed, **sa_sp)
 
@@ -156,9 +157,10 @@ class DreamerSaEncoder(SpSaEncoder):
         self.action_encoder = IntBucketEncoder(
             n_actions, self.state_sp.n_active_bits
         )
-        self.s_a_concatenator = SdrConcatenator(input_sources=[
-            self.state_sp,
-            self.action_encoder
+        self.s_a_concatenator = SdrConcatenator(
+            sdr_spaces=[
+            self.state_sp.output_sdr_size,
+            self.action_encoder.output_sdr_size
         ])
         self.sa_sp = None  # it isn't needed for a Dreamer
 

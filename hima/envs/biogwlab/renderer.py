@@ -45,7 +45,7 @@ class Renderer:
         layers, sdr_sizes = zip(*layers_with_sdr_size)
 
         if self.channels_concatenator is None:
-            self.channels_concatenator = SdrConcatenator(list(sdr_sizes))
+            self.channels_concatenator = SdrConcatenator(sdr_spaces=list(sdr_sizes))
 
         if self.rendering_sdr_sizes is None:
             self.rendering_sdr_sizes = []

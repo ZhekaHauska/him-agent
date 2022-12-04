@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
 
 from typing import Any, Sequence
 
@@ -75,15 +76,6 @@ class IntBucketEncoder:
         right = left + self._bucket_size
         return np.arange(left, right, dtype=np.int)
 
-    def decode_bit(self, bit_int: int) -> int:
-        bucket_ind = bit_int // self._buckets_step
-        if bucket_ind >= self.n_values:
-            bucket_ind = self.n_values - 1
-        return bucket_ind
-
-    def activation_fraction(self, activation):
-        return activation / self._bucket_size
-
     def _bucket_starting_pos(self, i):
         return i * self._buckets_step
 
@@ -101,24 +93,24 @@ class IntRandomEncoder:
 
     def __init__(
             self, n_values: int, seed: int,
-            sds: tuple = None,
+            sds: Sds | Sds.TShortNotation = None,
             space_compression: float = None,
             active_size: int = None
     ):
         """
-        Initializes encoder.
+        Initializes encoder that maps each categorical value to a fixed random SDR.
 
         :param n_values: defines a range [0, n_values) of values that can be encoded
-        :param total_bits: total number of bits in a resulted SDR
-        :param n_active_bits: int number of resulted SDR active bits or its [float] sparsity level
-        :param seed: random seed for random encoding scheme generation
+        :param sds: SDR space
+        :param space_compression: compression factor for SDR space relatively to a bucket encoder
+        :param seed: random seed for the random encoding scheme generation
         """
 
         if sds is None:
             sds_size = int(n_values * active_size * space_compression)
             sds = (sds_size, active_size)
 
-        self.output_sds = Sds(sds)
+        self.output_sds = Sds.as_sds(sds)
         self._encoding_map = self._make_encoding_map(
             n_values=n_values,
             total_bits=self.output_sds.size,
@@ -151,54 +143,33 @@ class IntRandomEncoder:
         return encoding_map
 
 
-class IntArrayEncoder:
-    n_types: int
-    output_sdr_size: int
-
-    def __init__(
-            self, shape: tuple[int, ...], n_types: int,
-            # Keep for init interface compatibility with IntBucketEncoder
-            bucket_size: int = None, buckets_step: int = None
-    ):
-        n_values = np.prod(shape)
-        self.n_types = n_types
-        self.output_sdr_size = self.n_types * n_values
-
-    def encode(self, x: np.ndarray = None, mask: np.ndarray = None):
-        if x is None:
-            x = ~mask
-
-        x = x.flatten()
-        if mask is not None:
-            indices = np.flatnonzero(mask)
-        else:
-            indices = np.arange(x.size)
-        return indices * self.n_types + x[indices]
-
-
 class SdrConcatenator:
     """Concatenates sparse SDRs."""
-    output_sdr_size: int
+    output_sds: Sds
 
-    _shifts: Sequence[int]
+    _shifts: list[int]
 
-    def __init__(self, input_sources: list[Any]):
-        if input_sources and isinstance(input_sources[0], int):
-            input_sizes = input_sources
-        else:
-            input_sizes = [source.output_sdr_size for source in input_sources]
-        cumulative_sizes = np.cumsum(input_sizes)
+    def __init__(self, sdr_spaces: list[Sds] | list[int]):
+        if len(sdr_spaces) > 0 and isinstance(sdr_spaces[0], int):
+            # sdr_spaces is a list of SDR sizes ==> sparsity is unknown, so we set
+            # it to 1.0 as a placeholder
+            # noinspection PyTypeChecker
+            sdr_spaces = [Sds(size=size, sparsity=1.0) for size in sdr_spaces]
+
+        cumulative_sizes = np.cumsum([sds.size for sds in sdr_spaces])
+        total_size = cumulative_sizes[-1]
+        total_active_size = sum([sds.active_size for sds in sdr_spaces])
 
         # NB: note that zero shift at the beginning is omitted
         self._shifts = cumulative_sizes[:-1]
-        self.output_sdr_size = cumulative_sizes[-1]
+        self.output_sds = Sds(size=total_size, active_size=total_active_size)
 
-    def concatenate(self, *sparse_sdrs):
+    def concatenate(self, *sparse_sdrs: SparseSdr) -> SparseSdr:
         """Concatenates `sparse_sdrs` fixing their relative indexes."""
         size = sum(len(sdr) for sdr in sparse_sdrs)
         result = np.empty(size, dtype=np.int)
 
-        # to speed up things do not apply zero shift to the first sdr
+        # to speed things up do not apply zero shift to the first sdr
         first = sparse_sdrs[0]
         l, r = 0, len(first)
         result[l:r] = first
@@ -208,9 +179,12 @@ class SdrConcatenator:
             sdr = sparse_sdrs[i]
             l = r
             r = r + len(sdr)
-            result[l:r] = sdr
-            result[l:r] += self._shifts[i - 1]
+            result[l:r] = sdr + self._shifts[i - 1]
         return result
+
+    @property
+    def output_sdr_size(self):
+        return self.output_sds.size
 
 
 class RangeDynamicEncoder:
