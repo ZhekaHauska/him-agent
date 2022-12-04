@@ -77,6 +77,7 @@ charts:
 
 blocks:
   gen:
+    # TODO: _base_config_: generator__S__.synthetic_sequences
     _type_family_: generator
     _base_config_: synthetic_sequences
     n_values: 30
