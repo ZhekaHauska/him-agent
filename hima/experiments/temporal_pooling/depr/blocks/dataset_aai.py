@@ -12,7 +12,7 @@ from htm.bindings.sdr import SDR
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone
-from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling.depr.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
 from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
 from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
