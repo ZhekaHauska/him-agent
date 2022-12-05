@@ -11,7 +11,7 @@ from hima.common.config import resolve_init_params, resolve_absolute_quantity, e
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.depr.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling._depr.blocks.base_block_stats import BlockStats
 from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
 

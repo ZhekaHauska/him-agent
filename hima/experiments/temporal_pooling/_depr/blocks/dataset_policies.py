@@ -10,9 +10,9 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.depr.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.depr.blocks.dataset_resolver import resolve_encoder
-from hima.experiments.temporal_pooling.depr.blocks.dataset_synth_sequences import \
+from hima.experiments.temporal_pooling._depr.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling._depr.blocks.dataset_resolver import resolve_encoder
+from hima.experiments.temporal_pooling._depr.blocks.dataset_synth_sequences import \
     generate_synthetic_sequences
 from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
 from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
