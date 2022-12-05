@@ -13,15 +13,15 @@ from matplotlib import pyplot as plt
 from wandb.sdk.wandb_run import Run
 
 from hima.common.sdr import SparseSdr
-from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.metrics import (
+from hima.experiments.temporal_pooling._depr.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling._depr.metrics import (
     multiplicative_loss, DISTR_SIM_PMF
 )
-from hima.experiments.temporal_pooling.sdr_seq_cross_stats import (
+from hima.experiments.temporal_pooling._depr.sdr_seq_cross_stats import (
     OnlinePmfSimilarityMatrix, OfflinePmfSimilarityMatrix, SimilarityMatrix
 )
-from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
-from hima.experiments.temporal_pooling.utils import rename_dict_keys
+from hima.experiments.temporal_pooling._depr.stats_config import StatsMetricsConfig
+from hima.experiments.temporal_pooling._depr.utils import rename_dict_keys
 
 
 class RunProgress:

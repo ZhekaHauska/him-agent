@@ -13,7 +13,7 @@ from hima.common.config import resolve_init_params, extracted
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling._depr.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
+from hima.experiments.temporal_pooling._depr.sdr_seq_stats import SdrSequenceStats
 
 
 class SpatialPoolerBlockStats(BlockStats):

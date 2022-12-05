@@ -14,8 +14,8 @@ from hima.experiments.temporal_pooling._depr.blocks.base_block_stats import Bloc
 from hima.experiments.temporal_pooling._depr.blocks.dataset_resolver import resolve_encoder
 from hima.experiments.temporal_pooling._depr.blocks.dataset_synth_sequences import \
     generate_synthetic_sequences
-from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
-from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
+from hima.experiments.temporal_pooling._depr.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
+from hima.experiments.temporal_pooling._depr.stats_config import StatsMetricsConfig
 
 
 class Policy:

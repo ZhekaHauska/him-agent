@@ -1,3 +1,9 @@
+#  Copyright (c) 2022 Autonomous Non-Profit Organization "Artificial Intelligence Research
+#  Institute" (AIRI); Moscow Institute of Physics and Technology (National Research University).
+#  All rights reserved.
+#
+#  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
@@ -143,5 +149,5 @@ if __name__ == '__main__':
         })
         rooms_observations.append(converted)
 
-    with open('distance.pkl', 'wb') as f:
+    with open('../distance.pkl', 'wb') as f:
         dump(rooms_observations, f)

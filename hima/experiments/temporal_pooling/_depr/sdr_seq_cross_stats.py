@@ -3,13 +3,14 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+
 from typing import Any, Optional, Union
 
 import numpy as np
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.metrics import (
+from hima.experiments.temporal_pooling._depr.metrics import (
     standardize_sample_distribution,
     sequence_similarity_elementwise, distribution_similarity, DISTR_SIM_PMF,
     DISTR_SIM_KL

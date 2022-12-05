@@ -13,7 +13,7 @@ from hima.common.config import extracted_type, resolve_init_params, resolve_abso
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling._depr.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
+from hima.experiments.temporal_pooling._depr.sdr_seq_stats import SdrSequenceStats
 
 
 class TemporalPoolerBlockStats(BlockStats):
@@ -97,7 +97,7 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
         tp = UnionTemporalPooler(**tp_config)
 
     elif tp_type == 'AblationUtp':
-        from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
+        from hima.experiments.temporal_pooling._depr.ablation_utp import AblationUtp
         tp_config = resolve_init_params(
             tp_config,
             inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
@@ -107,7 +107,7 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
         tp = AblationUtp(**tp_config)
 
     elif tp_type == 'CustomUtp':
-        from hima.experiments.temporal_pooling.custom_utp import CustomUtp
+        from hima.experiments.temporal_pooling._depr.custom_utp import CustomUtp
         tp_config = resolve_init_params(
             tp_config,
             inputDimensions=feedforward_sds.shape,
@@ -117,7 +117,7 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
         tp = CustomUtp(**tp_config)
 
     elif tp_type == 'SandwichTp':
-        from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
+        from hima.experiments.temporal_pooling._depr.sandwich_tp import SandwichTp
         tp_config = resolve_init_params(tp_config, seed=seed)
 
         # hacky hack to set pooling restriction propagated to upper SP

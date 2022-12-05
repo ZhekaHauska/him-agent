@@ -11,7 +11,7 @@ import numpy as np
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.metrics import entropy
+from hima.experiments.temporal_pooling._depr.metrics import entropy
 
 
 class SdrSequenceStats:

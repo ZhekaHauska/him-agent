@@ -13,24 +13,24 @@ from hima.common.run.runner import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling.blocks.dataset_aai import RoomObservationSequence
-from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
-from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
-from hima.experiments.temporal_pooling.blocks.tm_sequence import (
+from hima.experiments.temporal_pooling._depr.blocks.dataset_aai import RoomObservationSequence
+from hima.experiments.temporal_pooling._depr.blocks.dataset_resolver import resolve_data_generator
+from hima.experiments.temporal_pooling._depr.blocks.sp import resolve_sp
+from hima.experiments.temporal_pooling._depr.blocks.tm_sequence import (
     resolve_tm,
     resolve_tm_apical_feedback
 )
-from hima.experiments.temporal_pooling.blocks.tp import resolve_tp
-from hima.experiments.temporal_pooling.config_resolvers import resolve_run_setup
-from hima.experiments.temporal_pooling.test_on_policies import (
+from hima.experiments.temporal_pooling._depr.blocks.tp import resolve_tp
+from hima.experiments.temporal_pooling._depr.config_resolvers import resolve_run_setup
+from hima.experiments.temporal_pooling._depr.test_on_policies import (
     resolve_epoch_runs,
     resolve_random_seed, scheduled
 )
-from hima.experiments.temporal_pooling.test_stats import (
+from hima.experiments.temporal_pooling._depr.test_stats import (
     RunProgress,
     ExperimentStats
 )
-from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
+from hima.experiments.temporal_pooling._depr.stats_config import StatsMetricsConfig
 
 
 class RunSetup:

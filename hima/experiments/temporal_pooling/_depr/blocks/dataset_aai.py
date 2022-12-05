@@ -13,9 +13,9 @@ from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone
 from hima.experiments.temporal_pooling._depr.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
-from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
-from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
+from hima.experiments.temporal_pooling._depr.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
+from hima.experiments.temporal_pooling._depr.sdr_seq_stats import SdrSequenceStats
+from hima.experiments.temporal_pooling._depr.stats_config import StatsMetricsConfig
 
 
 class RoomObservationSequence:

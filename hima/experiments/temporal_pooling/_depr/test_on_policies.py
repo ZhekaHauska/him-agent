@@ -14,22 +14,22 @@ from hima.common.run.runner import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, timed
-from hima.experiments.temporal_pooling.blocks.dataset_policies import Policy
-from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
-from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
-from hima.experiments.temporal_pooling.blocks.tm_context import (
+from hima.experiments.temporal_pooling._depr.blocks import Policy
+from hima.experiments.temporal_pooling._depr.blocks.dataset_resolver import resolve_data_generator
+from hima.experiments.temporal_pooling._depr.blocks.sp import resolve_sp
+from hima.experiments.temporal_pooling._depr.blocks.tm_context import (
     resolve_tm,
     resolve_tm_apical_feedback
 )
-from hima.experiments.temporal_pooling.blocks.tp import resolve_tp
-from hima.experiments.temporal_pooling.config_resolvers import (
+from hima.experiments.temporal_pooling._depr.blocks.tp import resolve_tp
+from hima.experiments.temporal_pooling._depr.config_resolvers import (
     resolve_run_setup
 )
-from hima.experiments.temporal_pooling.test_stats import (
+from hima.experiments.temporal_pooling._depr.test_stats import (
     ExperimentStats,
     RunProgress
 )
-from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
+from hima.experiments.temporal_pooling._depr.stats_config import StatsMetricsConfig
 
 
 class RunSetup:
