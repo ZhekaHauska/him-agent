@@ -101,7 +101,7 @@ def generate_random_positions_observations(room_conf: str, n_positions=5, seed=4
 
 
 def generate_random_positions_observations_v1_output(room_conf: str, n_positions=5, seed=42):
-    with open('../configs/v1.yaml', 'r') as yml_v1:
+    with open('configs/v1.yaml', 'r') as yml_v1:
         v1_conf = yaml.safe_load(yml_v1)['v1_config']
 
     v1_outputs = []
