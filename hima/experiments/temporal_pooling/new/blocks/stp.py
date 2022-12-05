@@ -81,7 +81,7 @@ def resolve_stp(stp_config, feedforward_sds: Sds, output_sds: Sds):
         stp = UnionTemporalPooler(**stp_config)
 
     elif stp_type == 'AblationUtp':
-        from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
+        from hima.experiments.temporal_pooling._depr.ablation_utp import AblationUtp
         stp_config = resolve_init_params(
             stp_config,
             inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
@@ -91,7 +91,7 @@ def resolve_stp(stp_config, feedforward_sds: Sds, output_sds: Sds):
         stp = AblationUtp(**stp_config)
 
     elif stp_type == 'CustomUtp':
-        from hima.experiments.temporal_pooling.custom_utp import CustomUtp
+        from hima.experiments.temporal_pooling._depr.custom_utp import CustomUtp
         stp_config = resolve_init_params(
             stp_config,
             inputDimensions=feedforward_sds.shape,
@@ -100,7 +100,7 @@ def resolve_stp(stp_config, feedforward_sds: Sds, output_sds: Sds):
         stp = CustomUtp(**stp_config)
 
     elif stp_type == 'SandwichTp':
-        from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
+        from hima.experiments.temporal_pooling._depr.sandwich_tp import SandwichTp
 
         # hacky hack to set pooling restriction propagated to upper SP
         if 'max_intermediate_used' in stp_config and stp_config['max_intermediate_used'] is not None:
