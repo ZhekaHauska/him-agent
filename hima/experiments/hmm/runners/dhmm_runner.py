@@ -165,7 +165,7 @@ class MPGTest:
                             segments = self.hmm.connections.segmentsForCell(cell)
 
                             if len(segments) > 0:
-                                value = self.hmm.log_factor_values_per_segment[segments].sum()
+                                value = self.hmm.sqrt_log_factor_values_per_segment[segments].sum()
                             else:
                                 value = 0
 
@@ -410,7 +410,7 @@ class MMPGTest:
                         segments = self.hmm.connections.segmentsForCell(cell)
 
                         if len(segments) > 0:
-                            value = self.hmm.log_factor_values_per_segment[segments].sum()
+                            value = self.hmm.sqrt_log_factor_values_per_segment[segments].sum()
                         else:
                             value = 0
 
@@ -476,7 +476,7 @@ class NStepTest:
         if log_self_loop_factor is not None:
             self.hmm.log_self_loop_factor = log_self_loop_factor
         else:
-            max_factor = self.hmm.log_factor_values_per_segment.max()
+            max_factor = self.hmm.sqrt_log_factor_values_per_segment.max()
             self.hmm.log_self_loop_factor = max_factor
         if policy is not None:
             self.mpg.initial_policy = policy
@@ -684,7 +684,7 @@ class PinballTest:
                         segments = self.hmm.connections.segmentsForCell(cell)
 
                         if len(segments) > 0:
-                            value = self.hmm.log_factor_values_per_segment[segments].sum()
+                            value = self.hmm.sqrt_log_factor_values_per_segment[segments].sum()
                         else:
                             value = 0
 

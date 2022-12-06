@@ -33,11 +33,9 @@ class DCHMM:
             n_vars_per_factor: int,
             factors_per_var: int,
             factor_activation_threshold: int,
-            initial_log_factor_value: float = 0,
+            initial_factor_value: float = 0,
             lr: float = 0.01,
-            gamma: float = 1.0,
             beta: float = 0.0,
-            regularization: float = 0.01,
             punishment: float = 0.0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
@@ -109,8 +107,6 @@ class DCHMM:
         self.segment_activation_threshold = n_vars_per_factor
 
         self.lr = lr
-        self.gamma = gamma
-        self.regularization = regularization
         self.beta = beta
         self.punishment = punishment
 
@@ -136,10 +132,10 @@ class DCHMM:
         )
 
         # each segment corresponds to a factor value
-        self.initial_log_factor_value = initial_log_factor_value
-        self.log_factor_values_per_segment = np.full(
+        self.initial_factor_value = initial_factor_value
+        self.sqrt_log_factor_values_per_segment = np.full(
             self.total_segments,
-            fill_value=self.initial_log_factor_value,
+            fill_value=self.initial_factor_value,
             dtype=REAL64_DTYPE
         )
 
@@ -231,8 +227,9 @@ class DCHMM:
             # deviation activity
             if len(active_segments) > 0:
                 factors_for_active_segments = self.factor_for_segment[active_segments]
-                # TODO here overflow is encountered
-                shifted_factor_value = np.expm1(self.log_factor_values_per_segment[active_segments])
+                shifted_factor_value = np.expm1(
+                    np.square(self.sqrt_log_factor_values_per_segment[active_segments])
+                )
 
                 likelihood = self.forward_messages[self.receptive_fields[active_segments]]
                 log_likelihood = np.sum(np.log(likelihood), axis=-1)
@@ -377,14 +374,22 @@ class DCHMM:
         )
 
     def _update_factors(self, segments_to_reinforce, segments_to_punish):
-        w = self.log_factor_values_per_segment[segments_to_reinforce]
-        self.log_factor_values_per_segment[
-            segments_to_reinforce
-        ] += self.lr * (np.exp(-self.gamma*w) - self.regularization * w)
+        cells_for_segments_reinforce = self.connections.mapSegmentsToCells(segments_to_reinforce)
+        cells_for_segments_punish = self.connections.mapSegmentsToCells(segments_to_punish)
 
-        self.log_factor_values_per_segment[
+        w = self.sqrt_log_factor_values_per_segment[segments_to_reinforce]
+        self.sqrt_log_factor_values_per_segment[
+            segments_to_reinforce
+        ] += self.lr * (
+                w + self.segment_prune_threshold
+        ) * (
+                1 - self.prediction[cells_for_segments_reinforce]
+        )
+
+        w = self.sqrt_log_factor_values_per_segment[segments_to_punish]
+        self.sqrt_log_factor_values_per_segment[
             segments_to_punish
-        ] -= self.punishment
+        ] -= self.punishment * w * self.prediction[cells_for_segments_punish]
 
         segments = np.concatenate(
                 [
@@ -393,7 +398,7 @@ class DCHMM:
                 ]
             )
 
-        w = self.log_factor_values_per_segment[segments]
+        w = self.sqrt_log_factor_values_per_segment[segments]
 
         segments_to_prune = segments[np.abs(w) < self.segment_prune_threshold]
 
@@ -588,20 +593,3 @@ class DCHMM:
             self.receptive_fields[new_segment] = candidates
 
         return np.array(new_segments, dtype=UINT_DTYPE)
-
-    @staticmethod
-    def _log_product(array, axis=None, indices=None):
-        log_array = np.log(array)
-
-        if indices is not None:
-            log_array = np.add.reduceat(
-                array,
-                indices
-            )
-        else:
-            log_array = log_array.sum(axis=axis)
-
-        # rescale
-        log_array -= log_array.min()
-
-        return np.exp(log_array)
