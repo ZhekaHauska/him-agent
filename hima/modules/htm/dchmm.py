@@ -35,6 +35,8 @@ class DCHMM:
             factor_activation_threshold: int,
             initial_factor_value: float = 0,
             lr: float = 0.01,
+            max_kick_off: float = 0,
+            slope_kick_off: float = 0,
             beta: float = 0.0,
             punishment: float = 0.0,
             cell_activation_threshold: float = EPS,
@@ -107,6 +109,8 @@ class DCHMM:
         self.segment_activation_threshold = n_vars_per_factor
 
         self.lr = lr
+        self.max_kick_off = max_kick_off
+        self.slope_kick_off = slope_kick_off
         self.beta = beta
         self.punishment = punishment
 
@@ -378,10 +382,12 @@ class DCHMM:
         cells_for_segments_punish = self.connections.mapSegmentsToCells(segments_to_punish)
 
         w = self.sqrt_log_factor_values_per_segment[segments_to_reinforce]
+        kick_off = 1 / (1 + self.slope_kick_off * w)
+
         self.sqrt_log_factor_values_per_segment[
             segments_to_reinforce
         ] += self.lr * (
-                w + self.segment_prune_threshold
+                w + self.max_kick_off * kick_off
         ) * (
                 1 - self.prediction[cells_for_segments_reinforce]
         )
