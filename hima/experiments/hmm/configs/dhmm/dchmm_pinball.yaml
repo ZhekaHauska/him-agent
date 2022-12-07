@@ -6,8 +6,6 @@ initial_factor_value: 0.1
 beta: 1.0  # importance of active vars for receptive field
 lr: 0.01
 punishment: 0.01
-max_kick_off: 1
-slope_kick_off: 10
 cell_activation_threshold: 0.0001
 max_segments_per_cell: 100
 max_segments_for_spec_state: 1000
