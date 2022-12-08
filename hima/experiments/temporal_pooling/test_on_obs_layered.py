@@ -19,30 +19,9 @@ from hima.experiments.temporal_pooling.resolvers.graph import (
     BlockRegistryResolver
 )
 from hima.experiments.temporal_pooling.run_progress import RunProgress
+from hima.experiments.temporal_pooling.run_setup import RunSetup
 from hima.experiments.temporal_pooling.run_setup_resolver import resolve_run_setup
 from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
-
-
-class RunSetup:
-    n_sequences: int
-    steps_per_sequence: int | None
-    sequence_repeats: int
-    epochs: int
-    log_repeat_schedule: int
-    log_epoch_schedule: int
-
-    def __init__(
-            self, n_sequences: int, steps_per_sequence: int | None,
-            sequence_repeats: int, epochs: int, total_repeats: int,
-            log_repeat_schedule: int = 1, log_epoch_schedule: int = 1
-    ):
-        self.n_sequences = n_sequences
-        self.steps_per_sequence = steps_per_sequence
-        self.sequence_repeats, self.epochs = resolve_epoch_runs(
-            sequence_repeats, epochs, total_repeats
-        )
-        self.log_repeat_schedule = log_repeat_schedule
-        self.log_epoch_schedule = log_epoch_schedule
 
 
 class ObservationsLayeredExperiment(Runner):

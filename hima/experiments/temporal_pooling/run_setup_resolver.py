@@ -13,7 +13,7 @@ def resolve_run_setup(config: dict, run_setup_config: dict | str, experiment_typ
         run_setup_config = config['run_setups'][run_setup_config]
 
     if experiment_type == 'layered':
-        from hima.experiments.temporal_pooling.test_on_obs_layered import RunSetup
+        from hima.experiments.temporal_pooling.run_setup import RunSetup
         return RunSetup(**run_setup_config)
     else:
         KeyError(f'Experiment type {experiment_type} is not supported')
