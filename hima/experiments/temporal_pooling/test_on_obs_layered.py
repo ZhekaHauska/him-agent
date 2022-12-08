@@ -107,9 +107,11 @@ class ObservationsLayeredExperiment(Runner):
         self.stats.on_sequence_started(sequence.id, log_scheduled)
 
         for input_data in sequence:
-            self.progress.next_step()
-            self.pipeline.step(input_data, learn=learn)
-            self.stats.on_step()
+            self.reset_blocks('spatial_pooler')
+            for _ in range(self.run_setup.item_repeats):
+                self.progress.next_step()
+                self.pipeline.step(input_data, learn=learn)
+                self.stats.on_step()
 
     def reset_blocks(self, *blocks_family):
         blocks_family = set(blocks_family)
@@ -125,17 +127,6 @@ def resolve_random_seed(seed: int | None) -> int:
         # randomly generate a seed
         return np.random.default_rng().integers(10000)
     return seed
-
-
-def resolve_epoch_runs(intra_epoch_repeats: int, epochs: int, total_repeats: int):
-    total_repeats = resolve_value(total_repeats)
-    intra_epoch_repeats = resolve_value(intra_epoch_repeats)
-    epochs = resolve_value(epochs)
-    if intra_epoch_repeats is None:
-        intra_epoch_repeats = total_repeats // epochs
-    if epochs is None:
-        epochs = total_repeats // intra_epoch_repeats
-    return intra_epoch_repeats, epochs
 
 
 def scheduled(

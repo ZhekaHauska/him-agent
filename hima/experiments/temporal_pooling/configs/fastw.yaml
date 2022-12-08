@@ -17,19 +17,50 @@ stats_and_metrics:
 
 pipeline:
   - ___.input -> gen.output
+#  - ???.output -> sp1.feedforward
   - block: concat
     pipes:
       - sp1.output -> concat.feedforward_1
       - gen.output -> concat.feedforward_2
   - concat.output -> sp1.feedforward
-#  - block: concat
-#    pipes:
-#    - sp1.output -> sp1.feedforward
-#    - gen.output -> sp1.feedforward
-#  - gen.output -> tp1.feedforward
-#  - gen.output -> stp1.feedforward
-#  - ???.output -> sp2.feedforward
   - ???.output -> ___.output
+
+blocks:
+  gen:
+    # TODO: _base_config_: generator__S__.synthetic_sequences
+    _type_family_: generator
+    _base_config_: synthetic_sequences
+    n_values: 30
+    value_encoder: random
+  concat:
+    _type_family_: concatenator
+  sp1:
+    _type_family_: spatial_pooler
+    _base_config_: default
+    output_sds: [600, 20]
+    boostStrength: 0.
+    potentialPct: 0.14
+  tp1:
+    _type_family_: temporal_pooler
+    _base_config_: default
+    reset_on_activation: False
+    sparsity: 10
+    pooling_window: 10
+    decay: ...
+    activation_threshold: 0.01
+    rand_decay_max_ratio: 1.0
+    not_predicted_weight: 0.7
+  stp1:
+    _type_family_: spatiotemporal_pooler
+    _base_config_: ablation_utp
+    ff_sds: ???
+    output_sds: [400, 16]
+  sp2:
+    _type_family_: spatial_pooler
+    _base_config_: wide
+    output_sds: [500, 0.1]
+
+concatenator: {}
 
 track_streams:
   gen.output:
@@ -83,43 +114,6 @@ charts:
 #  - stp1.output/epoch/mean_pmf_coverage
 #  - stp1.output/epoch/sim_mx_off_el_mae
 
-blocks:
-  gen:
-    # TODO: _base_config_: generator__S__.synthetic_sequences
-    _type_family_: generator
-    _base_config_: synthetic_sequences
-    n_values: 30
-    value_encoder: random
-  concat:
-    _type_family_: concatenator
-  sp1:
-    _type_family_: spatial_pooler
-    _base_config_: default
-    output_sds: [400, 16]
-    boostStrength: 0.
-    potentialPct: 0.6
-  tp1:
-    _type_family_: temporal_pooler
-    _base_config_: default
-    reset_on_activation: False
-    sparsity: 10
-    pooling_window: 10
-    decay: ...
-    activation_threshold: 0.01
-    rand_decay_max_ratio: 1.0
-    not_predicted_weight: 0.7
-  stp1:
-    _type_family_: spatiotemporal_pooler
-    _base_config_: ablation_utp
-    ff_sds: ???
-    output_sds: [400, 16]
-  sp2:
-    _type_family_: spatial_pooler
-    _base_config_: wide
-    output_sds: [500, 0.1]
-
-concatenator: {}
-
 generator:
   synthetic_sequences:
     _type_: synthetic_sequences
@@ -147,6 +141,7 @@ run_setups:
     n_sequences: 5
     steps_per_sequence: 10
     sequence_repeats: 3
+    item_repeats: 1
     epochs: 4
     # FIXME: to ???
     total_repeats: ...
@@ -157,6 +152,7 @@ run_setups:
     n_sequences: 10
     steps_per_sequence: 30
     sequence_repeats: 10
+    item_repeats: 3
     epochs: 10
     total_repeats: ...
     log_repeat_schedule: 5
