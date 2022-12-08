@@ -7,9 +7,9 @@ from typing import Any
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.new.blocks.graph import Stream
-from hima.experiments.temporal_pooling.new.stats.config import StatsMetricsConfig
-from hima.experiments.temporal_pooling.new.stats.tracker import Tracker, TMetrics
+from hima.experiments.temporal_pooling.blocks.graph import Stream
+from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
+from hima.experiments.temporal_pooling.stats.tracker import Tracker, TMetrics
 
 
 class StreamTracker(Tracker):
@@ -79,10 +79,10 @@ def resolve_tracker(
         tracker_name: str, sds: Sds, n_sequences: int, stats_config: StatsMetricsConfig
 ) -> Tracker:
     if tracker_name == 'sdr':
-        from hima.experiments.temporal_pooling.new.stats.sdr_tracker import SdrTracker
+        from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
         return SdrTracker(sds)
     elif tracker_name == 'cross.offline.el':
-        from hima.experiments.temporal_pooling.new.stats.similarity_matrix import \
+        from hima.experiments.temporal_pooling.stats.similarity_matrix import \
             OfflineElementwiseSimilarityMatrix
         return OfflineElementwiseSimilarityMatrix(
             n_sequences=n_sequences, sds=sds,
@@ -90,7 +90,7 @@ def resolve_tracker(
             symmetrical=stats_config.symmetrical_similarity
         )
     elif tracker_name == 'cross.offline.prefix':
-        from hima.experiments.temporal_pooling.new.stats.similarity_matrix import \
+        from hima.experiments.temporal_pooling.stats.similarity_matrix import \
             OfflinePmfSimilarityMatrix
         return OfflinePmfSimilarityMatrix(
             n_sequences=n_sequences, sds=sds,
@@ -100,7 +100,7 @@ def resolve_tracker(
             pmf_decay=stats_config.pmf_decay
         )
     elif tracker_name == 'cross.online.el':
-        from hima.experiments.temporal_pooling.new.stats.similarity_matrix import \
+        from hima.experiments.temporal_pooling.stats.similarity_matrix import \
             OnlineElementwiseSimilarityMatrix
         return OnlineElementwiseSimilarityMatrix(
             n_sequences=n_sequences, sds=sds,
@@ -109,7 +109,7 @@ def resolve_tracker(
             online_similarity_decay=stats_config.online_similarity_decay
         )
     elif tracker_name == 'cross.online.prefix':
-        from hima.experiments.temporal_pooling.new.stats.similarity_matrix import \
+        from hima.experiments.temporal_pooling.stats.similarity_matrix import \
             OnlinePmfSimilarityMatrix
         return OnlinePmfSimilarityMatrix(
             n_sequences=n_sequences, sds=sds,

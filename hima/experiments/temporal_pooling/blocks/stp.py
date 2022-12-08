@@ -14,7 +14,7 @@ from hima.common.config import (
 )
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.new.blocks.graph import Block
+from hima.experiments.temporal_pooling.blocks.graph import Block
 
 
 class SpatiotemporalPoolerBlock(Block):

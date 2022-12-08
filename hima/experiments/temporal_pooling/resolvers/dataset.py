@@ -5,8 +5,8 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 from hima.common.config import extracted_type, resolve_init_params, TConfig
-from hima.experiments.temporal_pooling.new.resolvers.graph import BlockResolver
-from hima.experiments.temporal_pooling.new.blocks.graph import Block
+from hima.experiments.temporal_pooling.resolvers.graph import BlockResolver
+from hima.experiments.temporal_pooling.blocks.graph import Block
 
 
 class DataGeneratorResolver(BlockResolver):
@@ -31,7 +31,7 @@ class DataGeneratorResolver(BlockResolver):
         generator_config, generator_type = extracted_type(generator_config)
 
         if generator_type == 'synthetic_sequences':
-            from hima.experiments.temporal_pooling.new.blocks.dataset_synth_sequences import (
+            from hima.experiments.temporal_pooling.blocks.dataset_synth_sequences import (
                 SyntheticSequencesGenerator
             )
             generator_config = resolve_init_params(generator_config, **induction_registry)

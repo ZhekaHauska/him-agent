@@ -11,7 +11,7 @@ from htm.bindings.sdr import SDR
 
 from hima.common.config import resolve_init_params, extracted
 from hima.common.sdr import SparseSdr
-from hima.experiments.temporal_pooling.new.blocks.graph import Block
+from hima.experiments.temporal_pooling.blocks.graph import Block
 
 
 class SpatialPoolerBlock(Block):

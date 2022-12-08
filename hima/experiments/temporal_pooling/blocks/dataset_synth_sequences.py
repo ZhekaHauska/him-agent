@@ -10,10 +10,10 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.new.data.synthetic_sequences import \
+from hima.experiments.temporal_pooling.data.synthetic_sequences import \
     generate_synthetic_sequences
-from hima.experiments.temporal_pooling.new.resolvers.encoder import resolve_encoder
-from hima.experiments.temporal_pooling.new.blocks.graph import Block
+from hima.experiments.temporal_pooling.resolvers.encoder import resolve_encoder
+from hima.experiments.temporal_pooling.blocks.graph import Block
 
 
 class Sequence:

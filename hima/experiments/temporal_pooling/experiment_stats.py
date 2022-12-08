@@ -13,12 +13,12 @@ from matplotlib import pyplot as plt
 from wandb.sdk.wandb_run import Run
 
 from hima.common.config import TConfig
-from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
-from hima.experiments.temporal_pooling.new.stats.metrics import (
+from hima.experiments.temporal_pooling.blocks.graph import Block, Stream
+from hima.experiments.temporal_pooling.stats.metrics import (
     multiplicative_loss
 )
-from hima.experiments.temporal_pooling.new.stats.config import StatsMetricsConfig
-from hima.experiments.temporal_pooling.new.stats.stream_tracker import StreamTracker
+from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
+from hima.experiments.temporal_pooling.stats.stream_tracker import StreamTracker
 
 
 class RunProgress:

@@ -6,7 +6,7 @@
 
 from hima.common.sdr import SparseSdr
 from hima.common.sdr_encoders import SdrConcatenator
-from hima.experiments.temporal_pooling.new.blocks.graph import Block
+from hima.experiments.temporal_pooling.blocks.graph import Block
 
 
 class ConcatenatorBlock(Block):

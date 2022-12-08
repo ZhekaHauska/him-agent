@@ -149,5 +149,5 @@ if __name__ == '__main__':
         })
         rooms_observations.append(converted)
 
-    with open('../distance.pkl', 'wb') as f:
+    with open('../data/distance.pkl', 'wb') as f:
         dump(rooms_observations, f)

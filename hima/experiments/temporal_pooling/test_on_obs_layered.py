@@ -13,19 +13,19 @@ from hima.common.config import resolve_value, TConfig
 from hima.common.run.runner import Runner
 from hima.common.sds import Sds
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling.new.run_setup_resolver import (
+from hima.experiments.temporal_pooling.run_setup_resolver import (
     resolve_run_setup
 )
-from hima.experiments.temporal_pooling.new.blocks.dataset_synth_sequences import Sequence
-from hima.experiments.temporal_pooling.new.blocks.graph import (
+from hima.experiments.temporal_pooling.blocks.dataset_synth_sequences import Sequence
+from hima.experiments.temporal_pooling.blocks.graph import (
     Block, Pipeline
 )
-from hima.experiments.temporal_pooling.new.resolvers.graph import (
+from hima.experiments.temporal_pooling.resolvers.graph import (
     PipelineResolver,
     BlockRegistryResolver
 )
-from hima.experiments.temporal_pooling.new.stats.config import StatsMetricsConfig
-from hima.experiments.temporal_pooling.new.experiment_stats import (
+from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
+from hima.experiments.temporal_pooling.experiment_stats import (
     ExperimentStats,
     RunProgress
 )

@@ -12,7 +12,7 @@ from hima.common.config import (
 )
 from hima.common.sds import Sds
 from hima.common.utils import isnone
-from hima.experiments.temporal_pooling.new.blocks.graph import (
+from hima.experiments.temporal_pooling.blocks.graph import (
     Pipe, Block, Pipeline,
     ComputationUnit, Stream, ExternalApiBlock
 )
@@ -51,13 +51,13 @@ class BlockRegistryResolver:
     @staticmethod
     def _get_block_resolvers():
         # to prevent circular imports resolvers should be imported locally
-        from hima.experiments.temporal_pooling.new.resolvers.dataset import (
+        from hima.experiments.temporal_pooling.resolvers.dataset import (
             DataGeneratorResolver
         )
-        from hima.experiments.temporal_pooling.new.resolvers.sp import SpatialPoolerResolver
-        from hima.experiments.temporal_pooling.new.resolvers.tp import TemporalPoolerResolver
-        from hima.experiments.temporal_pooling.new.resolvers.stp import SpatiotemporalPoolerResolver
-        from hima.experiments.temporal_pooling.new.resolvers.concat import ConcatenatorResolver
+        from hima.experiments.temporal_pooling.resolvers.sp import SpatialPoolerResolver
+        from hima.experiments.temporal_pooling.resolvers.tp import TemporalPoolerResolver
+        from hima.experiments.temporal_pooling.resolvers.stp import SpatiotemporalPoolerResolver
+        from hima.experiments.temporal_pooling.resolvers.concat import ConcatenatorResolver
 
         return {
             DataGeneratorResolver.family: DataGeneratorResolver(),
