@@ -136,6 +136,7 @@ class PipelineResolver:
             ]
             if not unresolved:
                 break
+            
 
         assert not unresolved, f'Cannot resolve {unresolved} pipeline units!'
 
@@ -186,11 +187,3 @@ class PipelineResolver:
 
         stream = self.block_registry[block_name].register_stream(stream_name)
         return stream
-
-
-def _resolve_interface(streams: list[str], default_streams: list[str]) -> list[str]:
-    # None means default, unresolved means do nothing it is inducted later
-    streams = resolve_value(streams)
-    streams = isnone(streams, default_streams)
-
-    return streams if is_resolved_value(streams) else []

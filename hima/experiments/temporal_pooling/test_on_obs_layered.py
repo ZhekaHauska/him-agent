@@ -4,48 +4,36 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Optional
+from __future__ import annotations
 
 import numpy as np
-from wandb.sdk.wandb_run import Run
 
 from hima.common.config import resolve_value, TConfig
 from hima.common.run.runner import Runner
-from hima.common.sds import Sds
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling.run_setup_resolver import (
-    resolve_run_setup
-)
 from hima.experiments.temporal_pooling.blocks.dataset_synth_sequences import Sequence
-from hima.experiments.temporal_pooling.blocks.graph import (
-    Block, Pipeline
-)
+from hima.experiments.temporal_pooling.blocks.graph import Block, Pipeline
+from hima.experiments.temporal_pooling.experiment_stats import ExperimentStats
 from hima.experiments.temporal_pooling.resolvers.graph import (
     PipelineResolver,
     BlockRegistryResolver
 )
+from hima.experiments.temporal_pooling.run_progress import RunProgress
+from hima.experiments.temporal_pooling.run_setup_resolver import resolve_run_setup
 from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
-from hima.experiments.temporal_pooling.experiment_stats import (
-    ExperimentStats,
-    RunProgress
-)
 
 
 class RunSetup:
     n_sequences: int
-    steps_per_sequence: Optional[int]
+    steps_per_sequence: int | None
     sequence_repeats: int
     epochs: int
     log_repeat_schedule: int
     log_epoch_schedule: int
 
-    tp_output_sds: Sds
-    sp_output_sds: Sds
-
     def __init__(
-            self, n_sequences: int, steps_per_sequence: Optional[int],
+            self, n_sequences: int, steps_per_sequence: int | None,
             sequence_repeats: int, epochs: int, total_repeats: int,
-            tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation,
             log_repeat_schedule: int = 1, log_epoch_schedule: int = 1
     ):
         self.n_sequences = n_sequences
@@ -56,14 +44,8 @@ class RunSetup:
         self.log_repeat_schedule = log_repeat_schedule
         self.log_epoch_schedule = log_epoch_schedule
 
-        self.tp_output_sds = Sds(short_notation=tp_output_sds)
-        self.sp_output_sds = Sds(short_notation=sp_output_sds)
-
 
 class ObservationsLayeredExperiment(Runner):
-    config: TConfig
-    logger: Optional[Run]
-
     seed: int
     run_setup: RunSetup
     stats_config: StatsMetricsConfig
@@ -158,7 +140,7 @@ class ObservationsLayeredExperiment(Runner):
                 block.reset()
 
 
-def resolve_random_seed(seed: Optional[int]) -> int:
+def resolve_random_seed(seed: int | None) -> int:
     seed = resolve_value(seed)
     if seed is None:
         # randomly generate a seed

@@ -19,8 +19,8 @@ pipeline:
   - ___.input -> gen.output
   - block: concat
     pipes:
-      - sp1.output -> concat.feedforward
-      - gen.output -> concat.feedforward
+      - sp1.output -> concat.feedforward_1
+      - gen.output -> concat.feedforward_2
   - concat.output -> sp1.feedforward
 #  - block: concat
 #    pipes:
@@ -150,8 +150,6 @@ run_setups:
     epochs: 4
     # FIXME: to ???
     total_repeats: ...
-    sp_output_sds: [400, 10]
-    tp_output_sds: [400, 10]
     log_repeat_schedule: 3
     log_epoch_schedule: 2
 
@@ -161,8 +159,6 @@ run_setups:
     sequence_repeats: 10
     epochs: 10
     total_repeats: ...
-    sp_output_sds: [500, 16]
-    tp_output_sds: [1000, 25]
     log_repeat_schedule: 5
     log_epoch_schedule: 2
 

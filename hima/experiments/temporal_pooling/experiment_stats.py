@@ -7,33 +7,15 @@
 from typing import Optional
 
 import numpy as np
-import seaborn as sns
-import wandb
-from matplotlib import pyplot as plt
-from wandb.sdk.wandb_run import Run
 
 from hima.common.config import TConfig
 from hima.experiments.temporal_pooling.blocks.graph import Block, Stream
+from hima.experiments.temporal_pooling.run_progress import RunProgress
+from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.stats.metrics import (
     multiplicative_loss
 )
-from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.stats.stream_tracker import StreamTracker
-
-
-class RunProgress:
-    epoch: int
-    step: int
-
-    def __init__(self):
-        self.epoch = -1
-        self.step = -1
-
-    def next_epoch(self):
-        self.epoch += 1
-
-    def next_step(self):
-        self.step += 1
 
 
 class ExperimentStats:
@@ -41,9 +23,9 @@ class ExperimentStats:
     TStreamName = str
     TMetricsName = str
 
+    logger: Optional["wandb.sdk.wandb_run.Run"]
     n_sequences: int
     progress: RunProgress
-    logger: Optional[Run]
     stats_config: StatsMetricsConfig
 
     diff_stats: TConfig
@@ -57,7 +39,7 @@ class ExperimentStats:
     logging_temporally_disabled: bool
 
     def __init__(
-            self, *, n_sequences: int, progress: RunProgress, logger: Optional[Run],
+            self, *, n_sequences: int, progress: RunProgress, logger,
             blocks: dict[str, Block], track_streams: TConfig,
             stats_config: StatsMetricsConfig, debug: bool,
             diff_stats: TConfig, loss: list[str], charts: list[str],
@@ -72,6 +54,11 @@ class ExperimentStats:
         self.diff_stats = diff_stats
         self.loss_items = (loss[0], loss[1])
         self.charts = charts
+
+        if self.logger or self.debug:
+            import wandb
+            from matplotlib import pyplot as plt
+            import seaborn as sns
 
         self.stream_trackers = self._make_stream_trackers(
             track_streams=track_streams, blocks=blocks,
@@ -220,6 +207,9 @@ HEATMAP_SIDE_SIZE = 7
 
 
 def plot_single_heatmap(repr_matrix):
+    import wandb
+    from matplotlib import pyplot as plt
+
     fig, ax = plt.subplots(1, 1, figsize=(HEATMAP_SIDE_SIZE+1, HEATMAP_SIDE_SIZE-1))
     plot_heatmap(repr_matrix, ax)
 
@@ -230,6 +220,9 @@ def plot_single_heatmap(repr_matrix):
 
 
 def plot_heatmaps_row(**sim_matrices):
+    import wandb
+    from matplotlib import pyplot as plt
+
     n = len(sim_matrices)
     fig, axes = plt.subplots(
         nrows=1, ncols=n, sharey='all',
@@ -248,6 +241,8 @@ def plot_heatmaps_row(**sim_matrices):
 
 
 def plot_heatmap(heatmap: np.ndarray, ax):
+    import seaborn as sns
+
     v_min, v_max = calculate_heatmap_value_boundaries(heatmap)
     if isinstance(heatmap, np.ma.MaskedArray):
         sns.heatmap(
