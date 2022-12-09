@@ -152,7 +152,7 @@ run_setups:
     n_sequences: 10
     steps_per_sequence: 30
     sequence_repeats: 10
-    item_repeats: 3
+    item_repeats: 1
     epochs: 10
     total_repeats: ...
     log_repeat_schedule: 5
