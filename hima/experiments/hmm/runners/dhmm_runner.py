@@ -6,7 +6,7 @@
 
 from hima.modules.htm.dchmm import DCHMM
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
-from hima.envs.pinball.pinball import Pinball
+from pinball import Pinball
 
 import numpy as np
 from scipy.special import rel_entr

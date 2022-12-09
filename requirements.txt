@@ -7,8 +7,10 @@ wandb
 imageio
 seaborn
 pygame
+scipy
 
 # Install also (see `install.md`):
 #   1. Our fork of the htm.core
 #   2. [Optional] CoppeliaSim + PyRep
 #   3. [Optional] AnimalAI
+#   4. [Optional] Pinball

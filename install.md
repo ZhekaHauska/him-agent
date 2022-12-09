@@ -67,6 +67,7 @@ File `requirements.txt` contains all required dependencies. Also, as commented i
 1. Our fork of the `htm.core` package.
 2. [optional] CoppeliaSim + PyRep
 3. [optional] AnimalAI
+4. [optional] Pinball
 
 In this section we provide you with two options: a) install requirements using both conda and pip or b) install everything with pip. In both cases everything is installed into the dedicated conda environment. The name of the environment is up to you, while we use `hima` for this guide.
 
@@ -119,6 +120,10 @@ pip install -e .
 ```
 
 _The last command installs `hima` with the "development mode" flag. It allows you importing modules from the `hima` package outside of the package root folder, e.g. in Jupyter Notebooks or in another projects. Development mode flag `-e` prevents the package sources to be copied to the package index. Instead, the symlink is created, which means that the edits are "visible" immediately and don't require you to reinstall/update the package manually after any changes in its sources._
+
+### [Optional] Step 7. Install Pinball
+
+If you are planning to run experiments in [Pinball](https://github.com/ZhekaHauska/pinball) environment, you should also install it.
 
 ### Project structure
 
