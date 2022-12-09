@@ -591,6 +591,7 @@ class PinballTest:
 
         self.hmm = DCHMM(**conf['hmm'])
 
+        self.prediction_steps = conf['run']['prediction_steps']
         self.n_episodes = conf['run']['n_episodes']
         self.log_update_rate = conf['run']['update_rate']
         self.max_steps = conf['run']['max_steps']
@@ -643,6 +644,17 @@ class PinballTest:
                 total_surprise += surprise
                 # 2. image
                 if (writer is not None) and (i % self.log_update_rate == 0):
+                    if self.prediction_steps > 1:
+                        back_up_massages = self.hmm.forward_messages.copy()
+
+                    for j in range(self.prediction_steps - 1):
+                        self.hmm.predict_cells()
+                        self.hmm.forward_messages = self.hmm.next_forward_messages
+
+                    if self.prediction_steps > 1:
+                        column_probs = self.hmm.predict_columns()
+                        self.hmm.forward_messages = back_up_massages
+
                     im = np.hstack(
                         [
                             diff.astype(np.uint8)*255,

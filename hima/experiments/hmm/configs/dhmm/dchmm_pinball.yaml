@@ -1,9 +1,9 @@
 cells_per_column: 50
-n_vars_per_factor: 15
+n_vars_per_factor: 10
 factor_activation_threshold: 0  # number of active variables in a receptive field to active factor
-factors_per_var: 1
+factors_per_var: 5
 initial_factor_value: 0.1
-beta: 1.0  # importance of active vars for receptive field
+beta: 10.0  # importance of active vars for receptive field
 lr: 0.01
 punishment: 0.01
 cell_activation_threshold: 0.0001
