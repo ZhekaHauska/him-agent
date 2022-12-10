@@ -947,3 +947,49 @@ class SpatialPoolerWrapper(SpatialPooler):
     @property
     def input_sdr_size(self):
         return self._cached_input_sdr.size
+
+
+class SPFilter:
+    def __init__(
+            self,
+            htm_spatial_pooler: HtmSpatialPooler,
+            stride: tuple[int, int] = (1, 1)
+    ):
+        self._spatial_pooler = htm_spatial_pooler
+        self.stride = stride
+        self.filter_size = self._spatial_pooler.getInputDimensions()
+        self.filter_state_space = self._spatial_pooler.getColumnDimensions()
+        self.n_filter_states = self._spatial_pooler.getNumColumns()
+
+        self.current_filter_input = SDR(self.filter_size)
+        self.current_filter_output = SDR(self.filter_state_space)
+
+        self.n_vars = ...
+
+    def compute(self, input_: SDR, learn: bool = False):
+        max_row = input_.dimensions[0] - self.filter_size[0]
+        max_col = input_.dimensions[1] - self.filter_size[1]
+
+        states = list()
+        var = 0
+        for row in range(0, max_row, self.stride[0]):
+            for col in range(0, max_col, self.stride[1]):
+                self.current_filter_input.dense = input_.dense[
+                    row: row + self.filter_size[0],
+                    col: col + self.filter_size[1]
+                ]
+
+                self._spatial_pooler.compute(
+                    self.current_filter_input,
+                    learn,
+                    self.current_filter_output
+                )
+
+                state = self.current_filter_output.sparse[0]
+                state += var * self.n_filter_states
+
+                states.append(state)
+
+                var += 1
+
+        return states
