@@ -952,19 +952,24 @@ class SpatialPoolerWrapper(SpatialPooler):
 class SPFilter:
     def __init__(
             self,
-            htm_spatial_pooler: HtmSpatialPooler,
-            stride: tuple[int, int] = (1, 1)
+            size,
+            state_space,
+            stride: tuple[int, int] = (1, 1),
+            **kwargs
     ):
-        self._spatial_pooler = htm_spatial_pooler
+        self._spatial_pooler = HtmSpatialPooler(
+            inputDimensions=size,
+            columnDimensions=state_space,
+            **kwargs
+        )
+
         self.stride = stride
-        self.filter_size = self._spatial_pooler.getInputDimensions()
-        self.filter_state_space = self._spatial_pooler.getColumnDimensions()
+        self.filter_size = size
+        self.filter_state_space = state_space
         self.n_filter_states = self._spatial_pooler.getNumColumns()
 
         self.current_filter_input = SDR(self.filter_size)
         self.current_filter_output = SDR(self.filter_state_space)
-
-        self.n_vars = ...
 
     def compute(self, input_: SDR, learn: bool = False):
         max_row = input_.dimensions[0] - self.filter_size[0]

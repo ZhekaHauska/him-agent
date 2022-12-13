@@ -4,15 +4,12 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from hima.modules.htm.spatial_pooler import SPFilter
-from htm.algorithms import SpatialPooler
 from htm.bindings.sdr import SDR
 import numpy as np
 
 
 if __name__ == '__main__':
     params = dict(
-        inputDimensions=[5, 5],
-        columnDimensions=[2, 2],
         potentialPct=0.5,
         globalInhibition=True,
         localAreaDensity=0,
@@ -29,9 +26,7 @@ if __name__ == '__main__':
         wrapAround=False
     )
 
-    sp = SpatialPooler(**params)
-
-    spf = SPFilter(sp)
+    spf = SPFilter([5, 5], [2, 2], **params)
 
     in_sdr = SDR([48, 32])
     in_sdr.dense = np.ones([48, 32])
