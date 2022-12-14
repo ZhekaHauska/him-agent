@@ -591,6 +591,7 @@ class PinballTest:
 
         self.hmm = DCHMM(**conf['hmm'])
 
+        self.action = conf['run']['action']
         self.prediction_steps = conf['run']['prediction_steps']
         self.n_episodes = conf['run']['n_episodes']
         self.log_update_rate = conf['run']['update_rate']
@@ -620,7 +621,7 @@ class PinballTest:
             else:
                 writer = None
 
-            self.env.act((0.5, 5))
+            self.env.act(self.action)
 
             while True:
                 im = self.preprocess(self.env.obs())

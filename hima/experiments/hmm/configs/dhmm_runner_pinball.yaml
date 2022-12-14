@@ -7,7 +7,8 @@ n_episodes: 51
 update_rate: 10
 max_steps: 50
 log_gif_fps: 10
-prediction_steps: 2
+prediction_steps: 1
+action: [ 0, 5 ]
 
 experiment: pinball
 hmm_conf: 'configs/dhmm/dchmm_pinball.yaml'
