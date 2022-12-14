@@ -456,14 +456,14 @@ class DCHMM:
         )
 
         wrong_predictions = ~np.isin(next_cells, cells_for_obs)
-        wrong_predicted_vars = np.flatnonzero(
-            wrong_predictions
-        )
+        wrong_predicted_vars = (
+                next_cells[wrong_predictions] // self.n_hidden_states
+        ).astype(UINT_DTYPE)
 
         # resample cells for wrong predictions
         new_forward_message = self.next_forward_messages.reshape(
             (self.n_hidden_vars, self.n_hidden_states)
-        )[wrong_predictions]
+        )[wrong_predicted_vars]
 
         new_forward_message /= new_forward_message.sum(axis=-1).reshape(-1, 1)
 
