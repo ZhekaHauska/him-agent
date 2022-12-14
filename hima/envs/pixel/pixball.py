@@ -10,7 +10,8 @@ class Pixball:
     def __init__(
             self,
             size,
-            initial_pos
+            initial_pos,
+            seed: int = None
     ):
         self.size = np.array(size, dtype=np.int)
         self.env_state = np.zeros(size)
@@ -19,6 +20,7 @@ class Pixball:
 
         self.velocity = np.zeros(2, dtype=np.int)
         self.env_state[initial_pos] = 1
+        self.seed = seed
 
     def act(self, velocity):
         self.velocity = np.array(velocity, dtype=np.int)
