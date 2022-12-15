@@ -18,11 +18,6 @@ stats_and_metrics:
 pipeline:
   - ___.input -> gen.output
   - ???.output -> sp2.feedforward
-#  - block: concat
-#    pipes:
-#      - sp1.output -> concat.feedforward_1
-#      - gen.output -> concat.feedforward_2
-#  - concat.output -> sp1.feedforward
   - ???.output -> ___.output
 
 blocks:
@@ -30,41 +25,26 @@ blocks:
     # TODO: _base_config_: generator__S__.synthetic_sequences
     _type_family_: generator
     _base_config_: synthetic_sequences
-    n_values: 30
+    n_values: 100
     value_encoder: random
   concat:
     _type_family_: concatenator
   sp1:
     _type_family_: spatial_pooler
     _base_config_: default
-    output_sds: [200, 10]
+    output_sds: [600, 20]
     boostStrength: 0.
     potentialPct: 0.14
-  tp1:
-    _type_family_: temporal_pooler
-    _base_config_: default
-    reset_on_activation: False
-    sparsity: 10
-    pooling_window: 10
-    decay: ...
-    activation_threshold: 0.01
-    rand_decay_max_ratio: 1.0
-    not_predicted_weight: 0.7
-  stp1:
-    _type_family_: spatiotemporal_pooler
-    _base_config_: ablation_utp
-    ff_sds: ???
-    output_sds: [400, 16]
   sp2:
     _type_family_: custom_sp
     _base_config_: default
-    output_sds: [100, 8]
-    initial_rf_sparsity: 0.35
+    output_sds: [600, 20]
+    initial_rf_sparsity: 0.25
     max_rf_sparsity: 0.12
-    max_rf_to_input_ratio: 2.0
+    max_rf_to_input_ratio: 2.5
     learning_rate_inc: 0.1
     learning_rate_dec: 0.01
-    newborn_pruning_cycle: 40
+    newborn_pruning_cycle: 15
     newborn_pruning_stages: 2
 
 run_setups:
@@ -107,14 +87,6 @@ track_streams:
     - sdr
     - cross.offline.el
     - cross.online.el
-  tp1.output:
-    - sdr
-    - cross.offline.el
-    - cross.online.el
-  stp1.output:
-    - sdr
-    - cross.offline.el
-    - cross.online.el
 
 diff_stats:
   off_on_el:
@@ -124,35 +96,16 @@ diff_stats:
     - gen.output/epoch/sim_mx_off_el
     - sp1.output/epoch/sim_mx_off_el
     - sp2.output/epoch/sim_mx_off_el
-    - tp1.output/epoch/sim_mx_off_el
-    - stp1.output/epoch/sim_mx_off_el
   online_el:
     - gen.output/epoch/sim_mx_on_el
     - sp1.output/epoch/sim_mx_on_el
     - sp2.output/epoch/sim_mx_on_el
-    - tp1.output/epoch/sim_mx_on_el
-    - stp1.output/epoch/sim_mx_on_el
 
 loss:
-#  - sp1.output/epoch/sim_mx_on_el_mae
-#  - sp1.output/epoch/mean_pmf_coverage
-  - sp2.output/epoch/sim_mx_on_el_mae
-  - sp2.output/epoch/mean_pmf_coverage
-#  - tp1.output/epoch/sim_mx_on_el_mae
-#  - tp1.output/epoch/mean_pmf_coverage
-#  - stp1.output/epoch/sim_mx_on_el_mae
-#  - stp1.output/epoch/mean_pmf_coverage
-
-charts:
   - sp1.output/epoch/sim_mx_on_el_mae
   - sp1.output/epoch/mean_pmf_coverage
-  - sp1.output/epoch/sim_mx_off_el_mae
-#  - tp1.output/epoch/sim_mx_on_el_mae
-#  - tp1.output/epoch/mean_pmf_coverage
-#  - tp1.output/epoch/sim_mx_off_el_mae
-#  - stp1.output/epoch/sim_mx_on_el_mae
-#  - stp1.output/epoch/mean_pmf_coverage
-#  - stp1.output/epoch/sim_mx_off_el_mae
+  - sp2.output/epoch/sim_mx_on_el_mae
+  - sp2.output/epoch/mean_pmf_coverage
 
 generator:
   synthetic_sequences:
@@ -187,17 +140,6 @@ encoder:
     space_compression: .5
     active_size: ???
     sds: ...
-    seed: ???
-
-temporal_pooler:
-  default:
-    sds: ???
-    reset_on_activation: False
-    pooling_window: ???
-    decay: ???
-    activation_threshold: ???
-    rand_decay_max_ratio: 1.0
-    not_predicted_weight: 0.7
     seed: ???
 
 custom_sp:
@@ -246,166 +188,3 @@ spatial_pooler:
     synPermActiveInc: 0.1
     synPermInactiveDec: 0.01
     wrapAround: False
-
-spatiotemporal_pooler:
-  union_tp:
-    _type_: UnionTp
-    seed: ???
-    # input
-    inputDimensions: ???
-    potentialRadius: ???
-    potentialPct: 0.5
-    globalInhibition: True
-    # intermediate
-    localAreaDensity: ???
-    # output
-    columnDimensions: ???
-    maxUnionActivity: ???
-
-    activeOverlapWeight: 1
-    predictedActiveOverlapWeight: 2
-    exciteFunctionType: Logistic
-    decayFunctionType: Exponential
-    decayTimeConst: 10.0
-    synPermPredActiveInc: 0.1
-    synPermPreviousPredActiveInc: 0.05
-    historyLength: 20
-    minHistory: 3
-    boostStrength: 1.0
-    dutyCyclePeriod: 40000
-    minPctOverlapDutyCycle: 0.0002
-    numActiveColumnsPerInhArea: 0
-    stimulusThreshold: 1
-    synPermConnected: 0.5
-    synPermActiveInc: 0.1
-    synPermInactiveDec: 0.01
-    wrapAround: False
-
-  ablation_utp:
-    _type_: AblationUtp
-    seed: ???
-    # input
-    inputDimensions: ???
-    potentialRadius: ???
-    potentialPct: 0.18
-    globalInhibition: True
-    # intermediate
-    localAreaDensity: ???
-    # output
-    columnDimensions: ???
-    maxUnionActivity: ???
-
-    activeOverlapWeight: 1
-    predictedActiveOverlapWeight: 2
-    exciteFunctionType: Logistic
-    decayFunctionType: Exponential
-    decayTimeConst: 15.0
-    historyLength: 6
-    minHistory: 3
-    boostStrength: 0.1
-    dutyCyclePeriod: 20000
-    minPctOverlapDutyCycle: 0.0002
-    numActiveColumnsPerInhArea: 0
-    stimulusThreshold: 1
-    synPermConnected: 0.5
-    synPermActiveInc: 0.1
-    synPermInactiveDec: 0.01
-    synPermPredActiveInc: 0.1
-    synPermPreviousPredActiveInc: 0.02
-    wrapAround: False
-    # ablation
-    first_boosting: True
-    second_boosting: True
-    untemporal_learning: True
-    union_learning: True
-    history_learning: True
-
-  sandwich_tp:
-    _type_: SandwichTp
-    seed: ???
-    initial_pooling: 0.75
-    pooling_decay: 0.04
-
-    pooling_decay_r: 1.
-    only_upper: False
-    max_intermediate_used: ...
-
-    lower_sp_conf:
-      # input
-      inputDimensions: ???
-      potentialRadius: ???
-      potentialPct: 0.12
-      globalInhibition: True
-      # output
-      # check bigger
-      columnDimensions: ???
-      localAreaDensity: ???
-
-      boostStrength: 0.25
-      dutyCyclePeriod: 10000
-      minPctOverlapDutyCycle: 0.0002
-      numActiveColumnsPerInhArea: 0
-      stimulusThreshold: 1
-      synPermConnected: 0.5
-      synPermActiveInc: 0.1
-      synPermInactiveDec: 0.005
-      wrapAround: False
-    upper_sp_conf:
-      # input: lower output
-      inputDimensions: ???
-      potentialRadius: ???
-      potentialPct: 0.12
-      globalInhibition: True
-      # output
-      columnDimensions: ???
-      localAreaDensity: ???
-
-      boostStrength: 0.25
-      dutyCyclePeriod: 4000
-      minPctOverlapDutyCycle: 0.0002
-      numActiveColumnsPerInhArea: 0
-      stimulusThreshold: 1
-      synPermConnected: 0.5
-      synPermActiveInc: 0.05
-      synPermInactiveDec: 0.01
-      wrapAround: False
-
-
-temporal_memory:
-  ff_sds: ???
-  columns: ???
-  cells_per_column: 12
-  prune_zero_synapses: True
-  timeseries: False
-  anomaly_window: 1000
-  confidence_window: 1000
-  sm_ac: 0.99
-  seed: ???
-
-  bc_sds: ???
-  context_cells: ???
-  basal_context:
-    sample_size: ???
-    activation_threshold: 0.85
-    learning_threshold: 0.5
-    max_synapses_per_segment: 1.2
-    max_segments_per_cell: 32
-    initial_permanence: 0.46
-    connected_threshold: 0.5
-    permanence_increment: 0.1
-    permanence_decrement: 0.05
-    predicted_segment_decrement: 0.001
-
-  fb_sds: ???
-  feedback_cells: ???
-  apical_feedback:
-    sample_size: ???
-    activation_threshold: 0.85
-    learning_threshold: 0.6
-    max_synapses_per_segment: 1.2
-    max_segments_per_cell: 32
-    initial_permanence: 0.46
-    connected_threshold: 0.5
-    permanence_increment: 0.05
-    permanence_decrement: 0.02
-    predicted_segment_decrement: 0.001
