@@ -17,7 +17,7 @@ stats_and_metrics:
 
 pipeline:
   - ___.input -> gen.output
-  - ???.output -> sp1.feedforward
+  - ???.output -> sp2.feedforward
 #  - block: concat
 #    pipes:
 #      - sp1.output -> concat.feedforward_1
@@ -37,7 +37,7 @@ blocks:
   sp1:
     _type_family_: spatial_pooler
     _base_config_: default
-    output_sds: [600, 20]
+    output_sds: [200, 10]
     boostStrength: 0.
     potentialPct: 0.14
   tp1:
@@ -56,9 +56,41 @@ blocks:
     ff_sds: ???
     output_sds: [400, 16]
   sp2:
-    _type_family_: spatial_pooler
-    _base_config_: wide
-    output_sds: [500, 0.1]
+    _type_family_: custom_sp
+    _base_config_: default
+    output_sds: [100, 8]
+    initial_rf_sparsity: 0.35
+    max_rf_sparsity: 0.12
+    max_rf_to_input_ratio: 2.0
+    learning_rate_inc: 0.1
+    learning_rate_dec: 0.01
+    newborn_pruning_cycle: 40
+    newborn_pruning_stages: 2
+
+run_setups:
+  simple:
+    n_sequences: 5
+#    n_sequences: 2
+    steps_per_sequence: 20
+#    steps_per_sequence: 3
+    sequence_repeats: 2
+    item_repeats: 1
+#    epochs: 2
+    epochs: 5
+    # FIXME: to ???
+    total_repeats: ...
+    log_repeat_schedule: 3
+    log_epoch_schedule: 2
+
+  full:
+    n_sequences: 10
+    steps_per_sequence: 30
+    sequence_repeats: 10
+    item_repeats: 1
+    epochs: 10
+    total_repeats: ...
+    log_repeat_schedule: 5
+    log_epoch_schedule: 2
 
 concatenator: {}
 
@@ -68,6 +100,10 @@ track_streams:
     - cross.offline.el
     - cross.online.el
   sp1.output:
+    - sdr
+    - cross.offline.el
+    - cross.online.el
+  sp2.output:
     - sdr
     - cross.offline.el
     - cross.online.el
@@ -87,17 +123,21 @@ diff_stats:
   offline_el:
     - gen.output/epoch/sim_mx_off_el
     - sp1.output/epoch/sim_mx_off_el
+    - sp2.output/epoch/sim_mx_off_el
     - tp1.output/epoch/sim_mx_off_el
     - stp1.output/epoch/sim_mx_off_el
   online_el:
     - gen.output/epoch/sim_mx_on_el
     - sp1.output/epoch/sim_mx_on_el
+    - sp2.output/epoch/sim_mx_on_el
     - tp1.output/epoch/sim_mx_on_el
     - stp1.output/epoch/sim_mx_on_el
 
 loss:
-  - sp1.output/epoch/sim_mx_on_el_mae
-  - sp1.output/epoch/mean_pmf_coverage
+#  - sp1.output/epoch/sim_mx_on_el_mae
+#  - sp1.output/epoch/mean_pmf_coverage
+  - sp2.output/epoch/sim_mx_on_el_mae
+  - sp2.output/epoch/mean_pmf_coverage
 #  - tp1.output/epoch/sim_mx_on_el_mae
 #  - tp1.output/epoch/mean_pmf_coverage
 #  - stp1.output/epoch/sim_mx_on_el_mae
@@ -136,28 +176,6 @@ generator:
     policy_similarity_std: 0.35
     seed: ???
 
-run_setups:
-  simple:
-    n_sequences: 5
-    steps_per_sequence: 10
-    sequence_repeats: 3
-    item_repeats: 1
-    epochs: 4
-    # FIXME: to ???
-    total_repeats: ...
-    log_repeat_schedule: 3
-    log_epoch_schedule: 2
-
-  full:
-    n_sequences: 10
-    steps_per_sequence: 30
-    sequence_repeats: 10
-    item_repeats: 1
-    epochs: 10
-    total_repeats: ...
-    log_repeat_schedule: 5
-    log_epoch_schedule: 2
-
 encoder:
   bucket:
     _type_: int_bucket
@@ -182,13 +200,14 @@ temporal_pooler:
     not_predicted_weight: 0.7
     seed: ???
 
-spatial_pooler:
-  custom:
+custom_sp:
+  default:
     seed: ???
     # input
     ff_sds: ???
     initial_rf_sparsity: 0.3
-    rf_sparsity: 0.1
+    max_rf_sparsity: 0.1
+    max_rf_to_input_ratio: 2.5
     # output
     output_sds: ???
     # learning
@@ -196,7 +215,7 @@ spatial_pooler:
     learning_rate_inc: 0.1
     learning_rate_dec: 0.01
 
-
+spatial_pooler:
   wide:
     _base_config_: default
     potentialPct: 0.1
