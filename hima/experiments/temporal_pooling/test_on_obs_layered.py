@@ -97,6 +97,12 @@ class ObservationsLayeredExperiment(Runner):
         )
         self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
+        blocks = self.pipeline.blocks
+        sp = blocks['sp2'].sp if 'sp2' in blocks else blocks['sp1']
+        print(round(1e+6 * sp.run_time / sp.n_computes, 2))
+        # print(.sp.activation_entropy())
+        # print('_____')
+
     def run_sequence(self, sequence: Sequence, i_repeat: int = 0, learn=True):
         self.reset_blocks('temporal_memory', 'temporal_pooler')
 
