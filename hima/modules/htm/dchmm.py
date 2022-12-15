@@ -356,12 +356,13 @@ class DCHMM:
         )
 
         active_segments = np.flatnonzero(num_connected >= self.segment_activation_threshold)
+        all_segments = np.flatnonzero(num_connected >= 0)
 
         cells_for_active_segments = self.connections.mapSegmentsToCells(active_segments)
 
         mask = np.isin(cells_for_active_segments, next_active_cells)
         segments_to_learn = active_segments[mask]
-        segments_to_punish = active_segments[~mask]
+        segments_to_punish = np.setdiff1d(all_segments, segments_to_learn)
 
         cells_to_grow_new_segments = next_active_cells[
             ~np.isin(next_active_cells, cells_for_active_segments)
