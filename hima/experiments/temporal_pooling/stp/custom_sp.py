@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import time
+
 import numpy as np
 from numpy.random import Generator
 
@@ -15,9 +17,10 @@ from hima.experiments.temporal_pooling.stats.metrics import entropy
 class NewbornNeuron:
     """Neuron is a single neuron in the network."""
     id: int
-    sds: Sds
+    ff_sds: Sds
     potential_rf: np.ndarray
-    rf: SparseSdr
+    _potential_rf: set
+    rf: set
     weights: np.ndarray
     threshold = 0.3
     rng: Generator
@@ -27,13 +30,13 @@ class NewbornNeuron:
     activation_heatmap: np.ndarray
 
     def __init__(
-            self, id: int, sds: Sds, initial_rf_sparsity: float, avg_rate: float,
+            self, id: int, ff_sds: Sds, initial_rf_sparsity: float, avg_rate: float,
             rng: Generator
     ):
         self.id = id
-        self.sds = sds
+        self.ff_sds = ff_sds
         self.rng = rng
-        self.potential_rf = sample_rf(sds, initial_rf_sparsity, rng)
+        self.potential_rf = sample_rf(ff_sds, initial_rf_sparsity, rng)
         self.weights = rng.uniform(0, 1, size=len(self.potential_rf))
         self.rf = set(self.potential_rf[self.weights >= self.threshold])
         self.target_avg_rate = avg_rate
@@ -47,7 +50,6 @@ class NewbornNeuron:
         """Activate the neuron."""
         overlap = len(self.rf & input_sdr) * self.boosting()
         self.n_matches += 1
-        # if self.rate / self.target_avg_rate < 0.
         return overlap
 
     @property
@@ -62,21 +64,33 @@ class NewbornNeuron:
     def activate(self, input_sdr: SparseSdr):
         """Activate the neuron."""
         self.n_activations += 1
-        matched_presynaptic_neurons = np.isin(self.potential_rf, input_sdr)
-        self.activation_heatmap[matched_presynaptic_neurons] += 1
+        # matched_presynaptic_neurons = np.isin(self.potential_rf, input_sdr)
+        for i in range(self.potential_rf.shape[0]):
+            if self.potential_rf[i] in input_sdr:
+                self.activation_heatmap[i] += 1
 
     def learn(self, input_sdr: SparseSdr, learning_rate_inc: float, learning_rate_dec: float):
         """Learn the neuron."""
-        matched_presynaptic_neurons = np.isin(self.potential_rf, input_sdr)
-        self.weights[matched_presynaptic_neurons] += learning_rate_inc
-        self.weights[~matched_presynaptic_neurons] -= learning_rate_dec
-        np.clip(self.weights, 0, 1, out=self.weights)
+        # global inhibition
+        self.weights -= learning_rate_dec
 
-        self.rf = set(self.potential_rf[self.weights >= self.threshold])
+        # strengthen connections to the current input
+        for i in range(self.potential_rf.shape[0]):
+            if self.potential_rf[i] in input_sdr:
+                self.weights[i] += learning_rate_inc + learning_rate_dec
+                if self.weights[i] > 0.5 and self.potential_rf[i] not in self.rf:
+                    self.rf.add(self.potential_rf[i])
+                if self.weights[i] > 1:
+                    self.weights[i] = 1
+
+        # as decay is much slower and negligible, we may skip several updates
+        if self.n_activations % 5 == 0:
+            np.clip(self.weights, 0, 1, out=self.weights)
+            self.rf = set(self.potential_rf[self.weights >= self.threshold])
 
     def prune_rf(self, new_rf_sparsity: float):
         """Prune the receptive field."""
-        new_rf_size = int(self.sds.size * new_rf_sparsity)
+        new_rf_size = int(self.ff_sds.size * new_rf_sparsity)
         keep_prob = np.power(self.activation_heatmap, 2.0)
         keep_prob /= keep_prob.sum()
 
@@ -170,35 +184,34 @@ class SpatialPooler:
     def _compute(self, input_sdr: SparseSdr, learn: bool = True):
         """Compute the output SDR."""
         input_sdr_set = set(input_sdr)
+        # start_time = time.time()
         overlaps = np.array([
-            neuron.match(input_sdr_set, self.output_sds.sparsity) for neuron in self.neurons
+            neuron.match(input_sdr_set, self.output_sds.sparsity)
+            for neuron in self.neurons
         ])
-        # print(overlaps)
+        # run_time = time.time() - start_time
         n_winners = self.output_sds.active_size
         winners = np.sort(
             np.argpartition(-overlaps, n_winners)[:n_winners]
         )
-        # print(winners)
-
         for winner in winners:
-            self.neurons[winner].activate(input_sdr)
-
-        if learn:
-            for winner in winners:
+            self.neurons[winner].activate(input_sdr_set)
+            if learn:
                 self.neurons[winner].learn(
-                    input_sdr, self.learning_rate_inc, self.learning_rate_dec
+                    input_sdr_set, self.learning_rate_inc, self.learning_rate_dec
                 )
 
         self.n_computes += 1
         self.cum_input_size += len(input_sdr_set)
         if self.n_computes % int(self.newborn_pruning_cycle * self.output_sds.size) == 0:
             self.prune_newborns()
-        return winners
+        return winners #, run_time
 
     def prune_newborns(self):
         if self._newborn_prune_iteration == self.newborn_pruning_stages:
             self._newborn_prune_iteration += 1
-            print('Turning off newborns')
+            rf_size = int(self.rf_sparsity * self.ff_sds.size)
+            print(f'Turning off newborns: {self.rf_sparsity} | {rf_size}')
             for neuron in self.neurons:
                 neuron.boosting_k = 0.0
                 self.learning_rate_inc /= 2
@@ -207,7 +220,6 @@ class SpatialPooler:
         if self._newborn_prune_iteration > self.newborn_pruning_stages:
             return
 
-        print('Pruning newborns')
         avg_input_size = self.cum_input_size / self.n_computes
         input_sparsity = avg_input_size / self.ff_sds.size
 
@@ -216,11 +228,14 @@ class SpatialPooler:
             self._max_rf_to_input_ratio * input_sparsity
         )
         self._newborn_prune_iteration += 1
-        new_rf_sparsity = self._initial_rf_sparsity + self._newborn_prune_iteration * (
+        self.rf_sparsity = self._initial_rf_sparsity + self._newborn_prune_iteration * (
             target_rf_sparsity - self._initial_rf_sparsity
         ) / self.newborn_pruning_stages
+
+        rf_size = int(self.rf_sparsity * self.ff_sds.size)
+        print(f'Pruning newborns: {self.rf_sparsity} | {rf_size}')
         for neuron in self.neurons:
-            neuron.prune_rf(new_rf_sparsity)
+            neuron.prune_rf(self.rf_sparsity)
 
     def activation_entropy(self):
         activation_heatmap = np.array([
