@@ -601,6 +601,16 @@ class PinballTest:
         self.log_fps = conf['run']['log_gif_fps']
         self.logger = logger
 
+        if self.logger is not None:
+            self.logger.log(
+                {
+                    'setting': wandb.Image(
+                        plt.imshow(self.env.obs())
+                    )
+                },
+                step=0
+            )
+
     def run(self):
         total_surprise = 0
 
@@ -613,6 +623,7 @@ class PinballTest:
             steps = 0
 
             prev_im = self.preprocess(self.env.obs())
+            prev_diff = np.zeros_like(prev_im)
             if (self.logger is not None) and (i % self.log_update_rate == 0):
                 writer = imageio.get_writer(
                     f'/tmp/{self.logger.name}_ep{i}.gif',
@@ -649,23 +660,26 @@ class PinballTest:
                     if self.prediction_steps > 1:
                         back_up_massages = self.hmm.forward_messages.copy()
 
+                    predictions = [(column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)]
+
                     for j in range(self.prediction_steps - 1):
                         self.hmm.predict_cells()
+                        column_probs = self.hmm.predict_columns()
+                        predictions.append(
+                            (column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)
+                        )
                         self.hmm.forward_messages = self.hmm.next_forward_messages
 
                     if self.prediction_steps > 1:
-                        column_probs = self.hmm.predict_columns()
                         self.hmm.forward_messages = back_up_massages
 
-                    im = np.hstack(
-                        [
-                            diff.astype(np.uint8)*255,
-                            (column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)
-                        ]
-                    )
+                    im = [prev_diff.astype(np.uint8)*255]
+                    im.extend(predictions)
+                    im = np.hstack(im)
                     writer.append_data(im)
 
                 steps += 1
+                prev_diff = diff.copy()
                 if steps >= self.max_steps:
                     if writer is not None:
                         writer.close()
@@ -1003,4 +1017,4 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    main('configs/dhmm_runner_pixball.yaml')
+    main('configs/dhmm_runner_pinball.yaml')
