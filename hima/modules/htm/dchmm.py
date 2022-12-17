@@ -216,8 +216,7 @@ class DCHMM:
                 active_factors
             )
             cells_for_factor_vars = self._get_cells_in_vars(vars_for_factors)
-
-            log_base_for_cells = np.repeat(log_base[active_factors], self.n_hidden_states)
+            log_base_for_cells = np.repeat(log_base, self.n_hidden_states)
             factors_for_cells = np.repeat(active_factors, self.n_hidden_states)
 
             cell_factor_id_per_cell = (
