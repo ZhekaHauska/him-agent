@@ -692,7 +692,8 @@ class PinballTest:
                         'main_metrics/surprise': np.array(surprises).mean(),
                         'main_metrics/total_surprise': total_surprise,
                         'main_metrics/steps': steps,
-                        'connections/n_segments': self.hmm.connections.numSegments()
+                        'connections/n_segments': self.hmm.connections.numSegments(),
+                        'connections/n_factors': self.hmm.factor_connections.numSegments()
                     }, step=i
                 )
 
