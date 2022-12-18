@@ -1,13 +1,12 @@
-cells_per_column: 50
-n_vars_per_factor: 10
+cells_per_column: 4
+n_vars_per_factor: 9
 factor_activation_threshold: 0  # number of active variables in a receptive field to active factor
-factors_per_var: 5
+factors_per_var: 10
 initial_factor_value: 0.1
 beta: 10.0  # importance of active vars for receptive field
-lr: 0.01
-punishment: 0.01
+lr: 1
+punishment: 0.0
 cell_activation_threshold: 0.0001
 max_segments_per_cell: 100
 max_segments_for_spec_state: 1000
 segment_prune_threshold: 0.0001
-loop_sequence: True

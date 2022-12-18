@@ -8,7 +8,6 @@ from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
 
 import numpy as np
-from typing import Optional
 
 EPS = 1e-24
 INT_TYPE = "int32"
@@ -41,12 +40,8 @@ class DCHMM:
             max_segments_per_cell: int = 255,
             max_segments_for_spec_state: int = 1000,
             segment_prune_threshold: float = 0.001,
-            loop_sequence: bool = False,
-            log_self_loop_factor: Optional[float] = None,
             seed: int = None,
     ):
-        assert loop_sequence or (log_self_loop_factor is not None)
-
         self._rng = np.random.default_rng(seed)
 
         if seed:
@@ -63,18 +58,8 @@ class DCHMM:
         # plus reset state
         self.n_hidden_states = cells_per_column*n_obs_states + 1
 
-        self.loop_sequence = loop_sequence
-        self.log_self_loop_factor = log_self_loop_factor
-
-        if self.loop_sequence:
-            self.n_spec_states = 1
-            self.reset_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
-            self.terminal_states = np.empty(0, dtype=UINT_DTYPE)
-        else:
-            self.n_spec_states = 2
-            self.n_hidden_states += 1  # plus terminal state
-            self.reset_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 2
-            self.terminal_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
+        self.n_spec_states = 1
+        self.reset_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
@@ -94,9 +79,6 @@ class DCHMM:
 
         self.filter_reset_states_mask = np.ones(self.total_cells, dtype=bool)
         self.filter_reset_states_mask[self.reset_states] = False
-
-        self.filter_terminal_states_mask = np.ones(self.total_cells, dtype=bool)
-        self.filter_terminal_states_mask[self.terminal_states] = False
 
         # number of variables assigned to a segment
         self.n_vars_per_factor = n_vars_per_factor
@@ -294,8 +276,7 @@ class DCHMM:
     def predict_columns(self):
         assert self.prediction is not None
 
-        filter_special_states = self.filter_reset_states_mask & self.filter_terminal_states_mask
-        prediction = self.prediction[filter_special_states]
+        prediction = self.prediction[self.filter_reset_states_mask]
         prediction = prediction.reshape((self.n_columns, self.cells_per_column))
         return prediction.sum(axis=-1)
 
@@ -420,10 +401,7 @@ class DCHMM:
 
         vars_without_states = ~np.isin(np.arange(self.n_obs_vars), vars_for_obs_states)
 
-        if self.loop_sequence:
-            empty_states = self.reset_states[vars_without_states]
-        else:
-            empty_states = self.terminal_states[vars_without_states]
+        empty_states = self.reset_states[vars_without_states]
 
         cells = np.concatenate([empty_states, cells_in_columns])
         return cells
@@ -576,7 +554,7 @@ class DCHMM:
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
 
-            if self.filter_terminal_states_mask[cell] and self.filter_reset_states_mask[cell]:
+            if self.filter_reset_states_mask[cell]:
                 max_segments = self.max_segments_per_cell
             else:
                 max_segments = self.max_segments_for_spec_state

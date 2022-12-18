@@ -471,14 +471,8 @@ class NStepTest:
         with open(conf['run']['model_path'], 'rb') as file:
             self.mpg, self.hmm = pickle.load(file)
 
-        log_self_loop_factor = conf['run'].get('log_self_loop_factor')
         policy = conf['run'].get('policy')
 
-        if log_self_loop_factor is not None:
-            self.hmm.log_self_loop_factor = log_self_loop_factor
-        else:
-            max_factor = self.hmm.log_factor_values_per_segment.max()
-            self.hmm.log_self_loop_factor = max_factor
         if policy is not None:
             self.mpg.initial_policy = policy
 
@@ -1023,4 +1017,4 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    main('configs/dhmm_runner_pinball.yaml')
+    main('configs/dhmm_runner_single.yaml')
