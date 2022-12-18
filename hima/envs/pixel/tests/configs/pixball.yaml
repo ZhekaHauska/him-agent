@@ -1,2 +1,5 @@
-size: [ 10, 10 ]
-initial_pos: [ 0, 4 ]
+size: [ 5, 5 ]
+initial_pos: [ 0, 2 ]
+forces:
+  - pos: [ 2,  2 ]
+    directions: [ [ 0, 1 ], [ 0, -1 ] ]

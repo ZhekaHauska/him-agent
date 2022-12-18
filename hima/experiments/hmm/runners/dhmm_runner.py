@@ -811,6 +811,7 @@ class PixballTest:
             surprises = []
 
             steps = 0
+            prev_im = np.zeros(self.obs_shape)
 
             if (self.logger is not None) and (i % self.log_update_rate == 0):
                 writer = imageio.get_writer(
@@ -845,24 +846,27 @@ class PixballTest:
                     if self.prediction_steps > 1:
                         back_up_massages = self.hmm.forward_messages.copy()
 
+                    predictions = [(column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)]
+
                     for j in range(self.prediction_steps - 1):
                         self.hmm.predict_cells()
+                        column_probs = self.hmm.predict_columns()
+                        predictions.append(
+                            (column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)
+                        )
                         self.hmm.forward_messages = self.hmm.next_forward_messages
 
                     if self.prediction_steps > 1:
-                        column_probs = self.hmm.predict_columns()
                         self.hmm.forward_messages = back_up_massages
 
-                    im = np.hstack(
-                        [
-                            im.astype(np.uint8)*255,
-                            (column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)
-                        ]
-                    )
-                    writer.append_data(im)
+                    pic = [prev_im.astype(np.uint8) * 255]
+                    pic.extend(predictions)
+                    pic = np.hstack(pic)
+                    writer.append_data(pic)
 
-                self.env.step()
                 steps += 1
+                prev_im = im.copy()
+                self.env.step()
                 if steps >= self.max_steps:
                     if writer is not None:
                         writer.close()
@@ -875,7 +879,8 @@ class PixballTest:
                         'main_metrics/surprise': np.array(surprises).mean(),
                         'main_metrics/total_surprise': total_surprise,
                         'main_metrics/steps': steps,
-                        'connections/n_segments': self.hmm.connections.numSegments()
+                        'connections/n_segments': self.hmm.connections.numSegments(),
+                        'connections/n_factors': self.hmm.factor_connections.numSegments()
                     }, step=i
                 )
 
