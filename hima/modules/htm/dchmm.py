@@ -35,6 +35,7 @@ class DCHMM:
             initial_factor_value: float = 0,
             lr: float = 0.01,
             beta: float = 0.0,
+            gamma: float = 0.1,
             punishment: float = 0.0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
@@ -90,6 +91,7 @@ class DCHMM:
 
         self.lr = lr
         self.beta = beta
+        self.gamma = gamma
         self.punishment = punishment
 
         # low probability clipping
@@ -336,13 +338,12 @@ class DCHMM:
         )
 
         active_segments = np.flatnonzero(num_connected >= self.segment_activation_threshold)
-        all_segments = np.flatnonzero(num_connected >= 0)
 
         cells_for_active_segments = self.connections.mapSegmentsToCells(active_segments)
 
         mask = np.isin(cells_for_active_segments, next_active_cells)
         segments_to_learn = active_segments[mask]
-        segments_to_punish = np.setdiff1d(all_segments, segments_to_learn)
+        segments_to_punish = active_segments[~mask]
 
         cells_to_grow_new_segments = next_active_cells[
             ~np.isin(next_active_cells, cells_for_active_segments)
@@ -358,11 +359,12 @@ class DCHMM:
         cells_for_segments_reinforce = self.connections.mapSegmentsToCells(segments_to_reinforce)
         cells_for_segments_punish = self.connections.mapSegmentsToCells(segments_to_punish)
 
+        w = self.log_factor_values_per_segment[segments_to_reinforce]
         self.log_factor_values_per_segment[
             segments_to_reinforce
         ] += self.lr * (
                 1 - self.prediction[cells_for_segments_reinforce]
-        )
+        ) * np.exp(-self.gamma*w)
 
         self.log_factor_values_per_segment[
             segments_to_punish
