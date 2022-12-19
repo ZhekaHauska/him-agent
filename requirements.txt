@@ -8,6 +8,7 @@ imageio
 seaborn
 pygame
 scipy
+pygraphviz
 
 # Install also (see `install.md`):
 #   1. Our fork of the htm.core
