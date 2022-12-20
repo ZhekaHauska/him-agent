@@ -6,8 +6,12 @@
 
 from hima.modules.htm.dchmm import DCHMM
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
-from pinball import Pinball
 from hima.envs.pixel.pixball import Pixball
+
+try:
+    from pinball import Pinball
+except ModuleNotFoundError:
+    Pinball = None
 
 import numpy as np
 from scipy.special import rel_entr
@@ -572,6 +576,8 @@ class PinballTest:
 
         conf['hmm']['seed'] = self.seed
         conf['env']['seed'] = self.seed
+        conf['env']['exe_path'] = os.environ.get('PINBALL_EXE', None)
+        conf['env']['config_path'] = os.environ.get('PINBALL_CONF', None)
 
         self.env = Pinball(**conf['env'])
 
@@ -992,7 +998,7 @@ def main(config_path):
 
     if config['run']['log']:
         logger = wandb.init(
-            project=config['run']['project_name'], entity=os.environ['WANDB_ENTITY'],
+            project=config['run']['project_name'], entity=os.environ.get('WANDB_ENTITY', None),
             config=config
         )
     else:
@@ -1017,4 +1023,5 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    main('configs/dhmm_runner_single.yaml')
+    default_config = 'configs/dhmm_runner_single.yaml'
+    main(os.environ.get('RUN_CONF', default_config))

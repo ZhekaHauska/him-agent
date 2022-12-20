@@ -3,15 +3,15 @@ save_model: False
 project_name: 'pinball_dhmm_test'
 run_tag: null
 
-n_episodes: 51
+n_episodes: 501
 update_rate: 10
 max_steps: 50
-log_gif_fps: 10
-prediction_steps: 1
-action: [ 0, 5 ]
+log_gif_fps: 5
+prediction_steps: 5
+action: [ 0.5, 5 ]
 
 experiment: pinball
 hmm_conf: 'configs/dhmm/dchmm_pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'
 
-seed: 4378
+seed: null
