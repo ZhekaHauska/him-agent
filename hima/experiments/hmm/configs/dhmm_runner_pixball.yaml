@@ -3,15 +3,15 @@ save_model: False
 project_name: 'pixball_dhmm_test'
 run_tag: null
 
-n_episodes: 51
+n_episodes: 501
 update_rate: 10
-max_steps: 5
+max_steps: 50
 log_gif_fps: 2
-prediction_steps: 1
+prediction_steps: 3
 action: [ 1, 0 ]
 
 experiment: pixball
-hmm_conf: 'configs/dhmm/dchmm_pinball.yaml'
+hmm_conf: 'configs/dhmm/dchmm_pixball.yaml'
 env_conf: 'configs/pixball/default.yaml'
 
-seed: 4378
+seed: null
