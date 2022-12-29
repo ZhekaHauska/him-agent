@@ -76,10 +76,9 @@ class AttractorTracker(Tracker):
     def aggregate_metrics(self) -> TMetrics:
         assert isinstance(self.step_cum_sym_diff_rate, np.ndarray)
 
-        return {
-            f'epoch/avg_sym_diff_rate[{i_step}]': avg_sym_diff_rate
-            for i_step, avg_sym_diff_rate in enumerate(
-                self.step_cum_sym_diff_rate / self.i_intra_epoch_sequence,
-                start=1
-            )
-        }
+        avg_sym_diff_rate = self.step_cum_sym_diff_rate / self.i_intra_epoch_sequence
+        agg_metrics = {}
+        for i_step in range(1, self.n_steps_per_sequence):
+            agg_metrics[f'epoch/avg_sym_diff_rate[{i_step}]'] = avg_sym_diff_rate[i_step]
+
+        return agg_metrics
