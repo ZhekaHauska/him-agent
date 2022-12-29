@@ -11,6 +11,7 @@ from htm.bindings.sdr import SDR
 
 from hima.common.config import resolve_init_params, extracted
 from hima.common.sdr import SparseSdr
+from hima.common.utils import timed
 from hima.experiments.temporal_pooling.blocks.graph import Block
 
 
@@ -34,6 +35,8 @@ class SpatialPoolerBlock(Block):
         self.register_stream(self.OUTPUT).resolve_sds(output_sds)
 
         self._sp_config = sp_config
+        self.run_time = 0
+        self.n_computes = 0
 
     def build(self):
         sp_config = self._sp_config
@@ -51,8 +54,11 @@ class SpatialPoolerBlock(Block):
         self._active_output = SDR(output_sds.size)
 
     def compute(self, data: dict[str, SparseSdr], **kwargs):
-        self._compute(**data, **kwargs)
+        _, run_time = self._compute(**data, **kwargs)
+        self.run_time += run_time
+        self.n_computes += 1
 
+    @timed
     def _compute(self, feedforward: SparseSdr, learn: bool = True):
         self._active_input.sparse = feedforward.copy()
         self.sp.compute(self._active_input, learn=learn, output=self._active_output)
