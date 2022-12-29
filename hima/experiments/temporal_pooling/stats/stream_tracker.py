@@ -81,6 +81,9 @@ def resolve_tracker(
     if tracker_name == 'sdr':
         from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
         return SdrTracker(sds)
+    elif tracker_name == 'attractor':
+        from hima.experiments.temporal_pooling.stats.attractor_tracker import AttractorTracker
+        return AttractorTracker(sds)
     elif tracker_name == 'cross.offline.el':
         from hima.experiments.temporal_pooling.stats.similarity_matrix import \
             OfflineElementwiseSimilarityMatrix
