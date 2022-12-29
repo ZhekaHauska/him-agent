@@ -27,25 +27,29 @@ blocks:
     _base_config_: synthetic_sequences
     n_values: 100
     value_encoder: random
+    active_size: 10
   concat:
     _type_family_: concatenator
   sp1:
     _type_family_: spatial_pooler
     _base_config_: default
-    output_sds: [600, 20]
+#    output_sds: [600, 20]
+    output_sds: [2000, 40]
     boostStrength: 0.
     potentialPct: 0.14
   sp2:
     _type_family_: custom_sp
     _base_config_: default
+    sp_type: vectorized
     output_sds: [600, 20]
     initial_rf_sparsity: 0.25
     max_rf_sparsity: 0.12
     max_rf_to_input_ratio: 2.5
     learning_rate_inc: 0.1
     learning_rate_dec: 0.01
-    newborn_pruning_cycle: 15
-    newborn_pruning_stages: 2
+    newborn_pruning_cycle: 5
+    newborn_pruning_stages: 3
+    boosting_k: 1.0
 
 run_setups:
   simple:
@@ -188,3 +192,5 @@ spatial_pooler:
     synPermActiveInc: 0.1
     synPermInactiveDec: 0.01
     wrapAround: False
+
+charts: []

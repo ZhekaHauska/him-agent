@@ -8,7 +8,6 @@ from typing import Any
 from hima.common.config import resolve_init_params, extracted
 from hima.common.sdr import SparseSdr
 from hima.experiments.temporal_pooling.blocks.graph import Block
-from hima.experiments.temporal_pooling.stp.custom_sp import SpatialPooler
 
 
 class CustomSpatialPoolerBlock(Block):
@@ -19,11 +18,14 @@ class CustomSpatialPoolerBlock(Block):
     supported_streams = {FEEDFORWARD, OUTPUT}
 
     sp: Any
+    sp_type: str
 
     def __init__(self, id: int, name: str, **sp_config):
         super(CustomSpatialPoolerBlock, self).__init__(id, name)
 
-        sp_config, ff_sds, output_sds = extracted(sp_config, 'ff_sds', 'output_sds')
+        sp_config, ff_sds, output_sds, self.sp_type = extracted(
+            sp_config, 'ff_sds', 'output_sds', 'sp_type'
+        )
 
         self.register_stream(self.FEEDFORWARD).resolve_sds(ff_sds)
         self.register_stream(self.OUTPUT).resolve_sds(output_sds)
@@ -36,7 +38,12 @@ class CustomSpatialPoolerBlock(Block):
         output_sds = self.streams[self.OUTPUT].sds
 
         sp_config = resolve_init_params(sp_config)
-        self.sp = SpatialPooler(ff_sds=ff_sds, output_sds=output_sds, **sp_config)
+        if self.sp_type == 'vectorized':
+            from hima.experiments.temporal_pooling.stp.custom_sp_vec import SpatialPooler
+            self.sp = SpatialPooler(ff_sds=ff_sds, output_sds=output_sds, **sp_config)
+        else:
+            from hima.experiments.temporal_pooling.stp.custom_sp import SpatialPooler
+            self.sp = SpatialPooler(ff_sds=ff_sds, output_sds=output_sds, **sp_config)
 
     def compute(self, data: dict[str, SparseSdr], **kwargs):
         self._compute(**data, **kwargs)
