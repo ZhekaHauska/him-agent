@@ -246,13 +246,17 @@ def plot_heatmap(heatmap: np.ndarray, ax):
     import seaborn as sns
 
     v_min, v_max = calculate_heatmap_value_boundaries(heatmap)
+
+    h, w = heatmap.shape
+    annotate = h * w <= 200
+
+    heatmap_params = dict(
+        vmin=v_min, vmax=v_max, cmap='plasma', ax=ax, annot=annotate, annot_kws={'size': 6}
+    )
     if isinstance(heatmap, np.ma.MaskedArray):
-        sns.heatmap(
-            heatmap, mask=heatmap.mask,
-            vmin=v_min, vmax=v_max, cmap='plasma', ax=ax, annot=True, annot_kws={"size": 6}
-        )
-    else:
-        sns.heatmap(heatmap, vmin=v_min, vmax=v_max, cmap='plasma', ax=ax, annot=True)
+        heatmap_params['mask'] = heatmap.mask
+
+    sns.heatmap(heatmap, **heatmap_params)
 
 
 def calculate_heatmap_value_boundaries(arr: np.ndarray) -> tuple[float, float]:

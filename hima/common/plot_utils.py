@@ -105,7 +105,7 @@ def _plot_grid_image(
         data,
         norm=mpl.colors.SymLogNorm(linthresh=threshold, base=10)
     )
-    if with_value_text and data.shape[0] <= 16:
+    if with_value_text and h * w <= 200:
         valfmt = '{x:.1f}' if data.dtype == np.float else '{x}'
         annotate_heatmap(im, data=data, valfmt=valfmt)
 
