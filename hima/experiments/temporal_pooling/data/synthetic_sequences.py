@@ -43,3 +43,10 @@ def generate_synthetic_sequences(
         sequences[i+1, indices] = new_values
 
     return sequences
+
+
+def generate_synthetic_single_element_sequences(
+        n_sequences: int, n_values: int, seed: int
+) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    return rng.integers(0, high=n_values, size=(n_sequences, 1))

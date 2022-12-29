@@ -11,7 +11,9 @@ from numpy.random import Generator
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.data.synthetic_sequences import \
-    generate_synthetic_sequences
+    (
+    generate_synthetic_sequences, generate_synthetic_single_element_sequences
+)
 from hima.experiments.temporal_pooling.resolvers.encoder import resolve_encoder
 from hima.experiments.temporal_pooling.blocks.graph import Block
 
@@ -108,14 +110,20 @@ class SyntheticSequencesGenerator:
     def generate_sequences(self, n_sequences: int) -> list[Sequence]:
         values_encoding = [self.value_encoder.encode(x) for x in range(self.n_values)]
 
-        sequences = generate_synthetic_sequences(
-            n_sequences=n_sequences,
-            sequence_length=self.sequence_length,
-            n_values=self.n_values,
-            seed=self.seed,
-            sequence_similarity=self.sequence_similarity,
-            sequence_similarity_std=self.sequence_similarity_std,
-        )
+        if self.sequence_length > 1:
+            sequences = generate_synthetic_sequences(
+                n_sequences=n_sequences,
+                sequence_length=self.sequence_length,
+                n_values=self.n_values,
+                seed=self.seed,
+                sequence_similarity=self.sequence_similarity,
+                sequence_similarity_std=self.sequence_similarity_std,
+            )
+        else:
+            sequences = generate_synthetic_single_element_sequences(
+                n_sequences=n_sequences, n_values=self.n_values, seed=self.seed
+            )
+
         encoded_sequences = [
             Sequence(
                 id_=i_sequence,
