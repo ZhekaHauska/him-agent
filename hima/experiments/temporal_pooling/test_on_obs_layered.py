@@ -116,7 +116,7 @@ class ObservationsLayeredExperiment(Runner):
 
         seq_len = min(len(sequence), self.run_setup.steps_per_sequence)
         for input_data in islice(sequence, seq_len):
-            self.reset_blocks('spatial_pooler')
+            self.reset_blocks('spatial_pooler', 'custom_sp')
             for _ in range(self.run_setup.item_repeats):
                 self.progress.next_step()
                 self.pipeline.step(input_data, learn=learn)
