@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from itertools import islice
+
 import numpy as np
 
 from hima.common.config import resolve_value, TConfig
@@ -77,7 +79,7 @@ class ObservationsLayeredExperiment(Runner):
 
         for epoch in range(self.run_setup.epochs):
             _, elapsed_time = self.train_epoch()
-            print(f'Epoch {epoch}: {elapsed_time}')
+            print(f'Epoch {epoch}: {elapsed_time:.3f} sec')
         print('<==')
 
     @timed
@@ -99,7 +101,7 @@ class ObservationsLayeredExperiment(Runner):
 
         blocks = self.pipeline.blocks
         sp = blocks['sp2'].sp if 'sp2' in blocks else blocks['sp1']
-        print(round(1e+6 * sp.run_time / sp.n_computes, 2))
+        print(f'{round(sp.n_computes / sp.run_time / 1000, 2)} kcps')
         # print(.sp.activation_entropy())
         # print('_____')
 
@@ -112,7 +114,8 @@ class ObservationsLayeredExperiment(Runner):
         )
         self.stats.on_sequence_started(sequence.id, log_scheduled)
 
-        for input_data in sequence:
+        seq_len = min(len(sequence), self.run_setup.steps_per_sequence)
+        for input_data in islice(sequence, seq_len):
             self.reset_blocks('spatial_pooler')
             for _ in range(self.run_setup.item_repeats):
                 self.progress.next_step()
