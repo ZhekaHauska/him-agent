@@ -3,8 +3,6 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-import time
-
 import numpy as np
 from numpy.random import Generator
 
@@ -194,10 +192,7 @@ class SpatialPooler:
         self.rf = self.weights >= self.threshold
 
     def activation_entropy(self):
-        activation_heatmap = np.array([
-            neuron.rate for neuron in self.neurons
-        ])
-        activation_probs = activation_heatmap
+        activation_probs = self.n_activations / self.n_computes
         return (
             entropy(activation_probs, sds=self.output_sds),
             # np.round(activation_probs / self.output_sds.sparsity, 2)

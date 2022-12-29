@@ -21,13 +21,20 @@ pipeline:
   - ???.output -> ___.output
 
 blocks:
+#  gen:
+#    # TODO: _base_config_: generator__S__.synthetic_sequences
+#    _type_family_: generator
+#    _base_config_: synthetic_sequences
+#    n_values: 100
+#    value_encoder: random
+#    active_size: 10
   gen:
-    # TODO: _base_config_: generator__S__.synthetic_sequences
     _type_family_: generator
     _base_config_: synthetic_sequences
-    n_values: 100
-    value_encoder: random
+    value_encoder: random_fixed
+    n_values: 200
     active_size: 10
+    sequence_length: 1
   concat:
     _type_family_: concatenator
   sp1:
@@ -43,10 +50,12 @@ blocks:
     sp_type: vectorized
     output_sds: [600, 20]
     initial_rf_sparsity: 0.25
-    max_rf_sparsity: 0.12
-    max_rf_to_input_ratio: 2.5
-    learning_rate_inc: 0.1
-    learning_rate_dec: 0.01
+    max_rf_sparsity: 0.1
+    max_rf_to_input_ratio: 1.5
+#    learning_rate_inc: 0.1
+    learning_rate_inc: 0.02
+#    learning_rate_dec: 0.01
+    learning_rate_dec: 0.002
     newborn_pruning_cycle: 5
     newborn_pruning_stages: 3
     boosting_k: 1.0
@@ -76,30 +85,42 @@ run_setups:
     log_repeat_schedule: 5
     log_epoch_schedule: 2
 
+  repeating_one:
+    n_sequences: 100
+    steps_per_sequence: 1
+    sequence_repeats: 1
+    item_repeats: 5
+    epochs: 40
+    total_repeats: ...
+    log_repeat_schedule: 5
+    log_epoch_schedule: 10
+
 concatenator: {}
 
 track_streams:
   gen.output:
     - sdr
-    - cross.offline.el
+#    - cross.offline.el
     - cross.online.el
   sp1.output:
     - sdr
-    - cross.offline.el
+    - attractor
+#    - cross.offline.el
     - cross.online.el
   sp2.output:
     - sdr
-    - cross.offline.el
+    - attractor
+#    - cross.offline.el
     - cross.online.el
 
 diff_stats:
-  off_on_el:
-    - gen.output/epoch/sim_mx_off_el
-    - gen.output/epoch/sim_mx_on_el
-  offline_el:
-    - gen.output/epoch/sim_mx_off_el
-    - sp1.output/epoch/sim_mx_off_el
-    - sp2.output/epoch/sim_mx_off_el
+#  off_on_el:
+#    - gen.output/epoch/sim_mx_off_el
+#    - gen.output/epoch/sim_mx_on_el
+#  offline_el:
+#    - gen.output/epoch/sim_mx_off_el
+#    - sp1.output/epoch/sim_mx_off_el
+#    - sp2.output/epoch/sim_mx_off_el
   online_el:
     - gen.output/epoch/sim_mx_on_el
     - sp1.output/epoch/sim_mx_on_el
@@ -144,6 +165,13 @@ encoder:
     space_compression: .5
     active_size: ???
     sds: ...
+    seed: ???
+  random_fixed:
+    _type_: int_random
+    n_values: ???
+    space_compression: ...
+    active_size: ???
+    sds: [500, 10]
     seed: ???
 
 custom_sp:
