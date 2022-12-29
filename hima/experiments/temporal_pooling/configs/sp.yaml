@@ -17,7 +17,11 @@ stats_and_metrics:
 
 pipeline:
   - ___.input -> gen.output
-  - ???.output -> sp2.feedforward
+  - block: concat
+    pipes:
+      - sp2.output -> concat.feedforward_1
+      - gen.output -> concat.feedforward_2
+  - concat.output -> sp2.feedforward
   - ???.output -> ___.output
 
 blocks:
@@ -48,17 +52,17 @@ blocks:
     _type_family_: custom_sp
     _base_config_: default
     sp_type: vectorized
-    output_sds: [600, 20]
-    initial_rf_sparsity: 0.25
+    output_sds: [500, 10]
+    initial_rf_sparsity: 0.2
     max_rf_sparsity: 0.1
-    max_rf_to_input_ratio: 1.5
+    max_rf_to_input_ratio: 0.5
 #    learning_rate_inc: 0.1
     learning_rate_inc: 0.02
 #    learning_rate_dec: 0.01
-    learning_rate_dec: 0.002
+    learning_rate_dec: 0.005
     newborn_pruning_cycle: 5
     newborn_pruning_stages: 3
-    boosting_k: 1.0
+    boosting_k: 2.0
 
 run_setups:
   simple:
@@ -89,7 +93,7 @@ run_setups:
     n_sequences: 100
     steps_per_sequence: 1
     sequence_repeats: 1
-    item_repeats: 5
+    item_repeats: 7
     epochs: 40
     total_repeats: ...
     log_repeat_schedule: 5
