@@ -148,8 +148,9 @@ class ExperimentStats:
         self.transform_sim_mx_to_plots(metrics)
 
         loss_items = [metrics[key] for key in self.loss_items if key in metrics]
-        loss_components = [(loss_items[0], loss_items[1])]
-        metrics['loss'] = compute_loss(loss_components, self.stats_config.loss_layer_discount)
+        if loss_items:
+            loss_components = [(loss_items[0], loss_items[1])]
+            metrics['loss'] = compute_loss(loss_components, self.stats_config.loss_layer_discount)
 
         if self.logger:
             self.logger.log(metrics, step=self.progress.step)
