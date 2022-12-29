@@ -12,6 +12,7 @@ from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.custom_sp_utils import sample_rf, boosting
 
 
 class NewbornNeuron:
@@ -31,7 +32,7 @@ class NewbornNeuron:
 
     def __init__(
             self, id: int, ff_sds: Sds, initial_rf_sparsity: float, avg_rate: float,
-            rng: Generator
+            boosting_k: float, rng: Generator
     ):
         self.id = id
         self.ff_sds = ff_sds
@@ -43,10 +44,10 @@ class NewbornNeuron:
 
         self.n_matches = 1
         self.n_activations = 1
-        self.boosting_k = 2.0
+        self.boosting_log_1_k = np.log(1.0 + boosting_k)
         self.activation_heatmap = np.ones(len(self.potential_rf))
 
-    def match(self, input_sdr: SparseSdr, avg_rate: float) -> float:
+    def match(self, input_sdr: SparseSdr) -> float:
         """Activate the neuron."""
         overlap = len(self.rf & input_sdr) * self.boosting()
         self.n_matches += 1
@@ -57,9 +58,10 @@ class NewbornNeuron:
         return self.n_activations / self.n_matches
 
     def boosting(self) -> float:
-        boosting = self.rate / self.target_avg_rate
-        # print(self.rate > self.target_avg_rate, boosting, np.exp(-k * boosting))
-        return np.exp(-self.boosting_k * boosting)
+        return boosting(
+            relative_rate=self.target_avg_rate / self.rate,
+            log_k=self.boosting_log_1_k
+        )
 
     def activate(self, input_sdr: SparseSdr):
         """Activate the neuron."""
@@ -105,12 +107,6 @@ class NewbornNeuron:
         # self.boosting_k /= 2
 
 
-def sample_rf(sds: Sds, rf_sparsity: float, rng: Generator):
-    """Sample a random receptive field."""
-    rf_size = int(sds.size * rf_sparsity)
-    return rng.choice(sds.size, rf_size, replace=False)
-
-
 class SpatialPooler:
     # input
     ff_sds: Sds
@@ -145,6 +141,7 @@ class SpatialPooler:
             output_sds: Sds,
             min_overlap_for_activation: float, learning_rate_inc: float, learning_rate_dec: float,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
+            boosting_k: float,
             seed: int
     ):
         self.ff_sds = ff_sds
@@ -162,7 +159,8 @@ class SpatialPooler:
         self._rng = np.random.default_rng(seed)
         self.neurons = [
             NewbornNeuron(
-                id, self.ff_sds, initial_rf_sparsity, self.output_sds.sparsity, self._rng
+                id, self.ff_sds, initial_rf_sparsity, self.output_sds.sparsity,
+                boosting_k, self._rng
             )
             for id in range(self.output_sds.size)
         ]
@@ -186,7 +184,7 @@ class SpatialPooler:
         input_sdr_set = set(input_sdr)
         # start_time = time.time()
         overlaps = np.array([
-            neuron.match(input_sdr_set, self.output_sds.sparsity)
+            neuron.match(input_sdr_set)
             for neuron in self.neurons
         ])
         # run_time = time.time() - start_time
@@ -213,7 +211,7 @@ class SpatialPooler:
             rf_size = int(self.rf_sparsity * self.ff_sds.size)
             print(f'Turning off newborns: {self.rf_sparsity} | {rf_size}')
             for neuron in self.neurons:
-                neuron.boosting_k = 0.0
+                neuron.boosting_log_1_k = 0.0
                 self.learning_rate_inc /= 2
                 self.learning_rate_dec /= 2
             return
