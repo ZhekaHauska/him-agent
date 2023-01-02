@@ -26,10 +26,16 @@ if __name__ == '__main__':
         wrapAround=False
     )
 
-    spf = SPFilter([5, 5], [2, 2], **params)
+    spf = SPFilter([5, 5], [3, 3], stride=(1, 1), **params)
 
     in_sdr = SDR([48, 32])
     in_sdr.dense = np.ones([48, 32])
+
+    res = spf.compute(in_sdr)
+
+    print(res)
+
+    in_sdr = SDR([48, 32])
 
     res = spf.compute(in_sdr)
 

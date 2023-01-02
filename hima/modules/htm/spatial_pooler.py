@@ -990,11 +990,18 @@ class SPFilter:
                     self.current_filter_output
                 )
 
-                state = self.current_filter_output.sparse[0]
-                state += var * self.n_filter_states
+                if len(self.current_filter_output.sparse) > 0:
+                    state = self.current_filter_output.sparse[0]
+                    state += var * self.n_filter_states
 
-                states.append(state)
+                    states.append(state)
 
                 var += 1
 
-        return states
+        return (
+            states,
+            (
+                max_row//self.stride[0]+((max_row % self.stride[0]) > 0),
+                max_col//self.stride[1]+((max_col % self.stride[1]) > 0)
+            )
+        )
