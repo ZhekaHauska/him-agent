@@ -1005,3 +1005,24 @@ class SPFilter:
                 max_col//self.stride[1]+((max_col % self.stride[1]) > 0)
             )
         )
+
+
+class SPDecoder:
+    def __init__(self, sp: HtmSpatialPooler):
+        self.sp = sp
+        self.receptive_fields = np.zeros((self.sp.getNumColumns(), self.sp.getNumInputs()))
+
+    def decode(self, cell_probs, update=False):
+        assert cell_probs.size == self.sp.getNumColumns()
+
+        if update:
+            self._update_receptive_fields()
+
+        log_product = np.dot(self.receptive_fields.T, np.log(cell_probs))
+        return 1 - np.exp(log_product)
+
+    def _update_receptive_fields(self):
+        for cell in range(self.sp.getNumColumns()):
+            field = np.zeros(self.sp.getNumInputs())
+            field[self.sp.connections.connectedPresynapticCellsForSegment(cell)] = 1
+            self.receptive_fields[cell] = field
