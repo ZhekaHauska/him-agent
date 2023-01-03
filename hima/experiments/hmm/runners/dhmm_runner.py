@@ -7,6 +7,8 @@
 from hima.modules.htm.dchmm import DCHMM
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
 from hima.envs.pixel.pixball import Pixball
+from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
+from htm.bindings.sdr import SDR
 
 try:
     from pinball import Pinball
@@ -583,6 +585,25 @@ class PinballTest:
 
         obs = self.env.obs()
         self.obs_shape = (obs.shape[0], obs.shape[1])
+
+        sp_conf = conf.get('sp', None)
+        if sp_conf is not None:
+            sp_conf['seed'] = self.seed
+            self.encoder = HtmSpatialPooler(
+                self.obs_shape,
+                **sp_conf
+            )
+            self.obs_shape = self.encoder.getColumnDimensions()
+            self.sp_input = SDR(self.encoder.getInputDimensions())
+            self.sp_output = SDR(self.encoder.getColumnDimensions())
+
+            self.decoder = SPDecoder(self.encoder)
+        else:
+            self.encoder = None
+            self.sp_input = None
+            self.sp_output = None
+            self.decoder = None
+
         self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
         self.n_obs_states = 1
 
@@ -599,6 +620,7 @@ class PinballTest:
         self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
         self.log_fps = conf['run']['log_gif_fps']
+
         self.logger = logger
 
         if self.logger is not None:
@@ -643,6 +665,11 @@ class PinballTest:
 
                 obs_state = np.flatnonzero(diff)
 
+                if self.encoder is not None:
+                    self.sp_input.sparse = obs_state
+                    self.encoder.compute(self.sp_input, True, self.sp_output)
+                    obs_state = self.sp_output.sparse
+
                 self.hmm.predict_cells()
                 column_probs = self.hmm.predict_columns()
 
@@ -660,13 +687,26 @@ class PinballTest:
                     if self.prediction_steps > 1:
                         back_up_massages = self.hmm.forward_messages.copy()
 
-                    predictions = [(column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)]
+                    if self.decoder is not None:
+                        decoded_probs = self.decoder.decode(column_probs, update=True)
+                        decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
+                    else:
+                        decoded_probs = column_probs.reshape(self.obs_shape)
+
+                    predictions = [(decoded_probs * 255).astype(np.uint8)]
 
                     for j in range(self.prediction_steps - 1):
                         self.hmm.predict_cells()
                         column_probs = self.hmm.predict_columns()
+
+                        if self.decoder is not None:
+                            decoded_probs = self.decoder.decode(column_probs)
+                            decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
+                        else:
+                            decoded_probs = column_probs.reshape(self.obs_shape)
+
                         predictions.append(
-                            (column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)
+                            (decoded_probs * 255).astype(np.uint8)
                         )
                         self.hmm.forward_messages = self.hmm.next_forward_messages
 
@@ -970,6 +1010,11 @@ def main(config_path):
 
     with open(config['run']['env_conf'], 'r') as file:
         config['env'] = yaml.load(file, Loader=yaml.Loader)
+
+    sp_conf = config['run'].get('sp_conf', None)
+    if sp_conf is not None:
+        with open(sp_conf, 'r') as file:
+            config['sp'] = yaml.load(file, Loader=yaml.Loader)
 
     for arg in sys.argv[2:]:
         key, value = arg.split('=')

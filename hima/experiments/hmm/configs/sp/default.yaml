@@ -1,0 +1,15 @@
+columnDimensions: [ 12, 12 ]
+potentialPct: 0.5
+globalInhibition: False
+potentialRadius: 5
+localAreaDensity: 0.1
+# numActiveColumnsPerInhArea: 0
+stimulusThreshold: 3
+synPermInactiveDec: 0.01
+synPermActiveInc: 0.1
+synPermConnected: 0.5
+minPctOverlapDutyCycle: 0.001
+dutyCyclePeriod: 1000
+boostStrength: 0.0
+spVerbosity: 0
+wrapAround: False

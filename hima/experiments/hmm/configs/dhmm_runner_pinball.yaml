@@ -1,6 +1,6 @@
 log: True
 save_model: False
-project_name: 'pinball_dhmm_test'
+project_name: 'pinball_dhmm_decoder_test'
 run_tag: null
 
 n_episodes: 501
@@ -11,7 +11,8 @@ prediction_steps: 5
 action: [ 0.5, 5 ]
 
 experiment: pinball
+sp_conf: 'configs/sp/default.yaml'
 hmm_conf: 'configs/dhmm/dchmm_pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'
 
-seed: null
+seed: 3123
