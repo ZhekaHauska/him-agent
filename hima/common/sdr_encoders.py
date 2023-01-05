@@ -5,13 +5,11 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from typing import Any, Sequence
-
 import numpy as np
 from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
-from hima.common.sds import Sds
+from hima.common.sds import Sds, TSdsShortNotation
 from hima.common.utils import isnone
 
 
@@ -93,7 +91,7 @@ class IntRandomEncoder:
 
     def __init__(
             self, n_values: int, seed: int,
-            sds: Sds | Sds.TShortNotation = None,
+            sds: Sds | TSdsShortNotation = None,
             space_compression: float = None,
             active_size: int = None
     ):
@@ -246,7 +244,9 @@ class RangeDynamicEncoder:
         else:
             norm_speed = 0
 
-        diameter = int(round(self.min_diameter + norm_speed * (self.max_diameter - self.min_diameter)))
+        diameter = int(round(
+            self.min_diameter + norm_speed * (self.max_diameter - self.min_diameter)
+        ))
 
         norm_value = (value - self.min_value) / (self.max_value - self.min_value)
 
