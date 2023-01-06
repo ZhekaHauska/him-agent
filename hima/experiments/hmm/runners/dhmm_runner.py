@@ -635,12 +635,14 @@ class PinballTest:
 
     def run(self):
         total_surprise = 0
+        total_surprise_decoder = 0
 
         for i in range(self.n_episodes):
             self.env.reset()
             self.hmm.reset()
 
             surprises = []
+            surprises_decoder = []
 
             steps = 0
 
@@ -697,6 +699,18 @@ class PinballTest:
 
                 surprises.append(surprise)
                 total_surprise += surprise
+
+                if self.decoder is not None:
+                    decoded_probs = self.decoder.decode(column_probs, update=True)
+                    active_columns = np.isin(
+                        np.arange(self.encoder.getNumInputs()), self.sp_input.sparse
+                    )
+                    surprise_decoder = - np.sum(np.log(decoded_probs[active_columns]))
+                    surprise_decoder += - np.sum(np.log(1 - decoded_probs[~active_columns]))
+
+                    surprises_decoder.append(surprise_decoder)
+                    total_surprise_decoder += surprise_decoder
+
                 # 2. image
                 if (writer_raw is not None) and (i % self.log_update_rate == 0):
                     if self.prediction_steps > 1:
@@ -777,6 +791,14 @@ class PinballTest:
                         'connections/n_factors': self.hmm.factor_connections.numSegments()
                     }, step=i
                 )
+
+                if self.decoder is not None:
+                    self.logger.log(
+                        {
+                            'main_metrics/surprise_decoder': np.array(surprises_decoder).mean(),
+                            'main_metrics/total_surprise_decoder': total_surprise_decoder,
+                        }, step=i
+                    )
 
                 if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
                     self.logger.log(
