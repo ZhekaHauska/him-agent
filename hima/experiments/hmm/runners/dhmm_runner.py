@@ -646,22 +646,37 @@ class PinballTest:
 
             prev_im = self.preprocess(self.env.obs())
             prev_diff = np.zeros_like(prev_im)
+
+            if self.encoder is not None:
+                prev_latent = np.zeros(self.encoder.getColumnDimensions())
+            else:
+                prev_latent = None
+
             if (self.logger is not None) and (i % self.log_update_rate == 0):
-                writer = imageio.get_writer(
-                    f'/tmp/{self.logger.name}_ep{i}.gif',
+                writer_raw = imageio.get_writer(
+                    f'/tmp/{self.logger.name}_raw_ep{i}.gif',
                     mode='I',
                     fps=self.log_fps
                 )
+                if self.encoder is not None:
+                    writer_hidden = imageio.get_writer(
+                        f'/tmp/{self.logger.name}_hidden_ep{i}.gif',
+                        mode='I',
+                        fps=self.log_fps
+                    )
+                else:
+                    writer_hidden = None
             else:
-                writer = None
+                writer_raw = None
+                writer_hidden = None
 
             self.env.act(self.action)
 
             while True:
-                im = self.preprocess(self.env.obs())
-                thresh = im.mean()
-                diff = np.abs(im - prev_im) >= thresh
-                prev_im = im.copy()
+                raw_im = self.preprocess(self.env.obs())
+                thresh = raw_im.mean()
+                diff = np.abs(raw_im - prev_im) >= thresh
+                prev_im = raw_im.copy()
 
                 obs_state = np.flatnonzero(diff)
 
@@ -683,46 +698,72 @@ class PinballTest:
                 surprises.append(surprise)
                 total_surprise += surprise
                 # 2. image
-                if (writer is not None) and (i % self.log_update_rate == 0):
+                if (writer_raw is not None) and (i % self.log_update_rate == 0):
                     if self.prediction_steps > 1:
                         back_up_massages = self.hmm.forward_messages.copy()
 
                     if self.decoder is not None:
+                        hidden_prediction = column_probs.reshape(self.obs_shape)
                         decoded_probs = self.decoder.decode(column_probs, update=True)
                         decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
                     else:
                         decoded_probs = column_probs.reshape(self.obs_shape)
+                        hidden_prediction = None
 
-                    predictions = [(decoded_probs * 255).astype(np.uint8)]
+                    raw_predictions = [(decoded_probs * 255).astype(np.uint8)]
+
+                    if hidden_prediction is not None:
+                        hidden_predictions = [(hidden_prediction * 255).astype(np.uint8)]
+                    else:
+                        hidden_predictions = None
 
                     for j in range(self.prediction_steps - 1):
                         self.hmm.predict_cells()
                         column_probs = self.hmm.predict_columns()
 
                         if self.decoder is not None:
+                            hidden_prediction = column_probs.reshape(self.obs_shape)
                             decoded_probs = self.decoder.decode(column_probs)
                             decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
                         else:
                             decoded_probs = column_probs.reshape(self.obs_shape)
+                            hidden_prediction = None
 
-                        predictions.append(
+                        raw_predictions.append(
                             (decoded_probs * 255).astype(np.uint8)
                         )
+
+                        if hidden_predictions is not None:
+                            hidden_predictions.append(
+                                (hidden_prediction * 255).astype(np.uint8)
+                            )
+
                         self.hmm.forward_messages = self.hmm.next_forward_messages
 
                     if self.prediction_steps > 1:
                         self.hmm.forward_messages = back_up_massages
 
-                    im = [prev_diff.astype(np.uint8)*255]
-                    im.extend(predictions)
-                    im = np.hstack(im)
-                    writer.append_data(im)
+                    raw_im = [prev_diff.astype(np.uint8)*255]
+                    raw_im.extend(raw_predictions)
+                    raw_im = np.hstack(raw_im)
+                    writer_raw.append_data(raw_im)
+
+                    if hidden_predictions is not None:
+                        hid_im = [prev_latent.astype(np.uint8) * 255]
+                        hid_im.extend(hidden_predictions)
+                        hid_im = np.hstack(hid_im)
+                        writer_hidden.append_data(hid_im)
 
                 steps += 1
                 prev_diff = diff.copy()
+                prev_latent = self.sp_output.dense.copy()
+
                 if steps >= self.max_steps:
-                    if writer is not None:
-                        writer.close()
+                    if writer_raw is not None:
+                        writer_raw.close()
+
+                    if writer_hidden is not None:
+                        writer_hidden.close()
 
                     break
 
@@ -740,12 +781,22 @@ class PinballTest:
                 if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
                     self.logger.log(
                         {
-                            'gifs/prediction': wandb.Video(
-                                f'/tmp/{self.logger.name}_ep{i}.gif'
+                            'gifs/raw_prediction': wandb.Video(
+                                f'/tmp/{self.logger.name}_raw_ep{i}.gif'
                             )
                         },
                         step=i
                     )
+                    if writer_hidden is not None:
+                        self.logger.log(
+                            {
+                                'gifs/hidden_prediction': wandb.Video(
+                                    f'/tmp/{self.logger.name}_hidden_ep{i}.gif'
+                                )
+                            },
+                            step=i
+                        )
+
                     # factors and segments
                     n_segments = np.zeros(self.hmm.total_cells)
                     sum_factor_value = np.zeros(self.hmm.total_cells)
