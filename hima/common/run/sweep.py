@@ -8,6 +8,7 @@ import os
 from argparse import ArgumentParser
 from copy import deepcopy
 from multiprocessing import Process
+from pathlib import Path
 
 import wandb
 from matplotlib import pyplot as plt
@@ -21,12 +22,24 @@ from hima.common.utils import isnone
 
 
 class Sweep:
+    """
+    Manages a whole wandb sweep run.
+
+    If provided with a sweep id, assumes that it is an id of an existing sweep.
+    Otherwise, it registers new sweep id.
+
+    Prepares sweep execution by setting needed env/execution params.
+    Finally, spawns the specified number of agents (=processes) and waits for the completion.
+    """
+
     id: str
     project: str
     config: dict
     n_agents: int
 
     experiment_runner_registry: TExperimentRunnerRegistry
+
+    experiment_root: Path
 
     # sweep runs' shared config
     shared_run_config: dict
@@ -35,6 +48,7 @@ class Sweep:
     def __init__(
             self, sweep_id: str, config: dict, n_agents: int,
             experiment_runner_registry: TExperimentRunnerRegistry,
+            experiment_root: Path,
             shared_config_overrides: list[TKeyPathValue],
             run_arg_parser: ArgumentParser
     ):
@@ -45,7 +59,8 @@ class Sweep:
         self.experiment_runner_registry = experiment_runner_registry
 
         shared_config_filepath = self._extract_agents_shared_config_filepath(
-            parser=run_arg_parser, run_command_args=run_command_args
+            parser=run_arg_parser, run_command_args=run_command_args,
+            experiment_root=experiment_root
         )
         self.shared_run_config = read_config(shared_config_filepath)
         self.shared_run_config_overrides = shared_config_overrides
@@ -61,6 +76,7 @@ class Sweep:
             self.id = sweep_id
 
     def run(self):
+        """Spawn the specified number of processes for agents and wait for their completion."""
         print(f'==> Sweep {self.id}')
 
         # TODO: test error handling - we want to terminate [on any error]
@@ -98,7 +114,7 @@ class Sweep:
             raise
 
     def _run_provided_config(self) -> None:
-        # BE CAREFUL: this method is expected to be run in parallel — DO NOT mutate `self` here
+        # BE CAREFUL: this method is expected to run in parallel — DO NOT mutate `self` here
 
         # see comments inside func
         turn_off_gui_for_matplotlib()
@@ -107,7 +123,6 @@ class Sweep:
         # passed via wandb.config, hence we take it and apply all overrides:
         # while concatenating overrides, the order DOES matter: run params, then args
         run = wandb.init()
-        wandb.init()
         sweep_overrides = list(map(parse_arg, run.config.items()))
         config_overrides = sweep_overrides + self.shared_run_config_overrides
 
@@ -120,13 +135,15 @@ class Sweep:
         runner.run()
 
     @staticmethod
-    def _extract_agents_shared_config_filepath(parser: ArgumentParser, run_command_args):
+    def _extract_agents_shared_config_filepath(
+            parser: ArgumentParser, run_command_args: list[str], experiment_root: Path
+    ) -> Path:
         # there are several ways to extract config filepath based on different conventions
-        # we use parser as the most simplistic and automated,
-        # but we could introduce strict positional convention or parse with hands
+        # we use compatibility with an existing parser as the most simplistic and automated way,
+        # while we could also introduce strict positional convention or parse it with hands
 
         args, _ = parser.parse_known_args(run_command_args)
-        return args.config_filepath
+        return experiment_root.joinpath(args.config_filepath)
 
 
 def turn_off_gui_for_matplotlib():

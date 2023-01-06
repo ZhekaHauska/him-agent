@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
+
 import os
 from argparse import ArgumentParser
 from pathlib import Path
@@ -19,13 +21,30 @@ from hima.common.run.runner import Runner
 TExperimentRunnerRegistry = dict[str, Type[Runner]]
 
 
+# TODO:
+#   - pass log folder root with the default behavior: make temp folder with standard procedure
+#   - consider making set_single_threaded_math specified by the run arg
+
+
 def run_experiment(
         run_command_parser: ArgumentParser,
         experiment_runner_registry: TExperimentRunnerRegistry
 ) -> None:
+    """
+    THE MAIN entry point for starting a program.
+        1) resolves run args
+        2) resolves whether it is a single run or a wandb sweep
+        3) reads config
+        4) sets any execution params
+        5) resolves who will run this experiment — a runner
+        6) passes execution handling to the runner.
+    """
     args, unknown_args = run_command_parser.parse_known_args()
 
-    config = read_config(args.config_filepath)
+    config_path = Path(args.config_filepath)
+    experiment_root = config_path.parent
+
+    config = read_config(config_path)
     config_overrides = list(map(parse_arg, unknown_args))
 
     if args.wandb_entity:
@@ -42,10 +61,12 @@ def run_experiment(
             config=config,
             n_agents=args.n_sweep_agents,
             experiment_runner_registry=experiment_runner_registry,
+            experiment_root=experiment_root,
             shared_config_overrides=config_overrides,
             run_arg_parser=run_command_parser,
         ).run()
     else:
+        # single run
         override_config(config, config_overrides)
         runner = resolve_experiment_runner(config, experiment_runner_registry)
         runner.run()
@@ -58,8 +79,6 @@ def set_single_threaded_math():
 
 def get_run_command_arg_parser() -> ArgumentParser:
     parser = ArgumentParser()
-    # todo: add examples
-    # todo: remove --sweep ?
     parser.add_argument('-c', '--config', dest='config_filepath', required=True)
     parser.add_argument('-e', '--entity', dest='wandb_entity', required=False, default=None)
     parser.add_argument('--sweep', dest='wandb_sweep', action='store_true', default=False)
@@ -79,7 +98,9 @@ def resolve_experiment_runner(
     return runner_cls(config, **config)
 
 
-def read_config(filepath: str) -> TConfig:
-    filepath = Path(filepath)
+def read_config(filepath: str | Path) -> TConfig:
+    if not isinstance(filepath, Path):
+        filepath = Path(filepath)
+
     with filepath.open('r') as config_io:
         return yaml.load(config_io, Loader=yaml.Loader)
