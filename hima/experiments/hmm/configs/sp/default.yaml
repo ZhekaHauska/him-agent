@@ -4,8 +4,8 @@ globalInhibition: False
 potentialRadius: 5
 localAreaDensity: 0.1
 # numActiveColumnsPerInhArea: 0
-stimulusThreshold: 3
-synPermInactiveDec: 0.01
+stimulusThreshold: 1
+synPermInactiveDec: 0.1
 synPermActiveInc: 0.1
 synPermConnected: 0.5
 minPctOverlapDutyCycle: 0.001

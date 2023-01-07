@@ -5,14 +5,14 @@ run_tag: null
 
 n_episodes: 501
 update_rate: 10
-max_steps: 50
+max_steps: 15
 log_gif_fps: 5
 prediction_steps: 5
-action: [ 0.5, 5 ]
+action: [ 0.0, 5 ]
 
 experiment: pinball
 sp_conf: 'configs/sp/default.yaml'
 hmm_conf: 'configs/dhmm/dchmm_pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'
 
-seed: 3123
+seed: null
