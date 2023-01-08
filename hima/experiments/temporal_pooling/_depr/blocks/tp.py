@@ -12,25 +12,6 @@ from htm.bindings.sdr import SDR
 from hima.common.config import extracted_type, resolve_init_params, resolve_absolute_quantity
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling._depr.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling._depr.sdr_seq_stats import SdrSequenceStats
-
-
-class TemporalPoolerBlockStats(BlockStats):
-    seq_stats: SdrSequenceStats
-
-    def __init__(self, output_sds: Sds):
-        super(TemporalPoolerBlockStats, self).__init__(output_sds)
-        self.seq_stats = SdrSequenceStats(self.output_sds)
-
-    def update(self, current_output_sdr: SparseSdr):
-        self.seq_stats.update(current_output_sdr)
-
-    def step_metrics(self) -> dict[str, Any]:
-        return self.seq_stats.step_metrics()
-
-    def final_metrics(self) -> dict[str, Any]:
-        return self.seq_stats.final_metrics()
 
 
 class TemporalPoolerBlock:
@@ -41,7 +22,6 @@ class TemporalPoolerBlock:
 
     output_sdr: SparseSdr
     tp: Any
-    stats: TemporalPoolerBlockStats
 
     _input_active_cells: SDR
     _input_predicted_cells: SDR
@@ -50,7 +30,6 @@ class TemporalPoolerBlock:
         self.feedforward_sds = feedforward_sds
         self.output_sds = output_sds
         self.tp = tp
-        self.stats = TemporalPoolerBlockStats(self.output_sds)
 
         self.output_sdr = []
         self._input_active_cells = SDR(self.feedforward_sds.size)
@@ -64,12 +43,6 @@ class TemporalPoolerBlock:
         self.tp.reset()
         self.output_sdr = []
 
-    def reset_stats(self, stats: TemporalPoolerBlockStats = None):
-        if stats is None:
-            self.stats = TemporalPoolerBlockStats(self.output_sds)
-        else:
-            self.stats = stats
-
     def compute(self, active_input: SparseSdr, predicted_input: SparseSdr, learn: bool):
         self._input_active_cells.sparse = active_input.copy()
         self._input_predicted_cells.sparse = predicted_input.copy()
@@ -79,7 +52,6 @@ class TemporalPoolerBlock:
         )
         self.output_sdr = np.array(output_sdr.sparse, copy=True)
 
-        self.stats.update(self.output_sdr)
         return self.output_sdr
 
 

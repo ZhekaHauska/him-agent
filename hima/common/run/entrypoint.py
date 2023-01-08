@@ -24,6 +24,7 @@ TExperimentRunnerRegistry = dict[str, Type[Runner]]
 # TODO:
 #   - pass log folder root with the default behavior: make temp folder with standard procedure
 #   - consider making set_single_threaded_math specified by the run arg
+#   - make experiment runner registry lazy import
 
 
 def run_experiment(
