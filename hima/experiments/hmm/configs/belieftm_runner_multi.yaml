@@ -1,0 +1,19 @@
+log: True
+save_model: False
+project_name: 'mmpg_belieftm_test'
+run_tag: null
+
+n_episodes: 8000
+update_rate: 500
+smf_dist: 0.005
+max_steps: 100
+
+debug_tm_state: False
+chunk_size: 100
+debug_range: [ 0, 100 ]
+
+experiment: mmpg
+hmm_conf: 'configs/belieftm/mpg_multi.yaml'
+env_conf: 'configs/mpg/mmpg_default.yaml'
+
+seed: null
