@@ -12,10 +12,10 @@ from typing import Type
 
 from ruamel import yaml
 
-from hima.common.run.argparse import parse_arg
 from hima.common.config import (
     extracted_type, TConfig, override_config
 )
+from hima.common.run.argparse import parse_arg_list
 from hima.common.run.runner import Runner
 
 TExperimentRunnerRegistry = dict[str, Type[Runner]]
@@ -46,7 +46,7 @@ def run_experiment(
     experiment_root = config_path.parent
 
     config = read_config(config_path)
-    config_overrides = list(map(parse_arg, unknown_args))
+    config_overrides = parse_arg_list(unknown_args)
 
     if args.wandb_entity:
         # overwrite wandb entity for the run
