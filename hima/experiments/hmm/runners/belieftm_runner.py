@@ -7,7 +7,6 @@
 from hima.modules.htm.belief_tm import HybridNaiveBayesTM
 from hima.modules.htm.tm_writer import HTMWriter
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
-from hima.envs.pixel.pixball import Pixball
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
 from htm.bindings.sdr import SDR
 
@@ -19,7 +18,7 @@ except ModuleNotFoundError:
 import numpy as np
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
-import seaborn as sns
+from pathlib import Path
 import wandb
 import yaml
 import os
@@ -176,6 +175,10 @@ class MPGTest:
 
         if self.logger is not None and self.save_model:
             name = self.logger.name
+
+            path = Path('logs')
+            if not path.exists():
+                path.mkdir()
 
             np.save(f'logs/dist_{name}.npy', dist)
 
@@ -408,9 +411,13 @@ class MMPGTest:
         if self.logger is not None and self.save_model:
             name = self.logger.name
 
+            path = Path('logs')
+            if not path.exists():
+                path.mkdir()
+
             np.save(f'logs/dist_{name}.npy', dist)
 
-            with open(f"logs/models/model_{name}.pkl", 'wb') as file:
+            with open(f"logs/model_{name}.pkl", 'wb') as file:
                 pickle.dump((self.mpg, self.hmm), file)
 
 
@@ -419,34 +426,23 @@ class NStepTest:
         with open(conf['run']['model_path'], 'rb') as file:
             self.mpg, self.hmm = pickle.load(file)
 
-        policy = conf['run'].get('policy')
+        self.policy = conf['run'].get('policy', None)
 
-        if policy is not None:
-            self.mpg.initial_policy = policy
+        if self.policy is not None:
+            self.mpg.initial_policy = self.policy
+        else:
+            self.policy = self.mpg.initial_policy
 
-        self.mc_iterations = conf['mc_iterations']
+        if None in self.mpg.alphabet:
+            self.n_obs_states = len(self.mpg.alphabet) - 1
+        else:
+            self.n_obs_states = len(self.mpg.alphabet)
+
+        self.mc_iterations = conf['run']['mc_iterations']
         self.n_steps = conf['run']['n_steps']
-        self.n_obs_states = self.hmm.n_obs_states
         self.logger = logger
         self._rng = np.random.default_rng(conf['run']['seed'])
         self.mpg.reset()
-
-        policy = conf['run'].get('policy', None)
-
-        if policy is None:
-            obs = [self.mpg.char_to_num['B']]
-        else:
-            self.mpg.set_policy(policy)
-            obs = [self.mpg.char_to_num['B'], len(self.mpg.alphabet) + self.mpg.current_policy]
-
-        self.hmm.set_active_columns(obs)
-
-        self.hmm.activate_apical_dendrites(learn=False)
-        self.hmm.predict_cells()
-        self.hmm.activate_cells(learn=False)
-        active_cells = self.hmm.get_active_cells()
-        self.hmm.set_active_context_cells(active_cells)
-        self.hmm.predict_columns_density(update_receptive_fields=False)
 
         if self.logger is not None:
             im_name = f'/tmp/mpg_{self.logger.name}.png'
@@ -466,31 +462,56 @@ class NStepTest:
         fig, axs = plt.subplots(k, k, figsize=(10, 10))
         fig.tight_layout(pad=3.0)
 
-        for step in range(self.n_steps):
-            true_dist = self.mpg.predict_letters(from_state=0, steps=step)
+        if self.hmm.feedback_cells > 0:
+            self.hmm.set_active_feedback_cells([self.policy])
+            self.hmm.activate_apical_dendrites(learn=False)
 
-            self.hmm.predict_n_step_density(1, mc_iterations=self.mc_iterations)
+        self.hmm.set_active_columns([])
+        self.hmm.activate_basal_dendrites(learn=False)
+        self.hmm.predict_cells()
+        self.hmm.set_active_context_cells(self.hmm.get_active_cells())
+        self.hmm.predict_columns_density(update_receptive_fields=False)
+
+        for step in range(self.n_steps):
             predicted_dist = self.hmm.column_probs[:self.n_obs_states]
+
+            if step == 0:
+                labels = ['Predicted', 'True']
+                letter = self.mpg.next_state()
+
+                obs_state = [
+                        self.mpg.char_to_num[letter]
+                    ]
+
+                # if self.hmm.columns > self.n_obs_states:
+                #     obs_state.append(
+                #         self.mpg.current_policy + self.n_obs_states
+                #     )
+                # elif self.hmm.feedback_cells > 0:
+                #
+                #
+                # obs_state = np.array(
+                #     obs_state
+                # )
+
+                self.hmm.set_active_columns(obs_state)
+                self.hmm.activate_apical_dendrites(learn=False)
+                self.hmm.predict_cells()
+                self.hmm.activate_cells(learn=False)
+                active_cells = self.hmm.get_active_cells()
+                self.hmm.set_active_context_cells(active_cells)
+                self.hmm.predict_columns_density(update_receptive_fields=False)
+            else:
+                labels = [None, None]
+                self.hmm.predict_n_step_density(1, mc_iterations=self.mc_iterations)
+
+            true_dist = self.mpg.predict_letters(from_state=0, steps=step)
 
             if len(true_dist) > len(predicted_dist):
                 predicted_dist = np.append(predicted_dist, 1 - predicted_dist.sum())
 
             kl_div = rel_entr(true_dist, predicted_dist).sum()
-
-            if step == 0:
-                labels = ['Predicted', 'True']
-                letter = self.mpg.next_state()
-                obs_state = np.array(
-                    [
-                        self.mpg.char_to_num[letter],
-                        self.mpg.current_policy + self.hmm.n_obs_states
-                    ]
-                )
-                self.hmm.observe(obs_state, learn=False)
-            else:
-                labels = [None, None]
-                self.hmm.forward_messages = self.hmm.next_forward_messages
-
+            
             if self.logger is not None:
                 self.logger.log(
                     {
@@ -785,7 +806,11 @@ class PinballTest:
         if self.logger is not None and self.save_model:
             name = self.logger.name
 
-            with open(f"logs/models/model_{name}.pkl", 'wb') as file:
+            path = Path('logs')
+            if not path.exists():
+                path.mkdir()
+
+            with open(f"logs/model_{name}.pkl", 'wb') as file:
                 pickle.dump(self.hmm, file)
 
     def preprocess(self, image):
@@ -793,190 +818,6 @@ class PinballTest:
         gray_im /= gray_im.max()
 
         return gray_im
-
-
-class PixballTest:
-    def __init__(self, logger, conf):
-        self.seed = conf['run']['seed']
-
-        conf['hmm']['seed'] = self.seed
-        conf['env']['seed'] = self.seed
-
-        self.env = Pixball(**conf['env'])
-
-        obs = self.env.obs()
-        self.obs_shape = (obs.shape[0], obs.shape[1])
-        self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
-        self.n_obs_states = 1
-
-        conf['hmm']['n_obs_states'] = self.n_obs_states
-        conf['hmm']['n_obs_vars'] = self.n_obs_vars
-        conf['hmm']['shape'] = self.obs_shape
-
-        self.hmm = DCHMM(**conf['hmm'])
-
-        self.action = conf['run']['action']
-        self.prediction_steps = conf['run']['prediction_steps']
-        self.n_episodes = conf['run']['n_episodes']
-        self.log_update_rate = conf['run']['update_rate']
-        self.max_steps = conf['run']['max_steps']
-        self.save_model = conf['run']['save_model']
-        self.log_fps = conf['run']['log_gif_fps']
-        self.logger = logger
-
-    def run(self):
-        total_surprise = 0
-
-        for i in range(self.n_episodes):
-            self.env.reset()
-            self.hmm.reset()
-
-            surprises = []
-
-            steps = 0
-            prev_im = np.zeros(self.obs_shape)
-
-            if (self.logger is not None) and (i % self.log_update_rate == 0):
-                writer = imageio.get_writer(
-                    f'/tmp/{self.logger.name}_ep{i}.gif',
-                    mode='I',
-                    fps=self.log_fps
-                )
-            else:
-                writer = None
-
-            self.env.act(self.action)
-
-            while True:
-                im = self.preprocess(self.env.obs())
-
-                obs_state = np.flatnonzero(im)
-
-                self.hmm.predict_cells()
-                column_probs = self.hmm.predict_columns()
-
-                self.hmm.observe(obs_state, learn=True)
-                # metrics
-                # 1. surprise
-                active_columns = np.isin(np.arange(self.hmm.n_obs_vars), obs_state)
-                surprise = - np.sum(np.log(column_probs[active_columns]))
-                surprise += - np.sum(np.log(1 - column_probs[~active_columns]))
-
-                surprises.append(surprise)
-                total_surprise += surprise
-                # 2. image
-                if (writer is not None) and (i % self.log_update_rate == 0):
-                    if self.prediction_steps > 1:
-                        back_up_massages = self.hmm.forward_messages.copy()
-
-                    predictions = [(column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)]
-
-                    for j in range(self.prediction_steps - 1):
-                        self.hmm.predict_cells()
-                        column_probs = self.hmm.predict_columns()
-                        predictions.append(
-                            (column_probs.reshape(self.obs_shape) * 255).astype(np.uint8)
-                        )
-                        self.hmm.forward_messages = self.hmm.next_forward_messages
-
-                    if self.prediction_steps > 1:
-                        self.hmm.forward_messages = back_up_massages
-
-                    pic = [prev_im.astype(np.uint8) * 255]
-                    pic.extend(predictions)
-                    pic = np.hstack(pic)
-                    writer.append_data(pic)
-
-                steps += 1
-                prev_im = im.copy()
-                self.env.step()
-                if steps >= self.max_steps:
-                    if writer is not None:
-                        writer.close()
-
-                    break
-
-            if self.logger is not None:
-                self.logger.log(
-                    {
-                        'main_metrics/surprise': np.array(surprises).mean(),
-                        'main_metrics/total_surprise': total_surprise,
-                        'main_metrics/steps': steps,
-                        'connections/n_segments': self.hmm.connections.numSegments(),
-                        'connections/n_factors': self.hmm.factor_connections.numSegments()
-                    }, step=i
-                )
-
-                if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
-                    self.logger.log(
-                        {
-                            'gifs/prediction': wandb.Video(
-                                f'/tmp/{self.logger.name}_ep{i}.gif'
-                            )
-                        },
-                        step=i
-                    )
-                    # factors and segments
-                    n_segments = np.zeros(self.hmm.total_cells)
-                    sum_factor_value = np.zeros(self.hmm.total_cells)
-                    for cell in range(self.hmm.total_cells):
-                        segments = self.hmm.connections.segmentsForCell(cell)
-
-                        if len(segments) > 0:
-                            value = self.hmm.log_factor_values_per_segment[segments].sum()
-                        else:
-                            value = 0
-
-                        n_segments[cell] = len(segments)
-                        sum_factor_value[cell] = value
-
-                    n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
-                    n_segments = np.pad(
-                        n_segments,
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
-                        'constant',
-                        constant_values=0
-                    ).flatten()
-                    n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
-
-                    sum_factor_value = sum_factor_value.reshape((-1, self.hmm.n_hidden_states))
-                    sum_factor_value = np.pad(
-                        sum_factor_value,
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
-                        'constant',
-                        constant_values=0
-                    ).flatten()
-                    sum_factor_value = sum_factor_value.reshape((-1, self.hmm.cells_per_column)).T
-
-                    self.logger.log(
-                        {
-                            'factors/n_segments': wandb.Image(sns.heatmap(
-                                n_segments
-                            ))
-                        },
-                        step=i
-                    )
-                    plt.close('all')
-                    self.logger.log(
-                        {
-                            'factors/sum_factor_value': wandb.Image(
-                                sns.heatmap(
-                                    sum_factor_value
-                                )
-                            )
-                        },
-                        step=i
-                    )
-                    plt.close('all')
-
-        if self.logger is not None and self.save_model:
-            name = self.logger.name
-
-            with open(f"logs/models/model_{name}.pkl", 'wb') as file:
-                pickle.dump(self.hmm, file)
-
-    def preprocess(self, image):
-        return image
 
 
 def main(config_path):
@@ -1042,8 +883,6 @@ def main(config_path):
         runner = NStepTest(logger, config)
     elif experiment == 'pinball':
         runner = PinballTest(logger, config)
-    elif experiment == 'pixball':
-        runner = PixballTest(logger, config)
     else:
         raise ValueError
 

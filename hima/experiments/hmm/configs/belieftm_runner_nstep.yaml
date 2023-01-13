@@ -1,0 +1,16 @@
+log: False
+project_name: 'belieftm_dhmm_nstep_test'
+run_tag: null
+
+model_path: null
+n_steps: 10
+mc_iterations: 100
+
+# parameter overrides
+# policy: 2
+
+experiment: nstep
+hmm_conf: 'configs/belieftm/mpg_single.yaml'
+env_conf: 'configs/mpg/mmpg_default.yaml'
+
+seed: null
