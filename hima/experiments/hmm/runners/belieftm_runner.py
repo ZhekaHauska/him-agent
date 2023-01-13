@@ -202,8 +202,16 @@ class MMPGTest:
         else:
             self.n_obs_states = len(self.mpg.alphabet)
 
-        conf['hmm']['columns'] = self.n_obs_states + self.n_policies
+        conf['hmm']['columns'] = self.n_obs_states
         conf['hmm']['context_cells'] = conf['hmm']['columns'] * conf['hmm']['cells_per_column']
+
+        self.use_feedback = conf['run']['use_feedback']
+
+        if self.use_feedback:
+            conf['hmm']['feedback_cells'] = self.n_policies
+        else:
+            conf['hmm']['context_cells'] += self.n_policies
+            conf['hmm']['feedback_cells'] = 0
 
         self.hmm = HybridNaiveBayesTM(**conf['hmm'])
 
@@ -272,24 +280,38 @@ class MMPGTest:
                 word.append(letter)
 
                 if letter is None:
-                    obs_state = np.empty(0, dtype='uint32')
+                    obs_state = []
                 else:
-                    obs_state = np.array(
-                        [
-                            self.mpg.char_to_num[letter],
-                            policy + self.n_obs_states
-                        ]
+                    obs_state = [self.mpg.char_to_num[letter]]
+
+                prediction_context = self.hmm.get_active_cells()
+                if not self.use_feedback:
+                    prediction_context = np.append(
+                        prediction_context,
+                        self.hmm.columns * self.hmm.cells_per_column + policy
                     )
 
-                self.hmm.set_active_context_cells(self.hmm.get_active_cells())
+                self.hmm.set_active_context_cells(prediction_context)
                 self.hmm.activate_basal_dendrites(learn=True)
+
+                if self.use_feedback:
+                    self.hmm.set_active_feedback_cells([policy])
+                    self.hmm.activate_apical_dendrites(learn=True)
+
                 self.hmm.predict_cells()
                 self.hmm.predict_columns_density()
 
                 column_probs = self.hmm.column_probs[:self.n_obs_states]
 
-                # set winner cells from previous step
-                self.hmm.set_active_context_cells(self.hmm.get_winner_cells())
+                # set winner cells from the previous step
+                learning_context = self.hmm.get_winner_cells()
+                if not self.use_feedback:
+                    learning_context = np.append(
+                        learning_context,
+                        self.hmm.columns * self.hmm.cells_per_column + policy
+                    )
+
+                self.hmm.set_active_context_cells(learning_context)
                 self.hmm.set_active_columns(obs_state)
                 self.hmm.activate_cells(learn=True)
 
@@ -334,6 +356,10 @@ class MMPGTest:
                 total_dkl += dkl
 
                 steps += 1
+
+                if self.use_feedback and (steps == 0):
+                    self.hmm.set_active_feedback_cells([])
+                    self.hmm.activate_apical_dendrites(learn=False)
 
                 if letter is None:
                     break
@@ -462,15 +488,13 @@ class NStepTest:
         fig, axs = plt.subplots(k, k, figsize=(10, 10))
         fig.tight_layout(pad=3.0)
 
-        if self.hmm.feedback_cells > 0:
-            self.hmm.set_active_feedback_cells([self.policy])
-            self.hmm.activate_apical_dendrites(learn=False)
-
         self.hmm.set_active_columns([])
         self.hmm.activate_basal_dendrites(learn=False)
         self.hmm.predict_cells()
         self.hmm.set_active_context_cells(self.hmm.get_active_cells())
         self.hmm.predict_columns_density(update_receptive_fields=False)
+
+        dkls = []
 
         for step in range(self.n_steps):
             predicted_dist = self.hmm.column_probs[:self.n_obs_states]
@@ -482,17 +506,6 @@ class NStepTest:
                 obs_state = [
                         self.mpg.char_to_num[letter]
                     ]
-
-                # if self.hmm.columns > self.n_obs_states:
-                #     obs_state.append(
-                #         self.mpg.current_policy + self.n_obs_states
-                #     )
-                # elif self.hmm.feedback_cells > 0:
-                #
-                #
-                # obs_state = np.array(
-                #     obs_state
-                # )
 
                 self.hmm.set_active_columns(obs_state)
                 self.hmm.activate_apical_dendrites(learn=False)
@@ -511,6 +524,7 @@ class NStepTest:
                 predicted_dist = np.append(predicted_dist, 1 - predicted_dist.sum())
 
             kl_div = rel_entr(true_dist, predicted_dist).sum()
+            dkls.append(kl_div)
             
             if self.logger is not None:
                 self.logger.log(
@@ -548,7 +562,13 @@ class NStepTest:
         fig.legend(loc=7)
 
         if self.logger is not None:
+            dkls = np.array(dkls)
             self.logger.log({f'density/n_step_letter_predictions': wandb.Image(fig)})
+            self.logger.log(
+                {
+                    f'main_metrics/average_dkl': np.abs(dkls).mean(where=~np.isinf(dkls))
+                }
+            )
         else:
             plt.show()
 
