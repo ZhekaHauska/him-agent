@@ -50,8 +50,6 @@ def run_experiment(
     if args.wandb_entity:
         # overwrite wandb entity for the run
         os.environ['WANDB_ENTITY'] = args.wandb_entity
-    if not os.environ.get('WANDB_ENTITY', None):
-        print('WANDB_ENTITY env variable is not set. Set it for wandb logging.')
 
     if not args.multithread:
         # prevent math parallelization as it usually only slows things down for us
