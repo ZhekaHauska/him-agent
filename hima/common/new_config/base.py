@@ -12,7 +12,8 @@ from hima.common.utils import ensure_list
 
 # config-related types
 TConfig = dict[str, Any]
-TKeyPathValue = tuple[list, Any]
+TKeyPath = list
+TKeyPathValue = tuple[TKeyPath, Any]
 
 
 # ==================== resolve absolute or relative quantity ====================
@@ -104,9 +105,7 @@ def extracted(d: TConfig, *keys: str) -> tuple:
     (or None if a specified key was absent).
 
     NOTE: Sadly, type checkers incorrectly understand the correct type hint here,
-    which is tuple[TConfig, Optional[Any], ...], so less strict type hint is provided
-
-    TODO: Probably, it should be reworked to a `split`-like function that returns two dicts
+    which is tuple[TConfig, Optional[Any], ...], so a less strict type hint is provided
 
     Examples
     --------

@@ -140,7 +140,6 @@ class PipelineResolver:
             ]
             if not unresolved:
                 break
-            
 
         assert not unresolved, f'Cannot resolve {unresolved} pipeline units!'
 
