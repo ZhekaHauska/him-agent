@@ -114,7 +114,7 @@ def resolve_nested_configs(
 
 
 # ==================== config dict value induction ====================
-def resolve_absolute_quantity(abs_or_relative: int | float, baseline: int) -> int:
+def resolve_absolute_quantity(abs_or_relative: int | float, *, baseline: int) -> int:
     """
     Convert passed quantity to the absolute quantity regarding its type and the baseline value.
     Here we consider that ints relate to the absolute quantities and floats
@@ -148,7 +148,7 @@ def resolve_absolute_quantity(abs_or_relative: int | float, baseline: int) -> in
         raise TypeError(f'Function does not support type {type(abs_or_relative)}')
 
 
-def resolve_relative_quantity(abs_or_relative: int | float, baseline: int) -> float:
+def resolve_relative_quantity(abs_or_relative: int | float, *, baseline: int) -> float:
     """See `resolve_absolute_quantity` - this method is the opposite of it."""
 
     if isinstance(abs_or_relative, float):
