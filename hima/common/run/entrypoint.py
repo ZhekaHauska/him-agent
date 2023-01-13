@@ -23,7 +23,6 @@ TExperimentRunnerRegistry = dict[str, Type[Runner]]
 
 # TODO:
 #   - pass log folder root with the default behavior: make temp folder with standard procedure
-#   - consider making set_single_threaded_math specified by the run arg
 #   - make experiment runner registry lazy import
 
 
@@ -51,9 +50,12 @@ def run_experiment(
     if args.wandb_entity:
         # overwrite wandb entity for the run
         os.environ['WANDB_ENTITY'] = args.wandb_entity
+    if not os.environ.get('WANDB_ENTITY', None):
+        print('WANDB_ENTITY env variable is not set. Set it for wandb logging.')
 
-    # prevent math parallelization as it usually only slows things down for us
-    set_single_threaded_math()
+    if not args.multithread:
+        # prevent math parallelization as it usually only slows things down for us
+        set_single_threaded_math()
 
     if args.wandb_sweep:
         from hima.common.run.sweep import Sweep
@@ -85,6 +87,8 @@ def get_run_command_arg_parser() -> ArgumentParser:
     parser.add_argument('--sweep', dest='wandb_sweep', action='store_true', default=False)
     parser.add_argument('--sweep_id', dest='wandb_sweep_id', default=None)
     parser.add_argument('-n', '--n_sweep_agents', type=int, default=None)
+
+    parser.add_argument('--multithread', dest='multithread', action='store_true', default=False)
     return parser
 
 

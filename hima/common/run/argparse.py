@@ -31,7 +31,7 @@ def parse_arg(arg: str | tuple[str, Any]) -> TKeyPathValue:
         value = parse_str(value)
     else:
         # tuple ("key", value) from wandb config of the sweep single run
-        # we assume that the value is already passed correctly parsed
+        # we assume that the passed value is already correctly parsed
         key_path, value = arg
 
     # parse key tokens as they can represent array indices

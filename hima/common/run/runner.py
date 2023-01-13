@@ -29,7 +29,8 @@ class Runner:
         self.logger = None
         if log:
             self.logger = wandb.init(project=project)
-            # we have to pass the config with update instead of init because of sweep runs
+            # we have to pass the config with update instead of init because for sweep runs
+            # it is already initialized with the sweep run config
             self.logger.config.update(self.config)
 
     def run(self) -> None:
