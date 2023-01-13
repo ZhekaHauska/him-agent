@@ -37,17 +37,43 @@ class MPGTest:
 
         self.mpg = MultiMarkovProcessGrammar(**conf['env'])
 
-        conf['hmm']['columns'] = len(self.mpg.alphabet)
+        self.n_obs_states = len(self.mpg.alphabet)
+
+        conf['hmm']['columns'] = self.n_obs_states
         conf['hmm']['context_cells'] = conf['hmm']['columns'] * conf['hmm']['cells_per_column']
 
         self.hmm = HybridNaiveBayesTM(**conf['hmm'])
+
         self.n_episodes = conf['run']['n_episodes']
         self.smf_dist = conf['run']['smf_dist']
         self.log_update_rate = conf['run']['update_rate']
+        self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
+        self.n_steps = conf['run'].get('n_step_test', None)
+        if self.n_steps is not None:
+            self.mc_iterations = conf['run']['mc_iterations']
+
         self.logger = logger
 
+        if conf['run']['debug_tm_state']:
+            self.state_logger = HTMWriter(
+                'belief_tm',
+                os.environ.get('TM_STATE_PATH', 'tm_state_log'),
+                self.hmm,
+                conf['run']['chunk_size']
+            )
+        else:
+            self.state_logger = None
+
+        self.tm_state_debug_range = conf['run'].get('debug_range', [0, self.n_episodes])
+
         if self.logger is not None:
+            if self.n_steps is not None:
+                self.logger.define_metric(
+                    name='main_metrics/n_step_dkl',
+                    step_metric='prediction_step'
+                )
+
             im_name = f'/tmp/mpg_{self.logger.name}.png'
             draw_mpg(
                 im_name,
@@ -58,30 +84,40 @@ class MPGTest:
             self.logger.log({'mpg': wandb.Image(im_name)})
 
     def run(self):
-        dist = np.zeros((len(self.mpg.states), len(self.mpg.alphabet)))
-        dist_disp = np.zeros((len(self.mpg.states), len(self.mpg.alphabet)))
+        dist = np.zeros((len(self.mpg.states), len(self.mpg.alphabet) + 1))
+        dist_disp = np.zeros((len(self.mpg.states), len(self.mpg.alphabet) + 1))
+
         true_dist = np.array([self.mpg.predict_letters(from_state=i) for i in self.mpg.states])
+        norm = true_dist.sum(axis=-1)
+        empty_prob = np.clip(1 - norm, 0, 1)
+        true_dist = np.hstack([true_dist, empty_prob.reshape(-1, 1)])
 
         total_surprise = 0
         total_dkl = 0
+
         for i in range(self.n_episodes):
             self.mpg.reset()
             self.hmm.reset()
 
             dkls = []
             surprises = []
+            anomalies = []
+            confidences = []
+            word = []
+
+            steps = 0
 
             while True:
                 prev_state = self.mpg.current_state
 
                 letter = self.mpg.next_state()
 
+                word.append(letter)
+
                 if letter is None:
-                    obs_state = np.empty(0, dtype='uint32')
+                    obs_state = []
                 else:
-                    obs_state = np.array(
-                        [self.mpg.char_to_num[letter]]
-                    )
+                    obs_state = [self.mpg.char_to_num[letter]]
 
                 self.hmm.set_active_context_cells(self.hmm.get_active_cells())
                 self.hmm.activate_basal_dendrites(learn=True)
@@ -94,35 +130,67 @@ class MPGTest:
                 self.hmm.set_active_context_cells(self.hmm.get_winner_cells())
                 self.hmm.set_active_columns(obs_state)
                 self.hmm.activate_cells(learn=True)
-                
-                if letter is None:
-                    break
+
+                # debug
+                if (
+                        self.state_logger is not None
+                        and
+                        (self.tm_state_debug_range[0] <= i <= self.tm_state_debug_range[1])
+                ):
+                    if len(word) > 1:
+                        prev_letter = word[-2]
+                    else:
+                        prev_letter = None
+
+                    self.state_logger.write(letter, prev_letter)
                     
                 # metrics
-                # 1. surprise
-                surprise = min(200.0, self.hmm.surprise)
-                surprises.append(surprise)
-                total_surprise += surprise
+                if (letter is not None) and (prev_state != 0):
+                    # 1. surprise
+                    surprise = min(200.0, self.hmm.surprise)
+                    surprises.append(surprise)
+                    total_surprise += surprise
 
                 # 2. distribution
+                column_probs = np.append(
+                    column_probs, np.clip(1 - column_probs.sum(), 0, 1)
+                )
+
                 delta = column_probs - dist[prev_state]
                 dist_disp[prev_state] += self.smf_dist * (
                         np.power(delta, 2) - dist_disp[prev_state])
                 dist[prev_state] += self.smf_dist * delta
 
                 # 3. Kl distance
-                dkl = min(
-                        rel_entr(true_dist[prev_state], column_probs).sum(),
-                        200.0
-                    )
-                dkls.append(dkl)
-                total_dkl += dkl
+                if prev_state != 0:
+                    dkl = min(
+                            rel_entr(true_dist[prev_state], column_probs).sum(),
+                            200.0
+                        )
+                    dkls.append(dkl)
+                    total_dkl += dkl
+
+                    # 4. anomaly
+                    anomalies.append(self.hmm.anomaly[-1])
+
+                    # 5. confidence
+                    confidences.append(self.hmm.confidence[-1])
+
+                steps += 1
+
+                if letter is None:
+                    break
+
+                if steps >= self.max_steps:
+                    break
 
             if self.logger is not None:
                 self.logger.log(
                     {
-                        'main_metrics/surprise': np.array(surprises[1:]).mean(),
-                        'main_metrics/dkl': np.abs(dkls[1:]).mean(),
+                        'main_metrics/surprise': np.array(surprises).mean(),
+                        'main_metrics/anomaly': np.array(anomalies).mean(),
+                        'main_metrics/confidence': np.array(confidences).mean(),
+                        'main_metrics/dkl': np.abs(dkls).mean(),
                         'main_metrics/total_surprise': total_surprise,
                         'main_metrics/total_dkl': total_dkl,
                         'connections/basal_segments': self.hmm.basal_connections.numSegments(),
@@ -136,6 +204,10 @@ class MPGTest:
 
                     n_states = len(self.mpg.states)
                     k = int(np.ceil(np.sqrt(n_states)))
+
+                    tick_labels = self.mpg.alphabet.copy()
+                    tick_labels.append('∅')
+
                     fig, axs = plt.subplots(k, k)
                     fig.tight_layout(pad=3.0)
 
@@ -149,7 +221,7 @@ class MPGTest:
                         ax.bar(
                             np.arange(dist[n].shape[0]),
                             dist[n],
-                            tick_label=self.mpg.alphabet,
+                            tick_label=tick_labels,
                             label='TM',
                             color=(0.7, 1.0, 0.3),
                             capsize=4,
@@ -159,7 +231,7 @@ class MPGTest:
                         ax.bar(
                             np.arange(dist[n].shape[0]),
                             true_dist[n],
-                            tick_label=self.mpg.alphabet,
+                            tick_label=tick_labels,
                             color='#8F754F',
                             alpha=0.6,
                             label='True'
@@ -173,6 +245,26 @@ class MPGTest:
 
                         plt.close(fig)
 
+        # if self.logger is not None:
+        #     n_states = len(self.mpg.states)
+        #     tick_labels = self.mpg.alphabet.copy()
+        #     tick_labels.append('∅')
+        #
+        #     for n in range(n_states):
+        #         table = wandb.Table(
+        #             data=[[letter, p] for letter, p in zip(tick_labels, dist[n])],
+        #             columns=["letter", "prob"]
+        #         )
+        #         self.logger.log(
+        #             {f'dists/state_{n}': wandb.plot.bar(
+        #               table, "letter", "prob", title=f'state_{n}'
+        #             )},
+        #             step=i
+        #         )
+
+        if self.state_logger is not None:
+            self.state_logger.save()
+
         if self.logger is not None and self.save_model:
             name = self.logger.name
 
@@ -184,6 +276,116 @@ class MPGTest:
 
             with open(f"logs/model_{name}.pkl", 'wb') as file:
                 pickle.dump((self.mpg, self.hmm), file)
+
+        if self.n_steps is not None:
+            self.run_n_step()
+
+    def run_n_step(self):
+        self.hmm.reset()
+        self.mpg.reset()
+
+        k = int(np.ceil(np.sqrt(self.n_steps)))
+        fig, axs = plt.subplots(k, k, figsize=(10, 10))
+        fig.tight_layout(pad=3.0)
+
+        self.hmm.set_active_columns([])
+        self.hmm.activate_basal_dendrites(learn=False)
+        self.hmm.predict_cells()
+        self.hmm.set_active_context_cells(self.hmm.get_active_cells())
+        self.hmm.predict_columns_density(update_receptive_fields=False)
+
+        dkls = []
+        n_step_dists = []
+
+        for step in range(self.n_steps):
+            predicted_dist = self.hmm.column_probs[:self.n_obs_states]
+
+            if step == 0:
+                labels = ['Predicted', 'True']
+                letter = self.mpg.next_state()
+
+                obs_state = [
+                    self.mpg.char_to_num[letter]
+                ]
+
+                self.hmm.set_active_columns(obs_state)
+                self.hmm.activate_apical_dendrites(learn=False)
+                self.hmm.predict_cells()
+                self.hmm.activate_cells(learn=False)
+                active_cells = self.hmm.get_active_cells()
+                self.hmm.set_active_context_cells(active_cells)
+                self.hmm.predict_columns_density(update_receptive_fields=False)
+            else:
+                labels = [None, None]
+                self.hmm.predict_n_step_density(1, mc_iterations=self.mc_iterations)
+
+            true_dist = self.mpg.predict_letters(from_state=0, steps=step)
+
+            true_dist = np.append(
+                true_dist,
+                np.clip(1 - true_dist.sum(), 0, 1)
+            )
+
+            predicted_dist = np.append(
+                predicted_dist,
+                np.clip(1 - predicted_dist.sum(), 0, 1)
+            )
+
+            n_step_dists.append(predicted_dist)
+
+            kl_div = rel_entr(true_dist, predicted_dist).sum()
+            dkls.append(kl_div)
+
+            if self.logger is not None:
+                self.logger.log(
+                    {
+                        'main_metrics/n_step_dkl': kl_div,
+                        'prediction_step': step
+                    }
+                )
+
+            tick_labels = self.mpg.alphabet.copy()
+            tick_labels.append('∅')
+
+            ax = axs[step // k][step % k]
+            ax.grid()
+            ax.set_ylim(0, 1)
+            ax.bar(
+                np.arange(predicted_dist.shape[0]),
+                predicted_dist,
+                tick_label=tick_labels,
+                color=(0.7, 1.0, 0.3),
+                label=labels[0]
+            )
+
+            ax.bar(
+                np.arange(true_dist.shape[0]),
+                true_dist,
+                tick_label=tick_labels,
+                color=(0.8, 0.5, 0.5),
+                alpha=0.6,
+                label=labels[1]
+            )
+
+            ax.set_title(f'steps: {step + 1}; KL: {np.round(kl_div, 2)}')
+
+        fig.legend(loc=7)
+
+        if self.logger is not None:
+            dkls = np.array(dkls)
+            n_step_dists = np.vstack(n_step_dists)
+
+            name = self.logger.name
+
+            if self.save_model:
+                np.save(f'logs/n_step_dist_{name}.npy', n_step_dists)
+
+            self.logger.log({f'density/n_step_letter_predictions': wandb.Image(fig)})
+            self.logger.log(
+                {
+                    f'main_metrics/average_nstep_dkl': np.abs(dkls).mean(where=~np.isinf(dkls))
+                }
+            )
 
 
 class MMPGTest:
@@ -248,8 +450,8 @@ class MMPGTest:
     def run(self):
         dist = np.zeros((self.n_policies, len(self.mpg.states), len(self.mpg.alphabet)))
         dist_disp = np.zeros((self.n_policies, len(self.mpg.states), len(self.mpg.alphabet)))
-
         true_dist = np.zeros((self.n_policies, len(self.mpg.states), len(self.mpg.alphabet)))
+
         for pol in range(self.n_policies):
             self.mpg.set_policy(pol)
             true_dist[pol] = np.array(
@@ -258,6 +460,7 @@ class MMPGTest:
 
         total_surprise = 0
         total_dkl = 0
+
         for i in range(self.n_episodes):
             self.mpg.reset()
             self.hmm.reset()
@@ -265,6 +468,7 @@ class MMPGTest:
             dkls = []
             surprises = []
             anomalies = []
+            confidences = []
             word = []
 
             policy = self.mpg.rng.integers(self.n_policies)
@@ -355,6 +559,9 @@ class MMPGTest:
                 dkls.append(dkl)
                 total_dkl += dkl
 
+                # 5. confidence
+                confidences.append(self.hmm.confidence[-1])
+
                 steps += 1
 
                 if self.use_feedback and (steps == 0):
@@ -372,6 +579,7 @@ class MMPGTest:
                     {
                         'main_metrics/surprise': np.array(surprises[1:]).mean(),
                         'main_metrics/anomaly': np.array(anomalies[1:]).mean(),
+                        'main_metrics/confidence': np.array(confidences[1:]).mean(),
                         'main_metrics/dkl': np.abs(dkls[1:]).mean(),
                         'main_metrics/total_surprise': total_surprise,
                         'main_metrics/total_dkl': total_dkl,
@@ -459,10 +667,7 @@ class NStepTest:
         else:
             self.policy = self.mpg.initial_policy
 
-        if None in self.mpg.alphabet:
-            self.n_obs_states = len(self.mpg.alphabet) - 1
-        else:
-            self.n_obs_states = len(self.mpg.alphabet)
+        self.n_obs_states = len(self.mpg.alphabet)
 
         self.mc_iterations = conf['run']['mc_iterations']
         self.n_steps = conf['run']['n_steps']
@@ -520,8 +725,15 @@ class NStepTest:
 
             true_dist = self.mpg.predict_letters(from_state=0, steps=step)
 
-            if len(true_dist) > len(predicted_dist):
-                predicted_dist = np.append(predicted_dist, 1 - predicted_dist.sum())
+            true_dist = np.append(
+                true_dist,
+                np.clip(1 - true_dist.sum(), 0, 1)
+            )
+
+            predicted_dist = np.append(
+                predicted_dist,
+                np.clip(1 - predicted_dist.sum(), 0, 1)
+            )
 
             kl_div = rel_entr(true_dist, predicted_dist).sum()
             dkls.append(kl_div)
@@ -535,7 +747,7 @@ class NStepTest:
                 )
 
             tick_labels = self.mpg.alphabet.copy()
-            tick_labels = ['∅' if x is None else x for x in tick_labels]
+            tick_labels.append('∅')
 
             ax = axs[step // k][step % k]
             ax.grid()
