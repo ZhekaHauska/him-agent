@@ -5,13 +5,16 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from typing import Any, Collection
+from typing import Any, Collection, Union
 
 from hima.common.utils import ensure_list
 
 
 # config-related types
-TConfig = dict[str, Any]
+TConfig = Union[
+    dict[str, Any],
+    list[Any]
+]
 TKeyPath = list
 TKeyPathValue = tuple[TKeyPath, Any]
 
