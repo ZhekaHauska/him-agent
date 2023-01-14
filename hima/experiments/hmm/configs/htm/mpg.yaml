@@ -1,0 +1,13 @@
+cellsPerColumn: 10
+activationThreshold: 1
+minThreshold: 1
+maxNewSynapseCount: 1
+maxSynapsesPerSegment: 1
+initialPermanence: 0.4
+connectedPermanence: 0.5
+permanenceIncrement: 0.1
+permanenceDecrement: 0.1
+predictedSegmentDecrement: 0.001
+maxSegmentsPerCell: 15
+checkInputs: False
+

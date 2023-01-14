@@ -248,4 +248,4 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    main('../configs/hmm_runner.yaml')
+    main('../configs/runner/hmm/hmm_runner.yaml')

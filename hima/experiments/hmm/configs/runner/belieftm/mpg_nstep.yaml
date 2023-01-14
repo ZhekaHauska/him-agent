@@ -1,8 +1,8 @@
-log: False
+log: True
 project_name: 'belieftm_dhmm_nstep_test'
 run_tag: null
 
-model_path: null
+model_path: '/home/gsys/Desktop/Activity/HTM/htm_rl_tepo/hima_airi/him-agent/hima/experiments/hmm/logs/model_generous-grass-12.pkl'
 n_steps: 10
 mc_iterations: 100
 
@@ -11,6 +11,6 @@ mc_iterations: 100
 
 experiment: nstep
 hmm_conf: 'configs/belieftm/mpg_single.yaml'
-env_conf: 'configs/mpg/mmpg_default.yaml'
+env_conf: 'configs/mpg/mmpg_loopy.yaml'
 
 seed: null
