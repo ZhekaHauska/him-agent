@@ -1122,5 +1122,5 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    default_config = 'configs/belieftm_runner_single.yaml'
+    default_config = 'configs/belieftm/mpg_single.yaml'
     main(os.environ.get('RUN_CONF', default_config))
