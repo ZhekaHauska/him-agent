@@ -162,7 +162,7 @@ class MPGTest:
                 self.logger.log(
                     {
                         'main_metrics/surprise': np.array(surprises).mean(where=~np.isinf(np.array(surprises))),
-                        'main_metrics/anomaly': np.array(anomalies).mean(),
+                        'spec_metrics/anomaly': np.array(anomalies).mean(),
                         'main_metrics/dkl': np.abs(dkls).mean(where=~np.isinf(np.array(dkls))),
                         'main_metrics/total_surprise': total_surprise,
                         'main_metrics/total_dkl': total_dkl,

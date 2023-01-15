@@ -188,8 +188,8 @@ class MPGTest:
                 self.logger.log(
                     {
                         'main_metrics/surprise': np.array(surprises).mean(),
-                        'main_metrics/anomaly': np.array(anomalies).mean(),
-                        'main_metrics/confidence': np.array(confidences).mean(),
+                        'spec_metrics/anomaly': np.array(anomalies).mean(),
+                        'spec_metrics/confidence': np.array(confidences).mean(),
                         'main_metrics/dkl': np.abs(dkls).mean(),
                         'main_metrics/total_surprise': total_surprise,
                         'main_metrics/total_dkl': total_dkl,
