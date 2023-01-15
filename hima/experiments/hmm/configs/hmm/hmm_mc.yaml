@@ -1,7 +1,6 @@
 cells_per_column: 10
 lr: 1.0
 temp: 1.0
-regularization: 0.01
 gamma: 0.1
 punishment: 0.001
 learning_mode: htm

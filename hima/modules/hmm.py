@@ -23,7 +23,6 @@ class CHMMBasic:
             cells_per_column: int,
             lr: float = 0.1,
             temp: float = 1.0,
-            regularization: float = 0.1,
             gamma: float = 0.0,
             punishment: float = 0.0,
             batch_size: int = 1,
@@ -39,7 +38,6 @@ class CHMMBasic:
         self.states = np.arange(self.n_states)
         self.lr = lr
         self.temp = temp
-        self.alpha = regularization
         self.gamma = gamma
         self.punishment = punishment
         self.batch_size = batch_size
@@ -270,23 +268,32 @@ class CHMMBasic:
 
         if self.is_first:
             w = self.log_state_prior[next_state]
-            self.log_state_prior[next_state] += self.lr * (np.exp(-self.gamma*w) - self.alpha * w)
+            self.log_state_prior[next_state] += self.lr * np.exp(-self.gamma*w) * (
+                    1 - prediction[next_state]
+            )
 
             if wrong_prediction:
                 w = self.log_state_prior[predicted_state]
-                self.log_state_prior[predicted_state] -= self.punishment
+                self.log_state_prior[predicted_state] -= self.punishment * prediction[
+                    predicted_state
+                ]
 
             self.state_prior = softmax(self.log_state_prior, self.temp)
         else:
             w = self.log_transition_factors[prev_state, next_state]
 
-            self.log_transition_factors[prev_state, next_state] += self.lr * (
-                    np.exp(-self.gamma*w) - self.alpha * w)
+            self.log_transition_factors[prev_state, next_state] += (
+                    self.lr * np.exp(-self.gamma*w) * (
+                        1 - prediction[next_state]
+                    )
+            )
 
             if wrong_prediction:
                 w = self.log_transition_factors[prev_state, predicted_state]
 
-                self.log_transition_factors[prev_state, predicted_state] -= self.punishment
+                self.log_transition_factors[prev_state, predicted_state] -= (
+                        self.punishment * prediction[predicted_state]
+                )
 
             self.transition_probs = np.vstack(
                 [softmax(x, self.temp) for x in self.log_transition_factors]
