@@ -7,6 +7,7 @@ n_episodes: 100
 update_rate: 50
 smf_dist: 0.005
 max_steps: 50
+log_path: 'logs'
 
 debug_tm_state: False
 chunk_size: 100

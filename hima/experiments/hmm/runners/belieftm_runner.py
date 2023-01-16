@@ -50,6 +50,7 @@ class MPGTest:
         self.log_update_rate = conf['run']['update_rate']
         self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
+        self.log_path = conf['run']['log_path']
         self.n_steps = conf['run'].get('n_step_test', None)
         if self.n_steps is not None:
             self.mc_iterations = conf['run']['mc_iterations']
@@ -269,13 +270,13 @@ class MPGTest:
         if self.logger is not None and self.save_model:
             name = self.logger.name
 
-            path = Path('logs')
+            path = Path(self.log_path)
             if not path.exists():
                 path.mkdir()
 
-            np.save(f'logs/dist_{name}.npy', dist)
+            np.save(f'{self.log_path}/dist_{name}.npy', dist)
 
-            with open(f"logs/model_{name}.pkl", 'wb') as file:
+            with open(f"{self.log_path}/model_{name}.pkl", 'wb') as file:
                 pickle.dump((self.mpg, self.hmm), file)
 
         if self.n_steps is not None:
