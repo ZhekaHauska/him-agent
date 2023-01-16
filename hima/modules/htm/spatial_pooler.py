@@ -1018,7 +1018,7 @@ class SPDecoder:
         if update:
             self._update_receptive_fields()
 
-        log_product = np.dot(self.receptive_fields.T, np.log(1 - cell_probs))
+        log_product = np.dot(self.receptive_fields.T, np.log(np.clip(1 - cell_probs, 1e-7, 1)))
         return 1 - np.exp(log_product)
 
     def _update_receptive_fields(self):
