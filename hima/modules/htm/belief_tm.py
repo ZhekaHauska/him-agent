@@ -204,9 +204,8 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         )
 
         # p(inhib_cell = 1)
-        self.gamma = np.full(
+        self.gamma = np.zeros(
             self.max_interneurons,
-            self.init_gamma,
             dtype=REAL64_DTYPE
         )
 
