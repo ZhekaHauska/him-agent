@@ -25,6 +25,7 @@ import sys
 import ast
 import pickle
 import imageio
+from copy import copy
 
 
 class MPGTest:
@@ -50,8 +51,6 @@ class MPGTest:
         self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
         self.n_steps = conf['run'].get('n_step_test', None)
-        if self.n_steps is not None:
-            self.mc_iterations = conf['run']['mc_iterations']
 
         self.logger = logger
 
@@ -393,13 +392,11 @@ class PinballTest:
             self.sp_output = None
             self.decoder = None
 
-        self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
-        self.n_obs_states = 1
+        conf['hmm']['columnDimensions'] = self.obs_shape
 
-        conf['hmm']['columns'] = self.n_obs_vars
-        conf['hmm']['context_cells'] = conf['hmm']['columns'] * conf['hmm']['cells_per_column']
+        self.hmm = HtmTemporalMemory(**conf['hmm'])
 
-        self.hmm = HybridNaiveBayesTM(**conf['hmm'])
+        self.active_columns = SDR(self.encoder.getColumnDimensions())
 
         self.action = conf['run']['action']
         self.prediction_steps = conf['run']['prediction_steps']
@@ -408,7 +405,6 @@ class PinballTest:
         self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
         self.log_fps = conf['run']['log_gif_fps']
-        self.mc_iterations = conf['run']['mc_iterations']
 
         self.logger = logger
 
@@ -433,6 +429,11 @@ class PinballTest:
             surprises = []
             anomalies = []
             surprises_decoder = []
+
+            obs_probs_stack = []
+            hidden_probs_stack = []
+            n_step_surprise_obs = [list() for t in range(self.prediction_steps)]
+            n_step_surprise_hid = [list() for t in range(self.prediction_steps)]
 
             steps = 0
 
@@ -477,40 +478,37 @@ class PinballTest:
                     self.encoder.compute(self.sp_input, True, self.sp_output)
                     obs_state = self.sp_output.sparse
 
-                self.hmm.set_active_context_cells(self.hmm.get_active_cells())
-                self.hmm.activate_basal_dendrites(learn=True)
-                self.hmm.predict_cells()
-                self.hmm.predict_columns_density()
+                self.hmm.activateDendrites(learn=True)
 
-                column_probs = self.hmm.column_probs
-
-                # set winner cells from previous step
-                self.hmm.set_active_context_cells(self.hmm.get_winner_cells())
-                self.hmm.set_active_columns(obs_state)
-                self.hmm.activate_cells(learn=True)
+                column_probs = np.zeros(self.hmm.numberOfColumns())
+                column_probs[
+                    self.hmm.cellsToColumns(
+                        self.hmm.getPredictiveCells()
+                    ).sparse
+                ] = 1
 
                 # metrics
-                # 0. anomaly
-                anomalies.append(self.hmm.anomaly[-1])
-
                 # 1. surprise
-                surprise = min(200.0, self.hmm.surprise)
+                surprise = self.get_surprise(column_probs, self.sp_output.sparse)
                 surprises.append(surprise)
                 total_surprise += surprise
 
                 if self.decoder is not None:
                     decoded_probs = self.decoder.decode(column_probs, update=True)
-                    active_columns = np.isin(
-                        np.arange(self.encoder.getNumInputs()), self.sp_input.sparse
-                    )
-                    surprise_decoder = - np.sum(np.log(decoded_probs[active_columns]))
-                    surprise_decoder += - np.sum(np.log(1 - decoded_probs[~active_columns]))
+
+                    surprise_decoder = self.get_surprise(decoded_probs, self.sp_input.sparse)
 
                     surprises_decoder.append(surprise_decoder)
                     total_surprise_decoder += surprise_decoder
 
                 # 2. image
                 if (writer_raw is not None) and (i % self.log_update_rate == 0):
+                    # backup TM
+                    backup = pickle.dumps(self.hmm)
+
+                    obs_probs = []
+                    hidden_probs = []
+
                     if self.decoder is not None:
                         hidden_prediction = column_probs.reshape(self.obs_shape)
                         decoded_probs = self.decoder.decode(column_probs, update=True)
@@ -526,9 +524,24 @@ class PinballTest:
                     else:
                         hidden_predictions = None
 
+                    obs_probs.append(decoded_probs.copy())
+                    hidden_probs.append(hidden_prediction.copy())
+
                     for j in range(self.prediction_steps - 1):
-                        self.hmm.predict_n_step_density(1, mc_iterations=self.mc_iterations)
-                        column_probs = self.hmm.column_probs
+                        active_cells = self.hmm.getPredictiveCells()
+
+                        self.active_columns = self.hmm.cellsToColumns(
+                            active_cells
+                        )
+                        self.hmm.activateCells(self.active_columns, learn=False)
+                        self.hmm.activateDendrites(learn=False)
+
+                        column_probs = np.zeros(self.hmm.numberOfColumns())
+                        column_probs[
+                            self.hmm.cellsToColumns(
+                                self.hmm.getPredictiveCells()
+                            ).sparse
+                        ] = 1
 
                         if self.decoder is not None:
                             hidden_prediction = column_probs.reshape(self.obs_shape)
@@ -538,6 +551,9 @@ class PinballTest:
                             decoded_probs = column_probs.reshape(self.obs_shape)
                             hidden_prediction = None
 
+                        obs_probs.append(decoded_probs.copy())
+                        hidden_probs.append(hidden_prediction.copy())
+
                         raw_predictions.append(
                             (decoded_probs * 255).astype(np.uint8)
                         )
@@ -546,6 +562,23 @@ class PinballTest:
                             hidden_predictions.append(
                                 (hidden_prediction * 255).astype(np.uint8)
                             )
+
+                    obs_probs_stack.append(copy(obs_probs))
+                    hidden_probs_stack.append(copy(hidden_probs))
+
+                    # remove empty lists
+                    obs_probs_stack = [x for x in obs_probs_stack if len(x) > 0]
+                    hidden_probs_stack = [x for x in hidden_probs_stack if len(x) > 0]
+
+                    pred_horizon = [self.prediction_steps - len(x) for x in obs_probs_stack]
+                    current_predictions_obs = [x.pop(0) for x in obs_probs_stack]
+                    current_predictions_hid = [x.pop(0) for x in hidden_probs_stack]
+
+                    for p_obs, p_hid, s in zip(current_predictions_obs, current_predictions_hid, pred_horizon):
+                        surp_obs = self.get_surprise(p_obs.flatten(), self.sp_input.sparse)
+                        surp_hid = self.get_surprise(p_hid.flatten(), self.sp_output.sparse)
+                        n_step_surprise_obs[s].append(surp_obs)
+                        n_step_surprise_hid[s].append(surp_hid)
 
                     raw_im = [prev_diff.astype(np.uint8)*255]
                     raw_im.extend(raw_predictions)
@@ -557,6 +590,15 @@ class PinballTest:
                         hid_im.extend(hidden_predictions)
                         hid_im = np.hstack(hid_im)
                         writer_hidden.append_data(hid_im)
+
+                    # load TM
+                    self.hmm = pickle.loads(backup)
+
+                self.active_columns.sparse = obs_state
+                self.hmm.activateCells(self.active_columns, learn=True)
+
+                # 3. anomaly
+                anomalies.append(self.hmm.anomaly)
 
                 steps += 1
                 prev_diff = diff.copy()
@@ -575,12 +617,10 @@ class PinballTest:
                 self.logger.log(
                     {
                         'main_metrics/surprise': np.array(surprises[1:]).mean(),
-                        'main_metrics/anomaly': np.array(anomalies[1:]).mean(),
+                        'spec_metrics/anomaly': np.array(anomalies[1:]).mean(),
                         'main_metrics/total_surprise': total_surprise,
                         'main_metrics/steps': steps,
-                        'connections/basal_segments': self.hmm.basal_connections.numSegments(),
-                        'connections/inhib_segments': self.hmm.inhib_connections.numSegments(),
-                        'connections/apical_segments': self.hmm.apical_connections.numSegments()
+                        'connections/basal_segments': self.hmm.connections.numSegments(),
                     }, step=i
                 )
 
@@ -593,6 +633,23 @@ class PinballTest:
                     )
 
                 if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
+                    n_step_surprises_hid = {
+                        f'n_step_hidden/surprise_step_{s+1}': np.mean(x) for s, x in enumerate(n_step_surprise_hid)
+                    }
+                    n_step_surprises_obs = {
+                        f'n_step_raw/surprise_step_{s+1}': np.mean(x) for s, x in enumerate(n_step_surprise_obs)
+                    }
+
+                    self.logger.log(
+                        n_step_surprises_obs,
+                        step=i
+                    )
+
+                    self.logger.log(
+                        n_step_surprises_hid,
+                        step=i
+                    )
+
                     self.logger.log(
                         {
                             'gifs/raw_prediction': wandb.Video(
@@ -626,6 +683,23 @@ class PinballTest:
         gray_im /= gray_im.max()
 
         return gray_im
+
+    def get_surprise(self, probs, obs):
+        is_coincide = np.isin(
+            np.arange(len(probs)), obs
+        )
+        surprise = - np.sum(
+            np.log(
+                np.clip(probs[is_coincide], 1e-7, 1)
+            )
+        )
+        surprise += - np.sum(
+            np.log(
+                np.clip(1 - probs[~is_coincide], 1e-7, 1)
+            )
+        )
+
+        return surprise
 
 
 def main(config_path):
