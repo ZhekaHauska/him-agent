@@ -18,6 +18,7 @@ except ModuleNotFoundError:
 import numpy as np
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
+from pathlib import Path
 import seaborn as sns
 import wandb
 import yaml
@@ -26,6 +27,7 @@ import sys
 import ast
 import pickle
 import imageio
+from copy import copy
 
 
 class MPGTest:
@@ -644,6 +646,11 @@ class PinballTest:
             surprises = []
             surprises_decoder = []
 
+            obs_probs_stack = []
+            hidden_probs_stack = []
+            n_step_surprise_obs = [list() for t in range(self.prediction_steps)]
+            n_step_surprise_hid = [list() for t in range(self.prediction_steps)]
+
             steps = 0
 
             prev_im = self.preprocess(self.env.obs())
@@ -691,28 +698,27 @@ class PinballTest:
                 column_probs = self.hmm.predict_columns()
 
                 self.hmm.observe(obs_state, learn=True)
+
                 # metrics
                 # 1. surprise
-                active_columns = np.isin(np.arange(self.hmm.n_obs_vars), obs_state)
-                surprise = - np.sum(np.log(column_probs[active_columns]))
-                surprise += - np.sum(np.log(1 - column_probs[~active_columns]))
+                surprise = self.get_surprise(column_probs, obs_state)
 
                 surprises.append(surprise)
                 total_surprise += surprise
 
                 if self.decoder is not None:
                     decoded_probs = self.decoder.decode(column_probs, update=True)
-                    active_columns = np.isin(
-                        np.arange(self.encoder.getNumInputs()), self.sp_input.sparse
-                    )
-                    surprise_decoder = - np.sum(np.log(decoded_probs[active_columns]))
-                    surprise_decoder += - np.sum(np.log(1 - decoded_probs[~active_columns]))
+
+                    surprise_decoder = self.get_surprise(decoded_probs, self.sp_input.sparse)
 
                     surprises_decoder.append(surprise_decoder)
                     total_surprise_decoder += surprise_decoder
 
                 # 2. image
                 if (writer_raw is not None) and (i % self.log_update_rate == 0):
+                    obs_probs = []
+                    hidden_probs = []
+
                     if self.prediction_steps > 1:
                         back_up_massages = self.hmm.forward_messages.copy()
 
@@ -730,6 +736,9 @@ class PinballTest:
                         hidden_predictions = [(hidden_prediction * 255).astype(np.uint8)]
                     else:
                         hidden_predictions = None
+
+                    obs_probs.append(decoded_probs.copy())
+                    hidden_probs.append(hidden_prediction.copy())
 
                     for j in range(self.prediction_steps - 1):
                         self.hmm.predict_cells()
@@ -756,6 +765,25 @@ class PinballTest:
 
                     if self.prediction_steps > 1:
                         self.hmm.forward_messages = back_up_massages
+
+                    obs_probs_stack.append(copy(obs_probs))
+                    hidden_probs_stack.append(copy(hidden_probs))
+
+                    # remove empty lists
+                    obs_probs_stack = [x for x in obs_probs_stack if len(x) > 0]
+                    hidden_probs_stack = [x for x in hidden_probs_stack if len(x) > 0]
+
+                    pred_horizon = [self.prediction_steps - len(x) for x in obs_probs_stack]
+                    current_predictions_obs = [x.pop(0) for x in obs_probs_stack]
+                    current_predictions_hid = [x.pop(0) for x in hidden_probs_stack]
+
+                    for p_obs, p_hid, s in zip(
+                            current_predictions_obs, current_predictions_hid, pred_horizon
+                    ):
+                        surp_obs = self.get_surprise(p_obs.flatten(), self.sp_input.sparse)
+                        surp_hid = self.get_surprise(p_hid.flatten(), self.sp_output.sparse)
+                        n_step_surprise_obs[s].append(surp_obs)
+                        n_step_surprise_hid[s].append(surp_hid)
 
                     raw_im = [prev_diff.astype(np.uint8)*255]
                     raw_im.extend(raw_predictions)
@@ -801,6 +829,25 @@ class PinballTest:
                     )
 
                 if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
+                    n_step_surprises_hid = {
+                        f'n_step_hidden/surprise_step_{s + 1}': np.mean(x) for s, x in
+                        enumerate(n_step_surprise_hid)
+                    }
+                    n_step_surprises_obs = {
+                        f'n_step_raw/surprise_step_{s + 1}': np.mean(x) for s, x in
+                        enumerate(n_step_surprise_obs)
+                    }
+
+                    self.logger.log(
+                        n_step_surprises_obs,
+                        step=i
+                    )
+
+                    self.logger.log(
+                        n_step_surprises_hid,
+                        step=i
+                    )
+
                     self.logger.log(
                         {
                             'gifs/raw_prediction': wandb.Video(
@@ -875,6 +922,10 @@ class PinballTest:
         if self.logger is not None and self.save_model:
             name = self.logger.name
 
+            path = Path('logs')
+            if not path.exists():
+                path.mkdir()
+
             with open(f"logs/models/model_{name}.pkl", 'wb') as file:
                 pickle.dump(self.hmm, file)
 
@@ -883,6 +934,23 @@ class PinballTest:
         gray_im /= gray_im.max()
 
         return gray_im
+
+    def get_surprise(self, probs, obs):
+        is_coincide = np.isin(
+            np.arange(len(probs)), obs
+        )
+        surprise = - np.sum(
+            np.log(
+                np.clip(probs[is_coincide], 1e-7, 1)
+            )
+        )
+        surprise += - np.sum(
+            np.log(
+                np.clip(1 - probs[~is_coincide], 1e-7, 1)
+            )
+        )
+
+        return surprise
 
 
 class PixballTest:
