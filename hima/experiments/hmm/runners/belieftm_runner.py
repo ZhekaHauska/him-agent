@@ -919,97 +919,98 @@ class PinballTest:
                 self.hmm.set_active_columns(obs_state)
                 self.hmm.activate_cells(learn=True)
 
-                # metrics
-                # 0. anomaly
-                anomalies.append(self.hmm.anomaly[-1])
+                if steps > 0:
+                    # metrics
+                    # 0. anomaly
+                    anomalies.append(self.hmm.anomaly[-1])
 
-                # 1. surprise
-                surprise = min(200.0, self.hmm.surprise)
-                surprises.append(surprise)
-                total_surprise += surprise
-
-                if self.decoder is not None:
-                    decoded_probs = self.decoder.decode(column_probs, update=True)
-
-                    surprise_decoder = self.get_surprise(decoded_probs, self.sp_input.sparse)
-
-                    surprises_decoder.append(surprise_decoder)
-                    total_surprise_decoder += surprise_decoder
-
-                # 2. image
-                if (writer_raw is not None) and (i % self.log_update_rate == 0):
-                    obs_probs = []
-                    hidden_probs = []
+                    # 1. surprise
+                    surprise = self.get_surprise(column_probs, obs_state)
+                    surprises.append(surprise)
+                    total_surprise += surprise
 
                     if self.decoder is not None:
-                        hidden_prediction = column_probs.reshape(self.obs_shape)
                         decoded_probs = self.decoder.decode(column_probs, update=True)
-                        decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
-                    else:
-                        decoded_probs = column_probs.reshape(self.obs_shape)
-                        hidden_prediction = None
 
-                    raw_predictions = [(decoded_probs * 255).astype(np.uint8)]
+                        surprise_decoder = self.get_surprise(decoded_probs, self.sp_input.sparse)
 
-                    if hidden_prediction is not None:
-                        hidden_predictions = [(hidden_prediction * 255).astype(np.uint8)]
-                    else:
-                        hidden_predictions = None
+                        surprises_decoder.append(surprise_decoder)
+                        total_surprise_decoder += surprise_decoder
 
-                    obs_probs.append(decoded_probs.copy())
-                    hidden_probs.append(hidden_prediction.copy())
-
-                    for j in range(self.prediction_steps - 1):
-                        self.hmm.predict_n_step_density(1, mc_iterations=self.mc_iterations)
-                        column_probs = self.hmm.column_probs
+                    # 2. image
+                    if (writer_raw is not None) and (i % self.log_update_rate == 0):
+                        obs_probs = []
+                        hidden_probs = []
 
                         if self.decoder is not None:
                             hidden_prediction = column_probs.reshape(self.obs_shape)
-                            decoded_probs = self.decoder.decode(column_probs)
+                            decoded_probs = self.decoder.decode(column_probs, update=True)
                             decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
                         else:
                             decoded_probs = column_probs.reshape(self.obs_shape)
                             hidden_prediction = None
 
+                        raw_predictions = [(decoded_probs * 255).astype(np.uint8)]
+
+                        if hidden_prediction is not None:
+                            hidden_predictions = [(hidden_prediction * 255).astype(np.uint8)]
+                        else:
+                            hidden_predictions = None
+
                         obs_probs.append(decoded_probs.copy())
                         hidden_probs.append(hidden_prediction.copy())
 
-                        raw_predictions.append(
-                            (decoded_probs * 255).astype(np.uint8)
-                        )
+                        for j in range(self.prediction_steps - 1):
+                            self.hmm.predict_n_step_density(1, mc_iterations=self.mc_iterations)
+                            column_probs = self.hmm.column_probs
 
-                        if hidden_predictions is not None:
-                            hidden_predictions.append(
-                                (hidden_prediction * 255).astype(np.uint8)
+                            if self.decoder is not None:
+                                hidden_prediction = column_probs.reshape(self.obs_shape)
+                                decoded_probs = self.decoder.decode(column_probs)
+                                decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
+                            else:
+                                decoded_probs = column_probs.reshape(self.obs_shape)
+                                hidden_prediction = None
+
+                            obs_probs.append(decoded_probs.copy())
+                            hidden_probs.append(hidden_prediction.copy())
+
+                            raw_predictions.append(
+                                (decoded_probs * 255).astype(np.uint8)
                             )
 
-                    obs_probs_stack.append(copy(obs_probs))
-                    hidden_probs_stack.append(copy(hidden_probs))
+                            if hidden_predictions is not None:
+                                hidden_predictions.append(
+                                    (hidden_prediction * 255).astype(np.uint8)
+                                )
 
-                    # remove empty lists
-                    obs_probs_stack = [x for x in obs_probs_stack if len(x) > 0]
-                    hidden_probs_stack = [x for x in hidden_probs_stack if len(x) > 0]
+                        obs_probs_stack.append(copy(obs_probs))
+                        hidden_probs_stack.append(copy(hidden_probs))
 
-                    pred_horizon = [self.prediction_steps - len(x) for x in obs_probs_stack]
-                    current_predictions_obs = [x.pop(0) for x in obs_probs_stack]
-                    current_predictions_hid = [x.pop(0) for x in hidden_probs_stack]
+                        # remove empty lists
+                        obs_probs_stack = [x for x in obs_probs_stack if len(x) > 0]
+                        hidden_probs_stack = [x for x in hidden_probs_stack if len(x) > 0]
 
-                    for p_obs, p_hid, s in zip(current_predictions_obs, current_predictions_hid, pred_horizon):
-                        surp_obs = self.get_surprise(p_obs.flatten(), self.sp_input.sparse)
-                        surp_hid = self.get_surprise(p_hid.flatten(), self.sp_output.sparse)
-                        n_step_surprise_obs[s].append(surp_obs)
-                        n_step_surprise_hid[s].append(surp_hid)
+                        pred_horizon = [self.prediction_steps - len(x) for x in obs_probs_stack]
+                        current_predictions_obs = [x.pop(0) for x in obs_probs_stack]
+                        current_predictions_hid = [x.pop(0) for x in hidden_probs_stack]
 
-                    raw_im = [prev_diff.astype(np.uint8)*255]
-                    raw_im.extend(raw_predictions)
-                    raw_im = np.hstack(raw_im)
-                    writer_raw.append_data(raw_im)
+                        for p_obs, p_hid, s in zip(current_predictions_obs, current_predictions_hid, pred_horizon):
+                            surp_obs = self.get_surprise(p_obs.flatten(), self.sp_input.sparse)
+                            surp_hid = self.get_surprise(p_hid.flatten(), self.sp_output.sparse)
+                            n_step_surprise_obs[s].append(surp_obs)
+                            n_step_surprise_hid[s].append(surp_hid)
 
-                    if hidden_predictions is not None:
-                        hid_im = [prev_latent.astype(np.uint8) * 255]
-                        hid_im.extend(hidden_predictions)
-                        hid_im = np.hstack(hid_im)
-                        writer_hidden.append_data(hid_im)
+                        raw_im = [prev_diff.astype(np.uint8)*255]
+                        raw_im.extend(raw_predictions)
+                        raw_im = np.hstack(raw_im)
+                        writer_raw.append_data(raw_im)
+
+                        if hidden_predictions is not None:
+                            hid_im = [prev_latent.astype(np.uint8) * 255]
+                            hid_im.extend(hidden_predictions)
+                            hid_im = np.hstack(hid_im)
+                            writer_hidden.append_data(hid_im)
 
                 steps += 1
                 prev_diff = diff.copy()
@@ -1027,8 +1028,8 @@ class PinballTest:
             if self.logger is not None:
                 self.logger.log(
                     {
-                        'main_metrics/surprise': np.array(surprises[1:]).mean(),
-                        'spec_metrics/anomaly': np.array(anomalies[1:]).mean(),
+                        'main_metrics/surprise': np.array(surprises).mean(),
+                        'spec_metrics/anomaly': np.array(anomalies).mean(),
                         'main_metrics/total_surprise': total_surprise,
                         'main_metrics/steps': steps,
                         'connections/basal_segments': self.hmm.basal_connections.numSegments(),
