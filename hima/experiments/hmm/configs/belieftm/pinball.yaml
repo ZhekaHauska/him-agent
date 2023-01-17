@@ -22,7 +22,7 @@ init_b_apical: 0.5
 init_theta: 0.5
 init_gamma: 0.5
 
-cells_per_column: 10
+cells_per_column: 15
 prune_zero_synapses: True
 feedback_cells: 0
 
@@ -51,7 +51,7 @@ sample_size_apical: -1
 max_segments_per_cell_apical: 6
 
 
-max_interneurons: 100
+max_interneurons: 200
 connected_threshold_inhib: 0.01
 initial_permanence_inhib: 0.5
 permanence_increment_inhib: 0.1

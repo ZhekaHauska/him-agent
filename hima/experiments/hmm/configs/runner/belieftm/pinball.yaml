@@ -1,9 +1,9 @@
 log: True
 save_model: False
-project_name: 'pinball_decoder_test'
+project_name: 'ijcai_test'
 run_tag: belieftm
 
-n_episodes: 501
+n_episodes: 200
 update_rate: 10
 max_steps: 15
 log_gif_fps: 5
@@ -15,5 +15,6 @@ experiment: pinball
 sp_conf: 'configs/sp/default.yaml'
 hmm_conf: 'configs/belieftm/pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'
+setup: 'guard'
 
 seed: null

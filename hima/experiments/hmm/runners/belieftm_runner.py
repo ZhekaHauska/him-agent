@@ -794,7 +794,11 @@ class PinballTest:
         conf['hmm']['seed'] = self.seed
         conf['env']['seed'] = self.seed
         conf['env']['exe_path'] = os.environ.get('PINBALL_EXE', None)
-        conf['env']['config_path'] = os.environ.get('PINBALL_CONF', None)
+        conf['env']['config_path'] = os.path.join(
+            os.environ.get('PINBALL_ROOT', None),
+            'configs',
+            f"{conf['run']['setup']}.json"
+        )
 
         self.env = Pinball(**conf['env'])
 
