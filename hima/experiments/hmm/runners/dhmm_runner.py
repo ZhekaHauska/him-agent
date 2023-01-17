@@ -757,6 +757,9 @@ class PinballTest:
                                 decoded_probs = column_probs.reshape(self.obs_shape)
                                 hidden_prediction = None
 
+                            obs_probs.append(decoded_probs.copy())
+                            hidden_probs.append(hidden_prediction.copy())
+
                             raw_predictions.append(
                                 (decoded_probs * 255).astype(np.uint8)
                             )
