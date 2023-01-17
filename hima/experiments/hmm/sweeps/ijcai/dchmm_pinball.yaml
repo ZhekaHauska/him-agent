@@ -1,0 +1,20 @@
+project: ijcai_pinball
+entity: hauska
+program: runners/dhmm_runner.py
+method: grid
+metric:
+  name: main_metrics/total_surprise
+  goal: minimize
+parameters:
+  run.run_tag:
+    values: ['dchmm']
+  run.seed:
+    values: [43228, 78273, 83207]
+  run.setup:
+    values: ['fork', 'guard']
+command:
+  - ${env}
+  - python
+  - ${program}
+  - configs/runner/dhmm/pinball.yaml
+  - ${args}

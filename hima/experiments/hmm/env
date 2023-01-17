@@ -1,0 +1,3 @@
+export PINBALL_EXE=/home/eenigma/Desktop/Activity/HTM/pinball/Pinball.x86_64
+export PINBALL_ROOT=/home/eenigma/Desktop/Activity/HTM/pinball
+export WANDB_ENTITY=hauska

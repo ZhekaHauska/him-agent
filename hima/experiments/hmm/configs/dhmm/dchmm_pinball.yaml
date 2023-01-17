@@ -1,4 +1,4 @@
-cells_per_column: 50
+cells_per_column: 15
 n_vars_per_factor: 15
 factor_activation_threshold: 0  # number of active variables in a receptive field to active factor
 factors_per_var: 10
