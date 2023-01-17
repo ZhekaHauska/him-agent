@@ -50,6 +50,7 @@ class MPGTest:
         self.log_update_rate = conf['run']['update_rate']
         self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
+        self.log_path = conf['run']['log_path']
         self.n_steps = conf['run'].get('n_step_test', None)
 
         self.logger = logger
@@ -121,8 +122,8 @@ class MPGTest:
                 if (letter is not None) and (prev_state != 0):
                     # 1. surprise
                     active_columns = np.arange(self.n_obs_states) == obs_state[0]
-                    surprise = - np.sum(np.log(column_probs[active_columns]))
-                    surprise += - np.sum(np.log(1 - column_probs[~active_columns]))
+                    surprise = - np.sum(np.log(np.clip(column_probs[active_columns], 1e-7, 1)))
+                    surprise += - np.sum(np.log(np.clip(1 - column_probs[~active_columns], 1e-7, 1)))
 
                     surprises.append(surprise)
                     total_surprise += surprise
@@ -235,13 +236,13 @@ class MPGTest:
         if self.logger is not None and self.save_model:
             name = self.logger.name
 
-            path = Path('logs')
+            path = Path(self.log_path)
             if not path.exists():
                 path.mkdir()
 
-            np.save(f'logs/dist_{name}.npy', dist)
+            np.save(f'{self.log_path}/dist_{name}.npy', dist)
 
-            with open(f"logs/model_{name}.pkl", 'wb') as file:
+            with open(f"{self.log_path}/model_{name}.pkl", 'wb') as file:
                 pickle.dump((self.mpg, self.hmm), file)
 
         if self.n_steps is not None:
@@ -367,7 +368,11 @@ class PinballTest:
         conf['hmm']['seed'] = self.seed
         conf['env']['seed'] = self.seed
         conf['env']['exe_path'] = os.environ.get('PINBALL_EXE', None)
-        conf['env']['config_path'] = os.environ.get('PINBALL_CONF', None)
+        conf['env']['config_path'] = os.path.join(
+            os.environ.get('PINBALL_ROOT', None),
+            'configs',
+            f"{conf['run']['setup']}.json"
+        )
 
         self.env = Pinball(**conf['env'])
 

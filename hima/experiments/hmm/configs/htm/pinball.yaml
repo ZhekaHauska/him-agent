@@ -1,4 +1,4 @@
-cellsPerColumn: 10
+cellsPerColumn: 15
 activationThreshold: 1
 minThreshold: 1
 maxNewSynapseCount: 15
