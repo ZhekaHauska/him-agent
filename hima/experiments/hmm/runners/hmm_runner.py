@@ -397,13 +397,16 @@ class PinballTest:
 
         self.hmm = CHMMBasic(**conf['hmm'])
 
-        self.action = conf['run']['action']
+        self.actions = conf['run']['actions']
+        self.positions = conf['run']['positions']
         self.prediction_steps = conf['run']['prediction_steps']
         self.n_episodes = conf['run']['n_episodes']
         self.log_update_rate = conf['run']['update_rate']
         self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
         self.log_fps = conf['run']['log_gif_fps']
+
+        self._rng = np.random.default_rng(self.seed)
 
         self.logger = logger
 
@@ -461,7 +464,11 @@ class PinballTest:
                 writer_raw = None
                 writer_hidden = None
 
-            self.env.act(self.action)
+            init_i = self._rng.integers(0, len(self.actions), 1)
+            action = self.actions[init_i[0]]
+            position = self.positions[init_i[0]]
+            self.env.reset(position)
+            self.env.act(action)
 
             while True:
                 raw_im = self.preprocess(self.env.obs())
@@ -478,7 +485,8 @@ class PinballTest:
 
                 column_probs = self.hmm.predict_columns()
 
-                self.hmm.observe(obs_state[0], learn=True)
+                if len(obs_state) != 0:
+                    self.hmm.observe(obs_state[0], learn=True)
 
                 if steps > 0:
                     # metrics

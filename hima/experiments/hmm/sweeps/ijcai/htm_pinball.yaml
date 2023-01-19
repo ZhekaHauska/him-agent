@@ -1,4 +1,4 @@
-project: ijcai_pinball
+project: ijcai_pinball2
 entity: hauska
 program: runners/htm_runner.py
 method: grid
@@ -10,8 +10,8 @@ parameters:
     values: ['htm']
   run.seed:
     values: [43228, 78273, 83207]
-  run.setup:
-    values: ['fork', 'guard']
+  hmm.cellsPerColumn:
+    values: [1, 10]
 command:
   - ${env}
   - python

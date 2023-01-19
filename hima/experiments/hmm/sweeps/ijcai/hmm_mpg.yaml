@@ -7,26 +7,16 @@ metric:
   goal: minimize
 parameters:
   run.run_tag:
-    values: ['chmm']
+    values: ['chmm_mc']
   run.seed:
     values: [43228, 78273, 83207]
   run.log_path:
-    values: ['logs/chmm']
-  hmm.learning_mode:
-    values: ['bw_base']
-  hmm.batch_size:
-    values: [100]
-  hmm.lr:
-    values: [0.5]
-  hmm.initialization:
-    values: ['dirichlet']
-  hmm.sigma:
-    values: [1.0]
+    values: ['logs/chmm_mc']
   mpg.initial_policy:
     values: [0, 1, 2, 3, 4]
 command:
   - ${env}
   - python
   - ${program}
-  - configs/hmm_runner.yaml
+  - configs/runner/hmm/mpg_single.yaml
   - ${args}

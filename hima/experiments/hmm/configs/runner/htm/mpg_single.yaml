@@ -1,12 +1,13 @@
 log: True
-save_model: False
-project_name: 'mpg_htm_test'
-run_tag: null
+save_model: True
+project_name: 'ijcai_test'
+run_tag: htm
 
-n_episodes: 5000
-update_rate: 1000
+n_episodes: 3000
+update_rate: 2999
 smf_dist: 0.005
 max_steps: 50
+log_path: 'logs'
 
 n_step_test: 10
 
@@ -14,4 +15,4 @@ experiment: mpg
 hmm_conf: 'configs/htm/mpg.yaml'
 env_conf: 'configs/mpg/mmpg_default.yaml'
 
-seed: 4322
+seed: null

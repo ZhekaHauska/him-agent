@@ -3,7 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-
+from hima.common.sdr_encoders import IntBucketEncoder
 from hima.modules.htm.belief_tm import HybridNaiveBayesTM
 from hima.modules.htm.tm_writer import HTMWriter
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
@@ -39,8 +39,11 @@ class MPGTest:
         self.mpg = MultiMarkovProcessGrammar(**conf['env'])
 
         self.n_obs_states = len(self.mpg.alphabet)
+        self.bucket_size = conf['run']['bucket_size']
 
-        conf['hmm']['columns'] = self.n_obs_states
+        self.encoder = IntBucketEncoder(self.n_obs_states, self.bucket_size)
+
+        conf['hmm']['columns'] = self.encoder.output_sdr_size
         conf['hmm']['context_cells'] = conf['hmm']['columns'] * conf['hmm']['cells_per_column']
 
         self.hmm = HybridNaiveBayesTM(**conf['hmm'])
@@ -119,14 +122,18 @@ class MPGTest:
                 if letter is None:
                     obs_state = []
                 else:
-                    obs_state = [self.mpg.char_to_num[letter]]
+                    obs_state = self.encoder.encode(self.mpg.char_to_num[letter])
 
                 self.hmm.set_active_context_cells(self.hmm.get_active_cells())
                 self.hmm.activate_basal_dendrites(learn=True)
                 self.hmm.predict_cells()
                 self.hmm.predict_columns_density()
 
-                column_probs = self.hmm.column_probs
+                column_probs = np.mean(
+                    self.hmm.column_probs.reshape(
+                        (-1, self.bucket_size)
+                    ).T, axis=0
+                )
 
                 # set winner cells from previous step
                 self.hmm.set_active_context_cells(self.hmm.get_winner_cells())
@@ -300,15 +307,17 @@ class MPGTest:
         n_step_dists = []
 
         for step in range(self.n_steps):
-            predicted_dist = self.hmm.column_probs[:self.n_obs_states]
+            predicted_dist = np.mean(
+                    self.hmm.column_probs.reshape(
+                        (-1, self.bucket_size)
+                    ).T, axis=0
+                )
 
             if step == 0:
                 labels = ['Predicted', 'True']
                 letter = self.mpg.next_state()
 
-                obs_state = [
-                    self.mpg.char_to_num[letter]
-                ]
+                obs_state = self.encoder.encode(self.mpg.char_to_num[letter])
 
                 self.hmm.set_active_columns(obs_state)
                 self.hmm.activate_apical_dendrites(learn=False)
@@ -831,7 +840,8 @@ class PinballTest:
 
         self.hmm = HybridNaiveBayesTM(**conf['hmm'])
 
-        self.action = conf['run']['action']
+        self.actions = conf['run']['actions']
+        self.positions = conf['run']['positions']
         self.prediction_steps = conf['run']['prediction_steps']
         self.n_episodes = conf['run']['n_episodes']
         self.log_update_rate = conf['run']['update_rate']
@@ -839,6 +849,8 @@ class PinballTest:
         self.save_model = conf['run']['save_model']
         self.log_fps = conf['run']['log_gif_fps']
         self.mc_iterations = conf['run']['mc_iterations']
+
+        self._rng = np.random.default_rng(self.seed)
 
         self.logger = logger
 
@@ -897,7 +909,11 @@ class PinballTest:
                 writer_raw = None
                 writer_hidden = None
 
-            self.env.act(self.action)
+            init_i = self._rng.integers(0, len(self.actions), 1)
+            action = self.actions[init_i[0]]
+            position = self.positions[init_i[0]]
+            self.env.reset(position)
+            self.env.act(action)
 
             while True:
                 raw_im = self.preprocess(self.env.obs())

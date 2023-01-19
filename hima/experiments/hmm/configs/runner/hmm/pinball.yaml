@@ -3,12 +3,15 @@ save_model: False
 project_name: 'ijcai_test'
 run_tag: hmm
 
-n_episodes: 501
+n_episodes: 201
 update_rate: 10
 max_steps: 15
 log_gif_fps: 5
 prediction_steps: 5
-action: [ 0.0, 5 ]
+actions: [[ 3.14, 5 ], [0, 5], [-1.57, 2], [1.57, 2]]
+positions: [[0, -9], [0, 0], [-3, -5.3], [3, -5.3]]
+#actions: [[ 3.14, 5 ], [0, 3]]
+#positions: [[0, -9], [0, 0]]
 
 experiment: pinball
 sp_conf: 'configs/sp/hmm.yaml'
@@ -16,4 +19,4 @@ hmm_conf: 'configs/hmm/hmm_bw.yaml'
 env_conf: 'configs/pinball/default.yaml'
 setup: 'fork'
 
-seed: 3423
+seed: null
