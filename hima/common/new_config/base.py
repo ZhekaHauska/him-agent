@@ -5,10 +5,12 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Collection, Union
 
-from hima.common.utils import ensure_list
+from ruamel import yaml
 
+from hima.common.utils import ensure_list
 
 # config-related types
 TConfig = Union[
@@ -118,3 +120,13 @@ def extracted(d: TConfig, *keys: str) -> tuple:
     values = tuple([d.get(k, None) for k in keys])
     filtered_dict = filtered(d, keys, depth=1)
     return (filtered_dict, ) + values
+
+
+# ==================== read config ====================
+
+def read_config(filepath: str | Path) -> TConfig:
+    if not isinstance(filepath, Path):
+        filepath = Path(filepath)
+
+    with filepath.open('r') as config_io:
+        return yaml.load(config_io, Loader=yaml.Loader)

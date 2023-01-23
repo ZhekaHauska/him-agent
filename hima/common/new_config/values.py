@@ -47,8 +47,6 @@ def resolve_value(
 
 
 # ==================== config dict value induction ====================
-
-
 def get_unresolved_value() -> Any:
     return _TO_BE_INDUCED_VALUE
 

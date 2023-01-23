@@ -8,8 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Type
 
-from hima.common.new_config.base import TConfig, extracted, TKeyPath
-from hima.common.run.entrypoint import read_config
+from hima.common.new_config.base import TConfig, extracted, TKeyPath, read_config
 
 # ==> special keys
 # They are intended to be non-importable, i.e. to be used only here!
@@ -32,7 +31,7 @@ _BASE_CONFIG_KEY = '_base_'
 
 # ==================== config meta info extraction ====================
 def extracted_type_tag(config: TConfig) -> tuple[TConfig, str | None]:
-    """Extracts the type tag using the type hinting convention for configs."""
+    """Extracts the type tagusing the type hinting convention for configs."""
     return extracted(config, _TYPE_KEY)
 
 

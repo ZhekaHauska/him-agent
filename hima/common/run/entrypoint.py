@@ -7,28 +7,30 @@ from __future__ import annotations
 
 import os
 from argparse import ArgumentParser
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Type
 
-from ruamel import yaml
-
-from hima.common.config import (
-    extracted_type, TConfig, override_config
-)
+from hima.common.new_config.base import override_config, TConfig, read_config, TKeyPathValue
+from hima.common.new_config.global_config import GlobalConfig
+from hima.common.new_config.types import TTypeResolver
 from hima.common.run.argparse import parse_arg_list
-from hima.common.run.runner import Runner
-
-TExperimentRunnerRegistry = dict[str, Type[Runner]]
 
 
 # TODO:
 #   - pass log folder root with the default behavior: make temp folder with standard procedure
 #   - make experiment runner registry lazy import
 
+@dataclass
+class RunParams:
+    config: TConfig
+    config_path: Path
+    config_overrides: list[TKeyPathValue]
+
+    type_resolver: TTypeResolver
+
 
 def run_experiment(
-        run_command_parser: ArgumentParser,
-        experiment_runner_registry: TExperimentRunnerRegistry
+        *, arg_parser: ArgumentParser, experiment_runner_registry: TTypeResolver
 ) -> None:
     """
     THE MAIN entry point for starting a program.
@@ -39,13 +41,7 @@ def run_experiment(
         5) resolves who will run this experiment — a runner
         6) passes execution handling to the runner.
     """
-    args, unknown_args = run_command_parser.parse_known_args()
-
-    config_path = Path(args.config_filepath)
-    experiment_root = config_path.parent
-
-    config = read_config(config_path)
-    config_overrides = parse_arg_list(unknown_args)
+    args, unknown_args = arg_parser.parse_known_args()
 
     if args.wandb_entity:
         # overwrite wandb entity for the run
@@ -55,21 +51,47 @@ def run_experiment(
         # prevent math parallelization as it usually only slows things down for us
         set_single_threaded_math()
 
+    config_path = Path(args.config_filepath)
+    config = read_config(config_path)
+    config_overrides = parse_arg_list(unknown_args)
+
+    run_params = RunParams(
+        config=config, config_path=config_path,
+        config_overrides=config_overrides,
+        type_resolver=experiment_runner_registry
+    )
+
     if args.wandb_sweep:
-        from hima.common.run.sweep import Sweep
-        Sweep(
+        from hima.common.run.sweep import run_sweep
+        run_sweep(
             sweep_id=args.wandb_sweep_id,
-            config=config,
             n_agents=args.n_sweep_agents,
-            experiment_runner_registry=experiment_runner_registry,
-            experiment_root=experiment_root,
-            shared_config_overrides=config_overrides,
-            run_arg_parser=run_command_parser,
-        ).run()
+            sweep_run_params=run_params,
+            run_arg_parser=arg_parser,
+        )
     else:
         # single run
-        override_config(config, config_overrides)
-        runner = resolve_experiment_runner(config, experiment_runner_registry)
+        run_single_run_experiment(run_params)
+
+
+def run_single_run_experiment(run_params: RunParams) -> None:
+    global_config = GlobalConfig(
+        config=run_params.config, config_path=run_params.config_path,
+        type_resolver=run_params.type_resolver
+    )
+    # `config` here is the single object shared between all holders, so we can safely override it
+    override_config(global_config.config, run_params.config_overrides)
+
+    # append the config itself and its path to the global config,
+    # because arguments are passed to the runner via config only
+    global_config.config.update(
+        config=global_config.config,
+        confif_path=global_config.config_path,
+    )
+
+    runner = global_config.object_resolver.resolve(global_config.config)
+    # if runner is an object, it's only initialized at the moment, but not run yet
+    if runner is not None:
         runner.run()
 
 
@@ -78,7 +100,13 @@ def set_single_threaded_math():
     os.environ['MKL_NUM_THREADS'] = '1'
 
 
-def get_run_command_arg_parser() -> ArgumentParser:
+def default_run_arg_parser() -> ArgumentParser:
+    """
+    Returns default run command parser.
+
+    Instead of creating a new one for your specific purposes, you can create a default one
+    and then extend it by adding new arguments.
+    """
     parser = ArgumentParser()
     parser.add_argument('-c', '--config', dest='config_filepath', required=True)
     parser.add_argument('-e', '--entity', dest='wandb_entity', required=False, default=None)
@@ -88,22 +116,3 @@ def get_run_command_arg_parser() -> ArgumentParser:
 
     parser.add_argument('--multithread', dest='multithread', action='store_true', default=False)
     return parser
-
-
-def resolve_experiment_runner(
-        config: TConfig,
-        experiment_runner_registry: TExperimentRunnerRegistry
-) -> Runner:
-    config, experiment_type = extracted_type(config)
-    runner_cls = experiment_runner_registry.get(experiment_type, None)
-
-    assert runner_cls, f'Experiment runner type "{experiment_type}" is not supported'
-    return runner_cls(config, **config)
-
-
-def read_config(filepath: str | Path) -> TConfig:
-    if not isinstance(filepath, Path):
-        filepath = Path(filepath)
-
-    with filepath.open('r') as config_io:
-        return yaml.load(config_io, Loader=yaml.Loader)
