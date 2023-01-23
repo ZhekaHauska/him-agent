@@ -10,9 +10,9 @@ from argparse import ArgumentParser
 from dataclasses import dataclass
 from pathlib import Path
 
-from hima.common.new_config.base import override_config, TConfig, read_config, TKeyPathValue
-from hima.common.new_config.global_config import GlobalConfig
-from hima.common.new_config.types import TTypeResolver
+from hima.common.config.base import override_config, TConfig, read_config, TKeyPathValue
+from hima.common.config.global_config import GlobalConfig
+from hima.common.config.types import TTypeResolver
 from hima.common.run.argparse import parse_arg_list
 from hima.common.run.wandb import set_wandb_entity
 

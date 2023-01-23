@@ -4,7 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.common.config import TConfig
+from hima.common.config.base import TConfig
 import numpy as np
 from hima.modules.motivation import Striatum
 from hima.common.sdr import SparseSdr

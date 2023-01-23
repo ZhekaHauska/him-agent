@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from warnings import warn
 
 from hima.common.lazy_imports import lazy_import
-from hima.common.new_config.base import TConfig
+from hima.common.config.base import TConfig
 from hima.common.run.wandb import get_logger
 
 wandb = lazy_import('wandb')

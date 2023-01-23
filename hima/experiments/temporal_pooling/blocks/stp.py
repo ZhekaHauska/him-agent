@@ -9,9 +9,8 @@ from typing import Any
 import numpy as np
 from htm.bindings.sdr import SDR
 
-from hima.common.config import (
-    extracted_type, resolve_init_params, resolve_absolute_quantity, extracted
-)
+from hima.common.config.values import resolve_init_params
+from hima.common.config.base import resolve_absolute_quantity, extracted
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.blocks.graph import Block

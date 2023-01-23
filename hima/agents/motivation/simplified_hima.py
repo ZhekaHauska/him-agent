@@ -6,7 +6,7 @@
 
 import numpy as np
 from hima.common.sdr import SparseSdr
-from hima.common.config import TConfig
+from hima.common.config.base import TConfig
 from hima.modules.simple_bg import BasalGanglia
 
 

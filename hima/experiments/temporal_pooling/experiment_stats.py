@@ -8,7 +8,7 @@ from typing import Optional
 
 import numpy as np
 
-from hima.common.config import TConfig
+from hima.common.config.base import TConfig
 from hima.experiments.temporal_pooling.blocks.graph import Block, Stream
 from hima.experiments.temporal_pooling.run_progress import RunProgress
 from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig

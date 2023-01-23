@@ -4,7 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.common.config import TConfig
+from hima.common.config.base import TConfig
 from hima.experiments.temporal_pooling.blocks.concat import ConcatenatorBlock
 from hima.experiments.temporal_pooling.blocks.graph import Block
 from hima.experiments.temporal_pooling.resolvers.graph import BlockResolver

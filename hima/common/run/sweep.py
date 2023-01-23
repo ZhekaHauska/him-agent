@@ -11,7 +11,7 @@ from multiprocessing import Process
 from pathlib import Path
 
 from hima.common.lazy_imports import lazy_import
-from hima.common.new_config.base import read_config, extracted
+from hima.common.config.base import read_config, extracted
 from hima.common.run.argparse import parse_arg_list
 from hima.common.run.entrypoint import RunParams, run_single_run_experiment
 from hima.common.utils import isnone

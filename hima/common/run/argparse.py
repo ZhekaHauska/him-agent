@@ -8,7 +8,7 @@ from __future__ import annotations
 from ast import literal_eval
 from typing import Any
 
-from hima.common.config import TKeyPathValue
+from hima.common.config.base import TKeyPathValue
 
 
 def parse_arg_list(args: list[str]) -> list[TKeyPathValue]:

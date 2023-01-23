@@ -9,7 +9,7 @@ from typing import Union
 
 import numpy as np
 
-from hima.common.config import is_resolved_value
+from hima.common.config.values import is_resolved_value
 
 TSdsShortNotation = Union[
     # tuple[shape|size, active_size|sparsity]

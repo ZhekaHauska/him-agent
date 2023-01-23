@@ -10,7 +10,7 @@ import os
 from typing import TYPE_CHECKING
 
 from hima.common.lazy_imports import lazy_import
-from hima.common.new_config.base import TConfig
+from hima.common.config.base import TConfig
 
 wandb = lazy_import('wandb')
 if TYPE_CHECKING:

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from hima.common.new_config.base import TConfig
+from hima.common.config.base import TConfig
 
 # ==> special value constants
 # They are intended to be non-importable, i.e. to be used only here!

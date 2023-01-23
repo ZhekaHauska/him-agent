@@ -3,7 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from hima.common.config import is_resolved_value
+from hima.common.config.values import is_resolved_value
 from hima.common.sdr import SparseSdr
 from hima.common.sdr_encoders import SdrConcatenator
 from hima.experiments.temporal_pooling.blocks.graph import Block, Stream

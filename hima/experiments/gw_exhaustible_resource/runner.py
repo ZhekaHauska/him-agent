@@ -17,7 +17,7 @@ import numpy as np
 
 from hima.common.run.runner import Runner
 from hima.common.plot_utils import transform_fig_to_image
-from hima.common.config import TConfig
+from hima.common.config.base import TConfig
 from hima.envs.biogwlab.env import BioGwLabEnvironment
 from hima.envs.env import unwrap
 from hima.envs.biogwlab.environment import Environment

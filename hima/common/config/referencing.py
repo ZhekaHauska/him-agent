@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Type
 
-from hima.common.new_config.base import TConfig, extracted, TKeyPath, read_config
+from hima.common.config.base import TConfig, extracted, TKeyPath, read_config
 
 # ==> special keys
 # They are intended to be non-importable, i.e. to be used only here!

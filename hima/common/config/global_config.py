@@ -6,10 +6,10 @@
 from pathlib import Path
 from typing import Union, Dict, Callable, Any
 
-from hima.common.new_config.base import TConfig
-from hima.common.new_config.objects import ObjectResolver
-from hima.common.new_config.referencing import ConfigResolver
-from hima.common.new_config.types import TTypeResolver, LazyTypeResolver
+from hima.common.config.base import TConfig
+from hima.common.config.objects import ObjectResolver
+from hima.common.config.referencing import ConfigResolver
+from hima.common.config.types import TTypeResolver, LazyTypeResolver
 
 
 class GlobalConfig:

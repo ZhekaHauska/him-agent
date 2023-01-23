@@ -3,7 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from hima.common.new_config.types import TTypeOrFactory, LazyTypeResolver
+from hima.common.config.types import TTypeOrFactory, LazyTypeResolver
 
 
 class StpLazyTypeResolver(LazyTypeResolver):

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from hima.common.config import resolve_value
+from hima.common.config.values import resolve_value
 
 
 def resolve_random_seed(seed: int | None) -> int:

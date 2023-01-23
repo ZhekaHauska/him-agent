@@ -6,7 +6,8 @@
 
 import numpy as np
 
-from hima.common.config import resolve_init_params, resolve_absolute_quantity, extracted
+from hima.common.config.values import resolve_init_params
+from hima.common.config.base import resolve_absolute_quantity, extracted
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.modules.htm.temporal_memory import DelayedFeedbackTM

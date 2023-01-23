@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from typing import Type, Any
 
-from hima.common.new_config.base import TConfig
-from hima.common.new_config.referencing import ConfigResolver, extracted_type_tag
-from hima.common.new_config.values import resolve_init_params
-from hima.common.new_config.types import TTypeResolver, TTypeOrFactory
+from hima.common.config.base import TConfig
+from hima.common.config.referencing import ConfigResolver, extracted_type_tag
+from hima.common.config.values import resolve_init_params
+from hima.common.config.types import TTypeResolver, TTypeOrFactory
 
 
 class ObjectResolver:
