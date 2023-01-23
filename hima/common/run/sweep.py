@@ -4,21 +4,20 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-import os
 from argparse import ArgumentParser
 from copy import deepcopy
 from functools import partial
 from multiprocessing import Process
 from pathlib import Path
 
-import wandb
-from matplotlib import pyplot as plt
-
-from hima.common.config import extracted
-from hima.common.new_config.base import read_config
+from hima.common.lazy_imports import lazy_import
+from hima.common.new_config.base import read_config, extracted
 from hima.common.run.argparse import parse_arg_list
 from hima.common.run.entrypoint import RunParams, run_single_run_experiment
 from hima.common.utils import isnone
+from hima.common.run.wandb import turn_off_gui_for_matplotlib, set_wandb_sweep_threading
+
+wandb = lazy_import('wandb')
 
 
 def run_sweep(
@@ -101,6 +100,8 @@ def _wandb_agent_entry_point(run_params: RunParams) -> None:
             config_overrides=single_run_overrides + run_params.config_overrides,
             type_resolver=run_params.type_resolver,
         )
+        # remove `project` attribute from the config as it is set by the sweep
+        run_params.config, _ = extracted(run_params.config, 'project')
 
         run_single_run_experiment(run_params)
     except Exception as _:
@@ -122,18 +123,3 @@ def _extract_config_filepath(parser: ArgumentParser, run_command: list[str]) -> 
     # we pass a pair "--config" and "<config_filepath>", which can be parsed by the parser
     args, _ = parser.parse_known_args(run_command)
     return args.config_filepath
-
-
-def turn_off_gui_for_matplotlib():
-    """
-    Prevent matplotlib from using any GUI backend.
-    For example, it is prohibited for sub-processes as you will encounter kernel core errors.
-    """
-    plt.switch_backend('Agg')
-
-
-def set_wandb_sweep_threading():
-    # on Linux machines there's some kind of problem with running sweeps in threads?
-    # see https://github.com/wandb/client/issues/1409#issuecomment-870174971
-    # and https://github.com/wandb/client/issues/3045#issuecomment-1010435868
-    os.environ['WANDB_START_METHOD'] = 'thread'

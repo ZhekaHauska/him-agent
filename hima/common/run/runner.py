@@ -5,46 +5,36 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+import warnings
+from pathlib import Path
 from typing import TYPE_CHECKING
+from warnings import warn
 
 from hima.common.lazy_imports import lazy_import
 from hima.common.new_config.base import TConfig
-from hima.common.new_config.global_config import GlobalConfig
+from hima.common.run.wandb import get_logger
 
 wandb = lazy_import('wandb')
 if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run
 
 
+# TODO: remove obsolete class and the file itself
 class Runner:
     config: TConfig
+    config_path: Path
     logger: Run | None
 
     def __init__(
-            self, config: TConfig, log: bool = False, project: str = None,
+            self, config: TConfig, config_path: Path,
+            log: bool = False, project: str = None,
             **unpacked_config
     ):
+        warn(DeprecationWarning('This class is obsolete, make your Runner just by convention'))
+
         self.config = config
-        self.logger = None
-        if log:
-            self.logger = wandb.init(project=project)
-            # we have to pass the config with update instead of init because for sweep runs
-            # it is already initialized with the sweep run config
-            self.logger.config.update(self.config)
+        self.config_path = config_path
+        self.logger = get_logger(config, log=log, project=project)
 
     def run(self) -> None:
         ...
-
-
-def run(config, config_path, type_resolver):
-    global_config = GlobalConfig(config, config_path, type_resolver)
-
-    runner_kwargs = config.copy().update(
-        config=config
-    )
-
-    # if runner is a callback function, run happens on resolve
-    # otherwise, we expect it to be of `Runner` type and should explicitly call `run`
-    runner = global_config.object_resolver.resolve(runner_kwargs)
-    if isinstance(runner, Runner):
-        runner.run()

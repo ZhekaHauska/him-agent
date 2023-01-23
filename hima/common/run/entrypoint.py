@@ -14,6 +14,7 @@ from hima.common.new_config.base import override_config, TConfig, read_config, T
 from hima.common.new_config.global_config import GlobalConfig
 from hima.common.new_config.types import TTypeResolver
 from hima.common.run.argparse import parse_arg_list
+from hima.common.run.wandb import set_wandb_entity
 
 
 # TODO:
@@ -44,8 +45,7 @@ def run_experiment(
     args, unknown_args = arg_parser.parse_known_args()
 
     if args.wandb_entity:
-        # overwrite wandb entity for the run
-        os.environ['WANDB_ENTITY'] = args.wandb_entity
+        set_wandb_entity(args.wandb_entity)
 
     if not args.multithread:
         # prevent math parallelization as it usually only slows things down for us
@@ -82,15 +82,24 @@ def run_single_run_experiment(run_params: RunParams) -> None:
     # `config` here is the single object shared between all holders, so we can safely override it
     override_config(global_config.config, run_params.config_overrides)
 
-    # append the config itself and its path to the global config,
-    # because arguments are passed to the runner via config only
-    global_config.config.update(
-        config=global_config.config,
-        confif_path=global_config.config_path,
+    # resolve config in case it references other config files [on the root level]
+    # NB: passing the copy to the resolver keeps it clean
+    resolved_config = global_config.config_resolver.resolve(
+        global_config.config.copy(), config_type=dict
     )
 
-    runner = global_config.object_resolver.resolve(global_config.config)
-    # if runner is an object, it's only initialized at the moment, but not run yet
+    # we make a copy of the resolved config to make runner args with the references to the config
+    # itself appended, while leaving it untouched (it also prevent us passing self-referencing
+    # config to wandb.init(), which is prohibited)
+    runner_args = resolved_config.copy()
+    runner_args.update(
+        config=resolved_config,
+        config_path=global_config.config_path,
+    )
+
+    # if runner is a callback function, run happens on resolve
+    # otherwise, we expect it to be an object with an explicit `run` method that should be called
+    runner = global_config.object_resolver.resolve(runner_args)
     if runner is not None:
         runner.run()
 
