@@ -580,7 +580,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             sort=False
         )
 
-        dist_curr_step = self.cell_probs_context
+        dist_curr_step = self.cell_probs_context.copy()
         dist_next_step = np.zeros_like(dist_curr_step)
 
         for step in range(0, n_steps):
