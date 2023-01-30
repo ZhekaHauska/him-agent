@@ -21,4 +21,4 @@ experiment: mpg
 hmm_conf: 'configs/belieftm/mpg_single.yaml'
 env_conf: 'configs/mpg/mmpg_default.yaml'
 
-seed: null
+seed: 432

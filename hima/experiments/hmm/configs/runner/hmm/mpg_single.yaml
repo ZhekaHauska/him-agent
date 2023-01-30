@@ -10,6 +10,7 @@ max_steps: 50
 n_step_test: 10
 log_path: 'logs'
 
+experiment: mpg
 hmm_conf: 'configs/hmm/hmm_bw.yaml'
 mpg_conf: 'configs/mpg/mmpg_default.yaml'
 
