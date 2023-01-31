@@ -62,29 +62,28 @@ class LSTMIterative:
         )
         self.lstm.zero_grad()
 
-    def n_step_prediction(self, steps, mc_iterations=100):
-        dist_curr_step = self.prediction.cpu().detach().numpy()
-        dist_next_step = np.zeros(self.n_obs_states)
-        for step in range(steps):
-            for i in range(mc_iterations):
+    def n_step_prediction(self, initial_prediction, steps, mc_iterations=100):
+        n_step_dist = np.zeros((steps, self.n_obs_states))
+
+        for i in range(mc_iterations):
+            self.reset()
+            dist_curr_step = initial_prediction
+            for step in range(steps):
                 # sample observation from prediction density
                 gamma = self._rng.random(size=self.n_obs_states)
                 obs = np.flatnonzero(gamma < dist_curr_step)
                 dense_obs = np.zeros(self.n_obs_states, dtype='float32')
                 dense_obs[obs] = 1
                 dense_obs = torch.from_numpy(dense_obs).to(self.device)
+
                 # predict distribution
                 with torch.no_grad():
                     prediction = self.lstm(dense_obs).cpu().detach().numpy()
-                # add to average
-                dist_next_step += 1 / (i + 1) * (prediction - dist_next_step)
 
-            dist_curr_step = np.copy(dist_next_step)
-            dist_next_step = np.zeros_like(dist_curr_step)
+                n_step_dist[step] += 1/(i+1) * (prediction - n_step_dist[step])
+                dist_curr_step = prediction
 
-        self.prediction = torch.from_numpy(dist_curr_step).to(self.device)
-
-        return dist_curr_step
+        return n_step_dist
 
 
 class LSTMWM(nn.Module):

@@ -78,12 +78,14 @@ class MPGTest:
 
         total_surprise = 0
         total_dkl = 0
+
         for i in range(self.n_episodes):
             self.mpg.reset()
             self.hmm.reset()
 
             dkls = []
             surprises = []
+            word = []
 
             steps = 0
 
@@ -92,8 +94,10 @@ class MPGTest:
 
                 letter = self.mpg.next_state()
 
+                word.append(letter)
+
                 if letter is None:
-                    break
+                    obs_state = []
                 else:
                     obs_state = self.mpg.char_to_num[letter]
 
@@ -101,12 +105,9 @@ class MPGTest:
                 self.hmm.observe(obs_state, learn=True)
 
                 # metrics
-                # 1. surprise
-                if prev_state != 0:
-                    active_columns = np.arange(self.hmm.n_obs_states) == obs_state
-                    surprise = - np.sum(np.log(column_probs[active_columns]))
-                    surprise += - np.sum(np.log(1 - column_probs[~active_columns]))
-
+                if (letter is not None) and (prev_state != 0):
+                    # 1. surprise
+                    surprise = self.get_surprise(column_probs, obs_state)
                     surprises.append(surprise)
                     total_surprise += surprise
 
@@ -123,13 +124,16 @@ class MPGTest:
                 # 3. Kl distance
                 if prev_state != 0:
                     dkl = min(
-                            rel_entr(true_dist[prev_state], column_probs).sum(),
-                            200.0
-                        )
+                        rel_entr(true_dist[prev_state], column_probs).sum(),
+                        200.0
+                    )
                     dkls.append(dkl)
                     total_dkl += dkl
 
                 steps += 1
+
+                if letter is None:
+                    break
 
                 if steps > self.max_steps:
                     break
@@ -215,16 +219,23 @@ class MPGTest:
         dkls = []
         n_step_dists = []
 
+        initial_prediction = np.zeros(self.hmm.n_obs_states)
+        initial_prediction[self.mpg.char_to_num['B']] = 1
+
+        predictions = np.zeros((self.n_steps, self.hmm.n_obs_states))
+        predictions[1:] = self.hmm.n_step_prediction(
+            initial_prediction,
+            self.n_steps-1,
+            mc_iterations=self.mc_iterations
+        )
+
         for step in range(self.n_steps):
-            predicted_dist = self.hmm.prediction.cpu().detach().numpy()
+            predicted_dist = predictions[step]
 
             if step == 0:
                 labels = ['Predicted', 'True']
-                self.hmm.observe(self.mpg.char_to_num['B'])
-
             else:
                 labels = [None, None]
-                self.hmm.n_step_prediction(1, mc_iterations=self.mc_iterations)
 
             true_dist = self.mpg.predict_letters(from_state=0, steps=step)
 
@@ -293,6 +304,24 @@ class MPGTest:
                     f'main_metrics/average_nstep_dkl': np.abs(dkls).mean(where=~np.isinf(dkls))
                 }
             )
+
+    @staticmethod
+    def get_surprise(probs, obs):
+        is_coincide = np.isin(
+            np.arange(len(probs)), obs
+        )
+        surprise = - np.sum(
+            np.log(
+                np.clip(probs[is_coincide], 1e-7, 1)
+            )
+        )
+        surprise += - np.sum(
+            np.log(
+                np.clip(1 - probs[~is_coincide], 1e-7, 1)
+            )
+        )
+
+        return surprise
 
 
 class PinballTest:
@@ -482,7 +511,9 @@ class PinballTest:
                             if self.decoder is not None:
                                 hidden_prediction = column_probs.reshape(self.obs_shape)
                                 decoded_probs = self.decoder.decode(column_probs)
-                                decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
+                                decoded_probs = decoded_probs.reshape(
+                                    self.encoder.getInputDimensions()
+                                )
                             else:
                                 decoded_probs = column_probs.reshape(self.obs_shape)
                                 hidden_prediction = None
@@ -521,7 +552,7 @@ class PinballTest:
                             n_step_surprise_obs[s].append(surp_obs)
                             n_step_surprise_hid[s].append(surp_hid)
 
-                        raw_im = [prev_diff.astype(np.uint8)*255]
+                        raw_im = [prev_diff.astype(np.uint8) * 255]
                         raw_im.extend(raw_predictions)
                         raw_im = np.hstack(raw_im)
                         writer_raw.append_data(raw_im)
