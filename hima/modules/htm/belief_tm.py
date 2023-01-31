@@ -235,14 +235,6 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 :param learn: if true, connections will learn patterns from previous step
                 :return:
                 """
-        # compute surprise
-        inactive_columns = np.flatnonzero(
-            np.in1d(np.arange(self.columns), self.get_active_columns(), invert=True)
-        )
-        surprise = - np.sum(np.log(self.column_probs[self.get_active_columns()]))
-        surprise += - np.sum(np.log(1 - self.column_probs[inactive_columns]))
-        self.surprise = surprise
-
         # Calculate active cells
         correct_predicted_cells, bursting_columns = setCompare(
             self.predicted_cells.sparse, self.active_columns.sparse,

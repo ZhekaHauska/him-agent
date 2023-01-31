@@ -156,7 +156,7 @@ class MPGTest:
                 # metrics
                 if (letter is not None) and (prev_state != 0):
                     # 1. surprise
-                    surprise = min(200.0, self.hmm.surprise)
+                    surprise = self.get_surprise(self.hmm.column_probs, obs_state)
                     surprises.append(surprise)
                     total_surprise += surprise
 
@@ -253,23 +253,6 @@ class MPGTest:
                         )
 
                         plt.close(fig)
-
-        # if self.logger is not None:
-        #     n_states = len(self.mpg.states)
-        #     tick_labels = self.mpg.alphabet.copy()
-        #     tick_labels.append('∅')
-        #
-        #     for n in range(n_states):
-        #         table = wandb.Table(
-        #             data=[[letter, p] for letter, p in zip(tick_labels, dist[n])],
-        #             columns=["letter", "prob"]
-        #         )
-        #         self.logger.log(
-        #             {f'dists/state_{n}': wandb.plot.bar(
-        #               table, "letter", "prob", title=f'state_{n}'
-        #             )},
-        #             step=i
-        #         )
 
         if self.state_logger is not None:
             self.state_logger.save()
@@ -397,6 +380,24 @@ class MPGTest:
                     f'main_metrics/average_nstep_dkl': np.abs(dkls).mean(where=~np.isinf(dkls))
                 }
             )
+
+    @staticmethod
+    def get_surprise(probs, obs):
+        is_coincide = np.isin(
+            np.arange(len(probs)), obs
+        )
+        surprise = - np.sum(
+            np.log(
+                np.clip(probs[is_coincide], 1e-7, 1)
+            )
+        )
+        surprise += - np.sum(
+            np.log(
+                np.clip(1 - probs[~is_coincide], 1e-7, 1)
+            )
+        )
+
+        return surprise
 
 
 class MMPGTest:
@@ -546,7 +547,7 @@ class MMPGTest:
                 # metrics
                 if letter is not None:
                     # 1. surprise
-                    surprise = min(200, self.hmm.surprise)
+                    surprise = self.get_surprise(column_probs, obs_state)
                     surprises.append(surprise)
                     total_surprise += surprise
 
@@ -664,6 +665,24 @@ class MMPGTest:
 
             with open(f"logs/model_{name}.pkl", 'wb') as file:
                 pickle.dump((self.mpg, self.hmm), file)
+
+    @staticmethod
+    def get_surprise(probs, obs):
+        is_coincide = np.isin(
+            np.arange(len(probs)), obs
+        )
+        surprise = - np.sum(
+            np.log(
+                np.clip(probs[is_coincide], 1e-7, 1)
+            )
+        )
+        surprise += - np.sum(
+            np.log(
+                np.clip(1 - probs[~is_coincide], 1e-7, 1)
+            )
+        )
+
+        return surprise
 
 
 class NStepTest:
@@ -1113,13 +1132,15 @@ class PinballTest:
             with open(f"logs/model_{name}.pkl", 'wb') as file:
                 pickle.dump(self.hmm, file)
 
-    def preprocess(self, image):
+    @staticmethod
+    def preprocess(image):
         gray_im = image.sum(axis=-1)
         gray_im /= gray_im.max()
 
         return gray_im
 
-    def get_surprise(self, probs, obs):
+    @staticmethod
+    def get_surprise(probs, obs):
         is_coincide = np.isin(
             np.arange(len(probs)), obs
         )
