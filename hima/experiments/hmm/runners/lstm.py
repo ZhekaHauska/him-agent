@@ -39,6 +39,7 @@ class MPGTest:
         self.mpg = MultiMarkovProcessGrammar(**conf['env'])
 
         conf['hmm']['n_obs_states'] = len(self.mpg.alphabet)
+        conf['hmm']['n_hidden_states'] *= conf['hmm']['n_obs_states']
         self.hmm = LSTMIterative(**conf['hmm'])
 
         self.n_episodes = conf['run']['n_episodes']
@@ -362,9 +363,10 @@ class PinballTest:
 
         self.n_obs_states = self.obs_shape[0] * self.obs_shape[1]
 
-        conf['hmm']['n_columns'] = self.n_obs_states
+        conf['hmm']['n_obs_states'] = self.n_obs_states
+        conf['hmm']['n_hidden_states'] *= conf['hmm']['n_obs_states']
 
-        self.hmm = LSTMBasic(**conf['hmm'])
+        self.hmm = LSTMIterative(**conf['hmm'])
 
         self.actions = conf['run']['actions']
         self.positions = conf['run']['positions']
@@ -374,6 +376,7 @@ class PinballTest:
         self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
         self.log_fps = conf['run']['log_gif_fps']
+        self.mc_iterations = conf['run']['mc_iterations']
 
         self._rng = np.random.default_rng(self.seed)
 
@@ -452,10 +455,10 @@ class PinballTest:
                     self.encoder.compute(self.sp_input, True, self.sp_output)
                     obs_state = self.sp_output.sparse
 
-                column_probs = self.hmm.predict_columns()
+                column_probs = self.hmm.prediction.cpu().detach().numpy()
 
                 if len(obs_state) != 0:
-                    self.hmm.observe(obs_state[0], learn=True)
+                    self.hmm.observe(obs_state, learn=True)
 
                 if steps > 0:
                     # metrics
@@ -478,9 +481,6 @@ class PinballTest:
                         obs_probs = []
                         hidden_probs = []
 
-                        if self.prediction_steps > 1:
-                            back_up_massages = self.hmm.forward_message.copy()
-
                         if self.decoder is not None:
                             hidden_prediction = column_probs.reshape(self.obs_shape)
                             decoded_probs = self.decoder.decode(column_probs, update=True)
@@ -499,14 +499,14 @@ class PinballTest:
                         obs_probs.append(decoded_probs.copy())
                         hidden_probs.append(hidden_prediction.copy())
 
-                        transition_matrix = self.hmm.transition_probs
-                        forward_message = self.hmm.forward_message
+                        predictions = self.hmm.n_step_prediction(
+                            column_probs,
+                            self.prediction_steps-1,
+                            mc_iterations=self.mc_iterations
+                        )
 
                         for j in range(self.prediction_steps - 1):
-                            forward_message = np.dot(forward_message, transition_matrix)
-                            column_probs = np.reshape(
-                                forward_message, (self.hmm.n_columns, self.hmm.cells_per_column)
-                            ).sum(axis=-1)
+                            column_probs = predictions[j]
 
                             if self.decoder is not None:
                                 hidden_prediction = column_probs.reshape(self.obs_shape)
@@ -529,9 +529,6 @@ class PinballTest:
                                 hidden_predictions.append(
                                     (hidden_prediction * 255).astype(np.uint8)
                                 )
-
-                        if self.prediction_steps > 1:
-                            self.hmm.forward_message = back_up_massages
 
                         obs_probs_stack.append(copy(obs_probs))
                         hidden_probs_stack.append(copy(hidden_probs))
@@ -641,13 +638,15 @@ class PinballTest:
             with open(f"logs/models/model_{name}.pkl", 'wb') as file:
                 pickle.dump(self.hmm, file)
 
-    def preprocess(self, image):
+    @staticmethod
+    def preprocess(image):
         gray_im = image.sum(axis=-1)
         gray_im /= gray_im.max()
 
         return gray_im
 
-    def get_surprise(self, probs, obs):
+    @staticmethod
+    def get_surprise(probs, obs):
         is_coincide = np.isin(
             np.arange(len(probs)), obs
         )

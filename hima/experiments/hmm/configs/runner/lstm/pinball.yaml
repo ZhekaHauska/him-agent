@@ -1,0 +1,21 @@
+log: True
+save_model: False
+project_name: 'lstm_test'
+run_tag: lstm
+
+n_episodes: 201
+update_rate: 10
+max_steps: 15
+log_gif_fps: 5
+prediction_steps: 5
+mc_iterations: 100
+actions: [[ 3.14, 5 ], [0, 3]]
+positions: [[0, -9], [0, 0]]
+
+experiment: pinball
+sp_conf: 'configs/sp/default.yaml'
+hmm_conf: 'configs/lstm/default.yaml'
+env_conf: 'configs/pinball/default.yaml'
+setup: 'fork'
+
+seed: null
