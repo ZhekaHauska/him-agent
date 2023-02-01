@@ -62,12 +62,12 @@ class LSTMIterative:
         )
         self.lstm.zero_grad()
 
-    def n_step_prediction(self, initial_prediction, steps, mc_iterations=100):
+    def n_step_prediction(self, initial_dist, steps, mc_iterations=100):
         n_step_dist = np.zeros((steps, self.n_obs_states))
+        initial_message = (self.lstm.message[0].clone(), self.lstm.message[1].clone())
 
         for i in range(mc_iterations):
-            self.reset()
-            dist_curr_step = initial_prediction
+            dist_curr_step = initial_dist
             for step in range(steps):
                 # sample observation from prediction density
                 gamma = self._rng.random(size=self.n_obs_states)
@@ -82,6 +82,8 @@ class LSTMIterative:
 
                 n_step_dist[step] += 1/(i+1) * (prediction - n_step_dist[step])
                 dist_curr_step = prediction
+
+            self.lstm.message = initial_message
 
         return n_step_dist
 
