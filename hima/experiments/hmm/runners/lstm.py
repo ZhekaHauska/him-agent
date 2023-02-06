@@ -19,7 +19,6 @@ from scipy.special import rel_entr
 from pathlib import Path
 import pickle
 import matplotlib.pyplot as plt
-import seaborn as sns
 import wandb
 import yaml
 import os
@@ -207,7 +206,7 @@ class MPGTest:
                 pickle.dump((self.mpg, self.hmm), file)
 
         if self.n_steps is not None:
-            self.run_n_step()
+            average_dkl = self.run_n_step()
 
     def run_n_step(self):
         self.hmm.reset()
@@ -290,6 +289,8 @@ class MPGTest:
 
         fig.legend(loc=7)
 
+        average_dkls = np.abs(dkls).mean(where=~np.isinf(dkls))
+
         if self.logger is not None:
             dkls = np.array(dkls)
             n_step_dists = np.vstack(n_step_dists)
@@ -302,9 +303,10 @@ class MPGTest:
             self.logger.log({f'density/n_step_letter_predictions': wandb.Image(fig)})
             self.logger.log(
                 {
-                    f'main_metrics/average_nstep_dkl': np.abs(dkls).mean(where=~np.isinf(dkls))
+                    f'main_metrics/average_nstep_dkl': average_dkls
                 }
             )
+        return average_dkls
 
     @staticmethod
     def get_surprise(probs, obs):
