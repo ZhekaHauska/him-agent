@@ -34,7 +34,9 @@ class LSTMIterative:
         self.loss_function = nn.BCELoss()
         self.optimizer = optim.RMSprop(self.lstm.parameters(), lr=self.lr)
 
-        torch.manual_seed(seed)
+        if seed is not None:
+            torch.manual_seed(seed)
+
         self._rng = np.random.default_rng(seed)
 
     def observe(self, obs, learn=True):
