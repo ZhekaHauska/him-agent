@@ -9,6 +9,9 @@ seaborn
 pygame
 scipy
 pygraphviz
+torch
+torchvision
+torchaudio
 
 # Install also (see `install.md`):
 #   1. Our fork of the htm.core
