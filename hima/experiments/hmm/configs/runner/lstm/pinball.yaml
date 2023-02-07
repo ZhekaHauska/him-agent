@@ -16,6 +16,6 @@ experiment: pinball
 sp_conf: 'configs/sp/default.yaml'
 hmm_conf: 'configs/lstm/default.yaml'
 env_conf: 'configs/pinball/default.yaml'
-setup: 'fork'
+setup: 'frog'
 
 seed: null
