@@ -1,3 +1,3 @@
-export PINBALL_EXE=/home/eenigma/Desktop/Activity/HTM/pinball/Pinball.x86_64
-export PINBALL_ROOT=/home/eenigma/Desktop/Activity/HTM/pinball
+export PINBALL_EXE=path/to/exe
+export PINBALL_ROOT=path/to/project/root
 export WANDB_ENTITY=hauska
