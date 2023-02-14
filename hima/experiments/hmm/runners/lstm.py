@@ -4,7 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.modules.baselines.lstm import LSTMIterative
+from hima.modules.baselines.lstm import LSTMWMIterative
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
 from htm.bindings.sdr import SDR
@@ -39,7 +39,7 @@ class MPGTest:
 
         conf['hmm']['n_obs_states'] = len(self.mpg.alphabet)
         conf['hmm']['n_hidden_states'] *= conf['hmm']['n_obs_states']
-        self.hmm = LSTMIterative(**conf['hmm'])
+        self.hmm = LSTMWMIterative(**conf['hmm'])
 
         self.n_episodes = conf['run']['n_episodes']
         self.smf_dist = conf['run']['smf_dist']
@@ -368,7 +368,7 @@ class PinballTest:
         conf['hmm']['n_obs_states'] = self.n_obs_states
         conf['hmm']['n_hidden_states'] *= conf['hmm']['n_obs_states']
 
-        self.hmm = LSTMIterative(**conf['hmm'])
+        self.hmm = LSTMWMIterative(**conf['hmm'])
 
         self.actions = conf['run']['actions']
         self.positions = conf['run']['positions']

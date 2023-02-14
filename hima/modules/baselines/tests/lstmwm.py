@@ -3,14 +3,14 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from hima.modules.baselines.lstm import LSTMWM
+from hima.modules.baselines.lstm import LSTMWMUnit
 import torch
 import numpy as np
 
 
 if __name__ == '__main__':
     device = 'cpu'
-    lstm = LSTMWM(
+    lstm = LSTMWMUnit(
         8, 10
     ).to(device)
 

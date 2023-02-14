@@ -11,7 +11,7 @@ import numpy as np
 torch.autograd.set_detect_anomaly(True)
 
 
-class LSTMIterative:
+class LSTMWMIterative:
     def __init__(
             self,
             n_obs_states,
@@ -24,12 +24,13 @@ class LSTMIterative:
         self.lr = lr
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        self.lstm = LSTMWM(
+        self.lstm = LSTMWMUnit(
             input_size=n_obs_states,
             hidden_size=n_hidden_states
         ).to(self.device)
 
         self.prediction = torch.zeros(self.n_obs_states, device=self.device)
+        self.loss = None
 
         self.loss_function = nn.BCELoss()
         self.optimizer = optim.RMSprop(self.lstm.parameters(), lr=self.lr)
@@ -46,9 +47,10 @@ class LSTMIterative:
         dense_obs = torch.from_numpy(dense_obs).to(self.device)
 
         if learn:
-            loss = self.loss_function(self.prediction, dense_obs)
-            if loss.requires_grad:
-                loss.backward(retain_graph=True)
+            if self.loss is None:
+                self.loss = self.loss_function(self.prediction, dense_obs)
+            else:
+                self.loss += self.loss_function(self.prediction, dense_obs)
 
             self.prediction = self.lstm(dense_obs)
         else:
@@ -56,13 +58,18 @@ class LSTMIterative:
                 self.prediction = self.lstm(dense_obs)
 
     def reset(self):
-        self.optimizer.step()
+        self.optimizer.zero_grad()
+
+        if self.loss is not None:
+            self.loss.backward()
+            self.optimizer.step()
+            self.loss = None
+
         self.prediction = torch.zeros(self.n_obs_states, device=self.device)
         self.lstm.message = (
             torch.zeros(self.n_hidden_states, device=self.device),
             torch.zeros(self.n_hidden_states, device=self.device),
         )
-        self.lstm.zero_grad()
 
     def n_step_prediction(self, initial_dist, steps, mc_iterations=100):
         n_step_dist = np.zeros((steps, self.n_obs_states))
@@ -90,13 +97,13 @@ class LSTMIterative:
         return n_step_dist
 
 
-class LSTMWM(nn.Module):
+class LSTMWMUnit(nn.Module):
     def __init__(
             self,
             input_size,
             hidden_size
     ):
-        super(LSTMWM, self).__init__()
+        super(LSTMWMUnit, self).__init__()
 
         self.n_obs_states = input_size
         self.n_hidden_states = hidden_size
@@ -122,3 +129,43 @@ class LSTMWM(nn.Module):
         prediction_logit = self.hidden2obs(self.message[0])
         prediction = torch.sigmoid(prediction_logit)
         return prediction
+
+
+class LSTMWMLayer(nn.Module):
+    def __init__(
+            self,
+            input_size,
+            hidden_size,
+            n_layers=1,
+            dropout=0.2
+    ):
+        super(LSTMWMLayer, self).__init__()
+
+        self.n_obs_states = input_size
+        self.n_hidden_states = hidden_size
+
+        self.lstm = nn.LSTM(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=n_layers,
+            batch_first=True,
+            dropout=dropout
+        )
+
+        # The linear layer that maps from hidden state space back to obs space
+        self.hidden2obs = nn.Linear(
+            hidden_size,
+            input_size
+        )
+
+        self.message = (
+            torch.zeros(self.n_hidden_states),
+            torch.zeros(self.n_hidden_states)
+        )
+
+    def forward(self, obs):
+        hidden, self.message = self.lstm(obs, self.message)
+        prediction_logit = self.hidden2obs(hidden)
+        prediction = torch.sigmoid(prediction_logit)
+        return prediction
+
