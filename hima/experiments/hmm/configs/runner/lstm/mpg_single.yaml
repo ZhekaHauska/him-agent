@@ -12,7 +12,7 @@ mc_iterations: 100
 log_path: 'logs'
 
 experiment: mpg
-hmm_conf: 'configs/lstm/default.yaml'
+hmm_conf: 'configs/lstm/mpg.yaml'
 env_conf: 'configs/mpg/mmpg_default.yaml'
 
 seed: null

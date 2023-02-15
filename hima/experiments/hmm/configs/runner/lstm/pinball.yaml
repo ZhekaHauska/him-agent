@@ -17,7 +17,7 @@ positions: [[0, -9], [0, 0], [-3, -5.3], [3, -5.3]]
 
 experiment: pinball
 sp_conf: 'configs/sp/default.yaml'
-hmm_conf: 'configs/lstm/default.yaml'
+hmm_conf: 'configs/lstm/pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'
 setup: 'fork'
 
