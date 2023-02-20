@@ -91,15 +91,14 @@ def run_single_run_experiment(run_params: RunParams) -> None:
     # we make a copy of the resolved config to make runner args with the references to the config
     # itself appended, while leaving it untouched (it also prevent us passing self-referencing
     # config to wandb.init(), which is prohibited)
-    runner_args = resolved_config.copy()
-    runner_args.update(
+    runner_args = resolved_config | dict(
         config=resolved_config,
         config_path=global_config.config_path,
     )
 
     # if runner is a callback function, run happens on resolve
     # otherwise, we expect it to be an object with an explicit `run` method that should be called
-    runner = global_config.object_resolver.resolve(runner_args)
+    runner = global_config.resolve_object(runner_args)
     if runner is not None:
         runner.run()
 

@@ -103,7 +103,7 @@ class ConfigResolver:
         if isinstance(config, str):
             # it is a reference only
             reference_path = config
-            config = []
+            config = config_type()
         else:
             # only dicts may contain reference key in their definition;
             if isinstance(config, dict):

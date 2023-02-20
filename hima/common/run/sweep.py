@@ -10,14 +10,13 @@ from functools import partial
 from multiprocessing import Process
 from pathlib import Path
 
-from hima.common.lazy_imports import lazy_import
+import wandb
+
 from hima.common.config.base import read_config, extracted
 from hima.common.run.argparse import parse_arg_list
 from hima.common.run.entrypoint import RunParams, run_single_run_experiment
-from hima.common.utils import isnone
 from hima.common.run.wandb import turn_off_gui_for_matplotlib, set_wandb_sweep_threading
-
-wandb = lazy_import('wandb')
+from hima.common.utils import isnone
 
 
 def run_sweep(
@@ -46,6 +45,7 @@ def run_sweep(
 
     # parse sweep run args, extract run config path, read run config
     run_config_path = _extract_config_filepath(run_arg_parser, run_command)
+    run_config_path = Path.joinpath(sweep_run_params.config_path.parent, run_config_path)
     run_config = read_config(run_config_path)
 
     # construct run params shared between all agents (we will construct individual ones later)
@@ -62,6 +62,7 @@ def run_sweep(
             kwargs={
                 'sweep_id': sweep_id,
                 'function': partial(_wandb_agent_entry_point, run_params=run_params),
+                'project': wandb_project,
             }
         )
         for _ in range(n_agents)
