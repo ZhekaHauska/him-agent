@@ -8,12 +8,13 @@ from abc import ABC
 from typing import Optional, Any
 
 from hima.common.config.base import TConfig
-from hima.common.config.values import is_resolved_value, resolve_value
+from hima.common.config.global_config import GlobalConfig
+from hima.common.config.values import resolve_value
 from hima.common.sds import Sds
 from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.blocks.graph import (
     Pipe, Block, Pipeline,
-    ComputationUnit, Stream, ExternalApiBlock
+    ComputationUnit, Stream
 )
 
 
@@ -29,70 +30,45 @@ class BlockResolver(ABC):
         raise NotImplementedError()
 
 
-class BlockRegistryResolver:
-    _config: TConfig
+class BlockRegistry:
+    _global_config: GlobalConfig
     _supplementary_config: dict[str, Any]
 
     _id: int
     _block_configs: dict[str, TConfig]
-    _block_resolvers: dict[str, BlockResolver]
     _blocks: dict[str, Block]
 
-    def __init__(self, config: TConfig, block_configs: TConfig, **supplementary_config):
-        self._config = config
+    def __init__(
+            self, global_config: GlobalConfig, block_configs: TConfig,
+            input_sds: Sds,
+            **supplementary_config
+    ):
+        self._global_config = global_config
         self._supplementary_config = supplementary_config
+        self.input_sds = input_sds
 
         self._id = 0
         self._block_configs = block_configs
-        self._block_resolvers = self._get_block_resolvers()
         self._blocks = {}
 
-    @staticmethod
-    def _get_block_resolvers():
-        # to prevent circular imports resolvers should be imported locally
-        from hima.experiments.temporal_pooling.resolvers.dataset import (
-            DataGeneratorResolver
-        )
-        from hima.experiments.temporal_pooling.resolvers.sp import SpatialPoolerResolver
-        from hima.experiments.temporal_pooling.resolvers.custom_sp import (
-            CustomSpatialPoolerResolver
-        )
-        from hima.experiments.temporal_pooling.resolvers.tp import TemporalPoolerResolver
-        from hima.experiments.temporal_pooling.resolvers.stp import SpatiotemporalPoolerResolver
-        from hima.experiments.temporal_pooling.resolvers.concat import ConcatenatorResolver
-
-        return {
-            DataGeneratorResolver.family: DataGeneratorResolver(),
-            SpatialPoolerResolver.family: SpatialPoolerResolver(),
-            TemporalPoolerResolver.family: TemporalPoolerResolver(),
-            SpatiotemporalPoolerResolver.family: SpatiotemporalPoolerResolver(),
-            ConcatenatorResolver.family: ConcatenatorResolver(),
-            CustomSpatialPoolerResolver.family: CustomSpatialPoolerResolver(),
-        }
-
-    def __getitem__(self, item: str) -> Block:
-        if item not in self._blocks:
-            self._blocks[item] = self._resolve_block(block_name=item)
-        return self._blocks[item]
+    def __getitem__(self, block_name: str) -> Block:
+        if block_name not in self._blocks:
+            print(f"Resolving block {block_name}")
+            self._blocks[block_name] = self._resolve_block(block_name=block_name)
+        return self._blocks[block_name]
 
     def _resolve_block(self, block_name: str):
         block_id = self._id
         self._id += 1
 
-        if block_name == ExternalApiBlock.name:
-            return ExternalApiBlock(id=block_id, name=block_name)
+        block_config = self._block_configs[block_name] | dict(
+            id=block_id, name=block_name,
+        ) | self._supplementary_config
 
-        block_config, block_family = extracted_family(config=self._block_configs[block_name])
-        block_config = resolve_nested_configs(
-            config_registry=self._config[block_family], config=block_config
-        )
-        return self._block_resolvers[block_family].resolve(
-            global_config=self._config,
-            config=block_config,
-            block_id=block_id,
-            block_name=block_name,
-            **self._supplementary_config
-        )
+        if block_name == '___':
+            block_config |= dict(input_sds=self.input_sds)
+
+        return self._global_config.resolve_object(block_config)
 
     def build(self) -> dict[str, Block]:
         for name in self._blocks:
@@ -101,12 +77,12 @@ class BlockRegistryResolver:
 
 
 class PipelineResolver:
-    block_registry: BlockRegistryResolver
+    block_registry: BlockRegistry
 
     _previous_block: Optional[str]
     _current_block: Optional[str]
 
-    def __init__(self, block_registry: BlockRegistryResolver):
+    def __init__(self, block_registry: BlockRegistry):
         self.block_registry = block_registry
         self._current_block = None
         self._previous_block = None
@@ -116,6 +92,7 @@ class PipelineResolver:
         units = []
         self._current_block = self._previous_block = None
         for unit in pipeline:
+            print(f'unit: {unit}')
             unit = self.parse_unit(unit)
             units.append(unit)
             self._previous_block = unit.block.name

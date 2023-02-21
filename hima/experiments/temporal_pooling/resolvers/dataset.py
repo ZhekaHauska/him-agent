@@ -19,27 +19,19 @@ class DataGeneratorResolver(BlockResolver):
     ) -> Block:
         return DataGeneratorResolver._resolve(
             global_config=global_config, generator_config=config,
-            block_id=block_id, block_name=block_name,
+            id=block_id, name=block_name,
             **kwargs
         )
 
     @staticmethod
     def _resolve(
-            global_config: TConfig, generator_config: TConfig,
-            block_id: int, block_name: str, n_sequences: int,
-            **induction_registry
+            global_config: TConfig,
+            id: int, name: str, n_sequences: int, **generator_config: TConfig
     ):
-        generator_config, generator_type = extracted_type(generator_config)
-
-        if generator_type == 'synthetic_sequences':
-            from hima.experiments.temporal_pooling.blocks.dataset_synth_sequences import (
-                SyntheticSequencesGenerator
-            )
-            generator_config = resolve_init_params(generator_config, **induction_registry)
-            generator = SyntheticSequencesGenerator(global_config, **generator_config)
-        else:
-            raise KeyError(f'{generator_type} is not supported')
-
+        from hima.experiments.temporal_pooling.blocks.dataset_synth_sequences import (
+            SyntheticSequencesGenerator
+        )
+        generator = SyntheticSequencesGenerator(global_config, **generator_config)
         sequences = generator.generate_sequences(n_sequences)
-        block = generator.make_block(block_id, block_name, sequences)
+        block = generator.make_block(id, name, sequences)
         return block
