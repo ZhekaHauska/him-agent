@@ -21,7 +21,7 @@ class CustomSpatialPoolerBlock(Block):
     sp: Any
     sp_type: str
 
-    def __init__(self, id: int, name: str, **sp_config):
+    def __init__(self, id: int, name: str, global_config=None, n_sequences=None, **sp_config):
         super(CustomSpatialPoolerBlock, self).__init__(id, name)
 
         sp_config, ff_sds, output_sds, self.sp_type = extracted(

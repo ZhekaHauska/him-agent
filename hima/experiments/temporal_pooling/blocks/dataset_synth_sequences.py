@@ -8,14 +8,14 @@ from typing import Iterator
 import numpy as np
 from numpy.random import Generator
 
+from hima.common.config.base import TConfig
+from hima.common.config.global_config import GlobalConfig
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.data.synthetic_sequences import \
-    (
+from hima.experiments.temporal_pooling.blocks.graph import Block
+from hima.experiments.temporal_pooling.data.synthetic_sequences import (
     generate_synthetic_sequences, generate_synthetic_single_element_sequences
 )
-from hima.experiments.temporal_pooling.resolvers.encoder import resolve_encoder
-from hima.experiments.temporal_pooling.blocks.graph import Block
 
 
 class Sequence:
@@ -45,10 +45,10 @@ class SyntheticSequencesDatasetBlock(Block):
     _sequences: list[Sequence]
 
     def __init__(
-            self, id_: int, name: str, n_values: int, sequences: list[Sequence],
+            self, id: int, name: str, n_values: int, sequences: list[Sequence],
             values_sds: Sds
     ):
-        super(SyntheticSequencesDatasetBlock, self).__init__(id_, name)
+        super(SyntheticSequencesDatasetBlock, self).__init__(id, name)
 
         self.n_values = n_values
         self._sequences = sequences
@@ -84,17 +84,17 @@ class SyntheticSequencesGenerator:
     _rng: Generator
 
     def __init__(
-            self, config: dict,
+            self, global_config: GlobalConfig,
             sequence_length: int, n_values: int, active_size: int,
-            value_encoder: str,
+            value_encoder: TConfig,
             sequence_similarity: float,
             seed: int,
             sequence_similarity_std: float = 0.
     ):
         self.sequence_length = sequence_length
         self.n_values = n_values
-        self.value_encoder = resolve_encoder(
-            config, value_encoder,
+        self.value_encoder = global_config.resolve_object(
+            value_encoder,
             n_values=self.n_values,
             active_size=active_size,
             seed=seed
@@ -138,7 +138,7 @@ class SyntheticSequencesGenerator:
             self, block_id: int, block_name: str, sequences: list[Sequence]
     ) -> SyntheticSequencesDatasetBlock:
         return SyntheticSequencesDatasetBlock(
-            id_=block_id, name=block_name,
+            id=block_id, name=block_name,
             n_values=self.n_values,
             sequences=sequences,
             values_sds=self.values_sds

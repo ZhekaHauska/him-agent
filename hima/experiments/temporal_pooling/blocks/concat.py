@@ -18,7 +18,7 @@ class ConcatenatorBlock(Block):
 
     sdr_concatenator: SdrConcatenator
 
-    def __init__(self, id: int, name: str):
+    def __init__(self, id: int, name: str, **_):
         super(ConcatenatorBlock, self).__init__(id, name)
 
     def on_stream_sds_resolved(self, stream: Stream):

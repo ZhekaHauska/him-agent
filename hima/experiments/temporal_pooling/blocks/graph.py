@@ -48,14 +48,16 @@ class Block(ABC):
 
     id: int
     name: str
+    in_out: bool
     streams: dict[str, Stream]
 
     # TODO: log to charts, what to log?
 
-    def __init__(self, id: int, name: str):
+    def __init__(self, id: int, name: str, in_out: bool = False, **kwargs):
         self.id = id
         self.name = name
-        self.streams = {}
+        self.in_out = in_out
+        self.streams = self._parse_streams(kwargs)
 
     def register_stream(self, name: str) -> 'Stream':
         if name not in self.streams:
@@ -91,21 +93,27 @@ class Block(ABC):
     def __repr__(self):
         return f'{self.tag} {self.name}'
 
+    def _parse_streams(self, kwargs: dict):
+        streams = {}
+        for key, value in kwargs.items():
+            if not str.endswith(key, '_sds'):
+                continue
+            s = Stream(name=key[:-4], block=self)
+            s.resolve_sds(value)
+            streams[s.name] = s
+        return streams
 
-class ExternalApiBlock(Block):
-    family = '_ext_api_'
-    name = '___'
 
-    def make_stream_stats_tracker(self, *, stream: str, stats_config, **kwargs):
-        raise NotImplementedError()
+class StorageBlock(Block):
+    family = "storage"
 
     def build(self, **kwargs):
         pass
 
     def compute(self, data: dict[str, SparseSdr], **kwargs):
+        # put data to the specified streams
         for stream_name in data:
-            stream = self.streams[stream_name]
-            stream.sdr = data[stream_name]
+            self.streams[stream_name].sdr = data[stream_name]
 
 
 class Pipe:
@@ -188,7 +196,7 @@ class Pipeline:
     def __init__(self, units: list[ComputationUnit], blocks: dict[str, Block]):
         self.units = units
         self.blocks = blocks
-        self.api = self.blocks[ExternalApiBlock.name]
+        self.api = [block for block in blocks.values() if block.in_out][0]
 
     def step(self, input_data: dict[str, SparseSdr], **kwargs):
         # pass input data to the api block
