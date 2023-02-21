@@ -50,6 +50,5 @@ class GlobalConfig:
             config,
             object_type_or_factory=object_type_or_factory,
             config_type=config_type,
-            global_config=self,
             **substitution_registry | self.global_substitution_registry
         )
