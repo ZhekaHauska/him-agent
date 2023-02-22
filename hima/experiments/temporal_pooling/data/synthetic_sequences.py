@@ -9,44 +9,56 @@ from hima.common.utils import clip
 
 
 def generate_synthetic_sequences(
-        n_sequences: int, sequence_length: int, n_values: int, seed: int,
+        seed: int,
+        n_sequences: int,
+        sequence_length: int, alphabet_size: int,
         sequence_similarity: float,
-        sequence_similarity_std: float = 0.
+        sequence_similarity_std: float = 0.0
 ) -> np.ndarray:
     rng = np.random.default_rng(seed)
 
-    base_sequence = rng.integers(0, high=n_values, size=(1, sequence_length))
-    sequences = base_sequence.repeat(n_sequences, axis=0)
+    # init all sequences from the same origin
+    origin_sequence = rng.integers(0, high=alphabet_size, size=(1, sequence_length))
+    sequences = origin_sequence.repeat(n_sequences, axis=0)
 
-    # to-change indices
-    for i in range(n_sequences - 1):
-        if sequence_similarity_std < 1e-5:
-            sim = sequence_similarity
-        else:
+    # pin 0-th sequence to be the origin
+    origin_sequence = sequences[0]
+
+    def _get_target_similarity():
+        sim = sequence_similarity
+        # if sim std is set, sample individual target similarity for each sequence
+        if sequence_similarity_std > 0:
             sim = rng.normal(sequence_similarity, scale=sequence_similarity_std)
             sim = clip(sim, 0, 1)
+        return sim
 
-        n_values_to_change = int(sequence_length * (1 - sim))
-        if n_values_to_change == 0:
+    # perturb each other sequence to have target similarity with the origin
+    for i in range(1, n_sequences):
+        target_similarity = _get_target_similarity()
+
+        n_elements_to_change = int(sequence_length * (1 - target_similarity))
+        if not n_elements_to_change:
             continue
-        indices = rng.choice(sequence_length, n_values_to_change, replace=False)
 
-        # re-sample values from reduced value space (note n_values-1 below)
-        new_values = rng.integers(0, n_values - 1, n_values_to_change)
-        old_values = sequences[0][indices]
+        changing_indices = rng.choice(sequence_length, n_elements_to_change, replace=False)
 
-        # that's how we exclude origin value: |0|1|2| -> |0|.|2|3| — value 1 is excluded
-        mask = new_values >= old_values
+        # re-sample elements from reduced alphabet space: alphabet_size - 1,
+        # because for each element position we exclude ane element value — the one from the origin
+        new_values = rng.integers(0, alphabet_size - 1, n_elements_to_change)
+
+        # that's how we exclude one origin value: |0|1|2| -> |0|.|2|3| — value 1 is excluded
+        # this means we have to increment values from the tail, 1 and 2 in the example above
+        mask = new_values >= origin_sequence[changing_indices]
         new_values[mask] += 1
 
-        # replace origin values for specified positions with new values
-        sequences[i+1, indices] = new_values
+        # for selected indices, replace origin values with the new different values
+        sequences[i, changing_indices] = new_values
 
     return sequences
 
 
 def generate_synthetic_single_element_sequences(
-        n_sequences: int, n_values: int, seed: int
+        n_sequences: int, alphabet_size: int, seed: int
 ) -> np.ndarray:
     rng = np.random.default_rng(seed)
-    return rng.integers(0, high=n_values, size=(n_sequences, 1))
+    return rng.integers(0, high=alphabet_size, size=(n_sequences, 1))
