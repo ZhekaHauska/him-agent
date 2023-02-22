@@ -1,0 +1,228 @@
+_type_: tp.layered
+project: custom_sp
+log: True    # wandb logging
+
+run_setup: full
+seed: 42
+debug: False
+
+stats_and_metrics:
+  mae_normalization: no
+  symmetrical_similarity: False
+  distribution_metrics: pmf
+  online_similarity_decay: 1.
+  pmf_decay: 1.
+  loss_normalization: False
+  loss_layer_discount: 0.75
+
+pipeline:
+  - ___.input -> gen.output
+  - block: concat
+    pipes:
+      - sp2.output -> concat.feedforward_1
+      - gen.output -> concat.feedforward_2
+  - concat.output -> sp2.feedforward
+  - ???.output -> ___.output
+
+blocks:
+#  gen:
+#    # TODO: _base_config_: generator__S__.synthetic_sequences
+#    _type_family_: generator
+#    _base_config_: synthetic_sequences
+#    n_values: 100
+#    value_encoder: random
+#    active_size: 10
+  gen:
+    _type_family_: generator
+    _base_config_: synthetic_sequences
+    value_encoder: random_fixed
+    n_values: 200
+    active_size: 10
+    sequence_length: 1
+  concat:
+    _type_family_: concatenator
+  sp1:
+    _type_family_: spatial_pooler
+    _base_config_: default
+#    output_sds: [600, 20]
+    output_sds: [2000, 40]
+    boostStrength: 0.
+    potentialPct: 0.14
+  sp2:
+    _type_family_: custom_sp
+    _base_config_: default
+    sp_type: vectorized
+    output_sds: [500, 10]
+    initial_rf_sparsity: 0.2
+    max_rf_sparsity: 0.1
+    max_rf_to_input_ratio: 0.5
+#    learning_rate_inc: 0.1
+    learning_rate_inc: 0.02
+#    learning_rate_dec: 0.01
+    learning_rate_dec: 0.005
+    newborn_pruning_cycle: 5
+    newborn_pruning_stages: 3
+    boosting_k: 2.0
+
+run_setups:
+  simple:
+    n_sequences: 5
+#    n_sequences: 2
+    steps_per_sequence: 20
+#    steps_per_sequence: 3
+    sequence_repeats: 2
+    item_repeats: 1
+#    epochs: 2
+    epochs: 5
+    # FIXME: to ???
+    total_repeats: ...
+    log_repeat_schedule: 3
+    log_epoch_schedule: 2
+
+  full:
+    n_sequences: 10
+    steps_per_sequence: 30
+    sequence_repeats: 10
+    item_repeats: 1
+    epochs: 10
+    total_repeats: ...
+    log_repeat_schedule: 5
+    log_epoch_schedule: 2
+
+  repeating_one:
+    n_sequences: 10
+    steps_per_sequence: 1
+    sequence_repeats: 1
+    item_repeats: 7
+    epochs: 10
+    total_repeats: ...
+    log_repeat_schedule: 5
+    log_epoch_schedule: 10
+
+concatenator: {}
+
+track_streams:
+  gen.output:
+    - sdr
+#    - cross.offline.el
+    - cross.online.el
+  sp1.output:
+    - sdr
+    - attractor
+#    - cross.offline.el
+    - cross.online.el
+  sp2.output:
+    - sdr
+    - attractor
+#    - cross.offline.el
+    - cross.online.el
+
+diff_stats:
+#  off_on_el:
+#    - gen.output/epoch/sim_mx_off_el
+#    - gen.output/epoch/sim_mx_on_el
+#  offline_el:
+#    - gen.output/epoch/sim_mx_off_el
+#    - sp1.output/epoch/sim_mx_off_el
+#    - sp2.output/epoch/sim_mx_off_el
+  online_el:
+    - gen.output/epoch/sim_mx_on_el
+    - sp1.output/epoch/sim_mx_on_el
+    - sp2.output/epoch/sim_mx_on_el
+
+loss:
+  - sp1.output/epoch/sim_mx_on_el_mae
+  - sp1.output/epoch/mean_pmf_coverage
+  - sp2.output/epoch/sim_mx_on_el_mae
+  - sp2.output/epoch/mean_pmf_coverage
+
+generator:
+  synthetic_sequences:
+    _type_: synthetic_sequences
+    sequence_length: 40
+    n_values: 8
+    active_size: 10
+    value_encoder: random
+    sequence_similarity: 0.35
+    sequence_similarity_std: 0.35
+    seed: ???
+
+  synthetic_policies:
+    _type_: synthetic_policies
+    n_states: 40
+    n_actions: 8
+    active_size: 10
+    state_encoder: random
+    action_encoder: random
+    policy_similarity: 0.35
+    policy_similarity_std: 0.35
+    seed: ???
+
+encoder:
+  bucket:
+    _type_: int_bucket
+    n_values: ???
+    bucket_size: ???
+  random:
+    _type_: int_random
+    n_values: ???
+    space_compression: .5
+    active_size: ???
+    sds: ...
+    seed: ???
+  random_fixed:
+    _type_: int_random
+    n_values: ???
+    space_compression: ...
+    active_size: ???
+    sds: [500, 10]
+    seed: ???
+
+custom_sp:
+  default:
+    seed: ???
+    # input
+    ff_sds: ???
+    initial_rf_sparsity: 0.3
+    max_rf_sparsity: 0.1
+    max_rf_to_input_ratio: 2.5
+    # output
+    output_sds: ???
+    # learning
+    min_overlap_for_activation: 3
+    learning_rate_inc: 0.1
+    learning_rate_dec: 0.01
+
+spatial_pooler:
+  wide:
+    _base_config_: default
+    potentialPct: 0.1
+    boostStrength: 0.5
+    dutyCyclePeriod: 5000
+    minPctOverlapDutyCycle: 0.0002
+
+  default:
+    ff_sds: ???
+    output_sds: ???
+
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.6
+    globalInhibition: True
+    # output
+    columnDimensions: ???
+    localAreaDensity: ???
+
+    boostStrength: 0.2
+    dutyCyclePeriod: 20000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 3
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    wrapAround: False
+
+charts: []
