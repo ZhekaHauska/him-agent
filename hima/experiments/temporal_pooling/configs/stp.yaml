@@ -1,0 +1,83 @@
+_type_: stp.synthetic_sequences
+project: stp.fast_weights
+log: True    # wandb logging, use 'dry' for dummy do-nothing logging
+
+seed: 42
+run_setup:
+  n_sequences: 5
+  steps_per_sequence: 20
+  sequence_repeats: 2
+  item_repeats: 1
+  epochs: 5
+  total_repeats: ...
+  log_repeat_schedule: 3
+  log_epoch_schedule: 2
+
+dataset:
+  source:
+    _base_: generator.synthetic_sequences
+    # elements
+    n_elements: 200
+    active_size: 10
+    element_encoder: encoder.random_fixed_sds
+    # sequences
+    n_sequences: 10
+    sequence_length: 1
+
+generator:
+  synthetic_general_sequences:
+    _base_: $_base.generator.synthetic_sequences.general
+    n_elements: 40
+    element_encoder: random
+    n_sequences: 8
+    sequence_length: 40
+
+encoder:
+  ...
+
+run_setups:
+  simple:
+    n_sequences: 5
+#    n_sequences: 2
+    steps_per_sequence: 20
+#    steps_per_sequence: 3
+    sequence_repeats: 2
+    item_repeats: 1
+#    epochs: 2
+    epochs: 5
+    # FIXME: to ???
+    total_repeats: ...
+    log_repeat_schedule: 3
+    log_epoch_schedule: 2
+
+  full:
+    n_sequences: 10
+    steps_per_sequence: 30
+    sequence_repeats: 10
+    item_repeats: 1
+    epochs: 10
+    total_repeats: ...
+    log_repeat_schedule: 5
+    log_epoch_schedule: 2
+
+  repeating_one:
+    n_sequences: 10
+    steps_per_sequence: 1
+    sequence_repeats: 1
+    item_repeats: 7
+    epochs: 10
+    total_repeats: ...
+    log_repeat_schedule: 5
+    log_epoch_schedule: 10
+
+pipeline:
+  - ___.input -> gen.output
+  - ???.output -> ___.output
+
+blocks:
+  ___:
+    _type_: storage
+    in_out: True
+    input_sds: ???
+  gen:
+    _type_: storage
