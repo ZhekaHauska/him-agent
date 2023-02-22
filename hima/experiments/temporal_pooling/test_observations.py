@@ -8,22 +8,16 @@ from __future__ import annotations
 
 from itertools import islice
 
-import numpy as np
-
-from hima.common.config import resolve_value, TConfig
+from hima.common.config.base import TConfig
 from hima.common.run.runner import Runner
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.blocks.dataset_synth_sequences import Sequence
 from hima.experiments.temporal_pooling.blocks.graph import Block, Pipeline
 from hima.experiments.temporal_pooling.experiment_stats import ExperimentStats
-from hima.experiments.temporal_pooling.resolvers.graph import (
-    PipelineResolver,
-    BlockRegistryResolver
-)
 from hima.experiments.temporal_pooling.run_progress import RunProgress
 from hima.experiments.temporal_pooling.run_setup import RunSetup
-from hima.experiments.temporal_pooling.run_setup_resolver import resolve_run_setup
 from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
+from hima.experiments.temporal_pooling.utils import resolve_random_seed, scheduled
 
 
 class ObservationsLayeredExperiment(Runner):
@@ -128,24 +122,3 @@ class ObservationsLayeredExperiment(Runner):
             block = self.pipeline.blocks[name]
             if block.family in blocks_family:
                 block.reset()
-
-
-def resolve_random_seed(seed: int | None) -> int:
-    seed = resolve_value(seed)
-    if seed is None:
-        # randomly generate a seed
-        return np.random.default_rng().integers(10000)
-    return seed
-
-
-def scheduled(
-        i: int, schedule: int = 1,
-        always_report_first: bool = True, always_report_last: bool = True, i_max: int = None
-):
-    if always_report_first and i == 0:
-        return True
-    if always_report_last and i + 1 == i_max:
-        return True
-    if (i + 1) % schedule == 0:
-        return True
-    return False
