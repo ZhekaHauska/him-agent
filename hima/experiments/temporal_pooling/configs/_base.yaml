@@ -1,0 +1,54 @@
+generator:
+  synthetic_sequences:
+    _type_: synthetic_sequences
+    seed: ???
+    # elements
+    n_elements: ???
+    active_size: ???
+    element_encoder: ???
+    # sequences
+    n_sequences: ???
+    sequence_length: ???
+    sequence_similarity: ???
+    sequence_similarity_std: ???
+
+  # TODO: high similarity
+  synthetic_similar_sequences:
+    _base_: synthetic_sequences
+    sequence_similarity: ???
+    sequence_similarity_std: ???
+
+  # mid similarity
+  synthetic_general_sequences:
+    _base_: synthetic_sequences
+    sequence_similarity: 0.35
+    sequence_similarity_std: 0.35
+
+  # TODO: low similarity
+  synthetic_dissimilar_sequences:
+    _base_: synthetic_sequences
+    sequence_similarity: ???
+    sequence_similarity_std: ???
+
+encoder:
+  bucket:
+    _type_: int_bucket
+    n_values: ???
+    bucket_size: ???
+  random:
+    _type_: int_random
+    n_values: ???
+    space_compression: ???
+    active_size: ???
+    sds: ???
+    seed: ???
+  random_flexible_sds:
+    _base_: random
+    active_size: ???
+    space_compression: ???
+    sds: ...
+  random_fixed_sds:
+    _base_: random
+    space_compression: ...
+    active_size: ...
+    sds: ???
