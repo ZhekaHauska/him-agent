@@ -13,6 +13,10 @@ from hima.common.sds import Sds, TSdsShortNotation
 from hima.common.utils import isnone
 
 
+# TODO:
+#   1. Support caching for bucket encoder
+
+
 class IntBucketEncoder:
     """
     Encodes integer values from the range [0, `n_values`) as SDR with `output_sdr_size` total bits.
@@ -87,7 +91,7 @@ class IntRandomEncoder:
 
     output_sds: Sds
 
-    _encoding_map: np.array
+    encoding_map: np.array
 
     def __init__(
             self, n_values: int, seed: int,
@@ -109,7 +113,7 @@ class IntRandomEncoder:
             sds = (sds_size, active_size)
 
         self.output_sds = Sds.as_sds(sds)
-        self._encoding_map = self._make_encoding_map(
+        self.encoding_map = self._make_encoding_map(
             n_values=n_values,
             total_bits=self.output_sds.size,
             n_active_bits=self.output_sds.active_size,
@@ -126,11 +130,14 @@ class IntRandomEncoder:
 
     @property
     def n_values(self) -> int:
-        return self._encoding_map.shape[0]
+        return self.encoding_map.shape[0]
 
-    def encode(self, x: int) -> SparseSdr:
-        """Encodes value x to sparse SDR format using random overlapping encoding."""
-        return self._encoding_map[x]
+    def encode(self, x: int | list[int] | np.ndarray) -> SparseSdr:
+        """
+        Encodes value x to sparse SDR format using random overlapping encoding.
+        It is vectorized, so an array-like x is accepted too.
+        """
+        return self.encoding_map[x]
 
     @staticmethod
     def _make_encoding_map(n_values, total_bits, n_active_bits, seed: int) -> np.ndarray:
