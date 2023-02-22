@@ -8,8 +8,8 @@ from hima.common.config.types import TTypeOrFactory, LazyTypeResolver
 
 class StpLazyTypeResolver(LazyTypeResolver):
     def resolve(self, type_tag: str) -> TTypeOrFactory:
-        if type_tag == 'tp.layered':
-            from hima.experiments.temporal_pooling.test_on_obs_layered import StpExperiment
+        if type_tag == 'stp.synthetic_sequences':
+            from hima.experiments.temporal_pooling.test_stp import StpExperiment
             return StpExperiment
         if type_tag == 'storage':
             from hima.experiments.temporal_pooling.blocks.graph import StorageBlock
