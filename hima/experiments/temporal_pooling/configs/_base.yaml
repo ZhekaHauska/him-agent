@@ -1,16 +1,17 @@
-generator:
+dataset:
   synthetic_sequences:
     base:
-      _type_: synthetic_sequences
+      _type_: ds.synthetic_sequences
+      global_config: ???
       seed: ???
-      # elements
-      n_elements: ???
-      element_encoder: ???
       # sequences
       n_sequences: ???
       sequence_length: ???
       sequence_similarity: ???
       sequence_similarity_std: ???
+      # elements
+      alphabet_size: ???
+      encoder: ???
 
     # TODO: high similarity
     similar:
@@ -32,13 +33,13 @@ generator:
 
 encoder:
   bucket:
-    _type_: int_bucket
+    _type_: encoder.int_bucket
     n_values: ???
     bucket_size: ???
 
   random:
     base:
-      _type_: int_random
+      _type_: encoder.int_random
       n_values: ???
       space_compression: ???
       active_size: ???
