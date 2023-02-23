@@ -11,7 +11,7 @@ from itertools import islice
 from hima.common.config.base import TConfig
 from hima.common.run.runner import Runner
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling.blocks.dataset_synth_sequences import Sequence
+from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
 from hima.experiments.temporal_pooling.blocks.graph import Block, Pipeline
 from hima.experiments.temporal_pooling.experiment_stats import ExperimentStats
 from hima.experiments.temporal_pooling.run_progress import RunProgress

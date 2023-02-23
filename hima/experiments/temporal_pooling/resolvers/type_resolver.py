@@ -43,9 +43,7 @@ def _resolve_block(type_tag: str):
 
 def _resolve_dataset(type_tag):
     if type_tag == 'ds.synthetic_sequences':
-        from hima.experiments.temporal_pooling.blocks.dataset_synth_sequences import (
-            SyntheticSequences
-        )
+        from hima.experiments.temporal_pooling.data.synthetic_sequences import SyntheticSequences
         return SyntheticSequences
 
 
