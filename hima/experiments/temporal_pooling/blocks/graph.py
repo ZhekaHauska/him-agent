@@ -3,14 +3,15 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from abc import ABC, abstractmethod
-from typing import Union
+from __future__ import annotations
 
-from hima.common.config.utils import try_make_sds
-from hima.common.config.values import get_unresolved_value, is_resolved_value
+from abc import ABC, abstractmethod
+from typing import Union, Any
+
+from hima.common.config.utils import join_sds
+from hima.common.config.values import get_unresolved_value
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import isnone
 
 
 class Stream:
@@ -41,17 +42,21 @@ class Stream:
     def __repr__(self):
         return self.fullname
 
-    @staticmethod
-    def align(x: 'Stream', y: 'Stream'):
-        x_is_sds = isinstance(x.sds, Sds)
-        y_is_sds = isinstance(y.sds, Sds)
+    def join_sds(self, sds: Sds | Any):
+        # one-way apply
+        self.sds = join_sds(self.sds, sds)
+
+    def align(self, other: 'Stream'):
+        # two-way exchange
+        x_is_sds = isinstance(self.sds, Sds)
+        y_is_sds = isinstance(other.sds, Sds)
 
         if x_is_sds and y_is_sds:
-            assert x.sds == y.sds, f'Cannot align {x} and {y}.'
+            assert self.sds == other.sds, f'Cannot align {self} and {other}.'
         elif x_is_sds:
-            y.sds = x.sds
+            other.sds = self.sds
         elif y_is_sds:
-            x.sds = y.sds
+            self.sds = other.sds
 
 
 class Block(ABC):
@@ -81,12 +86,13 @@ class Block(ABC):
 
     # --------------- Overrideable public interface ---------------
 
-    def align_dimensions(self):
+    # noinspection PyMethodMayBeStatic
+    def align_dimensions(self) -> bool:
         """
         Align or induce block's streams dimensions.
         By default, does nothing. Override if it's applicable.
         """
-        pass
+        return True
 
     def reset(self, **kwargs):
         for name in self.streams:
@@ -119,8 +125,10 @@ class Block(ABC):
         for key, value in kwargs.items():
             if not str.endswith(key, '_sds'):
                 continue
-            stream = self.register_stream(name=key[:-4])
-            stream.sds = try_make_sds(value)
+
+            stream_name, sds = key[:-4], value
+            stream = self.register_stream(stream_name)
+            stream.join_sds(sds)
 
 
 class Pipe:
@@ -133,23 +141,24 @@ class Pipe:
     delay: int
     _sdr: Union[SparseSdr, list[SparseSdr]]
 
-    def __init__(self, src: Stream, dst: Stream, sds: Sds = None):
+    def __init__(self, src: Stream, dst: Stream, sds: Sds = get_unresolved_value()):
         self.src = src
         self.dst = dst
 
-        self.src.resolve_sds(isnone(sds, get_unresolved_value()))
+        self.src.join_sds(sds)
+        self.src.align(self.dst)
 
     def forward(self):
         self.dst.sdr = self.src.sdr
 
     def align_dimensions(self) -> bool:
-        if is_resolved_value(self.src.sds) and is_resolved_value(self.dst.sds):
-            return True
-
-        sds = self.src.sds
-        sds = self.dst.resolve_sds(sds)
-        sds = self.src.resolve_sds(sds)
-        return is_resolved_value(sds)
+        """
+        Align dimensions of the streams connected via this pipe.
+        Returns True if the streams' dimensions are resolved and correctly aligned,
+        and False otherwise.
+        """
+        self.src.align(self.dst)
+        return isinstance(self.src.sds, Sds)
 
     @property
     def sds(self):
@@ -190,18 +199,19 @@ class ComputationUnit:
             return f'{self.connections}'
 
 
-class Pipeline:
+class Model:
     """
     Pipeline is the ordered traversal of the computational graph, that is it defines both —
     the graph itself and the order of the computations.
     """
-    units: list[ComputationUnit]
+
+    pipeline: list[ComputationUnit]
     blocks: dict[str, Block]
 
     api: Block
 
-    def __init__(self, units: list[ComputationUnit], blocks: dict[str, Block]):
-        self.units = units
+    def __init__(self, api_block: str, units: list[ComputationUnit], blocks: dict[str, Block]):
+        self.pipeline = units
         self.blocks = blocks
         self.api = [block for block in blocks.values() if block.in_out][0]
 
@@ -209,10 +219,10 @@ class Pipeline:
         # pass input data to the api block
         self.api.compute(input_data)
 
-        for unit in self.units:
+        for unit in self.pipeline:
             unit.compute(**kwargs)
 
         return self.api.streams
 
     def __repr__(self):
-        return f'{self.units}'
+        return f'{self.pipeline}'
