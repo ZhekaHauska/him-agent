@@ -13,9 +13,12 @@ from hima.common.config.values import resolve_value
 from hima.common.sds import Sds
 from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.graph.graph import (
-    Pipe, Block, Pipeline,
-    ComputationUnit, Stream
+    Pipeline,
+    ComputationUnit
 )
+from hima.experiments.temporal_pooling.graph.pipe import Pipe
+from hima.experiments.temporal_pooling.graph.block import Block
+from hima.experiments.temporal_pooling.graph.stream import Stream
 
 
 class BlockResolver(ABC):

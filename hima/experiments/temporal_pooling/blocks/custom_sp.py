@@ -8,7 +8,7 @@ from typing import Any
 from hima.common.config.values import resolve_init_params
 from hima.common.config.base import extracted
 from hima.common.sdr import SparseSdr
-from hima.experiments.temporal_pooling.graph.graph import Block
+from hima.experiments.temporal_pooling.graph.block import Block
 
 
 class CustomSpatialPoolerBlock(Block):

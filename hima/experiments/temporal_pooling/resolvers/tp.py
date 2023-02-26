@@ -6,7 +6,7 @@
 
 from hima.common.config.base import TConfig
 from hima.common.config.values import resolve_init_params
-from hima.experiments.temporal_pooling.graph.graph import Block
+from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.blocks.tp import TemporalPoolerBlock
 from hima.experiments.temporal_pooling.resolvers.graph import BlockResolver
 

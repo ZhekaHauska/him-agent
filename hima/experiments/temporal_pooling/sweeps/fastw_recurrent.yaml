@@ -68,4 +68,4 @@ command:
 
     # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
   - --config
-  - ./configs/fastw.yaml
+  - ../configs/fastw.yaml

@@ -6,7 +6,8 @@
 from hima.common.config.values import is_resolved_value
 from hima.common.sdr import SparseSdr
 from hima.common.sdr_encoders import SdrConcatenator
-from hima.experiments.temporal_pooling.graph.graph import Block, Stream
+from hima.experiments.temporal_pooling.graph.block import Block
+from hima.experiments.temporal_pooling.graph.stream import Stream
 
 
 class ConcatenatorBlock(Block):

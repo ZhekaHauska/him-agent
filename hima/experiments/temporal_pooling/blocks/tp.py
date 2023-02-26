@@ -7,7 +7,8 @@
 from hima.common.config.values import is_resolved_value
 from hima.common.config.base import extracted
 from hima.common.sdr import SparseSdr
-from hima.experiments.temporal_pooling.graph.graph import Block, Stream
+from hima.experiments.temporal_pooling.graph.block import Block
+from hima.experiments.temporal_pooling.graph.stream import Stream
 from hima.experiments.temporal_pooling.stp.temporal_pooler import TemporalPooler
 
 
