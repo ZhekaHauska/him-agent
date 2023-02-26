@@ -31,7 +31,7 @@ class StpLazyTypeResolver(LazyTypeResolver):
 
 def _resolve_block(type_tag: str):
     if type_tag == 'block.storage':
-        from hima.experiments.temporal_pooling.blocks.graph import StorageBlock
+        from hima.experiments.temporal_pooling.blocks.storage import StorageBlock
         return StorageBlock
     if type_tag == 'block.custom_sp':
         from hima.experiments.temporal_pooling.blocks.custom_sp import CustomSpatialPoolerBlock

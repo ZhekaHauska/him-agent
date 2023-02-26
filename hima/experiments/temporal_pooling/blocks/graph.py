@@ -13,21 +13,30 @@ from hima.common.utils import isnone
 
 
 class Stream:
-    """Stream defines the named dataflow to or from a block."""
+    """
+    Stream defines the named dataflow to or from a block.
+
+    While it can be compared to a port, it acts similar to a register — a memory slot for a data,
+    i.e. a data is persisted and can be read several times until it's overwritten
+    with the next value.
+    """
     name: str
     sds: Sds
     sdr: SparseSdr
     block: 'Block'
 
     def __init__(self, name: str, block: 'Block'):
+        assert block is not None, f'Stream {name} does not have block specified.'
+
         self.block = block
         self.name = name
         self.sds = get_unresolved_value()
         self.sdr = []
 
     def resolve_sds(self, sds: Sds) -> Sds:
-        self.sds = resolve_value(self.sds, substitute_with=sds)
-        self.sds = Sds.as_sds(self.sds)
+        self.sds = Sds.as_sds(
+            resolve_value(self.sds, substitute_with=sds)
+        )
         if is_resolved_value(self.sds):
             self.block.on_stream_sds_resolved(self)
         return self.sds
@@ -39,6 +48,18 @@ class Stream:
     def __repr__(self):
         return self.fullname
 
+    @staticmethod
+    def align(x: 'Stream', y: 'Stream'):
+        resolved_x = isinstance(x.sds, Sds)
+        resolved_y = isinstance(y.sds, Sds)
+
+        if resolved_x and resolved_y:
+            assert x.sds == y.sds, f'Cannot align {x} and {y}.'
+        elif resolved_x:
+            y.sds = x.sds
+        elif resolved_y:
+            x.sds = y.sds
+
 
 class Block(ABC):
     """Base building block of the computational graph / neural network."""
@@ -48,23 +69,30 @@ class Block(ABC):
 
     id: int
     name: str
-    in_out: bool
     streams: dict[str, Stream]
 
-    # TODO: log to charts, what to log?
+    # TODO:
+    #  1. log to charts, what to log?
+    #  2. rename tag to ? and consider removing id
 
-    def __init__(self, id: int, name: str, in_out: bool = False, **kwargs):
+    def __init__(self, id: int, name: str, **kwargs):
         self.id = id
         self.name = name
-        self.in_out = in_out
-        self.streams = self._parse_streams(kwargs)
+        self.streams = {}
+        self._parse_streams(kwargs)
 
-    def register_stream(self, name: str) -> 'Stream':
+    def register_stream(self, name: str) -> Stream:
         if name not in self.streams:
             self.streams[name] = Stream(name=name, block=self)
         return self.streams[name]
 
-    def on_stream_sds_resolved(self, stream: Stream):
+    # --------------- Overrideable public interface ---------------
+
+    def align_dimensions(self):
+        """
+        Align or induce block's streams dimensions.
+        By default, does nothing. Override if it's applicable.
+        """
         pass
 
     def reset(self, **kwargs):
@@ -84,36 +112,22 @@ class Block(ABC):
     # --------------- String representation ---------------
 
     @property
-    def tag(self):
+    def shortname(self):
         return f'{self.id}_{self.family}'
 
-    def stream_tag(self, stream: str):
-        return f'{self.tag}.{stream}'
+    @property
+    def fullname(self):
+        return f'{self.shortname} {self.name}'
 
     def __repr__(self):
-        return f'{self.tag} {self.name}'
+        return self.fullname
 
     def _parse_streams(self, kwargs: dict):
-        streams = {}
         for key, value in kwargs.items():
             if not str.endswith(key, '_sds'):
                 continue
-            s = Stream(name=key[:-4], block=self)
-            s.resolve_sds(value)
-            streams[s.name] = s
-        return streams
-
-
-class StorageBlock(Block):
-    family = "storage"
-
-    def build(self, **kwargs):
-        pass
-
-    def compute(self, data: dict[str, SparseSdr], **kwargs):
-        # put data to the specified streams
-        for stream_name in data:
-            self.streams[stream_name].sdr = data[stream_name]
+            stream = self.register_stream(name=key[:-4])
+            stream.resolve_sds(value)
 
 
 class Pipe:
