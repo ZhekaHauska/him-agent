@@ -9,8 +9,6 @@ from typing import Union
 
 import numpy as np
 
-from hima.common.config.values import is_resolved_value
-
 TSdsShortNotation = Union[
     # tuple[shape|size, active_size|sparsity]
     tuple[
@@ -137,14 +135,11 @@ class Sds:
 
     @staticmethod
     def as_sds(sds: Sds | TSdsShortNotation) -> Sds:
-        if not is_resolved_value(sds):
-            # allow keeping unresolved values as is, because there's nothing you can do with it RN
-            return sds
-
-        if sds is None:
-            # allow empty sds
-            print("WARNING: allow empty SDS?")
-            return Sds(size=0, sparsity=0., active_size=0)
         if isinstance(sds, Sds):
             return sds
+
+        if isinstance(sds, dict):
+            # full key-value notation
+            return Sds(**sds)
+        # short notation
         return Sds(short_notation=sds)
