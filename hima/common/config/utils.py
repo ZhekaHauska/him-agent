@@ -12,17 +12,19 @@ from hima.common.config.values import is_resolved_value
 from hima.common.sds import Sds, TSdsShortNotation
 
 
-def make_sds(sds: Sds | TConfig | TSdsShortNotation | Any):
-    sds = try_make_sds(sds)
-    if isinstance(sds, Sds):
-        return sds
+def join_sds(x: Sds | Any, y: Sds | Any) -> Sds:
+    if x is None or isinstance(x, Sds):
+        return x
 
-    raise ValueError(f'Cannot resolve {sds} as Sds')
+    # unresolved -> Sds
+    y = make_sds(y)
+    if isinstance(y, Sds):
+        return y
+    return x
 
 
-def try_make_sds(sds: Sds | TConfig | TSdsShortNotation | Any):
+def make_sds(sds: Sds | TConfig | TSdsShortNotation | Any) -> Sds | None | Any:
     if sds is None:
-        # at the moment I don't know of useful SDS interpretation for None
         return None
 
     if isinstance(sds, Sds):
