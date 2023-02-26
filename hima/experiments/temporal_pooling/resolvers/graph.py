@@ -12,7 +12,7 @@ from hima.common.config.global_config import GlobalConfig
 from hima.common.config.values import resolve_value
 from hima.common.sds import Sds
 from hima.common.utils import isnone
-from hima.experiments.temporal_pooling.blocks.graph import (
+from hima.experiments.temporal_pooling.graph.graph import (
     Pipe, Block, Pipeline,
     ComputationUnit, Stream
 )

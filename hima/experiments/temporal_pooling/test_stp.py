@@ -35,7 +35,7 @@ class StpExperiment:
             log: bool, project: str,
             seed: int,
             iterate: TConfig, data: TConfig,
-            # pipeline: TConfig, blocks: TConfig,
+            model: TConfig,
             **_
     ):
         print('==> Init')

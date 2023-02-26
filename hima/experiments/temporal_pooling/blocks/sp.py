@@ -13,7 +13,7 @@ from hima.common.config.values import resolve_init_params
 from hima.common.config.base import extracted
 from hima.common.sdr import SparseSdr
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling.blocks.graph import Block
+from hima.experiments.temporal_pooling.graph.graph import Block
 
 
 class SpatialPoolerBlock(Block):
@@ -32,8 +32,8 @@ class SpatialPoolerBlock(Block):
 
         sp_config, ff_sds, output_sds = extracted(sp_config, 'ff_sds', 'output_sds')
 
-        self.register_stream(self.FEEDFORWARD).resolve_sds(ff_sds)
-        self.register_stream(self.OUTPUT).resolve_sds(output_sds)
+        self.register_stream(self.FEEDFORWARD).try_resolve_sds(ff_sds)
+        self.register_stream(self.OUTPUT).try_resolve_sds(output_sds)
 
         self._sp_config = sp_config
         self.run_time = 0

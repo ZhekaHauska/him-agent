@@ -5,7 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 from hima.common.sdr import SparseSdr
-from hima.experiments.temporal_pooling.blocks.graph import Block
+from hima.experiments.temporal_pooling.graph.graph import Block
 
 
 class StorageBlock(Block):

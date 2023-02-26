@@ -6,7 +6,7 @@
 
 from hima.common.config.base import TConfig
 from hima.experiments.temporal_pooling.blocks.concat import ConcatenatorBlock
-from hima.experiments.temporal_pooling.blocks.graph import Block
+from hima.experiments.temporal_pooling.graph.graph import Block
 from hima.experiments.temporal_pooling.resolvers.graph import BlockResolver
 
 

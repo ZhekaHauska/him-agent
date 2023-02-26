@@ -7,7 +7,7 @@ from typing import Any
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.blocks.graph import Stream
+from hima.experiments.temporal_pooling.graph.graph import Stream
 from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.stats.tracker import Tracker, TMetrics
 

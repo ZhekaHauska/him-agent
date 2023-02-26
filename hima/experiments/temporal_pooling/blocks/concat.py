@@ -6,7 +6,7 @@
 from hima.common.config.values import is_resolved_value
 from hima.common.sdr import SparseSdr
 from hima.common.sdr_encoders import SdrConcatenator
-from hima.experiments.temporal_pooling.blocks.graph import Block, Stream
+from hima.experiments.temporal_pooling.graph.graph import Block, Stream
 
 
 class ConcatenatorBlock(Block):
@@ -39,7 +39,7 @@ class ConcatenatorBlock(Block):
             if stream.startswith(self._ff_pattern)
         ]
         self.sdr_concatenator = SdrConcatenator(ff_sizes)
-        self.streams[self.OUTPUT].resolve_sds(self.sdr_concatenator.output_sds)
+        self.streams[self.OUTPUT].try_resolve_sds(self.sdr_concatenator.output_sds)
 
     def build(self, **kwargs):
         pass
