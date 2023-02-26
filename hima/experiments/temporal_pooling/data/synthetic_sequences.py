@@ -21,6 +21,9 @@ class Sequence:
     id: int
     seq: list[SparseSdr]
 
+    def __getitem__(self, ind):
+        return self.seq[ind]
+
     def __iter__(self) -> Iterator[SparseSdr]:
         return iter(self.seq)
 
@@ -62,6 +65,9 @@ class SyntheticSequences:
             Sequence(id=i_sequence, seq=self.encoder.encode(sequence))
             for i_sequence, sequence in enumerate(sequences)
         ]
+
+    def __iter__(self):
+        return iter(self.sequences)
 
 
 def generate_synthetic_sequences(
