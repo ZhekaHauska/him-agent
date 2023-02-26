@@ -138,7 +138,7 @@ class Sds:
         return shape, size, sparsity, active_size
 
     @staticmethod
-    def as_sds(sds: Sds | TSdsShortNotation) -> Sds:
+    def make(sds: Sds | TSdsShortNotation) -> Sds:
         if isinstance(sds, Sds):
             return sds
 

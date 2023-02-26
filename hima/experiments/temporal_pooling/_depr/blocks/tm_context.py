@@ -93,8 +93,8 @@ def resolve_tm(
     )
     tm_config, ff_sds, bc_sds, bc_config = extracted(tm_config, 'ff_sds', 'bc_sds', 'basal_context')
     # if FF/BC SDS were defined in config, they aren't Sds objects
-    ff_sds = Sds.as_sds(ff_sds)
-    bc_sds = Sds.as_sds(bc_sds)
+    ff_sds = Sds.make(ff_sds)
+    bc_sds = Sds.make(bc_sds)
 
     # resolve quantities based on FF and BC SDS settings
     tm_config = resolve_init_params(
@@ -120,7 +120,7 @@ def resolve_tm_apical_feedback(fb_sds: Sds, tm_block: ContextTemporalMemoryBlock
     )
     tm_config, fb_sds, fb_config = extracted(tm_config, 'fb_sds', 'apical_feedback')
     # if it was defined in config, it's not an Sds object
-    fb_sds = Sds.as_sds(fb_sds)
+    fb_sds = Sds.make(fb_sds)
 
     # resolve quantities based on FB SDS settings; implicitly asserts all other fields are resolved
     tm_config = resolve_init_params(tm_config, feedback_cells=fb_sds.size)

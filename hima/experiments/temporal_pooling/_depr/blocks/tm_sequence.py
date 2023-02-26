@@ -162,7 +162,7 @@ def resolve_tm(tm_config, ff_sds: Sds, seed: int):
     )
     tm_config, ff_sds = extracted(tm_config, 'ff_sds')
     # if FF SDS was defined in config, it isn't an Sds object
-    ff_sds = Sds.as_sds(ff_sds)
+    ff_sds = Sds.make(ff_sds)
 
     # resolve connections absolute params (shared for both BC and FB)
     tm_config |= resolve_tm_connections_region(tm_config, ff_sds)
@@ -180,7 +180,7 @@ def resolve_tm_apical_feedback(fb_sds: Sds, tm_block: SequenceApicalTemporalMemo
     )
     tm_config, fb_sds = extracted(tm_config, 'fb_sds')
     # if FB SDS was defined in config, it's not an Sds object
-    fb_sds = Sds.as_sds(fb_sds)
+    fb_sds = Sds.make(fb_sds)
 
     tm_block.configure_apical_feedback(fb_sds=fb_sds, resolved_tm_config=tm_config)
 

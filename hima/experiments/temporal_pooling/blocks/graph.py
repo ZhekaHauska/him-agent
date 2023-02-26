@@ -6,7 +6,8 @@
 from abc import ABC, abstractmethod
 from typing import Union
 
-from hima.common.config.values import get_unresolved_value, is_resolved_value, resolve_value
+from hima.common.config.utils import try_make_sds
+from hima.common.config.values import get_unresolved_value, is_resolved_value
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone
@@ -33,14 +34,6 @@ class Stream:
         self.sds = get_unresolved_value()
         self.sdr = []
 
-    def resolve_sds(self, sds: Sds) -> Sds:
-        self.sds = Sds.as_sds(
-            resolve_value(self.sds, substitute_with=sds)
-        )
-        if is_resolved_value(self.sds):
-            self.block.on_stream_sds_resolved(self)
-        return self.sds
-
     @property
     def fullname(self):
         return f'{self.block.name}.{self.name}'
@@ -50,14 +43,14 @@ class Stream:
 
     @staticmethod
     def align(x: 'Stream', y: 'Stream'):
-        resolved_x = isinstance(x.sds, Sds)
-        resolved_y = isinstance(y.sds, Sds)
+        x_is_sds = isinstance(x.sds, Sds)
+        y_is_sds = isinstance(y.sds, Sds)
 
-        if resolved_x and resolved_y:
+        if x_is_sds and y_is_sds:
             assert x.sds == y.sds, f'Cannot align {x} and {y}.'
-        elif resolved_x:
+        elif x_is_sds:
             y.sds = x.sds
-        elif resolved_y:
+        elif y_is_sds:
             x.sds = y.sds
 
 
@@ -127,7 +120,7 @@ class Block(ABC):
             if not str.endswith(key, '_sds'):
                 continue
             stream = self.register_stream(name=key[:-4])
-            stream.resolve_sds(value)
+            stream.sds = try_make_sds(value)
 
 
 class Pipe:

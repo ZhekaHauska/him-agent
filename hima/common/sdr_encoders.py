@@ -112,7 +112,7 @@ class IntRandomEncoder:
             sds_size = int(n_values * active_size * space_compression)
             sds = (sds_size, active_size)
 
-        self.output_sds = Sds.as_sds(sds)
+        self.output_sds = Sds.make(sds)
         self.encoding_map = self._make_encoding_map(
             n_values=n_values,
             total_bits=self.output_sds.size,
