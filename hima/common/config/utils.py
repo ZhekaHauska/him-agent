@@ -5,12 +5,14 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from typing import Any
+
 from hima.common.config.base import TConfig
 from hima.common.config.values import is_resolved_value
 from hima.common.sds import Sds, TSdsShortNotation
 
 
-def resolve_sds(sds: Sds | TConfig):
+def resolve_sds(sds: Sds | TConfig | TSdsShortNotation | Any):
     sds = try_resolve_sds(sds)
     if isinstance(sds, Sds):
         return sds
@@ -18,9 +20,9 @@ def resolve_sds(sds: Sds | TConfig):
     raise ValueError(f'Cannot resolve {sds} as Sds')
 
 
-def try_resolve_sds(sds: Sds | TConfig | TSdsShortNotation):
+def try_resolve_sds(sds: Sds | TConfig | TSdsShortNotation | Any):
     if sds is None:
-        # at the moment I don't know of useful SDS interpretation of None
+        # at the moment I don't know of useful SDS interpretation for None
         return None
 
     if isinstance(sds, Sds):
@@ -31,4 +33,3 @@ def try_resolve_sds(sds: Sds | TConfig | TSdsShortNotation):
         return sds
 
     return Sds.as_sds(sds)
-

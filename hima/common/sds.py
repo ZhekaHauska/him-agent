@@ -61,9 +61,16 @@ class Sds:
             # ignore keyword-only params
             shape, size, sparsity, active_size = self.parse_short_notation(*short_notation)
 
-        self.shape, self.size, self.sparsity, self.active_size = self.resolve_sds_components(
+        self.shape, self.size, self.sparsity, self.active_size = self.induce_all_components(
             shape=shape, size=size, sparsity=sparsity, active_size=active_size
         )
+
+    def __eq__(self, other):
+        assert isinstance(other, Sds)
+        return self.size == other.size and self.active_size == other.active_size
+
+    def __str__(self):
+        return f'({self.shape}, {self.size}, {self.active_size}, {self.sparsity})'
 
     @staticmethod
     def parse_short_notation(first, second):
@@ -102,11 +109,8 @@ class Sds:
 
         return shape, size, sparsity, active_size
 
-    def __str__(self):
-        return f'({self.shape}, {self.size}, {self.active_size}, {self.sparsity})'
-
     @staticmethod
-    def resolve_sds_components(
+    def induce_all_components(
             shape: tuple[int, ...] = None,
             size: int = None,
             sparsity: float = None,
