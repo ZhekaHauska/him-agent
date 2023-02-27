@@ -12,8 +12,11 @@ from typing import TYPE_CHECKING
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.run.wandb import get_logger
+from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
+from hima.experiments.temporal_pooling.graph.model import Model
+from hima.experiments.temporal_pooling.graph.model_compiler import ModelCompiler
 from hima.experiments.temporal_pooling.iteration import IterationConfig
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.utils import resolve_random_seed
@@ -25,9 +28,11 @@ if TYPE_CHECKING:
 class StpExperiment:
     config: GlobalConfig
     logger: Run | None
+    init_time: float
 
     seed: int
 
+    model: Model
     iterate: IterationConfig
 
     def __init__(
@@ -38,7 +43,9 @@ class StpExperiment:
             model: TConfig,
             **_
     ):
-        print('==> Init')
+        self.init_time = timer()
+        self.print_with_timestamp('==> Init')
+
         self.config = GlobalConfig(
             config=config, config_path=config_path, type_resolver=StpLazyTypeResolver()
         )
@@ -51,19 +58,19 @@ class StpExperiment:
             n_sequences=self.iterate.sequences,
             sequence_length=self.iterate.elements
         )
-        # block_registry = BlockRegistry(
-        #     global_config=self.config, block_configs=blocks,
-        #     input_sds=self.data.values_sds
-        # )
-        # pipeline_resolver = PipelineResolver(block_registry)
-        # pipeline = pipeline_resolver.resolve(pipeline)
+        model_compiler = ModelCompiler(self.config)
+        self.model = model_compiler.parse(**model)
+
+        self.model.api.streams['input'].join_sds(self.data.sds)
+        model_compiler.compile(self.model)
+        print(self.model)
 
     def run(self):
-        print('==> Run')
+        self.print_with_timestamp('==> Run')
         for epoch in range(self.iterate.epochs):
             _, elapsed_time = self.train_epoch()
-            print(f'Epoch {epoch}: {elapsed_time:.3f} sec')
-        print('<==')
+            self.print_with_timestamp(f'Epoch {epoch}')
+        self.print_with_timestamp('<==')
 
     @timed
     def train_epoch(self):
@@ -101,6 +108,9 @@ class StpExperiment:
             # self.reset_blocks('spatial_pooler', 'custom_sp')
             for _ in range(self.iterate.element_repeats):
                 # self.progress.next_step()
-                # self.pipeline.step(input_data, learn=learn)
+                self.model.api.streams['input'].sdr = input_sdr
+                self.model.forward()
                 # self.stats.on_step()
-                ...
+
+    def print_with_timestamp(self, text: str):
+        print_with_timestamp(text, self.init_time)

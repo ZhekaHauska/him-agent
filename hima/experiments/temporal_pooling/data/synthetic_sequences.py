@@ -69,6 +69,10 @@ class SyntheticSequences:
     def __iter__(self):
         return iter(self.sequences)
 
+    @property
+    def sds(self):
+        return self.encoder.output_sds
+
 
 def generate_synthetic_sequences(
         seed: int,

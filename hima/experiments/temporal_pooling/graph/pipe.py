@@ -11,10 +11,11 @@ from typing import Union
 from hima.common.config.values import get_unresolved_value
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
+from hima.experiments.temporal_pooling.graph.node import Node
 from hima.experiments.temporal_pooling.graph.stream import Stream
 
 
-class Pipe:
+class Pipe(Node):
     """Pipe connects two blocks' streams. Thus, both streams operate in the same SDS."""
 
     src: Stream
@@ -31,8 +32,8 @@ class Pipe:
         self.src.join_sds(sds)
         self.src.align(self.dst)
 
-    def forward(self):
-        self.dst.sdr = self.src.sdr
+    def expand(self):
+        yield self
 
     def align_dimensions(self) -> bool:
         """
@@ -43,9 +44,12 @@ class Pipe:
         self.src.align(self.dst)
         return isinstance(self.src.sds, Sds)
 
+    def forward(self) -> None:
+        self.dst.sdr = self.src.sdr
+
+    def __repr__(self) -> str:
+        return f'{self.src} -> {self.dst} | {self.sds}'
+
     @property
     def sds(self):
         return self.src.sds
-
-    def __repr__(self):
-        return f'{self.sds}| {self.src} -> {self.dst}'

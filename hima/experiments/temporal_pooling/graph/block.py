@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
-from hima.common.sdr import SparseSdr
+from hima.experiments.temporal_pooling.graph.node import Node
 from hima.experiments.temporal_pooling.graph.stream import Stream
 
 
-class Block(ABC):
+class Block(Node):
     """Base building block of the computational graph / neural network."""
 
     family: str = "base_block"
@@ -32,12 +32,27 @@ class Block(ABC):
         self.streams = {}
         self._parse_streams(kwargs)
 
+    # ---------- Block non-overrideable public interface ----------
+
     def register_stream(self, name: str) -> Stream:
         if name not in self.streams:
             self.streams[name] = Stream(name=name, block=self)
         return self.streams[name]
 
-    # --------------- Overrideable public interface ---------------
+    # ------------ Block overrideable public interface ------------
+
+    def reset(self, **kwargs):
+        for name in self.streams:
+            self.streams[name].sdr = []
+
+    @abstractmethod
+    def compile(self):
+        """Build block after all its configurable parameters are resolved."""
+        raise NotImplementedError()
+
+    # ----------------- Node public interface ---------------------
+    def expand(self):
+        yield self
 
     # noinspection PyMethodMayBeStatic
     def align_dimensions(self) -> bool:
@@ -47,22 +62,16 @@ class Block(ABC):
         """
         return True
 
-    def reset(self, **kwargs):
-        for name in self.streams:
-            self.streams[name].sdr = []
+    def forward(self) -> None:
+        """Blocks are supposed to have conscious `forward` methods that are used via BlockCall."""
+        raise ValueError(
+            'Blocks are supposed to have conscious `forward` methods that are used via BlockCall.'
+        )
 
-    @abstractmethod
-    def build(self, **kwargs):
-        """Build block after all its configurable parameters are resolved."""
-        raise NotImplementedError()
+    def __repr__(self) -> str:
+        return self.fullname
 
-    @abstractmethod
-    def compute(self, data: dict[str, SparseSdr], **kwargs):
-        """Make a computation given the provided input data streams."""
-        raise NotImplementedError()
-
-    # --------------- String representation ---------------
-
+    # ------------------ String representation --------------------
     @property
     def shortname(self):
         return f'{self.id}_{self.family}'
@@ -71,9 +80,7 @@ class Block(ABC):
     def fullname(self):
         return f'{self.shortname} {self.name}'
 
-    def __repr__(self):
-        return self.fullname
-
+    # ---------------------- Utility methods ----------------------
     def _parse_streams(self, kwargs: dict):
         for key, value in kwargs.items():
             if not str.endswith(key, '_sds'):
