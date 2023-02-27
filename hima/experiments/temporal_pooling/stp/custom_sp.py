@@ -109,7 +109,7 @@ class NewbornNeuron:
 
 class SpatialPooler:
     # input
-    ff_sds: Sds
+    feedforward_sds: Sds
     rf_sparsity: float
 
     _initial_rf_sparsity: float
@@ -136,7 +136,7 @@ class SpatialPooler:
     _newborn_prune_iteration: int
 
     def __init__(
-            self, ff_sds: Sds,
+            self, feedforward_sds: Sds,
             initial_rf_sparsity: float, max_rf_sparsity: float, max_rf_to_input_ratio: float,
             output_sds: Sds,
             min_overlap_for_activation: float, learning_rate_inc: float, learning_rate_dec: float,
@@ -144,7 +144,7 @@ class SpatialPooler:
             boosting_k: float,
             seed: int
     ):
-        self.ff_sds = ff_sds
+        self.feedforward_sds = feedforward_sds
         self.rf_sparsity = initial_rf_sparsity
         self._initial_rf_sparsity = initial_rf_sparsity
         self._max_rf_sparsity = max_rf_sparsity
@@ -159,7 +159,7 @@ class SpatialPooler:
         self._rng = np.random.default_rng(seed)
         self.neurons = [
             NewbornNeuron(
-                id, self.ff_sds, initial_rf_sparsity, self.output_sds.sparsity,
+                id, self.feedforward_sds, initial_rf_sparsity, self.output_sds.sparsity,
                 boosting_k, self._rng
             )
             for id in range(self.output_sds.size)
@@ -208,7 +208,7 @@ class SpatialPooler:
     def prune_newborns(self):
         if self._newborn_prune_iteration == self.newborn_pruning_stages:
             self._newborn_prune_iteration += 1
-            rf_size = int(self.rf_sparsity * self.ff_sds.size)
+            rf_size = int(self.rf_sparsity * self.feedforward_sds.size)
             print(f'Turning off newborns: {self.rf_sparsity} | {rf_size}')
             for neuron in self.neurons:
                 neuron.boosting_log_1_k = 0.0
@@ -219,7 +219,7 @@ class SpatialPooler:
             return
 
         avg_input_size = self.cum_input_size / self.n_computes
-        input_sparsity = avg_input_size / self.ff_sds.size
+        input_sparsity = avg_input_size / self.feedforward_sds.size
 
         target_rf_sparsity = min(
             self._max_rf_sparsity,
@@ -230,7 +230,7 @@ class SpatialPooler:
             target_rf_sparsity - self._initial_rf_sparsity
         ) / self.newborn_pruning_stages
 
-        rf_size = int(self.rf_sparsity * self.ff_sds.size)
+        rf_size = int(self.rf_sparsity * self.feedforward_sds.size)
         print(f'Pruning newborns: {self.rf_sparsity} | {rf_size}')
         for neuron in self.neurons:
             neuron.prune_rf(self.rf_sparsity)

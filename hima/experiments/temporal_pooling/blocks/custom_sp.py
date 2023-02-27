@@ -19,35 +19,24 @@ class CustomSpatialPoolerBlock(Block):
     supported_streams = {FEEDFORWARD, OUTPUT}
 
     sp: Any
-    sp_type: str
 
-    def __init__(self, id: int, name: str, global_config=None, n_sequences=None, **sp_config):
-        super(CustomSpatialPoolerBlock, self).__init__(id, name)
-
-        sp_config, ff_sds, output_sds, self.sp_type = extracted(
-            sp_config, 'ff_sds', 'output_sds', 'sp_type'
-        )
-
-        self.register_stream(self.FEEDFORWARD).try_resolve_sds(ff_sds)
-        self.register_stream(self.OUTPUT).try_resolve_sds(output_sds)
-
-        self._sp_config = sp_config
-
-    def build(self):
-        sp_config = self._sp_config
-        ff_sds = self.streams[self.FEEDFORWARD].sds
+    def compile(self):
+        sp_config = self._config
+        feedforward_sds = self.streams[self.FEEDFORWARD].sds
         output_sds = self.streams[self.OUTPUT].sds
 
-        sp_config = resolve_init_params(sp_config)
-        if self.sp_type == 'vectorized':
+        sp_config, sp_type = extracted(sp_config, 'sp_type')
+        if sp_type == 'vectorized':
             from hima.experiments.temporal_pooling.stp.custom_sp_vec import SpatialPooler
-            self.sp = SpatialPooler(ff_sds=ff_sds, output_sds=output_sds, **sp_config)
+            self.sp = SpatialPooler(
+                feedforward_sds=feedforward_sds, output_sds=output_sds, **sp_config
+            )
         else:
             from hima.experiments.temporal_pooling.stp.custom_sp import SpatialPooler
-            self.sp = SpatialPooler(ff_sds=ff_sds, output_sds=output_sds, **sp_config)
+            self.sp = SpatialPooler(
+                feedforward_sds=feedforward_sds, output_sds=output_sds, **sp_config
+            )
 
-    def compute(self, data: dict[str, SparseSdr], **kwargs):
-        self._compute(**data, **kwargs)
-
-    def _compute(self, feedforward: SparseSdr, learn: bool = True):
+    def compute(self, learn: bool = True):
+        feedforward = self.streams[self.FEEDFORWARD].sdr
         self.streams[self.OUTPUT].sdr = self.sp.compute(feedforward, learn=learn)

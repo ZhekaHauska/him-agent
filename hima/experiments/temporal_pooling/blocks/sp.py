@@ -39,7 +39,7 @@ class SpatialPoolerBlock(Block):
         self.run_time = 0
         self.n_computes = 0
 
-    def build(self):
+    def compile(self):
         sp_config = self._sp_config
         ff_sds = self.streams[self.FEEDFORWARD].sds
         output_sds = self.streams[self.OUTPUT].sds
@@ -54,13 +54,13 @@ class SpatialPoolerBlock(Block):
         self._active_input = SDR(ff_sds.size)
         self._active_output = SDR(output_sds.size)
 
-    def compute(self, data: dict[str, SparseSdr], **kwargs):
-        _, run_time = self._compute(**data, **kwargs)
+    def compute(self):
+        _, run_time = self._compute()
         self.run_time += run_time
         self.n_computes += 1
 
     @timed
-    def _compute(self, feedforward: SparseSdr, learn: bool = True):
+    def _compute(self, learn: bool = True):
         self._active_input.sparse = feedforward.copy()
         self.sp.compute(self._active_input, learn=learn, output=self._active_output)
         self.streams[self.OUTPUT].sdr = np.array(self._active_output.sparse, copy=True)

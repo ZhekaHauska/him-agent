@@ -14,6 +14,7 @@ class StpLazyTypeResolver(LazyTypeResolver):
             ('encoder.', _resolve_encoder),
             ('stp.', _resolve_runner),
             ('ds.', _resolve_dataset),
+            ('sp.', _resolve_spatial_pooler),
         ]
 
     def resolve(self, type_tag: str) -> TTypeOrFactory:
@@ -27,6 +28,12 @@ class StpLazyTypeResolver(LazyTypeResolver):
         if not resolved_type:
             raise ValueError(f'Unknown type tag: {type_tag}')
         return resolved_type
+
+
+def _resolve_spatial_pooler(type_tag: str):
+    if type_tag == 'sp.custom':
+        from hima.experiments.temporal_pooling.blocks.custom_sp import CustomSpatialPoolerBlock
+        return CustomSpatialPoolerBlock
 
 
 def _resolve_block(type_tag: str):

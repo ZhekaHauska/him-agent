@@ -15,7 +15,7 @@ from hima.experiments.temporal_pooling.stp.custom_sp_utils import sample_rf, boo
 
 class SpatialPooler:
     # input
-    ff_sds: Sds
+    feedforward_sds: Sds
     rf_sparsity: float
 
     _initial_rf_sparsity: float
@@ -49,7 +49,7 @@ class SpatialPooler:
     activation_heatmap: np.ndarray
 
     def __init__(
-            self, ff_sds: Sds,
+            self, feedforward_sds: Sds,
             initial_rf_sparsity: float, max_rf_sparsity: float, max_rf_to_input_ratio: float,
             output_sds: Sds,
             min_overlap_for_activation: float, learning_rate_inc: float, learning_rate_dec: float,
@@ -57,7 +57,7 @@ class SpatialPooler:
             boosting_k: float,
             seed: int
     ):
-        self.ff_sds = ff_sds
+        self.feedforward_sds = feedforward_sds
         self.rf_sparsity = initial_rf_sparsity
         self._initial_rf_sparsity = initial_rf_sparsity
         self._max_rf_sparsity = max_rf_sparsity
@@ -72,7 +72,7 @@ class SpatialPooler:
         self._rng = np.random.default_rng(seed)
 
         self.potential_rf = np.array([
-            sample_rf(ff_sds, self.rf_sparsity, self._rng)
+            sample_rf(feedforward_sds, self.rf_sparsity, self._rng)
             for _ in range(self.output_sds.size)
         ])
         print(self.potential_rf.shape)
@@ -102,7 +102,7 @@ class SpatialPooler:
         self.n_computes += 1
         self.cum_input_size += len(input_sdr)
 
-        dense_input = sparse_to_dense(input_sdr, self.ff_sds.size)
+        dense_input = sparse_to_dense(input_sdr, self.feedforward_sds.size)
         matches = dense_input[self.potential_rf]
         matches_active = matches & self.rf
         overlaps = matches_active.sum(axis=1)
@@ -155,7 +155,7 @@ class SpatialPooler:
     def update_rf_size(self):
         """Update the receptive field size."""
         avg_input_size = self.cum_input_size / self.n_computes
-        input_sparsity = avg_input_size / self.ff_sds.size
+        input_sparsity = avg_input_size / self.feedforward_sds.size
 
         target_rf_sparsity = min(
             self._max_rf_sparsity,
@@ -200,4 +200,4 @@ class SpatialPooler:
 
     @property
     def rf_size(self):
-        return int(self.rf_sparsity * self.ff_sds.size)
+        return int(self.rf_sparsity * self.feedforward_sds.size)

@@ -55,3 +55,10 @@ encoder:
       space_compression: ...
       active_size: ...
       sds: ???
+
+block:
+  # you can omit specifying this common base as _base_.
+  # it is added just for clarity that each block has these attributes
+  base:
+    id: ???
+    name: ???

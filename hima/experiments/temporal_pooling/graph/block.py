@@ -30,7 +30,7 @@ class Block(Node):
         self.id = id
         self.name = name
         self.streams = {}
-        self._parse_streams(kwargs)
+        self._config = self._extract_streams(kwargs)
 
     # ---------- Block non-overrideable public interface ----------
 
@@ -81,11 +81,14 @@ class Block(Node):
         return f'{self.shortname} {self.name}'
 
     # ---------------------- Utility methods ----------------------
-    def _parse_streams(self, kwargs: dict):
+    def _extract_streams(self, kwargs: dict):
+        config = {}
         for key, value in kwargs.items():
             if not str.endswith(key, '_sds'):
+                config[key] = value
                 continue
 
             stream_name, sds = key[:-4], value
             stream = self.register_stream(stream_name)
             stream.join_sds(sds)
+        return config
