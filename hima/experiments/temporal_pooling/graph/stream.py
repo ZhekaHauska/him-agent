@@ -52,12 +52,13 @@ class Stream:
 
     def align(self, other: 'Stream'):
         # two-way exchange
-        x_is_sds = isinstance(self.sds, Sds)
-        y_is_sds = isinstance(other.sds, Sds)
-
-        if x_is_sds and y_is_sds:
+        if self.valid and other.valid:
             assert self.sds == other.sds, f'Cannot align {self} and {other}.'
-        elif x_is_sds:
+        elif self.valid:
             other.sds = self.sds
-        elif y_is_sds:
+        elif other.valid:
             self.sds = other.sds
+
+    @property
+    def valid(self):
+        return isinstance(self.sds, Sds)

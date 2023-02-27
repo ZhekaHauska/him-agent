@@ -19,9 +19,17 @@ model:
   api_block: ___
   pipeline:
     - ___.input -> gen.output
-    - gen.output -> sp1.feedforward
-    - sp1.compute
-    - ???.output -> ___.output
+    - ???.output -> tm1.feedforward
+    - tm1.predict
+    - tm1.predicted_cells -> sp1.feedforward
+    - repeat: 5
+      pipeline:
+        - sp1.compute
+        - sp1.output -> feedforward
+    - ???.output -> tm1.predicted_cells
+    - tm1.set_predicted_cells
+    - tm1.activate
+    - ???.active_cells -> ___.output
 
 blocks:
   ___:
@@ -44,6 +52,16 @@ blocks:
     newborn_pruning_cycle: 5
     newborn_pruning_stages: 3
     boosting_k: 2.0
+  tm1:
+    _base_: tm.default_general_feedback
+    seed: ???
+    cells_per_column: 8
+    activation_threshold_basal: .85
+    learning_threshold_basal: .5
+    activation_threshold_apical: 1
+    learning_threshold_apical: 1
+    max_synapses_per_segment_basal: 1.2
+    max_segments_per_cell_basal: 32
 
 log_schedule:
   log_repeat_schedule: 3
@@ -51,6 +69,10 @@ log_schedule:
 
 iterate_setups:
   simple: ...
+
+tm:
+  default_general_feedback:
+    _type_: tm.general_feedback
 
 custom_sp:
   default:

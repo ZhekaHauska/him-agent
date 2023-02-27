@@ -5,9 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from typing import Any
 
-from hima.common.config.values import resolve_init_params
 from hima.common.config.base import extracted
-from hima.common.sdr import SparseSdr
 from hima.experiments.temporal_pooling.graph.block import Block
 
 

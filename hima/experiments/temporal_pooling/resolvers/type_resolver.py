@@ -15,6 +15,7 @@ class StpLazyTypeResolver(LazyTypeResolver):
             ('stp.', _resolve_runner),
             ('ds.', _resolve_dataset),
             ('sp.', _resolve_spatial_pooler),
+            ('tm.', _resolve_temporal_memory),
         ]
 
     def resolve(self, type_tag: str) -> TTypeOrFactory:
@@ -28,6 +29,14 @@ class StpLazyTypeResolver(LazyTypeResolver):
         if not resolved_type:
             raise ValueError(f'Unknown type tag: {type_tag}')
         return resolved_type
+
+
+def _resolve_temporal_memory(type_tag: str):
+    if type_tag == 'tm.general_feedback':
+        from hima.experiments.temporal_pooling.blocks.general_feedback_tm import (
+            GeneralFeedbackTemporalMemoryBlock
+        )
+        return GeneralFeedbackTemporalMemoryBlock
 
 
 def _resolve_spatial_pooler(type_tag: str):

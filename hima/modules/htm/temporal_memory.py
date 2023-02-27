@@ -217,7 +217,16 @@ class GeneralFeedbackTM:
             predicted_cells = self.predictive_cells_apical
 
         self.predicted_cells.sparse = predicted_cells.astype(UINT_DTYPE)
-        self.predicted_columns.sparse = np.unique(self._columns_for_cells(self.predicted_cells.sparse))
+        self._on_cells_predicted()
+
+    def set_predicted_cells(self, cells_id):
+        self.predicted_cells.sparse = cells_id
+        self._on_cells_predicted()
+
+    def _on_cells_predicted(self):
+        self.predicted_columns.sparse = np.unique(
+            self._columns_for_cells(self.predicted_cells.sparse)
+        )
 
         confidence = min(len(self.predicted_cells.sparse) / (self.mean_active_columns + EPS), 1.0)
         self.confidence_threshold = self.confidence_threshold + (

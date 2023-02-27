@@ -37,7 +37,7 @@ class SpatiotemporalPoolerBlock(Block):
 
         self._stp_config = stp_config
 
-    def build(self, **kwargs):
+    def compile(self, **kwargs):
         stp_config = self._stp_config
         ff_sds = self.streams[self.FEEDFORWARD].sds
         output_sds = self.streams[self.OUTPUT].sds

@@ -39,7 +39,7 @@ class TemporalPoolerBlock(Block):
         if not is_resolved_value(self.streams[propagate_to].sds):
             self.streams[propagate_to].try_resolve_sds(stream.sds)
 
-    def build(self):
+    def compile(self):
         sds = self.streams[self.FEEDFORWARD].sds
         self.tp = TemporalPooler(sds=sds, **self._tp_config)
 

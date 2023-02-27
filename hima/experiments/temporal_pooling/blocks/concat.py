@@ -42,7 +42,7 @@ class ConcatenatorBlock(Block):
         self.sdr_concatenator = SdrConcatenator(ff_sizes)
         self.streams[self.OUTPUT].try_resolve_sds(self.sdr_concatenator.output_sds)
 
-    def build(self, **kwargs):
+    def compile(self, **kwargs):
         pass
 
     def compute(self, data: dict[str, SparseSdr], **kwargs):

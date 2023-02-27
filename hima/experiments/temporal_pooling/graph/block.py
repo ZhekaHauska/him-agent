@@ -33,22 +33,20 @@ class Block(Node):
         self._config = self._extract_streams(kwargs)
 
     # ---------- Block non-overrideable public interface ----------
-
     def register_stream(self, name: str) -> Stream:
         if name not in self.streams:
             self.streams[name] = Stream(name=name, block=self)
         return self.streams[name]
 
     # ------------ Block overrideable public interface ------------
-
-    def reset(self, **kwargs):
-        for name in self.streams:
-            self.streams[name].sdr = []
-
     @abstractmethod
     def compile(self):
         """Build block after all its configurable parameters are resolved."""
         raise NotImplementedError()
+
+    def reset(self, **kwargs):
+        for name in self.streams:
+            self.streams[name].sdr = []
 
     # ----------------- Node public interface ---------------------
     def expand(self):
