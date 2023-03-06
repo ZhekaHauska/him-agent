@@ -16,39 +16,40 @@ from hima.experiments.temporal_pooling.stats.tracker import Tracker, TMetrics
 
 class AttractorTracker(Tracker):
     sds: Sds
-    n_steps_per_sequence: int | None
+    n_repeats_per_step: int | None
 
     sequence: SetSdrSequence
     step_cum_sym_diff_rate: np.ndarray | list
-    i_intra_epoch_sequence: int
     i_intra_sequence_step: int
+    i_intra_step_repeat: int
 
     def __init__(self, sds: Sds):
         self.sds = sds
-        self.n_steps_per_sequence = None
+        self.n_repeats_per_step = None
         self._reset_epoch()
 
     def _reset_epoch(self):
-        if self.n_steps_per_sequence is None:
+        if self.n_repeats_per_step is None:
             self.step_cum_sym_diff_rate = []
         else:
-            self.step_cum_sym_diff_rate = np.zeros(self.n_steps_per_sequence)
+            self.step_cum_sym_diff_rate = np.zeros(self.n_repeats_per_step)
 
-        self.i_intra_epoch_sequence = 0
-        self._reset_sequence()
-
-    def _reset_sequence(self):
-        self.sequence = []
         self.i_intra_sequence_step = 0
+        self._reset_step()
+
+    def _reset_step(self):
+        self.sequence = []
+        self.i_intra_step_repeat = 0
 
     def on_sequence_started(self, sequence_id: int):
-        self._reset_sequence()
-        self.i_intra_epoch_sequence += 1
+        self._reset_step()
+        self.i_intra_sequence_step += 1
 
     def on_epoch_started(self):
         self._reset_epoch()
 
     def on_step(self, sdr: SparseSdr):
+        self.i_intra_sequence_step += 1
         self.sequence.append(set(sdr))
 
         # step metrics
@@ -59,26 +60,26 @@ class AttractorTracker(Tracker):
             len(sdr | prev_sdr)
         )
 
-        if self.n_steps_per_sequence is None:
+        if self.n_repeats_per_step is None:
             self.step_cum_sym_diff_rate.append(sym_diff)
         else:
-            self.step_cum_sym_diff_rate[self.i_intra_sequence_step] += sym_diff
-        self.i_intra_sequence_step += 1
+            self.step_cum_sym_diff_rate[self.i_intra_step_repeat] += sym_diff
+
+    def on_step_finished(self):
+        if self.n_repeats_per_step is None:
+            self.n_repeats_per_step = self.i_intra_step_repeat
+            self.step_cum_sym_diff_rate = np.array(self.step_cum_sym_diff_rate)
+        self._reset_step()
 
     def step_metrics(self) -> TMetrics:
         return {}
 
-    def on_sequence_finished(self):
-        if self.n_steps_per_sequence is None:
-            self.n_steps_per_sequence = self.i_intra_sequence_step
-            self.step_cum_sym_diff_rate = np.array(self.step_cum_sym_diff_rate)
-
     def aggregate_metrics(self) -> TMetrics:
         assert isinstance(self.step_cum_sym_diff_rate, np.ndarray)
 
-        avg_sym_diff_rate = self.step_cum_sym_diff_rate / self.i_intra_epoch_sequence
+        avg_sym_diff_rate = self.step_cum_sym_diff_rate / self.i_intra_sequence_step
         agg_metrics = {}
-        for i_step in range(1, self.n_steps_per_sequence):
+        for i_step in range(1, self.n_repeats_per_step):
             agg_metrics[f'epoch/avg_sym_diff_rate[{i_step}]'] = avg_sym_diff_rate[i_step]
 
         return agg_metrics
