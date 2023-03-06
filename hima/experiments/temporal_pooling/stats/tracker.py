@@ -11,13 +11,16 @@ TMetrics = dict[str, Any]
 
 
 class Tracker:
-    def on_sequence_started(self, sequence_id: int):
-        pass
-
     def on_epoch_started(self):
         pass
 
+    def on_sequence_started(self, sequence_id: int):
+        pass
+
     def on_step(self, sdr: SparseSdr):
+        pass
+
+    def on_step_finished(self):
         pass
 
     def on_sequence_finished(self):
