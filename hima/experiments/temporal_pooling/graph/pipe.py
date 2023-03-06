@@ -42,7 +42,7 @@ class Pipe(Node):
         and False otherwise.
         """
         self.src.align(self.dst)
-        return isinstance(self.src.sds, Sds)
+        return self.src.valid
 
     def forward(self) -> None:
         self.dst.sdr = self.src.sdr

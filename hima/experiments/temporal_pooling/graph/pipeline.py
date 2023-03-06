@@ -19,7 +19,12 @@ class Pipeline(Node):
         yield from self
 
     def align_dimensions(self) -> bool:
-        return all(node.align_dimensions() for node in self)
+        # cannot reduce to all(...) as it shortcuts on the first returned False
+        # hence, doesn't call align for the rest of the pipeline
+        aligned = True
+        for node in self:
+            aligned &= node.align_dimensions()
+        return aligned
 
     def forward(self) -> None:
         for node in self:

@@ -22,18 +22,15 @@ class ConcatenatorBlock(Block):
             for stream in self.streams
             if stream.startswith(self._ff_pattern)
         ):
-            self._compile()
+            ff_sizes = [
+                self.streams[stream].sds
+                for stream in sorted(self.streams.keys())
+                if stream.startswith(self._ff_pattern)
+            ]
+            self.sdr_concatenator = SdrConcatenator(ff_sizes)
+            self.streams[self.OUTPUT].join_sds(self.sdr_concatenator.output_sds)
 
         return self.streams[self.OUTPUT].valid
-
-    def _compile(self):
-        ff_sizes = [
-            self.streams[stream].sds
-            for stream in sorted(self.streams.keys())
-            if stream.startswith(self._ff_pattern)
-        ]
-        self.sdr_concatenator = SdrConcatenator(ff_sizes)
-        self.streams[self.OUTPUT].join_sds(self.sdr_concatenator.output_sds)
 
     def compile(self, **kwargs):
         pass
