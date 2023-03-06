@@ -70,7 +70,7 @@ class Sds:
         return self.size == other.size and self.active_size == other.active_size
 
     def __str__(self):
-        return f'({self.shape}, {self.size}, {self.active_size}, {self.sparsity})'
+        return f'({self.shape}, {self.size}, {self.active_size}, {self.sparsity:.4f})'
 
     @staticmethod
     def parse_short_notation(first, second):
