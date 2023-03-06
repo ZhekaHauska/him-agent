@@ -16,7 +16,8 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
     FEEDFORWARD = 'feedforward'
     ACTIVE_CELLS = 'active_cells'
     PREDICTED_CELLS = 'predicted_cells'
-    supported_streams = {FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS}
+    CORRECTLY_PREDICTED_CELLS = 'correctly_predicted_cells'
+    supported_streams = {FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS}
 
     tm: GeneralFeedbackTM
 
@@ -34,11 +35,11 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
 
         for _, stream in self.streams.items():
             if propagate_from.name == self.FEEDFORWARD and stream.name in [
-                self.ACTIVE_CELLS, self.PREDICTED_CELLS
+                self.ACTIVE_CELLS, self.PREDICTED_CELLS, self.CORRECTLY_PREDICTED_CELLS
             ]:
                 size = propagate_from.sds.size * cells_per_column
             elif stream.name == self.FEEDFORWARD and propagate_from.name in [
-                self.ACTIVE_CELLS, self.PREDICTED_CELLS
+                self.ACTIVE_CELLS, self.PREDICTED_CELLS, self.CORRECTLY_PREDICTED_CELLS
             ]:
                 size = propagate_from.sds.size // cells_per_column
             else:
@@ -93,7 +94,7 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
         self.tm.predict_cells()
 
         if self.PREDICTED_CELLS in self.streams:
-            self.streams[self.PREDICTED_CELLS].sdr = self.tm.predicted_cells.sparse
+            self.streams[self.PREDICTED_CELLS].sdr = self.tm.get_predicted_cells()
 
     def set_predicted_cells(self):
         self.tm.set_predicted_cells(self.streams[self.PREDICTED_CELLS].sdr)
@@ -103,3 +104,5 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
         self.tm.activate_cells(learn)
 
         self.streams[self.ACTIVE_CELLS].sdr = self.tm.get_active_cells()
+        if self.CORRECTLY_PREDICTED_CELLS in self.streams:
+            self.streams[self.CORRECTLY_PREDICTED_CELLS].sdr = self.tm.get_correctly_predicted_cells()
