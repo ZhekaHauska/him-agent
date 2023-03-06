@@ -8,7 +8,7 @@ from htm.bindings.sdr import SDR
 from hima.common.config.base import extracted, resolve_absolute_quantity
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.graph.block import Block
-from hima.modules.htm.temporal_memory import GeneralFeedbackTM
+from hima.experiments.temporal_pooling.stp.general_feedback_tm import GeneralFeedbackTM
 
 
 class GeneralFeedbackTemporalMemoryBlock(Block):
@@ -89,9 +89,12 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
         self.activate(learn)
 
     def predict(self, learn: bool = True):
-        self.tm.set_active_context_cells(self.tm.get_active_cells())
+        self.tm.set_active_context_cells(self.streams[self.ACTIVE_CELLS].sdr)
         self.tm.activate_basal_dendrites(learn)
         self.tm.predict_cells()
+
+        if self.PREDICTED_CELLS in self.streams:
+            self.streams[self.PREDICTED_CELLS].sdr = self.tm.predicted_cells.sparse
 
     def set_predicted_cells(self):
         self.tm.set_predicted_cells(self.streams[self.PREDICTED_CELLS].sdr)
@@ -99,3 +102,5 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
     def activate(self, learn: bool = True):
         self.tm.set_active_columns(self.streams[self.FEEDFORWARD].sdr)
         self.tm.activate_cells(learn)
+
+        self.streams[self.ACTIVE_CELLS].sdr = self.tm.get_active_cells()
