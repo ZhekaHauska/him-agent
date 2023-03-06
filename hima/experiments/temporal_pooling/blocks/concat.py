@@ -3,11 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from hima.common.config.values import is_resolved_value
-from hima.common.sdr import SparseSdr
 from hima.common.sdr_encoders import SdrConcatenator
 from hima.experiments.temporal_pooling.graph.block import Block
-from hima.experiments.temporal_pooling.graph.stream import Stream
 
 
 class ConcatenatorBlock(Block):
@@ -19,36 +16,32 @@ class ConcatenatorBlock(Block):
 
     sdr_concatenator: SdrConcatenator
 
-    def __init__(self, id: int, name: str, **_):
-        super(ConcatenatorBlock, self).__init__(id, name)
-
-    def on_stream_sds_resolved(self, stream: Stream):
-        if is_resolved_value(self.streams[self.OUTPUT].sds):
-            return
-
-        if all(
-            is_resolved_value(self.streams[stream].sds)
+    def align_dimensions(self) -> bool:
+        if not self.streams[self.OUTPUT].valid and all(
+            self.streams[stream].valid
             for stream in self.streams
             if stream.startswith(self._ff_pattern)
         ):
-            self._build()
+            self._compile()
 
-    def _build(self):
+        return self.streams[self.OUTPUT].valid
+
+    def _compile(self):
         ff_sizes = [
             self.streams[stream].sds
             for stream in sorted(self.streams.keys())
             if stream.startswith(self._ff_pattern)
         ]
         self.sdr_concatenator = SdrConcatenator(ff_sizes)
-        self.streams[self.OUTPUT].try_resolve_sds(self.sdr_concatenator.output_sds)
+        self.streams[self.OUTPUT].join_sds(self.sdr_concatenator.output_sds)
 
     def compile(self, **kwargs):
         pass
 
-    def compute(self, data: dict[str, SparseSdr], **kwargs):
+    def compute(self):
         sdrs = [
-            data[stream]
-            for stream in sorted(data.keys())
+            self.streams[stream].sdr
+            for stream in sorted(self.streams.keys())
             if stream.startswith(self._ff_pattern)
         ]
         self.streams[self.OUTPUT].sdr = self.sdr_concatenator.concatenate(*sdrs)
