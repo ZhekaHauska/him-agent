@@ -68,16 +68,19 @@ blocks:
     _base_: $_base.custom_sp.default
     sp_type: vectorized
     output_sds: ??? #[500, 10]
+    initial_rf_sparsity: 0.08
+    max_rf_sparsity: 0.08
+    max_rf_to_input_ratio: 2.5
 #    learning_rate_inc: 0.1
     learning_rate_inc: 0.02
 #    learning_rate_dec: 0.01
     learning_rate_dec: 0.005
-    newborn_pruning_cycle: 5
+    newborn_pruning_cycle: 0.15
     newborn_pruning_stages: 3
   tm1:
     _base_: tm.default_general_feedback
     seed: ???
-    cells_per_column: 12
+    cells_per_column: 8
     activation_threshold_basal: .85
     learning_threshold_basal: .5
     activation_threshold_apical: 1

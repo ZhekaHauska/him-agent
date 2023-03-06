@@ -64,11 +64,13 @@ class StpExperiment:
             sequence_length=self.iterate.elements
         )
         model_compiler = ModelCompiler(self.config)
-        self.model = model_compiler.parse(**model)
+        self.model = self.config.resolve_object(model, object_type_or_factory=model_compiler.parse)
 
+        # propagate data SDS to the model graph
         self.model.api.streams['input'].join_sds(self.data.sds)
         model_compiler.compile(self.model)
         print(self.model)
+        print()
 
         self.progress = RunProgress()
         stats_and_metrics = self.config.resolve_object(
@@ -123,7 +125,7 @@ class StpExperiment:
         self.stats.on_sequence_started(sequence.id, log_scheduled)
 
         for _, input_sdr in enumerate(sequence):
-            # self.reset_blocks('spatial_pooler', 'custom_sp')
+            self.reset_blocks('spatial_pooler', 'custom_sp')
             for _ in range(self.iterate.element_repeats):
                 self.progress.next_step()
                 self.model.api.streams['input'].sdr = input_sdr

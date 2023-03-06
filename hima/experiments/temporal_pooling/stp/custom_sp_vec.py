@@ -75,7 +75,7 @@ class SpatialPooler:
             sample_rf(feedforward_sds, self.rf_sparsity, self._rng)
             for _ in range(self.output_sds.size)
         ])
-        print(self.potential_rf.shape)
+        print(f'SP vec init shape: {self.potential_rf.shape}')
 
         self.weights = self._rng.uniform(0, 1, size=self.potential_rf.shape)
         self.rf = self.weights >= self.threshold
@@ -139,17 +139,17 @@ class SpatialPooler:
     def prune_newborns(self):
         if self._newborn_prune_iteration == self.newborn_pruning_stages:
             self._newborn_prune_iteration += 1
-            print(f'Turning off newborns: {self.rf_sparsity} | {self.rf_size}')
             self.boosting_log_1_k = 0.
             self.learning_rate_inc /= 2
             self.learning_rate_dec /= 2
+            print(f'Boosting off: {self._state_str}')
             return
 
         if self._newborn_prune_iteration > self.newborn_pruning_stages:
             return
 
         self.update_rf_size()
-        print(f'Pruning newborns: {self.rf_sparsity} | {self.rf_size}')
+        print(f'Prune newborns: {self._state_str}')
         self.prune_rf()
 
     def update_rf_size(self):
@@ -201,3 +201,7 @@ class SpatialPooler:
     @property
     def rf_size(self):
         return int(self.rf_sparsity * self.feedforward_sds.size)
+
+    @property
+    def _state_str(self) -> str:
+        return f'{self.rf_sparsity:.4f} | {self.rf_size} | {self.learning_rate_inc:.4f}'
