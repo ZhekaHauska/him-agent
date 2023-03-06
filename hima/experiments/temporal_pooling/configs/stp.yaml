@@ -15,29 +15,45 @@ data:
     _base_: $_base.encoder.random.fixed_sds
     sds: [500, 10]
 
-model:
-  api_block: ___
-  pipeline:
-    - ___.input -> gen.output
-    - ???.output -> tm1.feedforward
-    - tm1.predict
-#    - tm1.predicted_cells -> sp1.feedforward
-#    - repeat: 3
-#      pipeline:
-#        - sp1.compute
-#        - sp1.output -> feedforward
-    - tm1.predicted_cells -> concat.feedforward_1
-    - tm1.predicted_cells -> concat.feedforward_2
-    - repeat: 3
-      pipeline:
-        - concat.compute
-        - concat.output -> sp1.feedforward
-        - sp1.compute
-        - sp1.output -> concat.feedforward_2
-    - sp1.output -> tm1.predicted_cells
-    - tm1.set_predicted_cells
-    - tm1.activate
-    - ???.active_cells -> ___.output
+model: models.hid_state_attraction
+
+models:
+  hid_state_attraction:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - ???.output -> tm1.feedforward
+      - tm1.predict
+      - tm1.predicted_cells -> sp1.feedforward
+      - repeat: 3
+        pipeline:
+          - sp1.compute
+          - sp1.output -> feedforward
+      - sp1.output -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      - tm1.activate
+      - ???.active_cells -> ___.output
+
+  hid_state_attraction_with_force:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - ???.output -> tm1.feedforward
+      - tm1.predict
+      # concat with tm predictions forced const SDR
+      - tm1.predicted_cells -> concat.feedforward_1
+      - tm1.predicted_cells -> concat.feedforward_2
+      - repeat: 3
+        pipeline:
+          - concat.compute
+          - concat.output -> sp1.feedforward
+          - sp1.compute
+          # only the 2nd part of concat vector is changed, the 1st part is kept unchanged
+          - sp1.output -> concat.feedforward_2
+      - sp1.output -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      - tm1.activate
+      - ???.active_cells -> ___.output
 
 blocks:
   ___:
@@ -49,19 +65,15 @@ blocks:
   concat:
     _type_: block.concatenator
   sp1:
-    _base_: custom_sp.default
+    _base_: $_base.custom_sp.default
     sp_type: vectorized
     output_sds: ??? #[500, 10]
-    initial_rf_sparsity: 0.2
-    max_rf_sparsity: 0.1
-    max_rf_to_input_ratio: 0.5
 #    learning_rate_inc: 0.1
     learning_rate_inc: 0.02
 #    learning_rate_dec: 0.01
     learning_rate_dec: 0.005
     newborn_pruning_cycle: 5
     newborn_pruning_stages: 3
-    boosting_k: 2.0
   tm1:
     _base_: tm.default_general_feedback
     seed: ???
@@ -109,19 +121,3 @@ iterate_setups:
 tm:
   default_general_feedback:
     _type_: tm.general_feedback
-
-custom_sp:
-  default:
-    _type_: sp.custom
-    seed: ???
-    # input
-    feedforward_sds: ???
-    initial_rf_sparsity: 0.3
-    max_rf_sparsity: 0.1
-    max_rf_to_input_ratio: 2.5
-    # output
-    output_sds: ???
-    # learning
-    min_overlap_for_activation: 3
-    learning_rate_inc: 0.1
-    learning_rate_dec: 0.01

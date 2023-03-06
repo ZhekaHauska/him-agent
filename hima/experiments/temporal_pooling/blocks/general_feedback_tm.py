@@ -3,7 +3,6 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from htm.bindings.sdr import SDR
 
 from hima.common.config.base import extracted, resolve_absolute_quantity
 from hima.common.sds import Sds
