@@ -14,9 +14,16 @@ class CustomSpatialPoolerBlock(Block):
 
     FEEDFORWARD = 'feedforward'
     OUTPUT = 'output'
-    supported_streams = {FEEDFORWARD, OUTPUT}
+    FEEDBACK = 'feedback'
+    supported_streams = {FEEDFORWARD, OUTPUT, FEEDBACK}
 
     sp: Any
+
+    def align_dimensions(self) -> bool:
+        output = self.streams[self.OUTPUT]
+        if output.valid:
+            self.streams[self.FEEDBACK].join_sds(output.sds)
+        return output.valid
 
     def compile(self):
         sp_config = self._config
@@ -38,3 +45,10 @@ class CustomSpatialPoolerBlock(Block):
     def compute(self, learn: bool = True):
         feedforward = self.streams[self.FEEDFORWARD].sdr
         self.streams[self.OUTPUT].sdr = self.sp.compute(feedforward, learn=learn)
+
+    def switch_polarity(self):
+        self.sp.polarity *= -1
+
+    def compute_feedback(self):
+        feedback = self.streams[self.FEEDBACK].sdr
+        self.sp.process_feedback(feedback)

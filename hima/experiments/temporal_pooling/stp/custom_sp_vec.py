@@ -6,7 +6,7 @@
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr, sparse_to_dense
+from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
@@ -68,6 +68,7 @@ class SpatialPooler:
         self.min_overlap_for_activation = min_overlap_for_activation
         self.learning_rate_inc = learning_rate_inc
         self.learning_rate_dec = learning_rate_dec
+        self.polarity = 1
 
         self._rng = np.random.default_rng(seed)
 
@@ -79,6 +80,8 @@ class SpatialPooler:
 
         self.weights = self._rng.uniform(0, 1, size=self.potential_rf.shape)
         self.rf = self.weights >= self.threshold
+        self.sparse_input = []
+        self.dense_input = np.zeros(self.feedforward_sds.size, dtype=int)
 
         self.n_activations = np.ones(self.output_sds.size)
         self.boosting_log_1_k = np.log(1.0 + boosting_k)
@@ -93,6 +96,7 @@ class SpatialPooler:
 
     def compute(self, input_sdr: SparseSdr, learn: bool = False) -> SparseSdr:
         """Compute the output SDR."""
+        # TODO: rename to feedforward
         output_sdr, run_time = self._compute_for_newborn(input_sdr, learn)
         self.run_time += run_time
         return output_sdr
@@ -102,8 +106,11 @@ class SpatialPooler:
         self.n_computes += 1
         self.cum_input_size += len(input_sdr)
 
-        dense_input = sparse_to_dense(input_sdr, self.feedforward_sds.size)
-        matches = dense_input[self.potential_rf]
+        self.dense_input[self.sparse_input] = 0
+        self.sparse_input = input_sdr
+        self.dense_input[self.sparse_input] = 1
+
+        matches = self.dense_input[self.potential_rf]
         matches_active = matches & self.rf
         overlaps = matches_active.sum(axis=1)
 
@@ -123,18 +130,35 @@ class SpatialPooler:
         self.activation_heatmap[winners] += matches[winners]
 
         if learn:
-            #   global inhibition + strengthen connections to the current input
-            lr_dec = self.learning_rate_dec
-            lr_inc = self.learning_rate_inc + self.learning_rate_dec
-            self.weights[winners] = np.clip(
-                self.weights[winners] - lr_dec + lr_inc * matches_active[winners],
-                0, 1
-            )
-            self.rf[winners] = self.weights[winners] >= self.threshold
+            self.learn(winners, matches_active[winners])
 
         if self.n_computes % int(self.newborn_pruning_cycle * self.output_sds.size) == 0:
             self.prune_newborns()
         return winners
+
+    def learn(self, winners, winners_active_matches):
+        # global inhibition + strengthen connections to the current input
+        lr_dec = self.learning_rate_dec
+        lr_inc = self.learning_rate_inc + self.learning_rate_dec
+        if self.polarity < 0:
+            lr_inc, lr_dec = -lr_inc, -lr_dec
+
+        self.weights[winners] = np.clip(
+            self.weights[winners] - lr_dec + lr_inc * winners_active_matches,
+            0, 1
+        )
+        self.rf[winners] = self.weights[winners] >= self.threshold
+
+    def process_feedback(self, feedback_sdr: SparseSdr):
+        # TODO: rename to feedback
+        feedback_matches = self.dense_input[
+            self.potential_rf[feedback_sdr]
+        ]
+        feedback_active_matches = feedback_matches & self.rf[feedback_sdr]
+        k = 5
+        self.polarity *= k
+        self.learn(feedback_sdr, feedback_active_matches)
+        self.polarity /= k
 
     def prune_newborns(self):
         if self._newborn_prune_iteration == self.newborn_pruning_stages:

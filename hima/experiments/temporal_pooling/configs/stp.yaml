@@ -4,8 +4,9 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 
 seed: 42
 iterate:
-  epochs: 8
+  epochs: 20
   sequences: 5
+  sequence_repeats: 3
   elements: 20
 
 data:
@@ -15,9 +16,52 @@ data:
     _base_: $_base.encoder.random.fixed_sds
     sds: [500, 10]
 
-model: models.hid_state_attraction
+model: models.hid_state_attraction_with_force_and_feedback
 
 models:
+  hid_state_attraction_with_force_and_feedback:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - ???.output -> tm1.feedforward
+      - tm1.predict
+      # concat with tm predictions forced const SDR
+      - tm1.predicted_cells -> concat.feedforward_1
+      - tm1.predicted_cells -> concat.feedforward_2
+      - repeat: 10
+        pipeline:
+          - concat.compute
+          - concat.output -> sp1.feedforward
+#          - sp1.switch_polarity
+          - sp1.compute
+          # only the 2nd part of concat vector is changed, the 1st part is kept unchanged
+          - sp1.output -> concat.feedforward_2
+      - sp1.output -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      - tm1.activate
+      - tm1.active_cells -> sp1.feedback
+#      - sp1.switch_polarity
+      - sp1.compute_feedback
+      - tm1.active_cells -> ___.output
+  hid_state_attraction_feedback:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - ???.output -> tm1.feedforward
+      - tm1.predict
+      - tm1.predicted_cells -> sp1.feedforward
+      - repeat: 10
+        pipeline:
+  #        - sp1.switch_polarity
+          - sp1.compute
+          - sp1.output -> feedforward
+      - sp1.output -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      - tm1.activate
+      - tm1.active_cells -> sp1.feedback
+  #    - sp1.switch_polarity
+      - sp1.compute_feedback
+      - tm1.active_cells -> ___.output
   hid_state_attraction:
     api_block: ___
     pipeline:
@@ -33,7 +77,6 @@ models:
       - tm1.set_predicted_cells
       - tm1.activate
       - ???.active_cells -> ___.output
-
   hid_state_attraction_with_force:
     api_block: ___
     pipeline:
@@ -68,24 +111,24 @@ blocks:
     _base_: $_base.custom_sp.default
     sp_type: vectorized
     output_sds: ??? #[500, 10]
-    initial_rf_sparsity: 0.08
+    initial_rf_sparsity: 0.15
     max_rf_sparsity: 0.08
-    max_rf_to_input_ratio: 2.5
+    max_rf_to_input_ratio: 4.0
 #    learning_rate_inc: 0.1
-    learning_rate_inc: 0.02
+    learning_rate_inc: 0.01
 #    learning_rate_dec: 0.01
-    learning_rate_dec: 0.005
-    newborn_pruning_cycle: 0.15
-    newborn_pruning_stages: 3
+    learning_rate_dec: 0.0025
+    newborn_pruning_cycle: 0.35
+    newborn_pruning_stages: 5
   tm1:
     _base_: tm.default_general_feedback
     seed: ???
     cells_per_column: 8
     activation_threshold_basal: .85
-    learning_threshold_basal: .5
+    learning_threshold_basal: .35
     activation_threshold_apical: 1
     learning_threshold_apical: 1
-    max_synapses_per_segment_basal: 1.2
+    max_synapses_per_segment_basal: 1.25
     max_segments_per_cell_basal: 32
 
 stats_and_metrics:
