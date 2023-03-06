@@ -15,11 +15,14 @@ from hima.common.run.wandb import get_logger
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
+from hima.experiments.temporal_pooling.experiment_stats_tmp import ExperimentStats
 from hima.experiments.temporal_pooling.graph.model import Model
 from hima.experiments.temporal_pooling.graph.model_compiler import ModelCompiler
 from hima.experiments.temporal_pooling.iteration import IterationConfig
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
-from hima.experiments.temporal_pooling.utils import resolve_random_seed
+from hima.experiments.temporal_pooling.run_progress import RunProgress
+from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
+from hima.experiments.temporal_pooling.utils import resolve_random_seed, scheduled
 
 if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run
@@ -41,6 +44,8 @@ class StpExperiment:
             seed: int,
             iterate: TConfig, data: TConfig,
             model: TConfig,
+            track_streams: TConfig, stats_and_metrics: TConfig, diff_stats: TConfig,
+            log_schedule: TConfig,
             **_
     ):
         self.init_time = timer()
@@ -65,8 +70,21 @@ class StpExperiment:
         model_compiler.compile(self.model)
         print(self.model)
 
+        self.progress = RunProgress()
+        stats_and_metrics = self.config.resolve_object(
+            stats_and_metrics, object_type_or_factory=StatsMetricsConfig
+        )
+        self.stats = ExperimentStats(
+            n_sequences=self.iterate.sequences, progress=self.progress, logger=self.logger,
+            blocks=self.model.blocks, track_streams=track_streams, stats_config=stats_and_metrics,
+            diff_stats=diff_stats
+        )
+        self.log_schedule = log_schedule
+
     def run(self):
         self.print_with_timestamp('==> Run')
+        self.stats.define_metrics()
+
         for epoch in range(self.iterate.epochs):
             _, elapsed_time = self.train_epoch()
             self.print_with_timestamp(f'Epoch {epoch}')
@@ -74,20 +92,20 @@ class StpExperiment:
 
     @timed
     def train_epoch(self):
-        # self.progress.next_epoch()
-        # self.stats.on_epoch_started()
+        self.progress.next_epoch()
+        self.stats.on_epoch_started()
 
         # noinspection PyTypeChecker
         for sequence in self.data:
             for i_repeat in range(self.iterate.sequence_repeats):
                 self.run_sequence(sequence, i_repeat, learn=True)
-            # self.stats.on_sequence_finished()
+            self.stats.on_sequence_finished()
 
-        # epoch_final_log_scheduled = scheduled(
-        #     i=self.progress.epoch, schedule=self.run_setup.log_epoch_schedule,
-        #     always_report_first=True, always_report_last=True, i_max=self.run_setup.epochs
-        # )
-        # self.stats.on_epoch_finished(epoch_final_log_scheduled)
+        epoch_final_log_scheduled = scheduled(
+            i=self.progress.epoch, schedule=self.log_schedule['epoch'],
+            always_report_first=True, always_report_last=True, i_max=self.iterate.epochs
+        )
+        self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
         # blocks = self.pipeline.blocks
         # sp = blocks['sp2'].sp if 'sp2' in blocks else blocks['sp1']
@@ -96,21 +114,28 @@ class StpExperiment:
         # print('_____')
 
     def run_sequence(self, sequence: Sequence, i_repeat: int = 0, learn=True):
-        # self.reset_blocks('temporal_memory', 'temporal_pooler')
+        self.reset_blocks('temporal_memory', 'temporal_pooler')
 
-        # log_scheduled = scheduled(
-        #     i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
-        #     always_report_first=True, always_report_last=True, i_max=self.run_setup.sequence_repeats
-        # )
-        # self.stats.on_sequence_started(sequence.id, log_scheduled)
+        log_scheduled = scheduled(
+            i=i_repeat, schedule=self.log_schedule['repeat'],
+            always_report_first=True, always_report_last=True, i_max=self.iterate.sequence_repeats
+        )
+        self.stats.on_sequence_started(sequence.id, log_scheduled)
 
         for _, input_sdr in enumerate(sequence):
             # self.reset_blocks('spatial_pooler', 'custom_sp')
             for _ in range(self.iterate.element_repeats):
-                # self.progress.next_step()
+                self.progress.next_step()
                 self.model.api.streams['input'].sdr = input_sdr
                 self.model.forward()
-                # self.stats.on_step()
+                self.stats.on_step()
+
+    def reset_blocks(self, *blocks_family):
+        blocks_family = set(blocks_family)
+        for name in self.model.blocks:
+            block = self.model.blocks[name]
+            if block.family in blocks_family:
+                block.reset()
 
     def print_with_timestamp(self, text: str):
         print_with_timestamp(text, self.init_time)

@@ -4,7 +4,7 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 
 seed: 42
 iterate:
-  epochs: 5
+  epochs: 8
   sequences: 5
   elements: 20
 
@@ -21,12 +21,20 @@ model:
     - ___.input -> gen.output
     - ???.output -> tm1.feedforward
     - tm1.predict
-    - tm1.predicted_cells -> sp1.feedforward
-    - repeat: 5
+#    - tm1.predicted_cells -> sp1.feedforward
+#    - repeat: 3
+#      pipeline:
+#        - sp1.compute
+#        - sp1.output -> feedforward
+    - tm1.predicted_cells -> concat.feedforward_1
+    - tm1.predicted_cells -> concat.feedforward_2
+    - repeat: 3
       pipeline:
+        - concat.compute
+        - concat.output -> sp1.feedforward
         - sp1.compute
-        - sp1.output -> feedforward
-    - ???.output -> tm1.predicted_cells
+        - sp1.output -> concat.feedforward_2
+    - sp1.output -> tm1.predicted_cells
     - tm1.set_predicted_cells
     - tm1.activate
     - ???.active_cells -> ___.output
@@ -38,10 +46,12 @@ blocks:
     output_sds: ???
   gen:
     _type_: block.storage
+  concat:
+    _type_: block.concatenator
   sp1:
     _base_: custom_sp.default
     sp_type: vectorized
-    output_sds: [500, 10]
+    output_sds: ??? #[500, 10]
     initial_rf_sparsity: 0.2
     max_rf_sparsity: 0.1
     max_rf_to_input_ratio: 0.5
@@ -55,7 +65,7 @@ blocks:
   tm1:
     _base_: tm.default_general_feedback
     seed: ???
-    cells_per_column: 8
+    cells_per_column: 12
     activation_threshold_basal: .85
     learning_threshold_basal: .5
     activation_threshold_apical: 1
@@ -63,9 +73,35 @@ blocks:
     max_synapses_per_segment_basal: 1.2
     max_segments_per_cell_basal: 32
 
+stats_and_metrics:
+  mae_normalization: no
+  symmetrical_similarity: False
+  distribution_metrics: pmf
+  online_similarity_decay: 1.
+  pmf_decay: 1.
+  loss_normalization: False
+  loss_layer_discount: 0.75
+
+track_streams:
+  gen.output:
+    - sdr
+    - cross.online.el
+  sp1.output:
+    - sdr
+    - cross.online.el
+  tm1.active_cells:
+    - sdr
+    - cross.online.el
+
+diff_stats:
+  online_el:
+    - gen.output/epoch/sim_mx_on_el
+    - sp1.output/epoch/sim_mx_on_el
+    - tm1.active_cells/epoch/sim_mx_on_el
+
 log_schedule:
-  log_repeat_schedule: 3
-  log_epoch_schedule: 2
+  epoch: 2
+  repeat: 3
 
 iterate_setups:
   simple: ...
