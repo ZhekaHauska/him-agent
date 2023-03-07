@@ -99,6 +99,10 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
     def set_predicted_cells(self):
         self.tm.set_predicted_cells(self.streams[self.PREDICTED_CELLS].sdr)
 
+    def union_predicted_cells(self):
+        self.tm.union_predicted_cells(self.streams[self.PREDICTED_CELLS].sdr)
+        self.streams[self.PREDICTED_CELLS].sdr = self.tm.get_predicted_cells()
+
     def activate(self, learn: bool = True):
         self.tm.set_active_columns(self.streams[self.FEEDFORWARD].sdr)
         self.tm.activate_cells(learn)
