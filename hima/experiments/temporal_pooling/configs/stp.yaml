@@ -5,8 +5,7 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 seed: 42
 iterate:
   epochs: 20
-  sequences: 5
-  sequence_repeats: 3
+  sequences: [5, 4]
   elements: 20
 
 data:
@@ -23,36 +22,36 @@ models:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
-      - ???.output -> tm1.feedforward
+      - gen.output -> tm1.feedforward
       - tm1.predict
       # concat with tm predictions forced const SDR
       - tm1.predicted_cells -> concat.feedforward_1
       - tm1.predicted_cells -> concat.feedforward_2
-      - repeat: 10
+#      - sp1.switch_polarity
+      - repeat: 5
         pipeline:
           - concat.compute
           - concat.output -> sp1.feedforward
-#          - sp1.switch_polarity
           - sp1.compute
           # only the 2nd part of concat vector is changed, the 1st part is kept unchanged
           - sp1.output -> concat.feedforward_2
-      - sp1.output -> tm1.predicted_cells
+      - concat.feedforward_2 -> tm1.predicted_cells
       - tm1.set_predicted_cells
       - tm1.activate
       - tm1.active_cells -> sp1.feedback
 #      - sp1.switch_polarity
       - sp1.compute_feedback
-      - tm1.active_cells -> ___.output
+      - tm1.correctly_predicted_cells -> ___.output
   hid_state_attraction_feedback:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
-      - ???.output -> tm1.feedforward
+      - gen.output -> tm1.feedforward
       - tm1.predict
       - tm1.predicted_cells -> sp1.feedforward
-      - repeat: 10
+#      - sp1.switch_polarity
+      - repeat: 5
         pipeline:
-  #        - sp1.switch_polarity
           - sp1.compute
           - sp1.output -> feedforward
       - sp1.output -> tm1.predicted_cells
@@ -61,7 +60,7 @@ models:
       - tm1.active_cells -> sp1.feedback
   #    - sp1.switch_polarity
       - sp1.compute_feedback
-      - tm1.active_cells -> ___.output
+      - tm1.correctly_predicted_cells -> ___.output
   hid_state_attraction:
     api_block: ___
     pipeline:
@@ -147,7 +146,7 @@ track_streams:
   sp1.output:
     - sdr
     - cross.online.el
-  tm1.active_cells:
+  tm1.correctly_predicted_cells:
     - sdr
     - cross.online.el
 
@@ -155,7 +154,7 @@ diff_stats:
   online_el:
     - gen.output/epoch/sim_mx_on_el
     - sp1.output/epoch/sim_mx_on_el
-    - tm1.active_cells/epoch/sim_mx_on_el
+    - tm1.correctly_predicted_cells/epoch/sim_mx_on_el
 
 log_schedule:
   epoch: 2
