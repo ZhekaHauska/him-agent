@@ -5,7 +5,7 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 seed: 42
 iterate:
   epochs: 20
-  sequences: [5, 4]
+  sequences: [5, 1]
   elements: 20
 
 data:
@@ -15,9 +15,125 @@ data:
     _base_: $_base.encoder.random.fixed_sds
     sds: [500, 10]
 
-model: models.hid_state_attraction_with_force_and_feedback
+model: models.unbounded_attraction_with_force_and_sp
 
 models:
+  unbounded_attraction_with_sp:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - gen.output -> sp0.feedforward
+      - sp0.compute
+      - tm1.predict
+      - tm1.predicted_cells -> sp1.feedforward
+      - repeat: 10
+        pipeline:
+          - sp1.compute
+          - sp1.output -> feedforward
+      # activate + predict by TM2
+      - sp1.feedforward -> tm2.feedforward
+      - tm2.set_active_columns
+      - tm2.predict
+      - tm2.set_predicted_cells
+      # correct TM1 predicted cells
+      - tm2.predicted_cells -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      # activate feedforward
+      - sp0.output -> tm1.feedforward
+      - tm1.activate
+      # learn TM2
+      - tm1.active_cells -> tm2.feedforward
+      - tm2.activate
+      - tm1.correctly_predicted_cells -> ___.output
+  unbounded_attraction_with_force_and_sp:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - gen.output -> sp0.feedforward
+      - sp0.compute
+      - tm1.predict
+      # concat with tm predictions forced const SDR
+      - tm1.predicted_cells -> concat.feedforward_1
+      - tm1.predicted_cells -> concat.feedforward_2
+      - repeat: 10
+        pipeline:
+          - concat.compute
+          - concat.output -> sp1.feedforward
+          - sp1.compute
+          # only the 2nd part of concat vector is changed, the 1st part is kept unchanged
+          - sp1.output -> concat.feedforward_2
+#      - tm2.reset
+      # activate + predict by TM2
+      - concat.feedforward_2 -> tm2.feedforward
+      - tm2.set_active_columns
+      - tm2.predict
+      - tm2.set_predicted_cells
+      # correct TM1 predicted cells
+      - tm2.predicted_cells -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      # activate feedforward
+      - sp0.output -> tm1.feedforward
+      - tm1.activate
+      # learn TM2
+      - tm1.active_cells -> tm2.feedforward
+      - tm2.activate
+      - tm1.correctly_predicted_cells -> ___.output
+  unbounded_attraction:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - tm1.predict
+      - tm1.predicted_cells -> sp1.feedforward
+      - repeat: 5
+        pipeline:
+          - sp1.compute
+          - sp1.output -> feedforward
+      # activate + predict by TM2
+      - sp1.feedforward -> tm2.feedforward
+      - tm2.set_active_columns
+      - tm2.predict
+      - tm2.set_predicted_cells
+      # correct TM1 predicted cells
+      - tm2.predicted_cells -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      # activate feedforward
+      - gen.output -> tm1.feedforward
+      - tm1.activate
+      # learn TM2
+      - tm1.active_cells -> tm2.feedforward
+      - tm2.activate
+      - tm1.correctly_predicted_cells -> ___.output
+  unbounded_attraction_with_force:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - tm1.predict
+      # concat with tm predictions forced const SDR
+      - tm1.predicted_cells -> concat.feedforward_1
+      - tm1.predicted_cells -> concat.feedforward_2
+      - repeat: 5
+        pipeline:
+          - concat.compute
+          - concat.output -> sp1.feedforward
+          - sp1.compute
+          # only the 2nd part of concat vector is changed, the 1st part is kept unchanged
+          - sp1.output -> concat.feedforward_2
+#      - tm2.reset
+      # activate + predict by TM2
+      - concat.feedforward_2 -> tm2.feedforward
+      - tm2.set_active_columns
+      - tm2.predict
+      - tm2.set_predicted_cells
+      # correct TM1 predicted cells
+      - tm2.predicted_cells -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      # activate feedforward
+      - gen.output -> tm1.feedforward
+      - tm1.activate
+      # learn TM2
+      - tm1.active_cells -> tm2.feedforward
+      - tm2.activate
+      - tm1.correctly_predicted_cells -> ___.output
   hid_state_attraction_with_force_and_feedback:
     api_block: ___
     pipeline:
@@ -96,6 +212,26 @@ models:
       - tm1.set_predicted_cells
       - tm1.activate
       - ???.active_cells -> ___.output
+  tm_sp:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - gen.output -> sp0.feedforward
+      - sp0.compute
+      - sp0.output -> tm1.feedforward
+      - tm1.predict
+      - tm1.set_predicted_cells
+      - tm1.activate
+      - tm1.correctly_predicted_cells -> ___.output
+  tm_predictions:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - gen.output -> tm1.feedforward
+      - tm1.predict
+      - tm1.set_predicted_cells
+      - tm1.activate
+      - tm1.correctly_predicted_cells -> ___.output
 
 blocks:
   ___:
@@ -106,29 +242,54 @@ blocks:
     _type_: block.storage
   concat:
     _type_: block.concatenator
+  sp0:
+    _base_: $_base.custom_sp.default
+    sp_type: vectorized
+    output_sds: [500, 10]
+    initial_rf_sparsity: 0.25
+    max_rf_sparsity: 0.08
+    max_rf_to_input_ratio: 0.8
+    learning_rate_inc: 0.1
+    learning_rate_dec: 0.01
+    newborn_pruning_cycle: 0.1
+    newborn_pruning_stages: 10
+    track_feedforward_sparsity: False
   sp1:
     _base_: $_base.custom_sp.default
     sp_type: vectorized
     output_sds: ??? #[500, 10]
-    initial_rf_sparsity: 0.15
+    initial_rf_sparsity: 0.05
     max_rf_sparsity: 0.08
-    max_rf_to_input_ratio: 4.0
-#    learning_rate_inc: 0.1
+    max_rf_to_input_ratio: 0.85
     learning_rate_inc: 0.01
-#    learning_rate_dec: 0.01
-    learning_rate_dec: 0.0025
-    newborn_pruning_cycle: 0.35
-    newborn_pruning_stages: 5
+    learning_rate_dec: 0.001
+    newborn_pruning_cycle: 0.15
+    newborn_pruning_stages: 10
+    track_feedforward_sparsity: False
   tm1:
     _base_: tm.default_general_feedback
     seed: ???
-    cells_per_column: 8
-    activation_threshold_basal: .85
-    learning_threshold_basal: .35
+    active_cells_sds: ???
+    predicted_cells_sds: ???
+    cells_per_column: 12
+    activation_threshold_basal: .9
+    learning_threshold_basal: .7
     activation_threshold_apical: 1
     learning_threshold_apical: 1
-    max_synapses_per_segment_basal: 1.25
-    max_segments_per_cell_basal: 32
+    max_synapses_per_segment_basal: -1
+    max_segments_per_cell_basal: 64
+  tm2:
+    _base_: tm.default_general_feedback
+    seed: ???
+    active_cells_sds: ???
+    predicted_cells_sds: ???
+    cells_per_column: 1
+    activation_threshold_basal: .8
+    learning_threshold_basal: .6
+    activation_threshold_apical: 1
+    learning_threshold_apical: 1
+    max_synapses_per_segment_basal: -1
+    max_segments_per_cell_basal: 128
 
 stats_and_metrics:
   mae_normalization: no
@@ -143,6 +304,9 @@ track_streams:
   gen.output:
     - sdr
     - cross.online.el
+  sp0.output:
+    - sdr
+    - cross.online.el
   sp1.output:
     - sdr
     - cross.online.el
@@ -153,12 +317,13 @@ track_streams:
 diff_stats:
   online_el:
     - gen.output/epoch/sim_mx_on_el
+    - sp0.output/epoch/sim_mx_on_el
     - sp1.output/epoch/sim_mx_on_el
     - tm1.correctly_predicted_cells/epoch/sim_mx_on_el
 
 log_schedule:
-  epoch: 2
-  repeat: 3
+  epoch: 5
+  repeat: 5
 
 iterate_setups:
   simple: ...
