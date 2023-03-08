@@ -21,7 +21,7 @@ class CustomSpatialPoolerBlock(Block):
 
     def align_dimensions(self) -> bool:
         output = self.streams[self.OUTPUT]
-        if output.valid:
+        if output.valid and self.FEEDBACK in self.streams:
             self.streams[self.FEEDBACK].join_sds(output.sds)
         return output.valid
 
