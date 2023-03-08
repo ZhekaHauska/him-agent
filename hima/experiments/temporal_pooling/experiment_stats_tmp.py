@@ -20,7 +20,7 @@ from hima.experiments.temporal_pooling.stats.metrics import (
     multiplicative_loss
 )
 from hima.experiments.temporal_pooling.stats.recall_tracker import AnomalyTracker
-from hima.experiments.temporal_pooling.stats.stream_tracker import StreamTracker
+from hima.experiments.temporal_pooling.stats.stream_tracker import StreamTracker, rename_dict_keys
 
 if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run
@@ -73,7 +73,11 @@ class ExperimentStats:
             track_streams=track_streams, blocks=blocks,
             stats_config=stats_config, n_sequences=n_sequences
         )
-        self.tm = blocks['tm1']
+        self.tms = [
+            blocks[block_name]
+            for block_name in blocks
+            if blocks[block_name].family in 'temporal_memory'
+        ]
         self.anomaly_tracker = AnomalyTracker()
 
     @staticmethod
@@ -131,14 +135,17 @@ class ExperimentStats:
             tracker = self.stream_trackers[name]
             tracker.on_step(tracker.stream.sdr)
 
-        self.anomaly_tracker.on_step(self.tm.tm.anomaly[-1])
+        for block in self.tms:
+            self.anomaly_tracker.on_step(block.tm.anomaly[-1])
 
         metrics = {
             'epoch': self.progress.epoch
         }
         for name in self.stream_trackers:
             metrics |= self.stream_trackers[name].step_metrics()
-        metrics |= self.anomaly_tracker.step_metrics()
+        for block in self.tms:
+            res = self.anomaly_tracker.step_metrics()
+            metrics |= rename_dict_keys(res, add_prefix=f'{block.name}/')
 
         self.logger.log(metrics, step=self.progress.step)
 
