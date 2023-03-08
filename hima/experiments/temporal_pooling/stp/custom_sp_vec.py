@@ -15,7 +15,7 @@ from hima.experiments.temporal_pooling.stp.custom_sp_utils import sample_rf, boo
 
 class SpatialPooler:
     # input
-    feedforward_sds: Sds
+    _feedforward_sds: Sds
     rf_sparsity: float
 
     _initial_rf_sparsity: float
@@ -34,7 +34,7 @@ class SpatialPooler:
 
     # connections
     n_computes: int
-    cum_input_size: int
+    cumulative_active_input_size: int
     newborn_pruning_cycle: float
     newborn_pruning_stages: int
     _newborn_prune_iteration: int
@@ -54,10 +54,12 @@ class SpatialPooler:
             output_sds: Sds,
             min_overlap_for_activation: float, learning_rate_inc: float, learning_rate_dec: float,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
-            boosting_k: float,
-            seed: int
+            boosting_k: float, seed: int,
+            track_feedforward_sparsity: bool = True,
     ):
-        self.feedforward_sds = feedforward_sds
+        self._feedforward_sds = feedforward_sds
+        self._track_feedforward_sparsity = track_feedforward_sparsity
+
         self.rf_sparsity = initial_rf_sparsity
         self._initial_rf_sparsity = initial_rf_sparsity
         self._max_rf_sparsity = max_rf_sparsity
@@ -81,7 +83,7 @@ class SpatialPooler:
         self.weights = self._rng.uniform(0, 1, size=self.potential_rf.shape)
         self.rf = self.weights >= self.threshold
         self.sparse_input = []
-        self.dense_input = np.zeros(self.feedforward_sds.size, dtype=int)
+        self.dense_input = np.zeros(feedforward_sds.size, dtype=int)
 
         self.n_activations = np.ones(self.output_sds.size)
         self.boosting_log_1_k = np.log(1.0 + boosting_k)
@@ -91,8 +93,16 @@ class SpatialPooler:
         self.newborn_pruning_stages = newborn_pruning_stages
         self._newborn_prune_iteration = 0
         self.n_computes = 0
-        self.cum_input_size = 0
+        self.cumulative_active_input_size = 0
         self.run_time = 0
+
+    @property
+    def feedforward_sds(self):
+        if not self._track_feedforward_sparsity:
+            return self._feedforward_sds
+
+        ff_avg_active_size = self.cumulative_active_input_size // self.n_computes
+        return Sds(size=self._feedforward_sds.size, active_size=ff_avg_active_size)
 
     def compute(self, input_sdr: SparseSdr, learn: bool = False) -> SparseSdr:
         """Compute the output SDR."""
@@ -104,7 +114,7 @@ class SpatialPooler:
     @timed
     def _compute_for_newborn(self, input_sdr: SparseSdr, learn: bool) -> SparseSdr:
         self.n_computes += 1
-        self.cum_input_size += len(input_sdr)
+        self.cumulative_active_input_size += len(input_sdr)
 
         self.dense_input[self.sparse_input] = 0
         self.sparse_input = input_sdr
@@ -178,12 +188,9 @@ class SpatialPooler:
 
     def update_rf_size(self):
         """Update the receptive field size."""
-        avg_input_size = self.cum_input_size / self.n_computes
-        input_sparsity = avg_input_size / self.feedforward_sds.size
-
         target_rf_sparsity = min(
             self._max_rf_sparsity,
-            self._max_rf_to_input_ratio * input_sparsity
+            self._max_rf_to_input_ratio * self.feedforward_sds.sparsity
         )
         self._newborn_prune_iteration += 1
         self.rf_sparsity = self._initial_rf_sparsity + self._newborn_prune_iteration * (
@@ -224,7 +231,7 @@ class SpatialPooler:
 
     @property
     def rf_size(self):
-        return int(self.rf_sparsity * self.feedforward_sds.size)
+        return int(self.rf_sparsity * self._feedforward_sds.size)
 
     @property
     def _state_str(self) -> str:
