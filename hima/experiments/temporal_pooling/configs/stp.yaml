@@ -15,37 +15,10 @@ data:
     _base_: $_base.encoder.random.fixed_sds
     sds: [500, 10]
 
-model: models.unbounded_attraction_with_force_and_sp
+model: models.unbound_enc
 
 models:
-  unbounded_attraction_with_sp:
-    api_block: ___
-    pipeline:
-      - ___.input -> gen.output
-      - gen.output -> sp0.feedforward
-      - sp0.compute
-      - tm1.predict
-      - tm1.predicted_cells -> sp1.feedforward
-      - repeat: 10
-        pipeline:
-          - sp1.compute
-          - sp1.output -> feedforward
-      # activate + predict by TM2
-      - sp1.feedforward -> tm2.feedforward
-      - tm2.set_active_columns
-      - tm2.predict
-      - tm2.set_predicted_cells
-      # correct TM1 predicted cells
-      - tm2.predicted_cells -> tm1.predicted_cells
-      - tm1.set_predicted_cells
-      # activate feedforward
-      - sp0.output -> tm1.feedforward
-      - tm1.activate
-      # learn TM2
-      - tm1.active_cells -> tm2.feedforward
-      - tm2.activate
-      - tm1.correctly_predicted_cells -> ___.output
-  unbounded_attraction_with_force_and_sp:
+  unbound_attraction_enc_force:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
@@ -78,13 +51,15 @@ models:
       - tm1.active_cells -> tm2.feedforward
       - tm2.activate
       - tm1.correctly_predicted_cells -> ___.output
-  unbounded_attraction:
+  unbound_attraction_enc:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
+      - gen.output -> sp0.feedforward
+      - sp0.compute
       - tm1.predict
       - tm1.predicted_cells -> sp1.feedforward
-      - repeat: 5
+      - repeat: 10
         pipeline:
           - sp1.compute
           - sp1.output -> feedforward
@@ -97,13 +72,13 @@ models:
       - tm2.predicted_cells -> tm1.predicted_cells
       - tm1.set_predicted_cells
       # activate feedforward
-      - gen.output -> tm1.feedforward
+      - sp0.output -> tm1.feedforward
       - tm1.activate
       # learn TM2
       - tm1.active_cells -> tm2.feedforward
       - tm2.activate
       - tm1.correctly_predicted_cells -> ___.output
-  unbounded_attraction_with_force:
+  unbound_attraction_force:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
@@ -111,7 +86,7 @@ models:
       # concat with tm predictions forced const SDR
       - tm1.predicted_cells -> concat.feedforward_1
       - tm1.predicted_cells -> concat.feedforward_2
-      - repeat: 5
+      - repeat: 10
         pipeline:
           - concat.compute
           - concat.output -> sp1.feedforward
@@ -134,7 +109,74 @@ models:
       - tm1.active_cells -> tm2.feedforward
       - tm2.activate
       - tm1.correctly_predicted_cells -> ___.output
-  hid_state_attraction_with_force_and_feedback:
+  unbound_attraction:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - tm1.predict
+      - tm1.predicted_cells -> sp1.feedforward
+      - repeat: 10
+        pipeline:
+          - sp1.compute
+          - sp1.output -> feedforward
+      # activate + predict by TM2
+      - sp1.feedforward -> tm2.feedforward
+      - tm2.set_active_columns
+      - tm2.predict
+      - tm2.set_predicted_cells
+      # correct TM1 predicted cells
+      - tm2.predicted_cells -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      # activate feedforward
+      - gen.output -> tm1.feedforward
+      - tm1.activate
+      # learn TM2
+      - tm1.active_cells -> tm2.feedforward
+      - tm2.activate
+      - tm1.correctly_predicted_cells -> ___.output
+  unbound_enc:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - gen.output -> sp0.feedforward
+      - sp0.compute
+      - tm1.predict
+      # activate + predict by TM2
+      - tm1.predicted_cells -> tm2.feedforward
+      - tm2.set_active_columns
+      - tm2.predict
+      - tm2.set_predicted_cells
+      # correct TM1 predicted cells
+      - tm2.predicted_cells -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      # activate feedforward
+      - sp0.output -> tm1.feedforward
+      - tm1.activate
+      # learn TM2
+      - tm1.active_cells -> tm2.feedforward
+      - tm2.activate
+      - tm1.correctly_predicted_cells -> ___.output
+  unbound:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - tm1.predict
+      # activate + predict by TM2
+      - tm1.predicted_cells -> tm2.feedforward
+      - tm2.set_active_columns
+      - tm2.predict
+      - tm2.set_predicted_cells
+      # correct TM1 predicted cells
+      - tm2.predicted_cells -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      # activate feedforward
+      - gen.output -> tm1.feedforward
+      - tm1.activate
+      # learn TM2
+      - tm1.active_cells -> tm2.feedforward
+      - tm2.activate
+      - tm1.correctly_predicted_cells -> ___.output
+  bound_attraction_force_feedback:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
@@ -144,7 +186,7 @@ models:
       - tm1.predicted_cells -> concat.feedforward_1
       - tm1.predicted_cells -> concat.feedforward_2
 #      - sp1.switch_polarity
-      - repeat: 5
+      - repeat: 10
         pipeline:
           - concat.compute
           - concat.output -> sp1.feedforward
@@ -158,7 +200,7 @@ models:
 #      - sp1.switch_polarity
       - sp1.compute_feedback
       - tm1.correctly_predicted_cells -> ___.output
-  hid_state_attraction_feedback:
+  bound_attraction_feedback:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
@@ -166,7 +208,7 @@ models:
       - tm1.predict
       - tm1.predicted_cells -> sp1.feedforward
 #      - sp1.switch_polarity
-      - repeat: 5
+      - repeat: 10
         pipeline:
           - sp1.compute
           - sp1.output -> feedforward
@@ -177,31 +219,16 @@ models:
   #    - sp1.switch_polarity
       - sp1.compute_feedback
       - tm1.correctly_predicted_cells -> ___.output
-  hid_state_attraction:
+  bound_attraction_force:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
-      - ???.output -> tm1.feedforward
-      - tm1.predict
-      - tm1.predicted_cells -> sp1.feedforward
-      - repeat: 3
-        pipeline:
-          - sp1.compute
-          - sp1.output -> feedforward
-      - sp1.output -> tm1.predicted_cells
-      - tm1.set_predicted_cells
-      - tm1.activate
-      - ???.active_cells -> ___.output
-  hid_state_attraction_with_force:
-    api_block: ___
-    pipeline:
-      - ___.input -> gen.output
-      - ???.output -> tm1.feedforward
+      - gen.output -> tm1.feedforward
       - tm1.predict
       # concat with tm predictions forced const SDR
       - tm1.predicted_cells -> concat.feedforward_1
       - tm1.predicted_cells -> concat.feedforward_2
-      - repeat: 3
+      - repeat: 10
         pipeline:
           - concat.compute
           - concat.output -> sp1.feedforward
@@ -211,8 +238,23 @@ models:
       - sp1.output -> tm1.predicted_cells
       - tm1.set_predicted_cells
       - tm1.activate
-      - ???.active_cells -> ___.output
-  tm_sp:
+      - tm1.correctly_predicted_cells -> ___.output
+  bound_attraction:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - gen.output -> tm1.feedforward
+      - tm1.predict
+      - tm1.predicted_cells -> sp1.feedforward
+      - repeat: 10
+        pipeline:
+          - sp1.compute
+          - sp1.output -> feedforward
+      - sp1.output -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      - tm1.activate
+      - tm1.correctly_predicted_cells -> ___.output
+  tm_enc:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
@@ -223,7 +265,7 @@ models:
       - tm1.set_predicted_cells
       - tm1.activate
       - tm1.correctly_predicted_cells -> ___.output
-  tm_predictions:
+  tm:
     api_block: ___
     pipeline:
       - ___.input -> gen.output
