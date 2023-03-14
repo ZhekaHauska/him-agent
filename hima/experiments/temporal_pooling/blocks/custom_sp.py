@@ -32,12 +32,12 @@ class CustomSpatialPoolerBlock(Block):
 
         sp_config, sp_type = extracted(sp_config, 'sp_type')
         if sp_type == 'vectorized':
-            from hima.experiments.temporal_pooling.stp.custom_sp_vec import SpatialPooler
+            from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
             self.sp = SpatialPooler(
                 feedforward_sds=feedforward_sds, output_sds=output_sds, **sp_config
             )
         else:
-            from hima.experiments.temporal_pooling.stp.custom_sp import SpatialPooler
+            from hima.experiments.temporal_pooling.stp.sp_list import SpatialPooler
             self.sp = SpatialPooler(
                 feedforward_sds=feedforward_sds, output_sds=output_sds, **sp_config
             )

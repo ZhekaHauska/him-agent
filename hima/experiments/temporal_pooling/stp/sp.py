@@ -10,34 +10,38 @@ from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.custom_sp_utils import sample_rf, boosting
+from hima.experiments.temporal_pooling.stp.sp_utils import (
+    boosting, gather_rows,
+    sample_for_each_neuron
+)
 
 
 class SpatialPooler:
-    # input
-    _feedforward_sds: Sds
-    rf_sparsity: float
+    rng: Generator
 
-    _initial_rf_sparsity: float
-    _max_rf_sparsity: float
-    _max_rf_to_input_ratio: float
+    # input
+    feedforward_sds: Sds
+
+    initial_rf_sparsity: float
+    max_rf_sparsity: float
+    max_rf_to_input_ratio: float
 
     # output
     output_sds: Sds
+    min_overlap_for_activation: float
 
     # learning
-    min_overlap_for_activation: float
     learning_rate_inc: float
     learning_rate_dec: float
 
-    _rng: Generator
-
     # connections
-    n_computes: int
-    cumulative_active_input_size: int
     newborn_pruning_cycle: float
     newborn_pruning_stages: int
-    _newborn_prune_iteration: int
+    newborn_pruning_stage: int
+
+    # stats
+    n_computes: int
+    cumulative_active_input_size: int
 
     # vectorized fields
     potential_rf: np.ndarray
@@ -55,35 +59,35 @@ class SpatialPooler:
             min_overlap_for_activation: float, learning_rate_inc: float, learning_rate_dec: float,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
             boosting_k: float, seed: int,
-            track_feedforward_sparsity: bool = True,
+            adapt_to_ff_sparsity: bool = True,
     ):
-        self._feedforward_sds = feedforward_sds
-        self._track_feedforward_sparsity = track_feedforward_sparsity
-
-        self.rf_sparsity = initial_rf_sparsity
-        self._initial_rf_sparsity = initial_rf_sparsity
-        self._max_rf_sparsity = max_rf_sparsity
-        self._max_rf_to_input_ratio = max_rf_to_input_ratio
-
+        self.rng = np.random.default_rng(seed)
+        self.feedforward_sds = feedforward_sds
         self.output_sds = output_sds
+
+        self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
+
+        self.initial_rf_sparsity = initial_rf_sparsity
+        self.max_rf_sparsity = max_rf_sparsity
+        self.max_rf_to_input_ratio = max_rf_to_input_ratio
 
         self.min_overlap_for_activation = min_overlap_for_activation
         self.learning_rate_inc = learning_rate_inc
         self.learning_rate_dec = learning_rate_dec
         self.polarity = 1
 
-        self._rng = np.random.default_rng(seed)
-
-        self.potential_rf = np.array([
-            sample_rf(feedforward_sds, self.rf_sparsity, self._rng)
-            for _ in range(self.output_sds.size)
-        ])
+        rf_size = int(self.initial_rf_sparsity * self.ff_size)
+        self.potential_rf = sample_for_each_neuron(
+            rng=self.rng, n_neurons=self.output_sds.size,
+            set_size=self.ff_size, sample_size=rf_size
+        )
         print(f'SP vec init shape: {self.potential_rf.shape}')
 
-        self.weights = self._rng.uniform(0, 1, size=self.potential_rf.shape)
+        self.weights = self.rng.uniform(0, 1, size=self.potential_rf.shape)
         self.rf = self.weights >= self.threshold
+
         self.sparse_input = []
-        self.dense_input = np.zeros(feedforward_sds.size, dtype=int)
+        self.dense_input = np.zeros(self.ff_size, dtype=int)
 
         self.n_activations = np.ones(self.output_sds.size)
         self.boosting_log_1_k = np.log(1.0 + boosting_k)
@@ -91,18 +95,10 @@ class SpatialPooler:
 
         self.newborn_pruning_cycle = newborn_pruning_cycle
         self.newborn_pruning_stages = newborn_pruning_stages
-        self._newborn_prune_iteration = 0
+        self.newborn_pruning_stage = 0
         self.n_computes = 0
         self.cumulative_active_input_size = 0
         self.run_time = 0
-
-    @property
-    def feedforward_sds(self):
-        if not self._track_feedforward_sparsity:
-            return self._feedforward_sds
-
-        ff_avg_active_size = self.cumulative_active_input_size // self.n_computes
-        return Sds(size=self._feedforward_sds.size, active_size=ff_avg_active_size)
 
     def compute(self, input_sdr: SparseSdr, learn: bool = False) -> SparseSdr:
         """Compute the output SDR."""
@@ -114,6 +110,9 @@ class SpatialPooler:
     @timed
     def _compute_for_newborn(self, input_sdr: SparseSdr, learn: bool) -> SparseSdr:
         self.n_computes += 1
+        if self.n_computes % int(self.newborn_pruning_cycle * self.output_sds.size) == 0:
+            self.shrink_receptive_field()
+
         self.cumulative_active_input_size += len(input_sdr)
 
         self.dense_input[self.sparse_input] = 0
@@ -141,9 +140,6 @@ class SpatialPooler:
 
         if learn:
             self.learn(winners, matches_active[winners])
-
-        if self.n_computes % int(self.newborn_pruning_cycle * self.output_sds.size) == 0:
-            self.prune_newborns()
         return winners
 
     def learn(self, winners, winners_active_matches):
@@ -160,67 +156,64 @@ class SpatialPooler:
         self.rf[winners] = self.weights[winners] >= self.threshold
 
     def process_feedback(self, feedback_sdr: SparseSdr):
-        # TODO: rename to feedback
-        feedback_matches = self.dense_input[
-            self.potential_rf[feedback_sdr]
-        ]
-        feedback_active_matches = feedback_matches & self.rf[feedback_sdr]
+        # feedback SDR is the SP neurons that should be reinforced
+        fb_potential_rf = self.potential_rf[feedback_sdr]
+        fb_matches = self.dense_input[fb_potential_rf]
+        fb_active_matches = fb_matches & self.rf[feedback_sdr]
         k = 5
         self.polarity *= k
-        self.learn(feedback_sdr, feedback_active_matches)
+        self.learn(feedback_sdr, fb_active_matches)
         self.polarity /= k
 
-    def prune_newborns(self):
-        if self._newborn_prune_iteration == self.newborn_pruning_stages:
-            self._newborn_prune_iteration += 1
-            self.boosting_log_1_k = 0.
-            self.learning_rate_inc /= 2
-            self.learning_rate_dec /= 2
-            print(f'Boosting off: {self._state_str}')
+    def shrink_receptive_field(self):
+        if self.newborn_pruning_stage > self.newborn_pruning_stages:
+            return
+        self.newborn_pruning_stage += 1
+
+        new_sparsity = self.current_rf_sparsity()
+        if new_sparsity > self.rf_sparsity:
+            # if feedforward sparsity is tracked, then it may change and lead to RF increase
+            # ==> leave RF as is
             return
 
-        if self._newborn_prune_iteration > self.newborn_pruning_stages:
-            return
-
-        self.update_rf_size()
-        print(f'Prune newborns: {self._state_str}')
-        self.prune_rf()
-
-    def update_rf_size(self):
-        """Update the receptive field size."""
-        target_rf_sparsity = min(
-            self._max_rf_sparsity,
-            self._max_rf_to_input_ratio * self.feedforward_sds.sparsity
-        )
-        self._newborn_prune_iteration += 1
-        self.rf_sparsity = self._initial_rf_sparsity + self._newborn_prune_iteration * (
-            target_rf_sparsity - self._initial_rf_sparsity
-        ) / self.newborn_pruning_stages
-
-    def prune_rf(self):
-        """Prune the receptive field."""
+        # probabilities to keep connection
         keep_prob = np.power(self.activation_heatmap, 2.0)
         keep_prob /= keep_prob.sum(axis=1, keepdims=True)
 
         # sample what connections to keep for each neuron independently
-        keep_connections_i = np.array([
-            self._rng.choice(
-                self.potential_rf.shape[1], size=self.rf_size, replace=False,
-                p=keep_prob[neuron]
-            )
-            for neuron in range(self.output_sds.size)
-        ])
-
-        def gather_rows(arr_2d, indices):
-            return np.array([
-                arr_2d[neuron, indices[neuron]]
-                for neuron in range(self.output_sds.size)
-            ])
+        new_rf_size = int(new_sparsity * self.ff_size)
+        keep_connections_i = sample_for_each_neuron(
+            rng=self.rng, n_neurons=self.output_sds.size,
+            set_size=self.rf_size, sample_size=new_rf_size, probs_2d=keep_prob
+        )
 
         self.potential_rf = gather_rows(self.potential_rf, keep_connections_i)
         self.weights = gather_rows(self.weights, keep_connections_i)
         self.activation_heatmap = gather_rows(self.activation_heatmap, keep_connections_i)
         self.rf = self.weights >= self.threshold
+        print(f'Prune newborns: {self._state_str()}')
+
+        if self.newborn_pruning_stage == self.newborn_pruning_stages:
+            self.on_end_pruning_newborns()
+
+    def on_end_pruning_newborns(self):
+        self.boosting_log_1_k = 0.
+        self.learning_rate_inc /= 2
+        self.learning_rate_dec /= 2
+        print(f'Boosting off: {self._state_str()}')
+
+    def current_rf_sparsity(self):
+        ff_sparsity = (
+            self.ff_avg_sparsity if self.adapt_to_ff_sparsity else self.feedforward_sds.sparsity
+        )
+        final_rf_sparsity = min(
+            self.max_rf_sparsity,
+            self.max_rf_to_input_ratio * ff_sparsity
+        )
+
+        progress = self.newborn_pruning_stage / self.newborn_pruning_stages
+        initial, final = self.initial_rf_sparsity, final_rf_sparsity
+        return initial + progress * (final - initial)
 
     def activation_entropy(self):
         activation_probs = self.n_activations / self.n_computes
@@ -230,9 +223,24 @@ class SpatialPooler:
         )
 
     @property
-    def rf_size(self):
-        return int(self.rf_sparsity * self._feedforward_sds.size)
+    def ff_size(self):
+        return self.feedforward_sds.size
 
     @property
+    def ff_avg_active_size(self):
+        return self.cumulative_active_input_size // self.n_computes
+
+    @property
+    def ff_avg_sparsity(self):
+        return self.ff_avg_active_size / self.ff_size
+
+    @property
+    def rf_size(self):
+        return self.rf.shape[1]
+
+    @property
+    def rf_sparsity(self):
+        return self.rf_size / self.ff_size
+
     def _state_str(self) -> str:
         return f'{self.rf_sparsity:.4f} | {self.rf_size} | {self.learning_rate_inc:.4f}'

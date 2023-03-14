@@ -15,9 +15,48 @@ data:
     _base_: $_base.encoder.random.fixed_sds
     sds: [500, 10]
 
-model: models.unbound_enc
+model: models.test_bound_attraction_feedback
 
 models:
+  test_bound_attraction_feedback:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - gen.output -> tm1.feedforward
+      - tm1.predict
+      - tm1.predicted_cells -> sp1.feedforward
+#      - sp1.switch_polarity
+      - repeat: 5
+        pipeline:
+          - sp1.compute
+          - sp1.output -> feedforward
+      - sp1.output -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      - tm1.activate
+      - tm1.active_cells -> sp1.feedback
+  #    - sp1.switch_polarity
+      - sp1.compute_feedback
+      - tm1.correctly_predicted_cells -> ___.output
+  ac_unbound:
+    api_block: ___
+    pipeline:
+      - ___.input -> gen.output
+      - tm1.predict
+      # activate + predict by TM2
+      - tm1.predicted_cells -> tm2.feedforward
+      - tm2.set_active_columns
+      - tm2.predict
+      - tm2.set_predicted_cells
+      # correct TM1 predicted cells
+      - tm2.predicted_cells -> tm1.predicted_cells
+      - tm1.set_predicted_cells
+      # activate feedforward
+      - gen.output -> tm1.feedforward
+      - tm1.activate
+      # learn TM2
+      - tm1.active_cells -> tm2.feedforward
+      - tm2.activate
+      - tm1.correctly_predicted_cells -> ___.output
   unbound_attraction_enc_force:
     api_block: ___
     pipeline:
@@ -295,7 +334,7 @@ blocks:
     learning_rate_dec: 0.01
     newborn_pruning_cycle: 0.1
     newborn_pruning_stages: 10
-    track_feedforward_sparsity: False
+    adapt_to_ff_sparsity: False
   sp1:
     _base_: $_base.custom_sp.default
     sp_type: vectorized
@@ -306,8 +345,9 @@ blocks:
     learning_rate_inc: 0.01
     learning_rate_dec: 0.001
     newborn_pruning_cycle: 0.15
-    newborn_pruning_stages: 10
-    track_feedforward_sparsity: False
+    newborn_pruning_stages: 5
+#    newborn_pruning_stages: 10
+    adapt_to_ff_sparsity: False
   tm1:
     _base_: tm.default_general_feedback
     seed: ???
