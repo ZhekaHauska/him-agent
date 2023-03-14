@@ -63,11 +63,10 @@ block:
     id: ???
     name: ???
 
-custom_sp:
+spatial_pooler:
   default:
-    _type_: sp.custom
+    _type_: sp.vectorized
     seed: ???
-    sp_type: vectorized
     # input
     feedforward_sds: ???
     initial_rf_sparsity: 0.25
@@ -77,8 +76,8 @@ custom_sp:
     output_sds: ???
     # learning
     min_overlap_for_activation: 3
-    learning_rate_inc: 0.1
-    learning_rate_dec: 0.01
+    learning_rate: 0.1
+    global_inhibition_strength: 0.01
     newborn_pruning_cycle: 5
     newborn_pruning_stages: 3
     boosting_k: 2.0

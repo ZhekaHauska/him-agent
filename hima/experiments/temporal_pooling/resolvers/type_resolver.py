@@ -39,22 +39,33 @@ def _resolve_temporal_memory(type_tag: str):
         return GeneralFeedbackTemporalMemoryBlock
 
 
-def _resolve_spatial_pooler(type_tag: str):
-    if type_tag == 'sp.custom':
-        from hima.experiments.temporal_pooling.blocks.custom_sp import CustomSpatialPoolerBlock
-        return CustomSpatialPoolerBlock
-
-
 def _resolve_block(type_tag: str):
     if type_tag == 'block.storage':
         from hima.experiments.temporal_pooling.blocks.storage import StorageBlock
         return StorageBlock
-    if type_tag == 'block.custom_sp':
-        from hima.experiments.temporal_pooling.blocks.custom_sp import CustomSpatialPoolerBlock
-        return CustomSpatialPoolerBlock
+    if type_tag == 'block.spatial_pooler':
+        from hima.experiments.temporal_pooling.blocks.sp import SpatialPoolerBlock
+        return SpatialPoolerBlock
     if type_tag == 'block.concatenator':
         from hima.experiments.temporal_pooling.blocks.concat import ConcatenatorBlock
         return ConcatenatorBlock
+    if type_tag == 'block.sp':
+        from hima.experiments.temporal_pooling.blocks.sp import SpatialPoolerBlock
+        return SpatialPoolerBlock
+    if type_tag == 'block.tm.general_feedback':
+        from hima.experiments.temporal_pooling.blocks.general_feedback_tm import (
+            GeneralFeedbackTemporalMemoryBlock
+        )
+        return GeneralFeedbackTemporalMemoryBlock
+
+
+def _resolve_spatial_pooler(type_tag: str):
+    if type_tag == 'sp.vectorized':
+        from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
+        return SpatialPooler
+    if type_tag == 'sp.list':
+        from hima.experiments.temporal_pooling.stp.sp_list import SpatialPooler
+        return SpatialPooler
 
 
 def _resolve_dataset(type_tag):

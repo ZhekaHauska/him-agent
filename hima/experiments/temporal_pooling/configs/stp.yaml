@@ -15,7 +15,7 @@ data:
     _base_: $_base.encoder.random.fixed_sds
     sds: [500, 10]
 
-model: models.test_bound_attraction_feedback
+model: models.tm_enc
 
 models:
   test_bound_attraction_feedback:
@@ -324,32 +324,36 @@ blocks:
   concat:
     _type_: block.concatenator
   sp0:
-    _base_: $_base.custom_sp.default
-    sp_type: vectorized
+    _type_: block.sp
     output_sds: [500, 10]
-    initial_rf_sparsity: 0.25
-    max_rf_sparsity: 0.08
-    max_rf_to_input_ratio: 0.8
-    learning_rate_inc: 0.1
-    learning_rate_dec: 0.01
-    newborn_pruning_cycle: 0.1
-    newborn_pruning_stages: 10
-    adapt_to_ff_sparsity: False
+    global_config: ???
+    sp:
+      _base_: $_base.spatial_pooler.default
+      initial_rf_sparsity: 0.25
+      max_rf_sparsity: 0.08
+      max_rf_to_input_ratio: 0.8
+      learning_rate: 0.1
+      global_inhibition_strength: 0.1
+      newborn_pruning_cycle: 0.1
+      newborn_pruning_stages: 10
+      adapt_to_ff_sparsity: False
   sp1:
-    _base_: $_base.custom_sp.default
-    sp_type: vectorized
-    output_sds: ??? #[500, 10]
-    initial_rf_sparsity: 0.05
-    max_rf_sparsity: 0.08
-    max_rf_to_input_ratio: 0.85
-    learning_rate_inc: 0.01
-    learning_rate_dec: 0.001
-    newborn_pruning_cycle: 0.15
-    newborn_pruning_stages: 5
-#    newborn_pruning_stages: 10
-    adapt_to_ff_sparsity: False
+    _type_: block.sp
+    global_config: ???
+    sp:
+      _base_: $_base.spatial_pooler.default
+      output_sds: ??? #[500, 10]
+      initial_rf_sparsity: 0.05
+      max_rf_sparsity: 0.08
+      max_rf_to_input_ratio: 0.85
+      learning_rate_inc: 0.01
+      learning_rate_dec: 0.001
+      newborn_pruning_cycle: 0.15
+      newborn_pruning_stages: 5
+#      newborn_pruning_stages: 10
+      adapt_to_ff_sparsity: False
   tm1:
-    _base_: tm.default_general_feedback
+    _base_: temporal_memory.default_general_feedback
     seed: ???
     active_cells_sds: ???
     predicted_cells_sds: ???
@@ -361,7 +365,7 @@ blocks:
     max_synapses_per_segment_basal: -1
     max_segments_per_cell_basal: 64
   tm2:
-    _base_: tm.default_general_feedback
+    _base_: temporal_memory.default_general_feedback
     seed: ???
     active_cells_sds: ???
     predicted_cells_sds: ???
@@ -410,6 +414,6 @@ log_schedule:
 iterate_setups:
   simple: ...
 
-tm:
+temporal_memory:
   default_general_feedback:
-    _type_: tm.general_feedback
+    _type_: block.tm.general_feedback

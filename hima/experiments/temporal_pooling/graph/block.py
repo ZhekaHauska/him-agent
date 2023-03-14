@@ -15,7 +15,7 @@ from hima.experiments.temporal_pooling.graph.stream import Stream
 class Block(Node):
     """Base building block of the computational graph / neural network."""
 
-    family: str = "base_block"
+    family: str = 'base_block'
     supported_streams: set[str] = {}
 
     id: int
@@ -79,7 +79,7 @@ class Block(Node):
         return f'{self.shortname} {self.name}'
 
     # ---------------------- Utility methods ----------------------
-    def _extract_streams(self, kwargs: dict):
+    def _extract_streams(self, kwargs: dict) -> dict:
         config = {}
         for key, value in kwargs.items():
             if not str.endswith(key, '_sds'):
