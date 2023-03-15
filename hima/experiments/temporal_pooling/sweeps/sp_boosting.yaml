@@ -37,4 +37,4 @@ command:
     #   |- configs/
     #       |- single_run_config.yaml
   - --config
-  - ./configs/fastw.yaml
+  - ../configs/stp.yaml
