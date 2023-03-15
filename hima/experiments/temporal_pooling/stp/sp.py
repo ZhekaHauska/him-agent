@@ -48,7 +48,7 @@ class SpatialPooler:
     rf: np.ndarray
     weights: np.ndarray
     threshold = 0.3
-    boosting_log_1_k: float
+    boosting_k: float
     n_activations: np.ndarray
     activation_heatmap: np.ndarray
 
@@ -90,8 +90,8 @@ class SpatialPooler:
         self.sparse_input = []
         self.dense_input = np.zeros(self.ff_size, dtype=int)
 
-        self.n_activations = np.ones(self.output_sds.size)
-        self.boosting_log_1_k = np.log(1.0 + boosting_k)
+        self.n_activations = np.full(self.output_sds.size, self.output_sds.sparsity / 1e+4)
+        self.boosting_k = boosting_k
         self.activation_heatmap = np.ones(self.potential_rf.shape)
 
         self.newborn_pruning_cycle = newborn_pruning_cycle
@@ -124,10 +124,10 @@ class SpatialPooler:
 
         if self.is_boosting_on:
             # boosting
-            rates = self.n_activations / self.n_computes
-            target_rate = self.output_sds.sparsity
-            relative_rates = target_rate / rates
-            boosting_alpha = boosting(relative_rate=relative_rates, log_k=self.boosting_log_1_k)
+            boosting_alpha = boosting(
+                relative_rate=self.activation_relative_rates,
+                k=self.boosting_k
+            )
             overlaps = overlaps * boosting_alpha
 
         n_winners = self.output_sds.active_size
@@ -143,13 +143,9 @@ class SpatialPooler:
             self.learn(winners, match_mask[winners])
         return winners
 
-    def learn(
-            self, neurons: np.ndarray, match_input_mask: np.ndarray,
-            strength: float = 1.0
-    ):
+    def learn(self, neurons: np.ndarray, match_input_mask: np.ndarray, strength: float = 1.0):
         all_ = self.global_inhibition_strength
         matched = 1. + all_
-
         lr = strength * self.polarity * self.learning_rate
 
         self.weights[neurons] = np.clip(
@@ -198,7 +194,7 @@ class SpatialPooler:
             self.on_end_pruning_newborns()
 
     def on_end_pruning_newborns(self):
-        self.boosting_log_1_k = 0.
+        self.boosting_k = 0.
         self.learning_rate /= 2
         self.global_inhibition_strength /= 2
         print(f'Boosting off: {self._state_str()}')
@@ -233,13 +229,6 @@ class SpatialPooler:
         initial, final = self.initial_rf_sparsity, final_rf_sparsity
         return initial + progress * (final - initial)
 
-    def activation_entropy(self):
-        activation_probs = self.n_activations / self.n_computes
-        return (
-            entropy(activation_probs, sds=self.output_sds),
-            # np.round(activation_probs / self.output_sds.sparsity, 2)
-        )
-
     @property
     def ff_size(self):
         return self.feedforward_sds.size
@@ -262,7 +251,22 @@ class SpatialPooler:
 
     @property
     def is_boosting_on(self):
-        return np.isclose(self.boosting_log_1_k, 0)
+        return np.isclose(self.boosting_k, 0)
 
     def _state_str(self) -> str:
         return f'{self.rf_sparsity:.4f} | {self.rf_size} | {self.learning_rate:.4f}'
+
+    @property
+    def activation_rates(self):
+        return self.n_activations / self.n_computes
+
+    @property
+    def activation_relative_rates(self):
+        target_rate = self.output_sds.sparsity
+        return self.activation_rates / target_rate
+
+    def activation_entropy(self):
+        return (
+            entropy(activation_probs, sds=self.output_sds),
+            # np.round(activation_probs / self.output_sds.sparsity, 2)
+        )

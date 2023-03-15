@@ -42,11 +42,16 @@ def sample_for_each_neuron(
     return samples
 
 
-def boosting(relative_rate: float | np.ndarray, log_k: float) -> float:
-    # x = log(R / r)
-    # B = exp(logK * x / |1 + x|)
-    #   0 -> -inf -> exp(-logK) = 1 / K
+def boosting(relative_rate: float | np.ndarray, k: float, softness: float = 3.0) -> float:
+    # relative rate: rate / R_target
+    # x = -log(relative_rate)
+    #   0 1 +inf  -> +inf 0 -inf
+    x = -np.log(relative_rate)
+
+    # B = exp(logK * tanh(x))
+    # relative_rate -> x -> B:
+    #   0 -> +inf -> exp(logK * 1) = K
     #   1 -> 0 -> exp(logK * 0) = 1
-    #   +inf -> +inf -> exp(logK) = K
-    x = np.log(relative_rate)
-    return np.exp(log_k * x / np.abs(1 + x))
+    #   +inf -> -inf -> exp(logK * -1) = 1 / K
+    # higher softness just makes the sigmoid curve smoother; default value is emprically optimizaed
+    return np.power(k + 1, np.tanh(x / softness))

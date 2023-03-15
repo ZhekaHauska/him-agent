@@ -334,8 +334,8 @@ blocks:
       max_rf_to_input_ratio: 0.8
       learning_rate: 0.1
       global_inhibition_strength: 0.1
-      newborn_pruning_cycle: 0.1
-      newborn_pruning_stages: 10
+      newborn_pruning_cycle: 0.2
+      newborn_pruning_stages: 5
       adapt_to_ff_sparsity: False
   sp1:
     _type_: block.sp
