@@ -40,12 +40,12 @@ class StpExperiment:
 
     def __init__(
             self, config: TConfig, config_path: Path,
-            log: bool, project: str,
-            seed: int,
+            log: bool, seed: int,
             iterate: TConfig, data: TConfig,
             model: TConfig,
             track_streams: TConfig, stats_and_metrics: TConfig, diff_stats: TConfig,
             log_schedule: TConfig,
+            project: str = None,
             **_
     ):
         self.init_time = timer()
