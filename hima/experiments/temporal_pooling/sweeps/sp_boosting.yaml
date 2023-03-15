@@ -20,9 +20,9 @@ parameters:
       - 1.2
   blocks..sp0.sp.boosting_k:
     values:
-      - 0.8
+      - 0.5
       - 1.0
-      - 1.2
+      - 2.0
 
 command:
   - ${env}
