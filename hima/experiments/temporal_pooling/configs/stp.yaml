@@ -331,7 +331,7 @@ blocks:
       _base_: $_base.spatial_pooler.default
       initial_rf_sparsity: 0.25
       max_rf_sparsity: 0.08
-      max_rf_to_input_ratio: 0.8
+      max_rf_to_input_ratio: 1.0
       learning_rate: 0.1
       global_inhibition_strength: 0.1
       newborn_pruning_cycle: 0.2
