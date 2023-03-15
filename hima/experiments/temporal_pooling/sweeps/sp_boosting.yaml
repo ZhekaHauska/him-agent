@@ -17,7 +17,7 @@ parameters:
     values:
       - 0.8
       - 1.0
-      - 1.2
+      - 1.25
   blocks..sp0.sp.boosting_k:
     values:
       - 0.5
