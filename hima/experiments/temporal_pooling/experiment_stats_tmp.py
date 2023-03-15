@@ -41,7 +41,6 @@ class ExperimentStats:
     # charts: list[str]
 
     stream_trackers: dict[TStreamName, StreamTracker]
-    anomaly_tracker: AnomalyTracker
     current_sequence_id: int
 
     logging_temporally_disabled: bool
@@ -52,7 +51,6 @@ class ExperimentStats:
             stats_config: StatsMetricsConfig,
             diff_stats: TConfig,
             loss: list[str] = None,
-            # charts: list[str],
     ):
         self.n_sequences = n_sequences
         self.progress = progress
@@ -62,7 +60,6 @@ class ExperimentStats:
         self.current_sequence_id = -1
         self.diff_stats = diff_stats
         self.loss_items = (loss[0], loss[1]) if loss else []
-        # self.charts = charts
 
         if self.logger:
             import wandb
@@ -74,11 +71,10 @@ class ExperimentStats:
             stats_config=stats_config, n_sequences=n_sequences
         )
         self.tms = [
-            blocks[block_name]
+            (blocks[block_name], AnomalyTracker())
             for block_name in blocks
             if blocks[block_name].family in 'temporal_memory'
         ]
-        self.anomaly_tracker = AnomalyTracker()
 
     @staticmethod
     def _make_stream_trackers(
@@ -135,16 +131,16 @@ class ExperimentStats:
             tracker = self.stream_trackers[name]
             tracker.on_step(tracker.stream.sdr)
 
-        for block in self.tms:
-            self.anomaly_tracker.on_step(block.tm.anomaly[-1])
+        for block, anomaly_tracker in self.tms:
+            anomaly_tracker.on_step(block.tm.anomaly[-1])
 
         metrics = {
             'epoch': self.progress.epoch
         }
         for name in self.stream_trackers:
             metrics |= self.stream_trackers[name].step_metrics()
-        for block in self.tms:
-            res = self.anomaly_tracker.step_metrics()
+        for block, anomaly_tracker in self.tms:
+            res = anomaly_tracker.step_metrics()
             metrics |= rename_dict_keys(res, add_prefix=f'{block.name}/')
 
         self.logger.log(metrics, step=self.progress.step)
