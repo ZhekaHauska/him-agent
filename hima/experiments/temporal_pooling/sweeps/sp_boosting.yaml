@@ -13,12 +13,12 @@ parameters:
   model.:
     value: models.tm_enc
 
-  blocks..sp0.max_rf_to_input_ratio:
+  blocks..sp0.sp.max_rf_to_input_ratio:
     values:
       - 0.8
       - 1.0
       - 1.2
-  blocks..sp0.boosting_k:
+  blocks..sp0.sp.boosting_k:
     values:
       - 0.8
       - 1.0
