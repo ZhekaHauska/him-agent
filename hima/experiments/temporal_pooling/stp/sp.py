@@ -251,7 +251,7 @@ class SpatialPooler:
 
     @property
     def is_boosting_on(self):
-        return np.isclose(self.boosting_k, 0)
+        return not np.isclose(self.boosting_k, 0)
 
     def _state_str(self) -> str:
         return f'{self.rf_sparsity:.4f} | {self.rf_size} | {self.learning_rate:.4f}'
