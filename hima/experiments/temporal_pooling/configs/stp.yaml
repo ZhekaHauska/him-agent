@@ -329,15 +329,16 @@ blocks:
     global_config: ???
     sp:
       _base_: $_base.spatial_pooler.default
-      initial_rf_to_input_ratio: 5.0
+      initial_rf_to_input_ratio: 8.0
       max_rf_to_input_ratio: 1.25
       max_rf_sparsity: 0.08
       learning_rate: 0.1
-      global_inhibition_strength: 0.1
+      global_inhibition_strength: 0.2
       newborn_pruning_cycle: 1.0
       newborn_pruning_stages: 4
       prune_grow_cycle: 2.0
       adapt_to_ff_sparsity: False
+      boosting_k: 0.5
   sp1:
     _type_: block.sp
     global_config: ???
