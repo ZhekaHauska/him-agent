@@ -336,7 +336,7 @@ blocks:
       global_inhibition_strength: 0.2
       newborn_pruning_cycle: 1.0
       newborn_pruning_stages: 4
-      prune_grow_cycle: 2.0
+      prune_grow_cycle: 4.0
       adapt_to_ff_sparsity: False
       boosting_k: 0.5
   sp1:

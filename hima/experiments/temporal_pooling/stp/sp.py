@@ -233,12 +233,6 @@ class SpatialPooler:
                 self.threshold + delta_w
             )
 
-        # sort it
-        sorted_i = np.argsort(self.potential_rf, axis=1)
-        self.potential_rf = gather_rows(self.potential_rf, sorted_i)
-        self.weights = gather_rows(self.weights, sorted_i)
-        self.rf = self.weights >= self.threshold
-
     def on_end_newborn_phase(self):
         self.learning_rate /= 2
         print(f'Become adult: {self._state_str()}')

@@ -30,16 +30,13 @@ def sample_for_each_neuron(
         set_size: int, sample_size: int,
         probs_2d: np.ndarray = None
 ) -> np.ndarray:
-    samples = np.array([
+    return np.array([
         rng.choice(
             set_size, size=sample_size, replace=False,
             p=probs_2d[neuron] if probs_2d is not None else None
         )
         for neuron in range(n_neurons)
     ])
-    # sort sampled indices. it's potentially a speed-up.
-    samples.sort(axis=1)
-    return samples
 
 
 def boosting(relative_rate: float | np.ndarray, k: float, softness: float = 3.0) -> float:
