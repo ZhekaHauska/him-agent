@@ -80,4 +80,4 @@ spatial_pooler:
     global_inhibition_strength: 0.01
     newborn_pruning_cycle: 1.0
     newborn_pruning_stages: 5
-    boosting_k: 0.5
+    boosting_k: 1.

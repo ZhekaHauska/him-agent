@@ -50,7 +50,7 @@ class SpatialPooler:
     rf: np.ndarray
     weights: np.ndarray
     threshold = 0.3
-    boosting_k: float
+    base_boosting_k: float
     output_trace: np.ndarray
 
     def __init__(
@@ -71,8 +71,8 @@ class SpatialPooler:
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
         self.initial_rf_sparsity = min(
-            max_rf_sparsity,
-            initial_rf_to_input_ratio * self.feedforward_sds.sparsity
+            initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
+            0.65
         )
         self.max_rf_to_input_ratio = max_rf_to_input_ratio
         self.max_rf_sparsity = max_rf_sparsity
@@ -101,15 +101,17 @@ class SpatialPooler:
         self.sparse_input = []
         self.dense_input = np.zeros(self.ff_size, dtype=int)
 
+        self.n_computes = 0
         self.feedforward_trace = np.full(self.ff_size, 1e-5)
         self.output_trace = np.full(self.output_size, 1e-5)
-        self.boosting_k = boosting_k
+        self.recognition_strength_trace = 0
 
+        self.base_boosting_k = boosting_k
         self.newborn_pruning_cycle = newborn_pruning_cycle
         self.newborn_pruning_stages = newborn_pruning_stages
         self.newborn_pruning_stage = 0
         self.prune_grow_cycle = prune_grow_cycle
-        self.n_computes = 0
+
         self.no_feedback_count = 0
         self.run_time = 0
 
@@ -126,22 +128,21 @@ class SpatialPooler:
         self.no_feedback_count += 1
         self.feedforward_trace[input_sdr] += 1
 
-        if self.n_computes % int(self.newborn_pruning_cycle * self.output_size) == 0:
-            self.shrink_receptive_field()
-        if self.n_computes % int(self.prune_grow_cycle * self.output_size) == 0:
-            self.prune_grow_synapses()
+        if self.is_newborn_phase:
+            if self.n_computes % int(self.newborn_pruning_cycle * self.output_size) == 0:
+                self.shrink_receptive_field()
+        else:
+            if self.n_computes % int(self.prune_grow_cycle * self.output_size) == 0:
+                self.prune_grow_synapses()
 
         self.update_input(input_sdr)
 
         match_mask, active_match_mask = self.match_input(self.dense_input)
         overlaps = active_match_mask.sum(axis=1)
 
-        if self.is_boosting_on:
+        if self.is_newborn_phase:
             # boosting
-            boosting_alpha = boosting(
-                relative_rate=self.output_relative_rate,
-                k=self.boosting_k
-            )
+            boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
             overlaps = overlaps * boosting_alpha
 
         n_winners = self.output_sds.active_size
@@ -151,6 +152,7 @@ class SpatialPooler:
 
         # update winners activation stats
         self.output_trace[winners] += 1
+        self.recognition_strength_trace += active_match_mask[winners].sum() / n_winners
 
         if learn:
             self.learn(winners, match_mask[winners])
@@ -176,8 +178,6 @@ class SpatialPooler:
         self.no_feedback_count = 0
 
     def shrink_receptive_field(self):
-        if self.newborn_pruning_stage >= self.newborn_pruning_stages:
-            return
         self.newborn_pruning_stage += 1
 
         new_sparsity = self.current_rf_sparsity()
@@ -202,10 +202,14 @@ class SpatialPooler:
         self.rf = self.weights >= self.threshold
         print(f'Prune newborns: {self._state_str()}')
 
-        if self.newborn_pruning_stage == self.newborn_pruning_stages:
-            self.on_end_pruning_newborns()
+        if not self.is_newborn_phase:
+            # it is ended
+            self.on_end_newborn_phase()
+
+        self.prune_grow_synapses()
 
     def prune_grow_synapses(self):
+        print(f'Force neurogenesis: {self.output_entropy():.3f} | {self.recognition_strength:.1f}')
         # prune-grow operation is just a resample: new synapses instead of the inactive synapses
         # new synapses are distributed according to the feedforward distribution
         inactive_synapses_mask = self.weights < self.threshold
@@ -235,12 +239,9 @@ class SpatialPooler:
         self.weights = gather_rows(self.weights, sorted_i)
         self.rf = self.weights >= self.threshold
 
-    def on_end_pruning_newborns(self):
-        self.boosting_k = 0.
+    def on_end_newborn_phase(self):
         self.learning_rate /= 2
-        self.global_inhibition_strength /= 2
-        self.newborn_pruning_cycle *= 10
-        print(f'Boosting off: {self._state_str()}')
+        print(f'Become adult: {self._state_str()}')
 
     def update_input(self, sdr: SparseSdr):
         # erase prev SDR
@@ -268,9 +269,9 @@ class SpatialPooler:
             self.max_rf_to_input_ratio * ff_sparsity
         )
 
-        progress = self.newborn_pruning_stage / self.newborn_pruning_stages
+        newborn_phase_progress = self.newborn_pruning_stage / self.newborn_pruning_stages
         initial, final = self.initial_rf_sparsity, final_rf_sparsity
-        return initial + progress * (final - initial)
+        return initial + newborn_phase_progress * (final - initial)
 
     @property
     def ff_size(self):
@@ -297,11 +298,12 @@ class SpatialPooler:
         return self.output_sds.size
 
     @property
-    def is_boosting_on(self):
-        return not np.isclose(self.boosting_k, 0)
+    def is_newborn_phase(self):
+        return self.newborn_pruning_stage < self.newborn_pruning_stages
 
     def _state_str(self) -> str:
-        return f'{self.rf_sparsity:.4f} | {self.rf_size} | {self.learning_rate:.4f}'
+        return f'{self.rf_sparsity:.4f} | {self.rf_size} | {self.learning_rate:.3f}' \
+               f' | {self.boosting_k:.2f}'
 
     @property
     def feedforward_rate(self):
@@ -320,5 +322,16 @@ class SpatialPooler:
     def rf_match_trace(self):
         return self.feedforward_trace[self.potential_rf]
 
+    @property
+    def boosting_k(self):
+        if not self.is_newborn_phase:
+            return 0.
+        newborn_phase_progress = self.newborn_pruning_stage / self.newborn_pruning_stages
+        return self.base_boosting_k * (1 - newborn_phase_progress)
+
     def output_entropy(self):
-        return entropy(self.rf_match_trace, sds=self.output_sds)
+        return entropy(self.output_rate, sds=self.output_sds)
+
+    @property
+    def recognition_strength(self):
+        return self.recognition_strength_trace / self.n_computes
