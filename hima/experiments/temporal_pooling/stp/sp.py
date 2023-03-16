@@ -50,7 +50,7 @@ class SpatialPooler:
     threshold = 0.3
     boosting_k: float
     n_activations: np.ndarray
-    activation_heatmap: np.ndarray
+    activation_traces: np.ndarray
 
     def __init__(
             self, feedforward_sds: Sds,
@@ -90,9 +90,9 @@ class SpatialPooler:
         self.sparse_input = []
         self.dense_input = np.zeros(self.ff_size, dtype=int)
 
-        self.n_activations = np.full(self.output_sds.size, self.output_sds.sparsity / 1e+4)
+        self.n_activations = np.full(self.output_sds.size, 1e-5)
         self.boosting_k = boosting_k
-        self.activation_heatmap = np.ones(self.potential_rf.shape)
+        self.activation_traces = np.full(self.potential_rf.shape, 1e-5)
 
         self.newborn_pruning_cycle = newborn_pruning_cycle
         self.newborn_pruning_stages = newborn_pruning_stages
@@ -137,7 +137,7 @@ class SpatialPooler:
 
         # update winners activation stats
         self.n_activations[winners] += 1
-        self.activation_heatmap[winners] += match_mask[winners]
+        self.activation_traces[winners] += match_mask[winners]
 
         if learn:
             self.learn(winners, match_mask[winners])
@@ -174,7 +174,7 @@ class SpatialPooler:
             return
 
         # probabilities to keep connection
-        keep_prob = np.power(self.activation_heatmap, 2.0)
+        keep_prob = np.power(self.activation_traces, 2.0)
         keep_prob /= keep_prob.sum(axis=1, keepdims=True)
 
         # sample what connections to keep for each neuron independently
@@ -186,7 +186,7 @@ class SpatialPooler:
 
         self.potential_rf = gather_rows(self.potential_rf, keep_connections_i)
         self.weights = gather_rows(self.weights, keep_connections_i)
-        self.activation_heatmap = gather_rows(self.activation_heatmap, keep_connections_i)
+        self.activation_traces = gather_rows(self.activation_traces, keep_connections_i)
         self.rf = self.weights >= self.threshold
         print(f'Prune newborns: {self._state_str()}')
 
@@ -266,7 +266,4 @@ class SpatialPooler:
         return self.activation_rates / target_rate
 
     def activation_entropy(self):
-        return (
-            entropy(activation_probs, sds=self.output_sds),
-            # np.round(activation_probs / self.output_sds.sparsity, 2)
-        )
+        return entropy(self.activation_traces, sds=self.output_sds)
