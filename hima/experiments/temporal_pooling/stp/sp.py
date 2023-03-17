@@ -158,13 +158,15 @@ class SpatialPooler:
     def learn(self, neurons: np.ndarray, match_input_mask: np.ndarray, modulation: float = 1.0):
         w = self.weights[neurons]
         mask = match_input_mask
+        matched = mask.sum(axis=1, keepdims=True)
+        matched = matched + (matched == 0.) * 1e-5
 
         lr = modulation * self.polarity * self.learning_rate
         inh = self.global_inhibition_strength
         dw_inh = lr * inh * (1 - mask)
 
         dw_pool = dw_inh.sum(axis=1, keepdims=True)
-        dw_exc = mask * dw_pool / mask.sum(axis=1, keepdims=True)
+        dw_exc = mask * dw_pool / matched
 
         self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
 

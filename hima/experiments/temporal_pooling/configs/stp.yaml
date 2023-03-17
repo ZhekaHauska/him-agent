@@ -154,7 +154,7 @@ models:
       - ___.input -> gen.output
       - tm1.predict
       - tm1.predicted_cells -> sp1.feedforward
-      - repeat: 10
+      - repeat: 1
         pipeline:
           - sp1.compute
           - sp1.output -> feedforward
@@ -285,7 +285,7 @@ models:
       - gen.output -> tm1.feedforward
       - tm1.predict
       - tm1.predicted_cells -> sp1.feedforward
-      - repeat: 10
+      - repeat: 1
         pipeline:
           - sp1.compute
           - sp1.output -> feedforward
@@ -331,7 +331,6 @@ blocks:
       _base_: $_base.spatial_pooler.default
       initial_rf_to_input_ratio: 8.0
       max_rf_to_input_ratio: 1.25
-      max_rf_sparsity: 0.08
       learning_rate: 0.02
       global_inhibition_strength: 0.2
       newborn_pruning_cycle: 1.0
@@ -345,15 +344,15 @@ blocks:
     sp:
       _base_: $_base.spatial_pooler.default
       output_sds: ??? #[500, 10]
-      initial_rf_sparsity: 0.05
-      max_rf_sparsity: 0.08
-      max_rf_to_input_ratio: 0.85
-      learning_rate_inc: 0.01
-      learning_rate_dec: 0.001
-      newborn_pruning_cycle: 0.15
-      newborn_pruning_stages: 5
-#      newborn_pruning_stages: 10
+      initial_rf_to_input_ratio: 8.0  #12?
+      max_rf_to_input_ratio: 1.25
+      learning_rate: 0.02
+      global_inhibition_strength: 0.2
+      newborn_pruning_cycle: 1.0
+      newborn_pruning_stages: 4
+      prune_grow_cycle: 4.0
       adapt_to_ff_sparsity: False
+      boosting_k: 0.5
   tm1:
     _base_: temporal_memory.default_general_feedback
     seed: ???
