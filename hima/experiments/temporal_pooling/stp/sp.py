@@ -46,7 +46,6 @@ class SpatialPooler:
     output_trace: np.ndarray
 
     # vectorized fields
-    potential_rf: np.ndarray
     rf: np.ndarray
     weights: np.ndarray
     threshold = 0.3
@@ -83,20 +82,17 @@ class SpatialPooler:
         self.polarity = 1
 
         rf_size = int(self.initial_rf_sparsity * self.ff_size)
-        self.potential_rf = sample_for_each_neuron(
+        self.rf = sample_for_each_neuron(
             rng=self.rng, n_neurons=self.output_size,
             set_size=self.ff_size, sample_size=rf_size
         )
-        print(f'SP vec init shape: {self.potential_rf.shape}')
+        print(f'SP vec init shape: {self.rf.shape}')
 
-        # sample weights close to threshold for faster specialization
-        delta_w = 2 * self.learning_rate
-        self.weights = self.rng.uniform(
-            self.threshold - delta_w,
-            self.threshold + delta_w,
-            size=self.potential_rf.shape
+        w0 = 1 / rf_size
+        self.w_min = 0.
+        self.weights = self.normalize_weights(
+            self.rng.normal(w0, w0, size=self.rf.shape)
         )
-        self.rf = self.weights >= self.threshold
 
         self.sparse_input = []
         self.dense_input = np.zeros(self.ff_size, dtype=int)
@@ -137,13 +133,14 @@ class SpatialPooler:
 
         self.update_input(input_sdr)
 
-        match_mask, active_match_mask = self.match_input(self.dense_input)
-        overlaps = active_match_mask.sum(axis=1)
+        match_mask = self.match_input(self.dense_input)
+        overlaps = (match_mask * self.weights).sum(axis=1)
 
         if self.is_newborn_phase:
             # boosting
             boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
-            overlaps = overlaps * boosting_alpha
+            # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
+            overlaps = overlaps * boosting_alpha ** np.sign(overlaps)
 
         n_winners = self.output_sds.active_size
         winners = np.sort(
@@ -152,29 +149,31 @@ class SpatialPooler:
 
         # update winners activation stats
         self.output_trace[winners] += 1
-        self.recognition_strength_trace += active_match_mask[winners].sum() / n_winners
+        self.recognition_strength_trace += overlaps[winners].sum() / n_winners
 
         if learn:
             self.learn(winners, match_mask[winners])
         return winners
 
-    def learn(self, neurons: np.ndarray, match_input_mask: np.ndarray, strength: float = 1.0):
-        all_ = self.global_inhibition_strength
-        matched = 1. + all_
-        lr = strength * self.polarity * self.learning_rate
+    def learn(self, neurons: np.ndarray, match_input_mask: np.ndarray, modulation: float = 1.0):
+        w = self.weights[neurons]
+        mask = match_input_mask
 
-        self.weights[neurons] = np.clip(
-            self.weights[neurons] + lr * (matched * match_input_mask - all_),
-            0, 1
-        )
-        self.rf[neurons] = self.weights[neurons] >= self.threshold
+        lr = modulation * self.polarity * self.learning_rate
+        inh = self.global_inhibition_strength
+        dw_inh = lr * inh * (1 - mask)
+
+        dw_pool = dw_inh.sum(axis=1, keepdims=True)
+        dw_exc = mask * dw_pool / mask.sum(axis=1, keepdims=True)
+
+        self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
 
     def process_feedback(self, feedback_sdr: SparseSdr):
         # feedback SDR is the SP neurons that should be reinforced
         feedback_strength = self.no_feedback_count
         fb_match_mask, _ = self.match_input(self.dense_input, neurons=feedback_sdr)
 
-        self.learn(feedback_sdr, fb_match_mask, strength=feedback_strength)
+        self.learn(feedback_sdr, fb_match_mask, modulation=feedback_strength)
         self.no_feedback_count = 0
 
     def shrink_receptive_field(self):
@@ -187,7 +186,7 @@ class SpatialPooler:
             return
 
         # probabilities to keep connection
-        keep_prob = np.power(self.weights, 2.0) + 0.01
+        keep_prob = np.power(np.abs(self.weights), 2.0) + 0.01
         keep_prob /= keep_prob.sum(axis=1, keepdims=True)
 
         # sample what connections to keep for each neuron independently
@@ -197,9 +196,10 @@ class SpatialPooler:
             set_size=self.rf_size, sample_size=new_rf_size, probs_2d=keep_prob
         )
 
-        self.potential_rf = gather_rows(self.potential_rf, keep_connections_i)
-        self.weights = gather_rows(self.weights, keep_connections_i)
-        self.rf = self.weights >= self.threshold
+        self.rf = gather_rows(self.rf, keep_connections_i)
+        self.weights = self.normalize_weights(
+            gather_rows(self.weights, keep_connections_i)
+        )
         print(f'Prune newborns: {self._state_str()}')
 
         if not self.is_newborn_phase:
@@ -210,28 +210,26 @@ class SpatialPooler:
 
     def prune_grow_synapses(self):
         print(f'Force neurogenesis: {self.output_entropy():.3f} | {self.recognition_strength:.1f}')
-        # prune-grow operation is just a resample: new synapses instead of the inactive synapses
+        # prune-grow operation combined results to resample of a part of
+        # the most inactive or just randomly selected synapses;
         # new synapses are distributed according to the feedforward distribution
-        inactive_synapses_mask = self.weights < self.threshold
         synapse_sample_prob = self.feedforward_rate
         synapse_sample_prob /= synapse_sample_prob.sum()
 
         for neuron in range(self.output_size):
-            inactive_mask = inactive_synapses_mask[neuron]
-            if self.output_relative_rate[neuron] < .1:
-                # for underperformed neurons resample all synapses
-                inactive_mask[:] = True
+            if self.output_relative_rate[neuron] > .1:
+                continue
 
-            self.potential_rf[neuron, inactive_mask] = self.rng.choice(
-                self.ff_size, size=inactive_mask.sum(), replace=False,
+            self.rf[neuron] = self.rng.choice(
+                self.ff_size, size=self.rf_size, replace=False,
                 p=synapse_sample_prob
             )
-            delta_w = self.threshold + 2 * self.learning_rate
-            self.weights[neuron, inactive_mask] = np.clip(
-                self.weights[neuron, inactive_mask],
-                self.threshold - delta_w,
-                self.threshold + delta_w
-            )
+            # delta_w = self.threshold + 2 * self.learning_rate
+            # self.weights[neuron, inactive_mask] = np.clip(
+            #     self.weights[neuron, inactive_mask],
+            #     self.threshold - delta_w,
+            #     self.threshold + delta_w
+            # )
 
     def on_end_newborn_phase(self):
         self.learning_rate /= 2
@@ -245,14 +243,18 @@ class SpatialPooler:
         self.dense_input[self.sparse_input] = 1
 
     def match_input(self, dense_input, neurons: np.ndarray = None):
-        if neurons is None:
-            potential_rf, rf = self.potential_rf, self.rf
-        else:
-            potential_rf, rf = self.potential_rf[neurons], self.rf[neurons]
+        rf = self.rf if neurons is None else self.rf[neurons]
+        return dense_input[rf]
 
-        match_mask = dense_input[potential_rf]
-        active_match_mask = match_mask & rf
-        return match_mask, active_match_mask
+    def normalize_weights(self, weights):
+        return np.clip(
+            weights / np.abs(weights).sum(axis=1, keepdims=True),
+            self.w_min, 1
+        )
+
+    def get_active_rf(self, weights):
+        w_thr = 1 / self.rf_size
+        return weights >= w_thr
 
     def current_rf_sparsity(self):
         ff_sparsity = (
@@ -314,7 +316,7 @@ class SpatialPooler:
 
     @property
     def rf_match_trace(self):
-        return self.feedforward_trace[self.potential_rf]
+        return self.feedforward_trace[self.rf]
 
     @property
     def boosting_k(self):

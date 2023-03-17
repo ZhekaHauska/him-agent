@@ -332,7 +332,7 @@ blocks:
       initial_rf_to_input_ratio: 8.0
       max_rf_to_input_ratio: 1.25
       max_rf_sparsity: 0.08
-      learning_rate: 0.1
+      learning_rate: 0.02
       global_inhibition_strength: 0.2
       newborn_pruning_cycle: 1.0
       newborn_pruning_stages: 4
