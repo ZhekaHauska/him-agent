@@ -224,12 +224,7 @@ class SpatialPooler:
                 self.ff_size, size=self.rf_size, replace=False,
                 p=synapse_sample_prob
             )
-            # delta_w = self.threshold + 2 * self.learning_rate
-            # self.weights[neuron, inactive_mask] = np.clip(
-            #     self.weights[neuron, inactive_mask],
-            #     self.threshold - delta_w,
-            #     self.threshold + delta_w
-            # )
+            self.weights[neuron] = 1 / self.rf_size
 
     def on_end_newborn_phase(self):
         self.learning_rate /= 2
