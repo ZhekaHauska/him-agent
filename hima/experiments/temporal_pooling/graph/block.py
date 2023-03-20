@@ -40,7 +40,9 @@ class Block(Node):
 
     def reset(self, **kwargs):
         for name in self.stream_registry:
-            self.stream_registry[name].write([])
+            stream = self.stream_registry[name]
+            if stream.is_sdr:
+                stream.set([])
 
     # ----------------- Node public interface ---------------------
     def expand(self):

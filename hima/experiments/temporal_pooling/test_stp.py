@@ -84,9 +84,8 @@ class StpExperiment:
         self.log_schedule = log_schedule
 
     def run(self):
-        return
         self.print_with_timestamp('==> Run')
-        self.stats.define_metrics()
+        # self.stats.define_metrics()
 
         for epoch in range(self.iterate.epochs):
             _, elapsed_time = self.train_epoch()
@@ -96,19 +95,19 @@ class StpExperiment:
     @timed
     def train_epoch(self):
         self.progress.next_epoch()
-        self.stats.on_epoch_started()
+        # self.stats.on_epoch_started()
 
         # noinspection PyTypeChecker
         for sequence in self.data:
             for i_repeat in range(self.iterate.sequence_repeats):
                 self.run_sequence(sequence, i_repeat, learn=True)
-            self.stats.on_sequence_finished()
+            # self.stats.on_sequence_finished()
 
         epoch_final_log_scheduled = scheduled(
             i=self.progress.epoch, schedule=self.log_schedule['epoch'],
             always_report_first=True, always_report_last=True, i_max=self.iterate.epochs
         )
-        self.stats.on_epoch_finished(epoch_final_log_scheduled)
+        # self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
         # blocks = self.pipeline.blocks
         # sp = blocks['sp2'].sp if 'sp2' in blocks else blocks['sp1']
@@ -123,15 +122,15 @@ class StpExperiment:
             i=i_repeat, schedule=self.log_schedule['repeat'],
             always_report_first=True, always_report_last=True, i_max=self.iterate.sequence_repeats
         )
-        self.stats.on_sequence_started(sequence.id, log_scheduled)
+        # self.stats.on_sequence_started(sequence.id, log_scheduled)
 
         for _, input_sdr in enumerate(sequence):
             self.reset_blocks('spatial_pooler', 'custom_sp')
             for _ in range(self.iterate.element_repeats):
                 self.progress.next_step()
-                self.model.api.stream_registry['input'].sdr = input_sdr
+                self.model.streams['input.sdr'].set(input_sdr)
                 self.model.forward()
-                self.stats.on_step()
+                # self.stats.on_step()
 
     def reset_blocks(self, *blocks_family):
         blocks_family = set(blocks_family)

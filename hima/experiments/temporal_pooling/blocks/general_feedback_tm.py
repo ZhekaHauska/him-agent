@@ -94,28 +94,28 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
         self.activate(learn)
 
     def predict(self, learn: bool = True):
-        self.tm.set_active_context_cells(self.stream_registry[self.ACTIVE_CELLS].sdr)
+        self.tm.set_active_context_cells(self[self.ACTIVE_CELLS].get())
         self.tm.activate_basal_dendrites(learn)
         self.tm.predict_cells()
 
-        if self.PREDICTED_CELLS in self.stream_registry:
-            self.stream_registry[self.PREDICTED_CELLS].sdr = self.tm.get_predicted_cells()
+        # if self.PREDICTED_CELLS in self.stream_registry:
+        self[self.PREDICTED_CELLS].set(self.tm.get_predicted_cells())
 
     def set_predicted_cells(self):
-        self.tm.set_predicted_cells(self.stream_registry[self.PREDICTED_CELLS].sdr)
+        self.tm.set_predicted_cells(self[self.PREDICTED_CELLS].get())
 
     def union_predicted_cells(self):
-        self.tm.union_predicted_cells(self.stream_registry[self.PREDICTED_CELLS].sdr)
-        self.stream_registry[self.PREDICTED_CELLS].sdr = self.tm.get_predicted_cells()
+        self.tm.union_predicted_cells(self[self.PREDICTED_CELLS].get())
+        self[self.PREDICTED_CELLS].set(self.tm.get_predicted_cells())
 
     def set_active_columns(self):
-        self.tm.set_active_columns(self.stream_registry[self.FEEDFORWARD].sdr)
+        self.tm.set_active_columns(self[self.FEEDFORWARD].get())
         self.tm.activate_cells(learn=False)
 
     def activate(self, learn: bool = True):
         self.set_active_columns()
         self.tm.activate_cells(learn)
 
-        self.stream_registry[self.ACTIVE_CELLS].sdr = self.tm.get_active_cells()
-        if self.CORRECTLY_PREDICTED_CELLS in self.stream_registry:
-            self.stream_registry[self.CORRECTLY_PREDICTED_CELLS].sdr = self.tm.get_correctly_predicted_cells()
+        self[self.ACTIVE_CELLS].set(self.tm.get_active_cells())
+        # if self.CORRECTLY_PREDICTED_CELLS in self.stream_registry:
+        self[self.CORRECTLY_PREDICTED_CELLS].set(self.tm.get_correctly_predicted_cells())

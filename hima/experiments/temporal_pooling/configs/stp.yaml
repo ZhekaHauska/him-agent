@@ -11,7 +11,8 @@ iterate:
 model:
   pipeline:
     - input.sdr -> gen.output.sdr
-    - gen.output.sdr -> tm1.feedforward.sdr
+    - gen.output.sdr -> sp0.feedforward.sdr
+    - sp0.output.sdr -> tm1.feedforward.sdr
     - compute TM1:
       - tm1.predict
       - tm1.set_predicted_cells

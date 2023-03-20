@@ -13,17 +13,17 @@ from hima.experiments.temporal_pooling.graph.block import Block
 class SpatialPoolerBlock(Block):
     family = 'spatial_pooler'
 
-    FEEDFORWARD = 'feedforward'
-    OUTPUT = 'output'
-    FEEDBACK = 'feedback'
+    FEEDFORWARD = 'feedforward.sdr'
+    OUTPUT = 'output.sdr'
+    FEEDBACK = 'feedback.sdr'
     supported_streams = {FEEDFORWARD, OUTPUT, FEEDBACK}
 
     sp: Any
 
     def align_dimensions(self) -> bool:
-        output = self.stream_registry[self.OUTPUT]
-        if output.valid and self.FEEDBACK in self.stream_registry:
-            self.stream_registry[self.FEEDBACK].join_sds(output.sds)
+        output = self[self.OUTPUT]
+        if output.valid and self.stream_name(self.FEEDBACK) in self.stream_registry:
+            self[self.FEEDBACK].set_sds(output.sds)
         return output.valid
 
     def compile(self):
@@ -32,17 +32,16 @@ class SpatialPoolerBlock(Block):
     def _compile(self, global_config: GlobalConfig, sp: TConfig):
         self.sp = global_config.resolve_object(
             sp,
-            feedforward_sds=self.stream_registry[self.FEEDFORWARD].sds,
-            output_sds=self.stream_registry[self.OUTPUT].sds
+            feedforward_sds=self[self.FEEDFORWARD].sds,
+            output_sds=self[self.OUTPUT].sds
         )
 
     def compute(self, learn: bool = True):
-        feedforward = self.stream_registry[self.FEEDFORWARD].sdr
-        self.stream_registry[self.OUTPUT].sdr = self.sp.compute(feedforward, learn=learn)
+        feedforward = self[self.FEEDFORWARD].get()
+        self[self.OUTPUT].set(self.sp.compute(feedforward, learn=learn))
 
     def switch_polarity(self):
         self.sp.polarity *= -1
 
     def compute_feedback(self):
-        feedback = self.stream_registry[self.FEEDBACK].sdr
-        self.sp.process_feedback(feedback)
+        self.sp.process_feedback(self[self.FEEDBACK].get())
