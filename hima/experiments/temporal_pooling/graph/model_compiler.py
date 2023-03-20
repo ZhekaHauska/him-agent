@@ -11,31 +11,29 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.config.values import resolve_value, get_unresolved_value
 from hima.common.run.argparse import parse_str
-from hima.experiments.temporal_pooling.graph.block_registry import BlockRegistry
 from hima.experiments.temporal_pooling.graph.block_call import BlockCall
+from hima.experiments.temporal_pooling.graph.block_registry import BlockRegistry
 from hima.experiments.temporal_pooling.graph.model import Model
 from hima.experiments.temporal_pooling.graph.node import Node
 from hima.experiments.temporal_pooling.graph.pipe import Pipe
 from hima.experiments.temporal_pooling.graph.pipeline import Pipeline
 from hima.experiments.temporal_pooling.graph.repeat import Repeat
-from hima.experiments.temporal_pooling.graph.stream import Stream
+from hima.experiments.temporal_pooling.graph.stream import Stream, StreamRegistry, SdrStream
 
 
 class ModelCompiler:
-    block_registry: BlockRegistry
-
-    _previous_block: Optional[str]
+    blocks: BlockRegistry
+    streams: StreamRegistry
 
     def __init__(self, global_config: GlobalConfig):
-        self.block_registry = BlockRegistry(global_config)
+        self.streams = StreamRegistry()
+        self.blocks = BlockRegistry(global_config, self.streams)
 
-    def parse(self, api_block: str, pipeline: list) -> Model:
-        self._previous_block = None
-
+    def parse(self, pipeline: list) -> Model:
         return Model(
-            api_block=api_block,
-            pipeline=self.parse_pipeline(pipeline),
-            blocks=self.block_registry.blocks,
+            pipeline=self.parse_pipeline(pipeline=pipeline),
+            blocks=self.blocks,
+            streams=self.streams
         )
 
     def compile(self, model: Model):
@@ -62,9 +60,11 @@ class ModelCompiler:
 
         assert not unaligned_nodes, f'Cannot align nodes: {unaligned_nodes}'
 
-    def parse_pipeline(self, pipeline: list) -> Pipeline:
+    def parse_pipeline(self, **kwargs) -> Pipeline:
+        pipeline_name, pipeline = Pipeline.extract_args(**kwargs)
         return Pipeline(
-            self.parse_node(unit) for unit in pipeline
+            name=pipeline_name,
+            pipeline=[self.parse_node(unit) for unit in pipeline]
         )
 
     def parse_node(self, node: str | TConfig) -> Node:
@@ -91,31 +91,18 @@ class ModelCompiler:
             elif 'repeat' in node:
                 # repeat control block
                 return self.parse_repeat(**node)
+            elif len(node) == 1:
+                return self.parse_pipeline(**node)
 
         raise ValueError(f'Cannot interpret a node from {node}.')
 
-    def parse_repeat(self, repeat: int, pipeline: TConfig) -> Repeat:
-        return Repeat(repeat=repeat, pipeline=self.parse_pipeline(pipeline))
+    def parse_repeat(self, repeat: int, do: TConfig) -> Repeat:
+        return Repeat(repeat=repeat, do=self.parse_pipeline(do=do))
 
-    def parse_block_func_call(self, call: str, *, block: str = None) -> BlockCall:
-        # pattern: block.func or func
-        # block could be: name or ???
-        func_parts = call.strip().split('.')
-        if len(func_parts) == 1:
-            # default block with the given func name
-            block_name = block
-            func_name = func_parts[0]
-        elif len(func_parts) == 2:
-            block_name, func_name = func_parts
-            # resolve with default if needed
-            block_name = resolve_value(block_name, substitute_with=block)
-        else:
-            raise ValueError(f'Cannot parse block func call unit from "{call}"')
-
-        block = self.block_registry[block_name]
-
-        # switch previous block with current block
-        self._previous_block = block_name
+    def parse_block_func_call(self, call: str) -> BlockCall:
+        # pattern: block.func
+        block_name, func_name = call.strip().split('.')
+        block = self.blocks[block_name]
         return BlockCall(block=block, name=func_name)
 
     def parse_pipe(self, pipe: str, *, sds: Any = get_unresolved_value()) -> Pipe:
@@ -128,38 +115,23 @@ class ModelCompiler:
             pipe = pipe[0]
 
         src, dst = pipe.strip().split('->')
-        # allows only explicit substitution as in ???.stream_name
-        src = self.parse_stream(src, substitution_block=self._previous_block)
-        # allows explicit substitution with previous block and current src block implicit default
-        dst = self.parse_stream(
-            dst,
-            default_block=src.block.name,
-            substitution_block=self._previous_block
-        )
+        src = self.parse_stream(src)
+        dst = self.parse_stream(dst)
         pipe = Pipe(src=src, dst=dst, sds=sds)
 
-        # switch previous block with current destination
-        self._previous_block = pipe.dst.block.name
         return pipe
 
-    def parse_stream(
-            self, s: str,
-            default_block: str = None,
-            substitution_block: str = get_unresolved_value()
-    ) -> Stream:
-        # pattern: block.stream or stream
-        # block could be: name or ???
-        stream_parts = s.strip().split('.')
-        if len(stream_parts) == 1:
-            # default block with the given stream name
-            block_name = default_block
-            stream_name = stream_parts[0]
-        elif len(stream_parts) == 2:
-            block_name, stream_name = stream_parts
-            # resolve with substitution if needed
-            block_name = resolve_value(block_name, substitute_with=substitution_block)
-        else:
-            raise ValueError(f'Cannot parse stream from "{s}"')
+    def parse_stream(self, stream_name: str) -> Stream | SdrStream:
+        # patterns: block.stream.sdr | block.stream | stream.sdr | stream
+        stream_name = stream_name.strip()
+        is_sdr = stream_name.endswith('.sdr')
 
-        stream = self.block_registry[block_name].register_stream(stream_name)
-        return stream
+        name_parts = stream_name.split('.')
+        n_name_parts = len(name_parts) - is_sdr
+
+        if n_name_parts == 2:
+            # register block
+            block = self.blocks[name_parts[0]]
+            return self.streams.register(stream_name, owner=block)
+        else:
+            return self.streams.register(stream_name)

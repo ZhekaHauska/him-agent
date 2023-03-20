@@ -8,14 +8,47 @@ iterate:
   sequences: [10, 1]
   elements: 20
 
+model:
+  pipeline:
+    - input.sdr -> gen.output.sdr
+    - gen.output.sdr -> tm1.feedforward.sdr
+    - compute TM1:
+      - tm1.predict
+      - tm1.set_predicted_cells
+      - tm1.activate
+    - tm1.correctly_predicted_cells.sdr -> output.sdr
+
+track_streams:
+  gen.output:
+    - sdr
+    - cross.online.el
+  sp0.output:
+    - sdr
+    - cross.online.el
+  sp1.output:
+    - sdr
+    - cross.online.el
+  tm1.correctly_predicted_cells:
+    - sdr
+    - cross.online.el
+
+diff_stats:
+  online_el:
+    - gen.output/epoch/sim_mx_on_el
+    - sp0.output/epoch/sim_mx_on_el
+    - sp1.output/epoch/sim_mx_on_el
+    - tm1.correctly_predicted_cells/epoch/sim_mx_on_el
+
+log_schedule:
+  epoch: 5
+  repeat: 5
+
 data:
   _base_: $_base.dataset.synthetic_sequences.general
   alphabet_size: 200
   encoder:
     _base_: $_base.encoder.random.fixed_sds
     sds: [500, 10]
-
-model: models.tm_enc
 
 models:
   test_bound_attraction_feedback:
@@ -386,31 +419,6 @@ stats_and_metrics:
   pmf_decay: 1.
   loss_normalization: False
   loss_layer_discount: 0.75
-
-track_streams:
-  gen.output:
-    - sdr
-    - cross.online.el
-  sp0.output:
-    - sdr
-    - cross.online.el
-  sp1.output:
-    - sdr
-    - cross.online.el
-  tm1.correctly_predicted_cells:
-    - sdr
-    - cross.online.el
-
-diff_stats:
-  online_el:
-    - gen.output/epoch/sim_mx_on_el
-    - sp0.output/epoch/sim_mx_on_el
-    - sp1.output/epoch/sim_mx_on_el
-    - tm1.correctly_predicted_cells/epoch/sim_mx_on_el
-
-log_schedule:
-  epoch: 5
-  repeat: 5
 
 iterate_setups:
   simple: ...

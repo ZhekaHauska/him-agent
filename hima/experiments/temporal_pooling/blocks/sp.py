@@ -21,9 +21,9 @@ class SpatialPoolerBlock(Block):
     sp: Any
 
     def align_dimensions(self) -> bool:
-        output = self.streams[self.OUTPUT]
-        if output.valid and self.FEEDBACK in self.streams:
-            self.streams[self.FEEDBACK].join_sds(output.sds)
+        output = self.stream_registry[self.OUTPUT]
+        if output.valid and self.FEEDBACK in self.stream_registry:
+            self.stream_registry[self.FEEDBACK].join_sds(output.sds)
         return output.valid
 
     def compile(self):
@@ -32,17 +32,17 @@ class SpatialPoolerBlock(Block):
     def _compile(self, global_config: GlobalConfig, sp: TConfig):
         self.sp = global_config.resolve_object(
             sp,
-            feedforward_sds=self.streams[self.FEEDFORWARD].sds,
-            output_sds=self.streams[self.OUTPUT].sds
+            feedforward_sds=self.stream_registry[self.FEEDFORWARD].sds,
+            output_sds=self.stream_registry[self.OUTPUT].sds
         )
 
     def compute(self, learn: bool = True):
-        feedforward = self.streams[self.FEEDFORWARD].sdr
-        self.streams[self.OUTPUT].sdr = self.sp.compute(feedforward, learn=learn)
+        feedforward = self.stream_registry[self.FEEDFORWARD].sdr
+        self.stream_registry[self.OUTPUT].sdr = self.sp.compute(feedforward, learn=learn)
 
     def switch_polarity(self):
         self.sp.polarity *= -1
 
     def compute_feedback(self):
-        feedback = self.streams[self.FEEDBACK].sdr
+        feedback = self.stream_registry[self.FEEDBACK].sdr
         self.sp.process_feedback(feedback)

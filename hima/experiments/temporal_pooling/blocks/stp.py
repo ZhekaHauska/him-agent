@@ -39,8 +39,8 @@ class SpatiotemporalPoolerBlock(Block):
 
     def compile(self, **kwargs):
         stp_config = self._stp_config
-        ff_sds = self.streams[self.FEEDFORWARD].sds
-        output_sds = self.streams[self.OUTPUT].sds
+        ff_sds = self.stream_registry[self.FEEDFORWARD].sds
+        output_sds = self.stream_registry[self.OUTPUT].sds
 
         self.stp = resolve_stp(self._stp_config, feedforward_sds=ff_sds, output_sds=output_sds)
 
@@ -63,7 +63,7 @@ class SpatiotemporalPoolerBlock(Block):
         output_sdr: SDR = self.stp.compute(
             self._active_input, self._active_input, learn
         )
-        self.streams[self.OUTPUT].sdr = np.array(output_sdr.sparse, copy=True)
+        self.stream_registry[self.OUTPUT].sdr = np.array(output_sdr.sparse, copy=True)
 
 
 def resolve_stp(stp_config, feedforward_sds: Sds, output_sds: Sds):

@@ -3,7 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Any, Callable
+from typing import Callable
 
 from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.node import Node

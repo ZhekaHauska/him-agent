@@ -13,45 +13,50 @@ from hima.experiments.temporal_pooling.stp.general_feedback_tm import GeneralFee
 class GeneralFeedbackTemporalMemoryBlock(Block):
     family = 'temporal_memory'
 
-    FEEDFORWARD = 'feedforward'
-    ACTIVE_CELLS = 'active_cells'
-    PREDICTED_CELLS = 'predicted_cells'
-    CORRECTLY_PREDICTED_CELLS = 'correctly_predicted_cells'
+    FEEDFORWARD = 'feedforward.sdr'
+    ACTIVE_CELLS = 'active_cells.sdr'
+    PREDICTED_CELLS = 'predicted_cells.sdr'
+    CORRECTLY_PREDICTED_CELLS = 'correctly_predicted_cells.sdr'
     supported_streams = {FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS}
 
     tm: GeneralFeedbackTM
 
     def align_dimensions(self) -> bool:
         cells_per_column = self._config['cells_per_column']
+        streams = {
+            short_name: self[short_name]
+            for short_name in self.supported_streams
+            if self.stream_name(short_name) in self.stream_registry
+        }
 
         propagate_from = None
-        for _, stream in self.streams.items():
-            if stream.valid:
-                propagate_from = stream
+        for short_name in streams:
+            if streams[short_name].valid_sds:
+                propagate_from = short_name
                 break
 
         if propagate_from is None:
             return False
 
-        for _, stream in self.streams.items():
-            if propagate_from.name == self.FEEDFORWARD and stream.name in [
+        for short_name, stream in streams.items():
+            if propagate_from == self.FEEDFORWARD and short_name in [
                 self.ACTIVE_CELLS, self.PREDICTED_CELLS, self.CORRECTLY_PREDICTED_CELLS
             ]:
-                size = propagate_from.sds.size * cells_per_column
-            elif stream.name == self.FEEDFORWARD and propagate_from.name in [
+                size = streams[propagate_from].sds.size * cells_per_column
+            elif short_name == self.FEEDFORWARD and propagate_from in [
                 self.ACTIVE_CELLS, self.PREDICTED_CELLS, self.CORRECTLY_PREDICTED_CELLS
             ]:
-                size = propagate_from.sds.size // cells_per_column
+                size = streams[propagate_from].sds.size // cells_per_column
             else:
-                size = propagate_from.sds.size
-            sds = Sds(size=size, active_size=propagate_from.sds.active_size)
-            stream.join_sds(sds)
+                size = streams[propagate_from].sds.size
+            sds = Sds(size=size, active_size=streams[propagate_from].sds.active_size)
+            stream.set_sds(sds)
         return True
 
     def compile(self):
         cells_per_column = self._config['cells_per_column']
         tm_config = self._config
-        ff_sds = self.streams[self.FEEDFORWARD].sds
+        ff_sds = self[self.FEEDFORWARD].sds
         (
             tm_config, activation_threshold_basal, learning_threshold_basal,
             activation_threshold_apical, learning_threshold_apical,
@@ -89,28 +94,28 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
         self.activate(learn)
 
     def predict(self, learn: bool = True):
-        self.tm.set_active_context_cells(self.streams[self.ACTIVE_CELLS].sdr)
+        self.tm.set_active_context_cells(self.stream_registry[self.ACTIVE_CELLS].sdr)
         self.tm.activate_basal_dendrites(learn)
         self.tm.predict_cells()
 
-        if self.PREDICTED_CELLS in self.streams:
-            self.streams[self.PREDICTED_CELLS].sdr = self.tm.get_predicted_cells()
+        if self.PREDICTED_CELLS in self.stream_registry:
+            self.stream_registry[self.PREDICTED_CELLS].sdr = self.tm.get_predicted_cells()
 
     def set_predicted_cells(self):
-        self.tm.set_predicted_cells(self.streams[self.PREDICTED_CELLS].sdr)
+        self.tm.set_predicted_cells(self.stream_registry[self.PREDICTED_CELLS].sdr)
 
     def union_predicted_cells(self):
-        self.tm.union_predicted_cells(self.streams[self.PREDICTED_CELLS].sdr)
-        self.streams[self.PREDICTED_CELLS].sdr = self.tm.get_predicted_cells()
+        self.tm.union_predicted_cells(self.stream_registry[self.PREDICTED_CELLS].sdr)
+        self.stream_registry[self.PREDICTED_CELLS].sdr = self.tm.get_predicted_cells()
 
     def set_active_columns(self):
-        self.tm.set_active_columns(self.streams[self.FEEDFORWARD].sdr)
+        self.tm.set_active_columns(self.stream_registry[self.FEEDFORWARD].sdr)
         self.tm.activate_cells(learn=False)
 
     def activate(self, learn: bool = True):
         self.set_active_columns()
         self.tm.activate_cells(learn)
 
-        self.streams[self.ACTIVE_CELLS].sdr = self.tm.get_active_cells()
-        if self.CORRECTLY_PREDICTED_CELLS in self.streams:
-            self.streams[self.CORRECTLY_PREDICTED_CELLS].sdr = self.tm.get_correctly_predicted_cells()
+        self.stream_registry[self.ACTIVE_CELLS].sdr = self.tm.get_active_cells()
+        if self.CORRECTLY_PREDICTED_CELLS in self.stream_registry:
+            self.stream_registry[self.CORRECTLY_PREDICTED_CELLS].sdr = self.tm.get_correctly_predicted_cells()

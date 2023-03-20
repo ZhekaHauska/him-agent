@@ -67,7 +67,7 @@ class StpExperiment:
         self.model = self.config.resolve_object(model, object_type_or_factory=model_compiler.parse)
 
         # propagate data SDS to the model graph
-        self.model.api.streams['input'].join_sds(self.data.sds)
+        self.model.streams['input.sdr'].set_sds(self.data.sds)
         model_compiler.compile(self.model)
         print(self.model)
         print()
@@ -76,14 +76,15 @@ class StpExperiment:
         stats_and_metrics = self.config.resolve_object(
             stats_and_metrics, object_type_or_factory=StatsMetricsConfig
         )
-        self.stats = ExperimentStats(
-            n_sequences=self.iterate.sequences, progress=self.progress, logger=self.logger,
-            blocks=self.model.blocks, track_streams=track_streams, stats_config=stats_and_metrics,
-            diff_stats=diff_stats
-        )
+        # self.stats = ExperimentStats(
+        #     n_sequences=self.iterate.sequences, progress=self.progress, logger=self.logger,
+        #     blocks=self.model.blocks, track_streams=track_streams, stats_config=stats_and_metrics,
+        #     diff_stats=diff_stats
+        # )
         self.log_schedule = log_schedule
 
     def run(self):
+        return
         self.print_with_timestamp('==> Run')
         self.stats.define_metrics()
 
@@ -128,7 +129,7 @@ class StpExperiment:
             self.reset_blocks('spatial_pooler', 'custom_sp')
             for _ in range(self.iterate.element_repeats):
                 self.progress.next_step()
-                self.model.api.streams['input'].sdr = input_sdr
+                self.model.api.stream_registry['input'].sdr = input_sdr
                 self.model.forward()
                 self.stats.on_step()
 

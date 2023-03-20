@@ -6,23 +6,23 @@
 
 from __future__ import annotations
 
-from hima.experiments.temporal_pooling.graph.block import Block
+from hima.experiments.temporal_pooling.graph.block_registry import BlockRegistry
 from hima.experiments.temporal_pooling.graph.node import Node
 from hima.experiments.temporal_pooling.graph.pipeline import Pipeline
+from hima.experiments.temporal_pooling.graph.stream import StreamRegistry
 
 
 class Model(Node):
     pipeline: Pipeline
-    blocks: dict[str, Block]
-
-    api: Block
+    blocks: BlockRegistry
+    streams: StreamRegistry
 
     def __init__(
-            self, api_block: str, pipeline: Pipeline, blocks: dict[str, Block]
+            self, pipeline: Pipeline, blocks: BlockRegistry, streams: StreamRegistry
     ):
-        self.api = blocks[api_block]
         self.pipeline = pipeline
         self.blocks = blocks
+        self.streams = streams
 
     def expand(self):
         return self.pipeline.expand()

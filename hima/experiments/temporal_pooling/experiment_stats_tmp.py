@@ -207,7 +207,7 @@ def parse_stream_name(stream_name: str, blocks: dict[str, Block]) -> Optional[St
     if block_name not in blocks:
         # skip unused blocks
         return None
-    return blocks[block_name].streams[stream_name]
+    return blocks[block_name].stream_registry[stream_name]
 
 
 def compute_loss(components, layer_discount) -> float:

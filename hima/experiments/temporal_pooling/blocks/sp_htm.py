@@ -41,8 +41,8 @@ class SpatialPoolerBlock(Block):
 
     def compile(self):
         sp_config = self._sp_config
-        ff_sds = self.streams[self.FEEDFORWARD].sds
-        output_sds = self.streams[self.OUTPUT].sds
+        ff_sds = self.stream_registry[self.FEEDFORWARD].sds
+        output_sds = self.stream_registry[self.OUTPUT].sds
 
         sp_config = resolve_init_params(
             sp_config,
@@ -63,4 +63,4 @@ class SpatialPoolerBlock(Block):
     def _compute(self, learn: bool = True):
         self._active_input.sparse = feedforward.copy()
         self.sp.compute(self._active_input, learn=learn, output=self._active_output)
-        self.streams[self.OUTPUT].sdr = np.array(self._active_output.sparse, copy=True)
+        self.stream_registry[self.OUTPUT].sdr = np.array(self._active_output.sparse, copy=True)

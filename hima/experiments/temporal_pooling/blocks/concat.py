@@ -17,31 +17,31 @@ class ConcatenatorBlock(Block):
     sdr_concatenator: SdrConcatenator
 
     def align_dimensions(self) -> bool:
-        if not self.streams[self.OUTPUT].valid and all(
-            self.streams[stream].valid
-            for stream in self.streams
+        if not self.stream_registry[self.OUTPUT].valid and all(
+            self.stream_registry[stream].valid
+            for stream in self.stream_registry
             if stream.startswith(self._ff_pattern)
         ):
             ff_sizes = [
-                self.streams[stream].sds
-                for stream in sorted(self.streams.keys())
+                self.stream_registry[stream].sds
+                for stream in sorted(self.stream_registry.keys())
                 if stream.startswith(self._ff_pattern)
             ]
             self.sdr_concatenator = SdrConcatenator(ff_sizes)
-            self.streams[self.OUTPUT].join_sds(self.sdr_concatenator.output_sds)
+            self.stream_registry[self.OUTPUT].join_sds(self.sdr_concatenator.output_sds)
 
-        return self.streams[self.OUTPUT].valid
+        return self.stream_registry[self.OUTPUT].valid
 
     def compile(self, **kwargs):
         pass
 
     def compute(self):
         sdrs = [
-            self.streams[stream].sdr
-            for stream in sorted(self.streams.keys())
+            self.stream_registry[stream].sdr
+            for stream in sorted(self.stream_registry.keys())
             if stream.startswith(self._ff_pattern)
         ]
-        self.streams[self.OUTPUT].sdr = self.sdr_concatenator.concatenate(*sdrs)
+        self.stream_registry[self.OUTPUT].sdr = self.sdr_concatenator.concatenate(*sdrs)
 
     @property
     def _ff_pattern(self) -> str:

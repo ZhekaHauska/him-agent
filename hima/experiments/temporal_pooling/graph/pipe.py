@@ -6,31 +6,30 @@
 
 from __future__ import annotations
 
-from typing import Union
-
 from hima.common.config.values import get_unresolved_value
-from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.graph.node import Node
-from hima.experiments.temporal_pooling.graph.stream import Stream
+from hima.experiments.temporal_pooling.graph.stream import Stream, SdrStream
 
 
 class Pipe(Node):
     """Pipe connects two blocks' streams. Thus, both streams operate in the same SDS."""
 
-    src: Stream
-    dst: Stream
+    src: Stream | SdrStream
+    dst: Stream | SdrStream
 
-    # TODO: implement delay and sdr bookkeeping
+    # TODO: implement delay and bookkeeping
     delay: int
-    _sdr: Union[SparseSdr, list[SparseSdr]]
 
     def __init__(self, src: Stream, dst: Stream, sds: Sds = get_unresolved_value()):
+        assert src.is_sdr == dst.is_sdr
+
         self.src = src
         self.dst = dst
 
-        self.src.join_sds(sds)
-        self.src.align(self.dst)
+        if self.src.is_sdr:
+            self.src.set_sds(sds)
+            self.src.exchange_sds(self.dst)
 
     def expand(self):
         yield self
@@ -41,15 +40,17 @@ class Pipe(Node):
         Returns True if the streams' dimensions are resolved and correctly aligned,
         and False otherwise.
         """
-        self.src.align(self.dst)
-        return self.src.valid
+        if self.src.is_sdr:
+            self.src: SdrStream
+            self.src.exchange_sds(self.dst)
+            return self.src.valid_sds
+        return True
 
     def forward(self) -> None:
-        self.dst.sdr = self.src.sdr
+        self.dst.set(self.src.get())
 
     def __repr__(self) -> str:
-        return f'{self.src} -> {self.dst} | {self.sds}'
-
-    @property
-    def sds(self):
-        return self.src.sds
+        res = f'{self.src} -> {self.dst}'
+        if self.src.is_sdr:
+            res = f'{res} | {self.src.sds}'
+        return res

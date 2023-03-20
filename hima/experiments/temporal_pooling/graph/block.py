@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import abstractmethod
 
 from hima.experiments.temporal_pooling.graph.node import Node
-from hima.experiments.temporal_pooling.graph.stream import Stream
+from hima.experiments.temporal_pooling.graph.stream import SdrStream, StreamRegistry
 
 
 class Block(Node):
@@ -20,23 +20,17 @@ class Block(Node):
 
     id: int
     name: str
-    streams: dict[str, Stream]
+    stream_registry: StreamRegistry
 
     # TODO:
     #  1. log to charts, what to log?
     #  2. rename tag to ? and consider removing id
 
-    def __init__(self, id: int, name: str, **kwargs):
+    def __init__(self, id: int, name: str, stream_registry: StreamRegistry, **kwargs):
         self.id = id
         self.name = name
-        self.streams = {}
+        self.stream_registry = stream_registry
         self._config = self._extract_streams(kwargs)
-
-    # ---------- Block non-overrideable public interface ----------
-    def register_stream(self, name: str) -> Stream:
-        if name not in self.streams:
-            self.streams[name] = Stream(name=name, block=self)
-        return self.streams[name]
 
     # ------------ Block overrideable public interface ------------
     @abstractmethod
@@ -45,8 +39,8 @@ class Block(Node):
         raise NotImplementedError()
 
     def reset(self, **kwargs):
-        for name in self.streams:
-            self.streams[name].sdr = []
+        for name in self.stream_registry:
+            self.stream_registry[name].write([])
 
     # ----------------- Node public interface ---------------------
     def expand(self):
@@ -79,6 +73,13 @@ class Block(Node):
         return f'{self.shortname} {self.name}'
 
     # ---------------------- Utility methods ----------------------
+    def stream_name(self, short_name):
+        qualified_name = f'{self.name}.{short_name}'
+        return qualified_name
+
+    def __getitem__(self, stream_name):
+        return self.stream_registry[self.stream_name(stream_name)]
+
     def _extract_streams(self, kwargs: dict) -> dict:
         config = {}
         for key, value in kwargs.items():
@@ -86,7 +87,9 @@ class Block(Node):
                 config[key] = value
                 continue
 
-            stream_name, sds = key[:-4], value
-            stream = self.register_stream(stream_name)
-            stream.join_sds(sds)
+            stream_name, sds = f'{key[:-4]}.sdr', value
+            stream_name = self.stream_name(stream_name)
+
+            stream: SdrStream = self.stream_registry.register(stream_name, owner=self)
+            stream.set_sds(sds)
         return config
