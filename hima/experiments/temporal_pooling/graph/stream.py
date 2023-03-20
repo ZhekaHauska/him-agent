@@ -25,19 +25,29 @@ class Stream:
     i.e. a data is persisted and can be read several times until it's overwritten
     with the next value.
     """
+    registry: 'StreamRegistry'
     owner: Block | None
     name: str
+    tracked: bool
     _value: Any
 
-    def __init__(self, name: str, block: Block = None):
+    def __init__(self, registry: 'StreamRegistry', name: str, block: Block = None):
+        self.registry = registry
         self.owner = block
         self.name = name
+        self.tracked = False
+        self._value = None
 
     def get(self):
         return self._value
 
-    def set(self, x):
-        self._value = x
+    def set(self, new_value, init=False):
+        if init:
+            self._value = new_value
+        else:
+            old_value, self._value = self._value, new_value
+            if self.tracked:
+                self.registry.on_stream_updated(self, old_value, new_value)
 
     @property
     def is_sdr(self):
@@ -54,8 +64,8 @@ class Stream:
 class SdrStream(Stream):
     sds: Sds
 
-    def __init__(self, name: str, block: Block = None):
-        super().__init__(name, block)
+    def __init__(self, registry: 'StreamRegistry', name: str, block: Block = None):
+        super().__init__(registry, name, block)
         self.sds = get_unresolved_value()
 
     @property
@@ -100,9 +110,22 @@ class StreamRegistry:
             return self._streams[name]
 
         stream_class = SdrStream if name.endswith('.sdr') else Stream
-        stream = stream_class(name, owner)
+        stream = stream_class(self, name, owner)
         self._streams[stream.name] = stream
         return stream
+
+    def track(self, name: str, tracker):
+        stream = self._streams.get(name, None)
+        if not stream:
+            stream = Stream(self, name)
+            self._streams[name] = stream
+
+        stream.tracked = True
+        self._trackers.setdefault(name, []).append(tracker)
+
+    def on_stream_updated(self, stream, old_value, new_value):
+        for tracker in self._trackers[stream.name]:
+            tracker.on_stream_updated(stream, old_value, new_value)
 
     def __iter__(self):
         yield from self._streams

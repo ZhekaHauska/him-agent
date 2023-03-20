@@ -5,7 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from typing import Any
 
-from hima.common.config.base import extracted, TConfig
+from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.experiments.temporal_pooling.graph.block import Block
 

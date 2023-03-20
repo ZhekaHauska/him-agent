@@ -30,7 +30,7 @@ class Block(Node):
         self.id = id
         self.name = name
         self.stream_registry = stream_registry
-        self._config = self._extract_streams(kwargs)
+        self._config = self._extract_sdr_streams(kwargs)
 
     # ------------ Block overrideable public interface ------------
     @abstractmethod
@@ -42,7 +42,7 @@ class Block(Node):
         for name in self.stream_registry:
             stream = self.stream_registry[name]
             if stream.is_sdr:
-                stream.set([])
+                stream.set([], init=True)
 
     # ----------------- Node public interface ---------------------
     def expand(self):
@@ -82,7 +82,7 @@ class Block(Node):
     def __getitem__(self, stream_name):
         return self.stream_registry[self.stream_name(stream_name)]
 
-    def _extract_streams(self, kwargs: dict) -> dict:
+    def _extract_sdr_streams(self, kwargs: dict) -> dict:
         config = {}
         for key, value in kwargs.items():
             if not str.endswith(key, '_sds'):
