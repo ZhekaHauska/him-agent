@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+
 from typing import Optional, Union
 
 import numpy as np
@@ -10,13 +11,13 @@ import numpy as np
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, safe_divide
-from hima.experiments.temporal_pooling.stats.metrics import (
+from hima.experiments.temporal_pooling._depr.stats.metrics import (
     standardize_sample_distribution,
     sequence_similarity_elementwise, distribution_similarity, DISTR_SIM_PMF,
     DISTR_SIM_KL, NO_NORMALIZATION, aggregate_pmf
 )
-from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrSequence, SeqHistogram
-from hima.experiments.temporal_pooling.stats.tracker import Tracker, TMetrics
+from hima.experiments.temporal_pooling._depr.stats.sdr_tracker import SdrSequence, SeqHistogram
+from hima.experiments.temporal_pooling._depr.stats.tracker import Tracker, TMetrics
 
 
 # 1. offline means we first collect full sequence then find its cross similarity to the others

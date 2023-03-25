@@ -9,7 +9,7 @@ from numpy.random import Generator
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling._depr.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
     sample_for_each_neuron

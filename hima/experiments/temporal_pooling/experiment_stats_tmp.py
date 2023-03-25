@@ -10,17 +10,15 @@ from typing import Optional, TYPE_CHECKING
 import numpy as np
 
 from hima.common.config.base import TConfig
-from hima.experiments.temporal_pooling.blocks.general_feedback_tm import \
-    GeneralFeedbackTemporalMemoryBlock
 from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.stream import Stream
 from hima.experiments.temporal_pooling.run_progress import RunProgress
-from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
-from hima.experiments.temporal_pooling.stats.metrics import (
+from hima.experiments.temporal_pooling._depr.stats.config import StatsMetricsConfig
+from hima.experiments.temporal_pooling._depr.stats.metrics import (
     multiplicative_loss
 )
-from hima.experiments.temporal_pooling.stats.recall_tracker import AnomalyTracker
-from hima.experiments.temporal_pooling.stats.stream_tracker import StreamTracker, rename_dict_keys
+from hima.experiments.temporal_pooling._depr.stats.recall_tracker import AnomalyTracker
+from hima.experiments.temporal_pooling._depr.stats.stream_tracker import StreamTracker, rename_dict_keys
 
 if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run

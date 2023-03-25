@@ -15,13 +15,11 @@ from hima.common.run.wandb import get_logger
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
-from hima.experiments.temporal_pooling.experiment_stats_tmp import ExperimentStats
 from hima.experiments.temporal_pooling.graph.model import Model
 from hima.experiments.temporal_pooling.graph.model_compiler import ModelCompiler
 from hima.experiments.temporal_pooling.iteration import IterationConfig
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.run_progress import RunProgress
-from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.utils import resolve_random_seed, scheduled
 
 if TYPE_CHECKING:
@@ -43,7 +41,7 @@ class StpExperiment:
             log: bool, seed: int,
             iterate: TConfig, data: TConfig,
             model: TConfig,
-            track_streams: TConfig, stats_and_metrics: TConfig, diff_stats: TConfig,
+            # track_streams: TConfig, stats_and_metrics: TConfig, diff_stats: TConfig,
             log_schedule: TConfig,
             project: str = None,
             **_
@@ -73,9 +71,9 @@ class StpExperiment:
         print()
 
         self.progress = RunProgress()
-        stats_and_metrics = self.config.resolve_object(
-            stats_and_metrics, object_type_or_factory=StatsMetricsConfig
-        )
+        # stats_and_metrics = self.config.resolve_object(
+        #     stats_and_metrics, object_type_or_factory=StatsMetricsConfig
+        # )
         # self.stats = ExperimentStats(
         #     n_sequences=self.iterate.sequences, progress=self.progress, logger=self.logger,
         #     blocks=self.model.blocks, track_streams=track_streams, stats_config=stats_and_metrics,

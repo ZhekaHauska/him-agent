@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+
 from __future__ import annotations
 
 import numpy as np
@@ -10,8 +11,8 @@ import numpy as np
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.stats.sdr_tracker import SetSdrSequence
-from hima.experiments.temporal_pooling.stats.tracker import Tracker, TMetrics
+from hima.experiments.temporal_pooling._depr.stats.sdr_tracker import SetSdrSequence
+from hima.experiments.temporal_pooling._depr.stats.tracker import Tracker, TMetrics
 
 
 class AttractorTracker(Tracker):

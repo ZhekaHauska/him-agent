@@ -17,7 +17,7 @@ from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.experiment_stats import ExperimentStats
 from hima.experiments.temporal_pooling.run_progress import RunProgress
 from hima.experiments.temporal_pooling.run_setup import RunSetup
-from hima.experiments.temporal_pooling.stats.config import StatsMetricsConfig
+from hima.experiments.temporal_pooling._depr.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.utils import resolve_random_seed, scheduled
 
 
