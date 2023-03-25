@@ -42,7 +42,7 @@ class Block(Node):
         for name in self.stream_registry:
             stream = self.stream_registry[name]
             if stream.is_sdr:
-                stream.set([], init=True)
+                stream.set([], reset=True)
 
     # ----------------- Node public interface ---------------------
     def expand(self):

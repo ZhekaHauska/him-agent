@@ -3,42 +3,25 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Any
+from typing import Any, Callable
+
+from hima.experiments.temporal_pooling.graph.model import Model
+from hima.experiments.temporal_pooling.graph.stream import Stream
+
+THandler = Callable[[Stream, Any, bool], None]
 
 
 class AltTracker:
-    model: Any
+    model: Model
     name: str
     track: dict
 
-    def __init__(self, model, name, track: dict):
+    def __init__(self, model: Model, name, on: dict):
         self.model = model
         self.name = name
-        self.track = track
+        self.track = on
 
-    def on_stream_updated(self, stream, old_value, new_value):
-        ...
-
-    def on_epoch_started(self):
-        pass
-
-    def on_sequence_started(self, sequence_id: int):
-        pass
-
-    def on_step(self, sdr: SparseSdr):
-        pass
-
-    def on_step_finished(self):
-        pass
-
-    def on_sequence_finished(self):
-        pass
-
-    def on_epoch_finished(self):
-        pass
-
-    def step_metrics(self) -> TMetrics:
-        return {}
-
-    def aggregate_metrics(self) -> TMetrics:
-        return {}
+        streams = self.model.streams
+        for handler_name, stream_name in on:
+            handler: THandler = getattr(self, f'on_{name}_updated')
+            streams.track(stream_name, handler)

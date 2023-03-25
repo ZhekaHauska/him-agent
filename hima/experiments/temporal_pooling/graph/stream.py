@@ -15,6 +15,7 @@ from hima.common.sds import Sds
 # circular import otherwise
 if TYPE_CHECKING:
     from hima.experiments.temporal_pooling.graph.block import Block
+    from hima.experiments.temporal_pooling.stats.alt_tracker import THandler
 
 
 class Stream:
@@ -28,26 +29,27 @@ class Stream:
     registry: 'StreamRegistry'
     owner: Block | None
     name: str
-    tracked: bool
     _value: Any
+    _trackers: list[THandler]
 
     def __init__(self, registry: 'StreamRegistry', name: str, block: Block = None):
         self.registry = registry
         self.owner = block
         self.name = name
-        self.tracked = False
+        self._trackers = []
         self._value = None
 
     def get(self):
         return self._value
 
-    def set(self, new_value, init=False):
-        if init:
-            self._value = new_value
-        else:
-            old_value, self._value = self._value, new_value
-            if self.tracked:
-                self.registry.on_stream_updated(self, old_value, new_value)
+    def set(self, value, reset=False):
+        self._value = value
+
+        for tracker in self._trackers:
+            tracker(self, value, reset)
+
+    def track(self, tracker: THandler):
+        self._trackers.append(tracker)
 
     @property
     def is_sdr(self):
@@ -94,7 +96,6 @@ class SdrStream(Stream):
 
 class StreamRegistry:
     _streams: dict[str, Stream | SdrStream]
-    _trackers: dict[str, list]
 
     def __init__(self):
         self._streams = {}
@@ -119,13 +120,7 @@ class StreamRegistry:
         if not stream:
             stream = Stream(self, name)
             self._streams[name] = stream
-
-        stream.tracked = True
-        self._trackers.setdefault(name, []).append(tracker)
-
-    def on_stream_updated(self, stream, old_value, new_value):
-        for tracker in self._trackers[stream.name]:
-            tracker.on_stream_updated(stream, old_value, new_value)
+        stream.track(tracker)
 
     def __iter__(self):
         yield from self._streams
