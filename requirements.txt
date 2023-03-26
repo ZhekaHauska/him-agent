@@ -1,7 +1,7 @@
 numpy
 matplotlib
 jupyterlab
-ruamel.yaml
+PyYaml
 tqdm
 wandb
 imageio
