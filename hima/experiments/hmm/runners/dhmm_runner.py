@@ -45,10 +45,19 @@ class MPGTest:
         self.n_episodes = conf['run']['n_episodes']
         self.smf_dist = conf['run']['smf_dist']
         self.log_update_rate = conf['run']['update_rate']
+        self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
+        self.log_path = conf['run']['log_path']
+        self.n_steps = conf['run'].get('n_step_test', None)
         self.logger = logger
 
         if self.logger is not None:
+            if self.n_steps is not None:
+                self.logger.define_metric(
+                    name='main_metrics/n_step_dkl',
+                    step_metric='prediction_step'
+                )
+
             im_name = f'/tmp/mpg_{self.logger.name}.png'
             draw_mpg(
                 im_name,
@@ -61,7 +70,11 @@ class MPGTest:
     def run(self):
         dist = np.zeros((len(self.mpg.states), len(self.mpg.alphabet)))
         dist_disp = np.zeros((len(self.mpg.states), len(self.mpg.alphabet)))
+
         true_dist = np.array([self.mpg.predict_letters(from_state=i) for i in self.mpg.states])
+        norm = true_dist.sum(axis=-1)
+        empty_prob = np.clip(1 - norm, 0, 1)
+        true_dist = np.hstack([true_dist, empty_prob.reshape(-1, 1)])
 
         total_surprise = 0
         total_dkl = 0
@@ -71,6 +84,8 @@ class MPGTest:
 
             dkls = []
             surprises = []
+
+            steps = 0
 
             while True:
                 prev_state = self.mpg.current_state
@@ -93,26 +108,35 @@ class MPGTest:
                     
                 # metrics
                 # 1. surprise
-                active_columns = np.arange(self.hmm.n_columns) == obs_state
-                surprise = - np.sum(np.log(column_probs[active_columns]))
-                surprise += - np.sum(np.log(1 - column_probs[~active_columns]))
+                if prev_state != 0:
+                    surprise = self.get_surprise(column_probs, obs_state)
 
-                surprises.append(surprise)
-                total_surprise += surprise
+                    surprises.append(surprise)
+                    total_surprise += surprise
 
                 # 2. distribution
+                column_probs = np.append(
+                    column_probs, np.clip(1 - column_probs.sum(), 0, 1)
+                )
+
                 delta = column_probs - dist[prev_state]
                 dist_disp[prev_state] += self.smf_dist * (
                         np.power(delta, 2) - dist_disp[prev_state])
                 dist[prev_state] += self.smf_dist * delta
 
                 # 3. Kl distance
-                dkl = min(
-                        rel_entr(true_dist[prev_state], column_probs).sum(),
-                        200.0
-                    )
-                dkls.append(dkl)
-                total_dkl += dkl
+                if prev_state != 0:
+                    dkl = min(
+                            rel_entr(true_dist[prev_state], column_probs).sum(),
+                            200.0
+                        )
+                    dkls.append(dkl)
+                    total_dkl += dkl
+
+                steps += 1
+
+                if steps > self.max_steps:
+                    break
 
             if self.logger is not None:
                 self.logger.log(
@@ -133,6 +157,9 @@ class MPGTest:
                     fig, axs = plt.subplots(k, k)
                     fig.tight_layout(pad=3.0)
 
+                    tick_labels = self.mpg.alphabet.copy()
+                    tick_labels.append('∅')
+
                     for n in range(n_states):
                         ax = axs[n // k][n % k]
                         ax.grid()
@@ -143,7 +170,7 @@ class MPGTest:
                         ax.bar(
                             np.arange(dist[n].shape[0]),
                             dist[n],
-                            tick_label=self.mpg.alphabet,
+                            tick_label=tick_labels,
                             label='TM',
                             color=(0.7, 1.0, 0.3),
                             capsize=4,
@@ -153,7 +180,7 @@ class MPGTest:
                         ax.bar(
                             np.arange(dist[n].shape[0]),
                             true_dist[n],
-                            tick_label=self.mpg.alphabet,
+                            tick_label=tick_labels,
                             color='#8F754F',
                             alpha=0.6,
                             label='True'
@@ -227,10 +254,130 @@ class MPGTest:
         if self.logger is not None and self.save_model:
             name = self.logger.name
 
-            np.save(f'logs/dist_{name}.npy', dist)
+            path = Path(self.log_path)
+            if not path.exists():
+                path.mkdir()
 
-            with open(f"logs/model_{name}.pkl", 'wb') as file:
+            np.save(f'{self.log_path}/dist_{name}.npy', dist)
+
+            with open(f"{self.log_path}/model_{name}.pkl", 'wb') as file:
                 pickle.dump((self.mpg, self.hmm), file)
+
+        if self.n_steps is not None:
+            self.run_n_step()
+
+    def run_n_step(self):
+        self.hmm.reset()
+        self.mpg.reset()
+
+        k = int(np.ceil(np.sqrt(self.n_steps)))
+        fig, axs = plt.subplots(k, k, figsize=(10, 10))
+        fig.tight_layout(pad=3.0)
+
+        dkls = []
+        n_step_dists = []
+
+        for step in range(self.n_steps):
+            true_dist = self.mpg.predict_letters(from_state=0, steps=step)
+
+            true_dist = np.append(
+                true_dist,
+                np.clip(1 - true_dist.sum(), 0, 1)
+            )
+
+            self.hmm.predict_cells()
+            predicted_dist = self.hmm.predict_columns()
+
+            predicted_dist = np.append(
+                predicted_dist,
+                np.clip(1 - predicted_dist.sum(), 0, 1)
+            )
+
+            n_step_dists.append(predicted_dist)
+
+            kl_div = rel_entr(true_dist, predicted_dist).sum()
+            dkls.append(kl_div)
+
+            if self.logger is not None:
+                self.logger.log(
+                    {
+                        'main_metrics/n_step_dkl': kl_div,
+                        'prediction_step': step
+                    }
+                )
+
+            if step == 0:
+                labels = ['Predicted', 'True']
+                letter = self.mpg.next_state()
+                obs_state = np.array(
+                    [
+                        self.mpg.char_to_num[letter]
+                    ]
+                )
+                self.hmm.observe(obs_state, learn=False)
+            else:
+                labels = [None, None]
+                self.hmm.forward_messages = self.hmm.next_forward_messages
+
+            tick_labels = self.mpg.alphabet.copy()
+            tick_labels.append('∅')
+
+            ax = axs[step // k][step % k]
+            ax.grid()
+            ax.set_ylim(0, 1)
+            ax.bar(
+                np.arange(predicted_dist.shape[0]),
+                predicted_dist,
+                tick_label=tick_labels,
+                color=(0.7, 1.0, 0.3),
+                label=labels[0]
+            )
+
+            ax.bar(
+                np.arange(true_dist.shape[0]),
+                true_dist,
+                tick_label=tick_labels,
+                color=(0.8, 0.5, 0.5),
+                alpha=0.6,
+                label=labels[1]
+            )
+
+            ax.set_title(f'steps: {step + 1}; KL: {np.round(kl_div, 2)}')
+
+        fig.legend(loc=7)
+
+        if self.logger is not None:
+            dkls = np.array(dkls)
+            n_step_dists = np.vstack(n_step_dists)
+
+            name = self.logger.name
+
+            if self.save_model:
+                np.save(f'logs/n_step_dist_{name}.npy', n_step_dists)
+
+            self.logger.log({f'density/n_step_letter_predictions': wandb.Image(fig)})
+            self.logger.log(
+                {
+                    f'main_metrics/average_nstep_dkl': np.abs(dkls).mean(where=~np.isinf(dkls))
+                }
+            )
+
+    def get_surprise(self, probs, obs):
+        is_coincide = np.isin(
+            np.arange(len(probs)), obs
+        )
+        surprise = - np.sum(
+            np.log(
+                np.clip(probs[is_coincide], 1e-7, 1)
+            )
+        )
+        surprise += - np.sum(
+            np.log(
+                np.clip(1 - probs[~is_coincide], 1e-7, 1)
+            )
+        )
+
+        return surprise
 
 
 class MMPGTest:
@@ -619,13 +766,16 @@ class PinballTest:
 
         self.hmm = DCHMM(**conf['hmm'])
 
-        self.action = conf['run']['action']
+        self.actions = conf['run']['actions']
+        self.positions = conf['run']['positions']
         self.prediction_steps = conf['run']['prediction_steps']
         self.n_episodes = conf['run']['n_episodes']
         self.log_update_rate = conf['run']['update_rate']
         self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
         self.log_fps = conf['run']['log_gif_fps']
+
+        self._rng = np.random.default_rng(self.seed)
 
         self.logger = logger
 
@@ -683,7 +833,11 @@ class PinballTest:
                 writer_raw = None
                 writer_hidden = None
 
-            self.env.act(self.action)
+            init_i = self._rng.integers(0, len(self.actions), 1)
+            action = self.actions[init_i[0]]
+            position = self.positions[init_i[0]]
+            self.env.reset(position)
+            self.env.act(action)
 
             while True:
                 raw_im = self.preprocess(self.env.obs())
@@ -707,7 +861,6 @@ class PinballTest:
                     # metrics
                     # 1. surprise
                     surprise = self.get_surprise(column_probs, obs_state)
-
                     surprises.append(surprise)
                     total_surprise += surprise
 
@@ -937,13 +1090,15 @@ class PinballTest:
             with open(f"logs/models/model_{name}.pkl", 'wb') as file:
                 pickle.dump(self.hmm, file)
 
-    def preprocess(self, image):
+    @staticmethod
+    def preprocess(image):
         gray_im = image.sum(axis=-1)
         gray_im /= gray_im.max()
 
         return gray_im
 
-    def get_surprise(self, probs, obs):
+    @staticmethod
+    def get_surprise(probs, obs):
         is_coincide = np.isin(
             np.arange(len(probs)), obs
         )
@@ -1217,5 +1372,5 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    default_config = 'configs/dhmm_runner_single.yaml'
+    default_config = 'configs/runner/dhmm/mpg_single.yaml'
     main(os.environ.get('RUN_CONF', default_config))
