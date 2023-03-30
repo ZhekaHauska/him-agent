@@ -328,6 +328,12 @@ class DCHMM:
                 next_active_cells
             )
 
+            # adapt off states
+            off_states_to_reinforce = np.isin(self.off_states, next_active_cells)
+            p = self.forward_messages[self.off_states[off_states_to_reinforce]]
+            self.alpha[off_states_to_reinforce] += (1 - p) * self.lr
+            self.alpha[~off_states_to_reinforce] -= self.punishment
+
             new_segments = self._grow_new_segments(
                 cells_to_grow_new_segments,
                 self.active_cells.sparse
