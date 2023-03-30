@@ -211,7 +211,7 @@ class MPGTest:
                         n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
                         n_segments = np.pad(
                             n_segments,
-                            ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                            ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
                             'constant',
                             constant_values=0
                         ).flatten()
@@ -220,7 +220,7 @@ class MPGTest:
                         sum_factor_value = sum_factor_value.reshape((-1, self.hmm.n_hidden_states))
                         sum_factor_value = np.pad(
                             sum_factor_value,
-                            ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                            ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
                             'constant',
                             constant_values=0
                         ).flatten()
@@ -576,7 +576,7 @@ class MMPGTest:
                     n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
                     n_segments = np.pad(
                         n_segments, 
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
                         'constant',
                         constant_values=0
                     ).flatten()
@@ -585,7 +585,7 @@ class MMPGTest:
                     sum_factor_value = sum_factor_value.reshape((-1, self.hmm.n_hidden_states))
                     sum_factor_value = np.pad(
                         sum_factor_value,
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
                         'constant',
                         constant_values=0
                     ).flatten()
@@ -724,6 +724,9 @@ class NStepTest:
 class PinballTest:
     def __init__(self, logger, conf):
         self.seed = conf['run']['seed']
+
+        if self.seed is None:
+            self.seed = np.random.randint(0, np.iinfo(np.int32).max)
 
         conf['hmm']['seed'] = self.seed
         conf['env']['seed'] = self.seed
@@ -1044,7 +1047,7 @@ class PinballTest:
                     n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
                     n_segments = np.pad(
                         n_segments,
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
                         'constant',
                         constant_values=0
                     ).flatten()
@@ -1053,7 +1056,7 @@ class PinballTest:
                     sum_factor_value = sum_factor_value.reshape((-1, self.hmm.n_hidden_states))
                     sum_factor_value = np.pad(
                         sum_factor_value,
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
                         'constant',
                         constant_values=0
                     ).flatten()
@@ -1254,7 +1257,7 @@ class PixballTest:
                     n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
                     n_segments = np.pad(
                         n_segments,
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
                         'constant',
                         constant_values=0
                     ).flatten()
@@ -1263,7 +1266,7 @@ class PixballTest:
                     sum_factor_value = sum_factor_value.reshape((-1, self.hmm.n_hidden_states))
                     sum_factor_value = np.pad(
                         sum_factor_value,
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_spec_states)),
+                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
                         'constant',
                         constant_values=0
                     ).flatten()

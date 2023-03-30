@@ -39,8 +39,9 @@ class DCHMM:
             punishment: float = 0.0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
-            max_segments_for_spec_state: int = 1000,
+            max_segments_for_off_state: int = 1000,
             segment_prune_threshold: float = 0.001,
+            allow_synapses_to_off_states: bool = False,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -59,18 +60,18 @@ class DCHMM:
         # plus reset state
         self.n_hidden_states = cells_per_column*n_obs_states + 1
 
-        self.n_spec_states = 1
-        self.reset_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
+        self.n_off_states = 1
+        self.off_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
         self.max_segments_per_cell = max_segments_per_cell
-        self.max_segments_for_spec_state = max_segments_for_spec_state
+        self.max_segments_for_off_state = max_segments_for_off_state
         self.total_cells = self.n_hidden_vars * self.n_hidden_states
 
         self.total_segments = (
-                (self.n_hidden_states - self.n_spec_states) * self.max_segments_per_cell +
-                self.n_spec_states * self.max_segments_for_spec_state
+                (self.n_hidden_states - self.n_off_states) * self.max_segments_per_cell +
+                self.n_off_states * self.max_segments_for_off_state
         ) * self.n_hidden_vars
 
         self.factors_per_var = factors_per_var
@@ -78,13 +79,15 @@ class DCHMM:
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
-        self.filter_reset_states_mask = np.ones(self.total_cells, dtype=bool)
-        self.filter_reset_states_mask[self.reset_states] = False
+        self.filter_off_states_mask = np.ones(self.total_cells, dtype=bool)
+        self.filter_off_states_mask[self.off_states] = False
 
         # number of variables assigned to a segment
         self.n_vars_per_factor = n_vars_per_factor
 
         self.segment_prune_threshold = segment_prune_threshold
+
+        self.allow_synapses_to_off_states = allow_synapses_to_off_states
 
         # for now leave it strict
         self.segment_activation_threshold = n_vars_per_factor
@@ -99,7 +102,7 @@ class DCHMM:
 
         self.active_cells = SDR(self.total_cells)
         # set all variables to the reset state
-        self.active_cells.sparse = self.reset_states
+        self.active_cells.sparse = self.off_states
 
         self.forward_messages = np.zeros(
             self.total_cells,
@@ -152,7 +155,7 @@ class DCHMM:
         )
 
     def reset(self):
-        self.active_cells.sparse = self.reset_states
+        self.active_cells.sparse = self.off_states
 
         self.forward_messages = np.zeros(
             self.total_cells,
@@ -278,7 +281,7 @@ class DCHMM:
     def predict_columns(self):
         assert self.prediction is not None
 
-        prediction = self.prediction[self.filter_reset_states_mask]
+        prediction = self.prediction[self.filter_off_states_mask]
         prediction = prediction.reshape((self.n_columns, self.cells_per_column))
         return prediction.sum(axis=-1)
 
@@ -349,6 +352,11 @@ class DCHMM:
             ~np.isin(next_active_cells, cells_for_active_segments)
         ]
 
+        if self.max_segments_for_off_state == 0:
+            cells_to_grow_new_segments = cells_to_grow_new_segments[
+                np.isin(cells_to_grow_new_segments, self.off_states, invert=True)
+            ]
+
         return (
             segments_to_learn.astype(UINT_DTYPE),
             segments_to_punish.astype(UINT_DTYPE),
@@ -396,14 +404,14 @@ class DCHMM:
         cells_in_columns = (
                 (
                         obs_states * self.cells_per_column +
-                        self.n_spec_states * vars_for_obs_states
+                        self.n_off_states * vars_for_obs_states
                 ).reshape((-1, 1)) +
                 np.arange(self.cells_per_column, dtype=UINT_DTYPE)
             ).flatten()
 
         vars_without_states = ~np.isin(np.arange(self.n_obs_vars), vars_for_obs_states)
 
-        empty_states = self.reset_states[vars_without_states]
+        empty_states = self.off_states[vars_without_states]
 
         cells = np.concatenate([empty_states, cells_in_columns])
         return cells
@@ -488,7 +496,7 @@ class DCHMM:
 
         active_cells = growth_candidates[
             np.isin(
-                growth_candidates, self.reset_states, invert=True
+                growth_candidates, self.off_states, invert=True
             )
         ]
 
@@ -530,11 +538,22 @@ class DCHMM:
                 col = var % self.shape[1]
                 distance = np.abs(rows - row) + np.abs(cols - col)
 
+                # beta doesn't have effect if synapses to off states are not allowed
                 score = - distance + self.beta * active_vars.dense
+
+                if not self.allow_synapses_to_off_states:
+                    h_vars = h_vars[active_vars.sparse]
+                    score = score[active_vars.sparse]
+
+                # sample size can't be smaller than number of variables
+                sample_size = min(self.n_vars_per_factor, len(h_vars))
+
+                if sample_size == 0:
+                    return np.empty(0, dtype=UINT_DTYPE)
 
                 variables = self._rng.choice(
                     h_vars,
-                    size=self.n_vars_per_factor,
+                    size=sample_size,
                     p=softmax(score),
                     replace=False
                 )
@@ -556,10 +575,10 @@ class DCHMM:
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
 
-            if self.filter_reset_states_mask[cell]:
+            if self.filter_off_states_mask[cell]:
                 max_segments = self.max_segments_per_cell
             else:
-                max_segments = self.max_segments_for_spec_state
+                max_segments = self.max_segments_for_off_state
 
             new_segment = self.connections.createSegment(cell, max_segments)
             self.factor_for_segment[new_segment] = factor_id
