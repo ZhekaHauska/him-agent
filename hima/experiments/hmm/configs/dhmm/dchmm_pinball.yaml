@@ -2,7 +2,8 @@ cells_per_column: 10
 n_vars_per_factor: 1
 factor_activation_threshold: 1  # number of active variables in a receptive field to active factor
 factors_per_var: 10
-initial_factor_value: 0.0
+initial_factor_value: 0
+initial_alpha_value: 10
 beta: 0  # importance of active vars for receptive field
 lr: 1.0
 gamma: 0.1

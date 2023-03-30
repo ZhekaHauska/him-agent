@@ -8,6 +8,7 @@ from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
 
 import numpy as np
+from scipy.stats import entropy
 
 EPS = 1e-24
 INT_TYPE = "int32"
@@ -33,6 +34,7 @@ class DCHMM:
             factors_per_var: int,
             factor_activation_threshold: int,
             initial_factor_value: float = 0,
+            initial_alpha_value: float = 0,
             lr: float = 0.01,
             beta: float = 0.0,
             gamma: float = 0.1,
@@ -154,6 +156,13 @@ class DCHMM:
             dtype=UINT_DTYPE
         )
 
+        self.initial_alpha_value = initial_alpha_value
+        self.alpha = np.full(
+            self.n_hidden_vars,
+            fill_value=self.initial_alpha_value,
+            dtype=REAL64_DTYPE
+        )
+
     def reset(self):
         self.active_cells.sparse = self.off_states
 
@@ -269,6 +278,17 @@ class DCHMM:
 
         norm = np.exp(log_prediction).sum(axis=-1).reshape((-1, 1))
         prediction = np.exp(log_prediction) / norm
+
+        # boost off states
+        prediction_entropy = entropy(
+            prediction[:, :-1],
+            axis=-1
+        )
+
+        prediction[:, -1] *= (1 + self.alpha * np.exp(prediction_entropy))
+
+        norm = prediction.sum(axis=-1).reshape((-1, 1))
+        prediction /= norm
 
         prediction = prediction.flatten()
 
