@@ -5,8 +5,8 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from textwrap import indent
 
-from hima.experiments.temporal_pooling.graph.node import Node, ListIndentRest
-from hima.experiments.temporal_pooling.graph.pipeline import Pipeline
+from hima.experiments.temporal_pooling.graph.node import Node
+from hima.experiments.temporal_pooling.graph.pipeline import Pipeline, ListIndentRest
 
 
 class Repeat(Node):

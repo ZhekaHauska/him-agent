@@ -26,14 +26,12 @@ class Stream:
     i.e. a data is persisted and can be read several times until it's overwritten
     with the next value.
     """
-    registry: 'StreamRegistry'
     owner: Block | None
     name: str
     _value: Any
     _trackers: list[THandler]
 
-    def __init__(self, registry: 'StreamRegistry', name: str, block: Block = None):
-        self.registry = registry
+    def __init__(self, name: str, block: Block = None):
         self.owner = block
         self.name = name
         self._trackers = []
@@ -66,8 +64,8 @@ class Stream:
 class SdrStream(Stream):
     sds: Sds
 
-    def __init__(self, registry: 'StreamRegistry', name: str, block: Block = None):
-        super().__init__(registry, name, block)
+    def __init__(self, name: str, block: Block = None):
+        super().__init__(name, block)
         self.sds = get_unresolved_value()
 
     @property
@@ -92,41 +90,3 @@ class SdrStream(Stream):
     @property
     def valid_sds(self):
         return isinstance(self.sds, Sds)
-
-
-class StreamRegistry:
-    _streams: dict[str, Stream | SdrStream]
-
-    def __init__(self):
-        self._streams = {}
-
-    def __getitem__(self, item):
-        return self._streams[item]
-
-    def __setitem__(self, key, value):
-        self._streams[key] = value
-
-    def register(self, name: str, owner: Block = None) -> Stream | SdrStream:
-        if name in self._streams:
-            return self._streams[name]
-
-        stream_class = SdrStream if name.endswith('.sdr') else Stream
-        stream = stream_class(self, name, owner)
-        self._streams[stream.name] = stream
-        return stream
-
-    def track(self, name: str, tracker):
-        stream = self._streams.get(name, None)
-        if not stream:
-            stream = Stream(self, name)
-            self._streams[name] = stream
-        stream.track(tracker)
-
-    def __iter__(self):
-        yield from self._streams
-
-    def __contains__(self, item):
-        return item in self._streams
-
-    def items(self):
-        return self._streams.items()

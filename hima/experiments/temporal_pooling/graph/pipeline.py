@@ -5,7 +5,11 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from textwrap import indent
 
-from hima.experiments.temporal_pooling.graph.node import Node, ListIndentFirst, ListIndentRest
+from hima.experiments.temporal_pooling.graph.node import Node
+
+
+ListIndentFirst = '  * '
+ListIndentRest = '    '
 
 
 class Pipeline(Node):

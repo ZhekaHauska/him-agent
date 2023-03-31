@@ -7,82 +7,51 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from typing import TYPE_CHECKING
 
-from hima.experiments.temporal_pooling.graph.node import Node
-from hima.experiments.temporal_pooling.graph.stream import SdrStream, StreamRegistry
+from hima.experiments.temporal_pooling.graph.node import Stretchable
+from hima.experiments.temporal_pooling.graph.stream import SdrStream
 
 
-class Block(Node):
+if TYPE_CHECKING:
+    from hima.experiments.temporal_pooling.graph.model import Model
+
+
+class Block(Stretchable):
     """Base building block of the computational graph / neural network."""
 
     family: str = 'base_block'
-    supported_streams: set[str] = {}
-
-    id: int
     name: str
-    stream_registry: StreamRegistry
 
-    # TODO:
-    #  1. log to charts, what to log?
-    #  2. rename tag to ? and consider removing id
+    supported_streams: set[str] = {}
+    model: Model
 
-    def __init__(self, id: int, name: str, stream_registry: StreamRegistry, **kwargs):
-        self.id = id
+    def __init__(self, name: str, model: Model, **kwargs):
         self.name = name
-        self.stream_registry = stream_registry
+        self.model = model
+        # Blocks MUST register themselves
+        self.model.blocks[name] = self
         self._config = self._extract_sdr_streams(kwargs)
 
-    # ------------ Block overrideable public interface ------------
     @abstractmethod
     def compile(self):
         """Build block after all its configurable parameters are resolved."""
         raise NotImplementedError()
 
-    def reset(self, **kwargs):
-        for name in self.stream_registry:
-            stream = self.stream_registry[name]
-            if stream.is_sdr:
-                stream.set([], reset=True)
-
-    # ----------------- Node public interface ---------------------
-    def expand(self):
-        yield self
-
-    # noinspection PyMethodMayBeStatic
-    def align_dimensions(self) -> bool:
-        """
-        Align or induce block's streams dimensions.
-        By default, does nothing. Override if it's applicable.
-        """
-        return True
-
-    def forward(self) -> None:
-        """Blocks are supposed to have conscious `forward` methods that are used via BlockCall."""
-        raise ValueError(
-            'Blocks are supposed to have conscious `forward` methods that are used via BlockCall.'
-        )
-
     def __repr__(self) -> str:
-        return self.fullname
-
-    # ------------------ String representation --------------------
-    @property
-    def shortname(self):
-        return f'{self.id}_{self.family}'
-
-    @property
-    def fullname(self):
-        return f'{self.shortname} {self.name}'
+        return self.name
 
     # ---------------------- Utility methods ----------------------
-    def stream_name(self, short_name):
-        qualified_name = f'{self.name}.{short_name}'
-        return qualified_name
+    def qualified_stream_name(self, stream_short_name: str) -> str:
+        return f'{self.name}.{stream_short_name}'
 
     def __getitem__(self, stream_name):
-        return self.stream_registry[self.stream_name(stream_name)]
+        return self.model.streams[self.qualified_stream_name(stream_name)]
 
     def _extract_sdr_streams(self, kwargs: dict) -> dict:
+        # the block itself has to be registered before starting register its streams
+        assert self.name in self.model.blocks
+
         config = {}
         for key, value in kwargs.items():
             if not str.endswith(key, '_sds'):
@@ -90,8 +59,8 @@ class Block(Node):
                 continue
 
             stream_name, sds = f'{key[:-4]}.sdr', value
-            stream_name = self.stream_name(stream_name)
+            stream_name = self.qualified_stream_name(stream_name)
 
-            stream: SdrStream = self.stream_registry.register(stream_name, owner=self)
+            stream: SdrStream = self.model.register_stream(stream_name)
             stream.set_sds(sds)
         return config

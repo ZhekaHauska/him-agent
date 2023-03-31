@@ -20,14 +20,8 @@ class BlockCall(Node):
         self.func_name = name
         self.func = getattr(block, name)
 
-    def expand(self):
-        return self.block.expand()
-
-    def align_dimensions(self) -> bool:
-        return self.block.align_dimensions()
-
     def forward(self) -> None:
         self.func()
 
     def __repr__(self) -> str:
-        return f'{self.func_name}: {self.block}'
+        return f'{self.block.name}.{self.func_name}'
