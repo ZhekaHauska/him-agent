@@ -6,7 +6,6 @@
 from typing import Any
 
 from hima.common.config.base import TConfig
-from hima.common.config.global_config import GlobalConfig
 from hima.experiments.temporal_pooling.graph.block import Block
 
 
@@ -20,28 +19,31 @@ class SpatialPoolerBlock(Block):
 
     sp: Any
 
-    def align_dimensions(self) -> bool:
-        output = self[self.OUTPUT]
-        if output.valid and self.stream_name(self.FEEDBACK) in self.stream_registry:
-            self[self.FEEDBACK].set_sds(output.sds)
-        return output.valid
+    def __init__(self, sp: TConfig, **kwargs):
+        super().__init__(**kwargs)
+        self.sp = sp
+
+    def fit_dimensions(self) -> bool:
+        output, feedback = self[self.OUTPUT], self[self.FEEDBACK]
+        if output.valid_sds and feedback is not None:
+            feedback.set_sds(output.sds)
+        return output.valid_sds
 
     def compile(self):
-        self._compile(**self._config)
-
-    def _compile(self, global_config: GlobalConfig, sp: TConfig):
-        self.sp = global_config.resolve_object(
-            sp,
+        self.sp = self.model.config.resolve_object(
+            self.sp,
             feedforward_sds=self[self.FEEDFORWARD].sds,
             output_sds=self[self.OUTPUT].sds
         )
 
     def compute(self, learn: bool = True):
-        feedforward = self[self.FEEDFORWARD].get()
-        self[self.OUTPUT].set(self.sp.compute(feedforward, learn=learn))
+        ff_sdr = self[self.FEEDFORWARD].get()
+        output_sdr = self.sp.compute(ff_sdr, learn=learn)
+        self[self.OUTPUT].set(output_sdr)
 
     def switch_polarity(self):
         self.sp.polarity *= -1
 
     def compute_feedback(self):
-        self.sp.process_feedback(self[self.FEEDBACK].get())
+        fb_sdr = self[self.FEEDBACK].get()
+        self.sp.process_feedback(fb_sdr)

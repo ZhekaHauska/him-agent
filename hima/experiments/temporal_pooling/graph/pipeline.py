@@ -14,7 +14,7 @@ ListIndentRest = '    '
 
 class Pipeline(Node):
     """
-    Pipeline is the ordered traversal of the computational graph, that is it defines both —
+    Pipeline is the named ordered list of computational graph nodes, which defines both —
     the graph itself and the order of the computations.
     """
 
@@ -24,19 +24,6 @@ class Pipeline(Node):
     def __init__(self, name: str, pipeline: list):
         self.name = name
         self._pipeline = pipeline
-
-    def expand(self):
-        yield from self
-        # for node in self:
-        #     yield from node.expand()
-
-    def align_dimensions(self) -> bool:
-        # cannot reduce to all(...) as it shortcuts on the first returned False
-        # hence, doesn't call align for the rest of the pipeline
-        aligned = True
-        for node in self:
-            aligned &= node.align_dimensions()
-        return aligned
 
     def forward(self) -> None:
         for node in self:
@@ -54,9 +41,3 @@ class Pipeline(Node):
 
     def __iter__(self):
         return iter(self._pipeline)
-
-    @staticmethod
-    def extract_args(**kwargs) -> tuple[str, list]:
-        assert len(kwargs) == 1
-        for pipeline_name, pipeline in kwargs.items():
-            return pipeline_name, list(pipeline)

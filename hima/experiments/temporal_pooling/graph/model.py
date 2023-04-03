@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from hima.agents.hima.hierarchy import Block
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.config.values import get_unresolved_value
 from hima.common.run.argparse import parse_str
+from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.block_call import BlockCall
 from hima.experiments.temporal_pooling.graph.node import Node, Stretchable
 from hima.experiments.temporal_pooling.graph.pipe import Pipe, SdrPipe
@@ -47,6 +47,48 @@ class Model(Stretchable, Node):
 
         for external_var in external:
             self.register_stream(external_var)
+
+    def compile(self):
+        self.fit_dimensions()
+
+        for _, block in self.blocks.items():
+            block.compile()
+
+    def fit_dimensions(self, max_iters: int = 100) -> bool:
+        unaligned_objects = [
+            node
+            for node in self.nodes
+            if isinstance(node, Stretchable)
+        ] + [
+            block
+            for _, block in self.blocks.items()
+            if isinstance(block, Stretchable)
+        ]
+
+        for i in range(max_iters):
+            unaligned_objects = [
+                obj
+                for obj in unaligned_objects
+                if not obj.fit_dimensions()
+            ]
+            if not unaligned_objects:
+                break
+
+        assert not unaligned_objects, f'Cannot align the following objects: {unaligned_objects}'
+        return True
+
+    def forward(self) -> None:
+        self.pipeline.forward()
+
+    def __repr__(self) -> str:
+        return f'{self.pipeline}'
+
+    def __contains__(self, item):
+        # allow both just for simpler and shorter usage. We expect blocks and streams have
+        # separate contexts such that the usage is unambiguous
+        return item in self.blocks or item in self.streams
+
+    # =========== Blocks/Streams API =========
 
     def resolve_block(self, name: str) -> Block:
         """
@@ -108,51 +150,25 @@ class Model(Stretchable, Node):
         stream = self.register_stream(name)
         stream.track(tracker)
 
-    def compile(self):
-        self.align_dimensions(model)
-
-        # compile blocks
-        blocks = model.blocks
-        for name in blocks:
-            blocks[name].compile()
-
-        return model
-
-    def fit_dimensions(self, max_iters: int = 100) -> bool:
-        unaligned_nodes = list(model.expand())
-        for i in range(max_iters):
-            unaligned_nodes = [
-                node
-                for node in unaligned_nodes
-                if not node.align_dimensions()
-            ]
-            if not unaligned_nodes:
-                break
-
-        assert not unaligned_nodes, f'Cannot align nodes: {unaligned_nodes}'
-
-    def forward(self) -> None:
-        self.pipeline.forward()
-
-    def __repr__(self) -> str:
-        return f'{self.pipeline}'
+    # =========== Parse API =========
 
     def parse(self, pipeline: list) -> Pipeline:
         return self.parse_pipeline(pipeline=pipeline)
 
     def parse_pipeline(self, **kwargs) -> Pipeline:
-        pipeline_name, pipeline = Pipeline.extract_args(**kwargs)
-        return Pipeline(
-            name=pipeline_name,
-            pipeline=[self.parse_node(unit) for unit in pipeline]
-        )
+        assert len(kwargs) == 1
 
-    def parse_node(self, node: str | TConfig) -> Node:
-        node = self._parse_node(node)
-        self.nodes.append(node)
-        return node
+        (pipeline_name, pipeline), = kwargs.items()
+        # NB: all nodes are aggregated via pipelines.
+        # Therefore, this is the only place for node registering
+        pipeline_nodes = [self.parse_node(unit) for unit in pipeline]
+        self.nodes.extend(pipeline_nodes)
 
-    def _parse_node(self, node: str) -> Node:
+        pipeline = Pipeline(name=pipeline_name, pipeline=pipeline_nodes)
+        self.nodes.append(pipeline)
+        return pipeline
+
+    def parse_node(self, node: str) -> Node:
         # could be:
         #   - pipe forwarding
         #   - basic block computation
