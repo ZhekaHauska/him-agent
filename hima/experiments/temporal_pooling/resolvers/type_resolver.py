@@ -11,6 +11,7 @@ class StpLazyTypeResolver(LazyTypeResolver):
         super().__init__()
         self.resolvers_by_prefix = [
             ('block.', _resolve_block),
+            ('tracker.', _resolve_tracker),
             ('encoder.', _resolve_encoder),
             ('stp.', _resolve_runner),
             ('ds.', _resolve_dataset),
@@ -57,6 +58,12 @@ def _resolve_block(type_tag: str):
             GeneralFeedbackTemporalMemoryBlock
         )
         return GeneralFeedbackTemporalMemoryBlock
+
+
+def _resolve_tracker(type_tag: str):
+    if type_tag == 'tracker.base':
+        from hima.experiments.temporal_pooling.stats.alt_tracker import AltTracker
+        return AltTracker
 
 
 def _resolve_spatial_pooler(type_tag: str):

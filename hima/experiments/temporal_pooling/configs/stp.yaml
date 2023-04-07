@@ -9,22 +9,34 @@ iterate:
   elements: 20
 
 model:
+  global_config: ???
+  external:
+    - step
+    - sequence_id
+    - epoch
   pipeline:
     - input.sdr -> sp0.feedforward.sdr
+    - sp0.compute()
+#    - sp0.output.sdr -> output.sdr
     - sp0.output.sdr -> tm1.feedforward.sdr
     - compute TM1:
-      - tm1.predict
-      - tm1.set_predicted_cells
-      - tm1.activate
+      - tm1.predict()
+      - tm1.set_predicted_cells()
+      - tm1.activate()
     - tm1.correctly_predicted_cells.sdr -> output.sdr
+  track:
+    - name: input.sdr
+      _base_: trackers.default
+      on: {}
+#        input_sdr: input.sdr
+#        step: step
 
 trackers:
-  - name: input.sdr
-    track:
-      - input.sdr
-      - step
+  default:
+    _type_: tracker.base
+    model: ???
 
-stream_trackers:
+track_streams:
   gen.output:
     - sdr
     - cross.online.el
@@ -354,18 +366,11 @@ models:
       - tm1.correctly_predicted_cells -> ___.output
 
 blocks:
-  ___:
-    _type_: block.storage
-    input_sds: ???
-    output_sds: ???
-  gen:
-    _type_: block.storage
   concat:
     _type_: block.concatenator
   sp0:
     _type_: block.sp
     output_sds: [500, 10]
-    global_config: ???
     sp:
       _base_: $_base.spatial_pooler.default
       initial_rf_to_input_ratio: 8.0
@@ -379,10 +384,9 @@ blocks:
       boosting_k: 0.5
   sp1:
     _type_: block.sp
-    global_config: ???
+    output_sds: ??? #[500, 10]
     sp:
       _base_: $_base.spatial_pooler.default
-      output_sds: ??? #[500, 10]
       initial_rf_to_input_ratio: 8.0  #12?
       max_rf_to_input_ratio: 1.25
       learning_rate: 0.02
@@ -393,29 +397,31 @@ blocks:
       adapt_to_ff_sparsity: False
       boosting_k: 0.5
   tm1:
-    _base_: temporal_memory.default_general_feedback
-    seed: ???
+    _type_: block.tm.general_feedback
     active_cells_sds: ???
     predicted_cells_sds: ???
-    cells_per_column: 12
-    activation_threshold_basal: .9
-    learning_threshold_basal: .7
-    activation_threshold_apical: 1
-    learning_threshold_apical: 1
-    max_synapses_per_segment_basal: -1
-    max_segments_per_cell_basal: 32
+    tm:
+      seed: ???
+      cells_per_column: 12
+      activation_threshold_basal: .9
+      learning_threshold_basal: .7
+      activation_threshold_apical: 1
+      learning_threshold_apical: 1
+      max_synapses_per_segment_basal: -1
+      max_segments_per_cell_basal: 32
   tm2:
-    _base_: temporal_memory.default_general_feedback
-    seed: ???
+    _type_: block.tm.general_feedback
     active_cells_sds: ???
     predicted_cells_sds: ???
-    cells_per_column: 1
-    activation_threshold_basal: .8
-    learning_threshold_basal: .6
-    activation_threshold_apical: 1
-    learning_threshold_apical: 1
-    max_synapses_per_segment_basal: -1
-    max_segments_per_cell_basal: 128
+    tm:
+      seed: ???
+      cells_per_column: 1
+      activation_threshold_basal: .8
+      learning_threshold_basal: .6
+      activation_threshold_apical: 1
+      learning_threshold_apical: 1
+      max_synapses_per_segment_basal: -1
+      max_segments_per_cell_basal: 128
 
 stats_and_metrics:
   mae_normalization: no

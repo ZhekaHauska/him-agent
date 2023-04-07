@@ -53,12 +53,8 @@ class Stream:
     def is_sdr(self):
         return False
 
-    @property
-    def fullname(self):
-        return self.name
-
     def __repr__(self):
-        return self.fullname
+        return self.name
 
 
 class SdrStream(Stream):

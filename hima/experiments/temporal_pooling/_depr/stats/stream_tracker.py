@@ -35,7 +35,7 @@ class StreamTracker(Tracker):
 
     @property
     def name(self):
-        return self.stream.fullname
+        return self.stream.name
 
     @property
     def sds(self):

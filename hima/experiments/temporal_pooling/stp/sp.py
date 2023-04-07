@@ -54,6 +54,7 @@ class SpatialPooler:
 
     def __init__(
             self, feedforward_sds: Sds,
+            # newborn / mature
             initial_rf_to_input_ratio: float, max_rf_to_input_ratio: float, max_rf_sparsity: float,
             output_sds: Sds,
             min_overlap_for_activation: float,

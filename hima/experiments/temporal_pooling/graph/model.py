@@ -14,14 +14,14 @@ from hima.common.config.values import get_unresolved_value
 from hima.common.run.argparse import parse_str
 from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.block_call import BlockCall
-from hima.experiments.temporal_pooling.graph.node import Node, Stretchable
+from hima.experiments.temporal_pooling.graph.node import Node, Stretchable, Stateful
 from hima.experiments.temporal_pooling.graph.pipe import Pipe, SdrPipe
 from hima.experiments.temporal_pooling.graph.pipeline import Pipeline
 from hima.experiments.temporal_pooling.graph.repeat import Repeat
 from hima.experiments.temporal_pooling.graph.stream import Stream, SdrStream
 
 
-class Model(Stretchable, Node):
+class Model(Stretchable, Stateful, Node):
     blocks_config_key = 'blocks'
 
     config: GlobalConfig
@@ -29,12 +29,16 @@ class Model(Stretchable, Node):
     pipeline: Pipeline
     streams: dict[str, Stream | SdrStream]
     blocks: dict[str, Block]
+    trackers: dict
+
+    metrics: dict[str, Any]
 
     def __init__(
             self,
             global_config: GlobalConfig,
             pipeline: Pipeline | list,
-            external: list[str]
+            external: list[str],
+            track: list[TConfig]
     ):
         self.config = global_config
         self.nodes = []
@@ -47,6 +51,14 @@ class Model(Stretchable, Node):
 
         for external_var in external:
             self.register_stream(external_var)
+
+        self.trackers = {}
+        for tracker in track:
+            tracker = self.config.resolve_object(tracker, model=self)
+            if tracker.valid:
+                self.trackers[tracker.name] = tracker
+
+        self.metrics = {}
 
     def compile(self):
         self.fit_dimensions()
@@ -77,13 +89,17 @@ class Model(Stretchable, Node):
         assert not unaligned_objects, f'Cannot align the following objects: {unaligned_objects}'
         return True
 
+    def reset(self):
+        # TODO: implement reset policy
+        pass
+
     def forward(self) -> None:
         self.pipeline.forward()
 
     def __repr__(self) -> str:
         return f'{self.pipeline}'
 
-    def __contains__(self, item):
+    def __contains__(self, item: str):
         # allow both just for simpler and shorter usage. We expect blocks and streams have
         # separate contexts such that the usage is unambiguous
         return item in self.blocks or item in self.streams
@@ -119,7 +135,7 @@ class Model(Stretchable, Node):
 
         return self.config.resolve_object(block_config)
 
-    def register_stream(self, name: str) -> Stream | SdrStream:
+    def register_stream(self, name: str, allow_block_resolve=True) -> Stream | SdrStream | None:
         # sanitize name first
         name = name.strip()
 
@@ -136,6 +152,8 @@ class Model(Stretchable, Node):
         # get the owning block (and try to register it too)
         block = None
         if is_owned_by_block:
+            if not allow_block_resolve:
+                return None
             # if the stream is owned by a block, register it too
             block_name = name_parts[0]
             block = self.resolve_block(block_name)
@@ -146,9 +164,11 @@ class Model(Stretchable, Node):
         self.streams[stream.name] = stream
         return stream
 
-    def track_stream(self, name: str, tracker):
-        stream = self.register_stream(name)
-        stream.track(tracker)
+    def try_track_stream(self, name: str, tracker):
+        stream = self.register_stream(name, allow_block_resolve=False)
+        if stream is not None:
+            stream.track(tracker)
+        return stream
 
     # =========== Parse API =========
 

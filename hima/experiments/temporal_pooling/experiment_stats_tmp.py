@@ -22,6 +22,7 @@ from hima.experiments.temporal_pooling._depr.stats.stream_tracker import StreamT
 
 if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run
+    from hima.experiments.temporal_pooling.graph.model import Model
 
 
 class ExperimentStats:
@@ -38,6 +39,7 @@ class ExperimentStats:
     loss_items: tuple[str, str] | None
     # charts: list[str]
 
+    model: Model
     stream_trackers: dict[TStreamName, StreamTracker]
     current_sequence_id: int
 
@@ -45,7 +47,7 @@ class ExperimentStats:
 
     def __init__(
             self, *, n_sequences: int, progress: RunProgress, logger,
-            blocks: dict[str, Block], track_streams: TConfig,
+            model: Model, track_streams: TConfig,
             stats_config: StatsMetricsConfig,
             diff_stats: TConfig,
             loss: list[str] = None,
@@ -58,6 +60,7 @@ class ExperimentStats:
         self.current_sequence_id = -1
         self.diff_stats = diff_stats
         self.loss_items = (loss[0], loss[1]) if loss else []
+        self.model = model
 
         if self.logger:
             import wandb
@@ -65,25 +68,24 @@ class ExperimentStats:
             import seaborn as sns
 
         self.stream_trackers = self._make_stream_trackers(
-            track_streams=track_streams, blocks=blocks,
-            stats_config=stats_config, n_sequences=n_sequences
+            track_streams=track_streams, stats_config=stats_config, n_sequences=n_sequences
         )
         self.tms = [
-            (blocks[block_name], AnomalyTracker())
-            for block_name in blocks
-            if blocks[block_name].family in 'temporal_memory'
+            (self.model.blocks[block_name], AnomalyTracker())
+            for block_name in self.model.blocks
+            if self.model.blocks[block_name].family in 'temporal_memory'
         ]
 
-    @staticmethod
     def _make_stream_trackers(
-            track_streams: TConfig, blocks: dict[str, Block],
+            self,
+            track_streams: TConfig,
             stats_config: StatsMetricsConfig, n_sequences: int
     ) -> dict[TStreamName, StreamTracker]:
         trackers = {}
         for stream_name in track_streams:
-            stream = parse_stream_name(stream_name, blocks)
-            if not stream:
+            if stream_name not in self.model:
                 continue
+            stream = self.model.streams[stream_name]
             stream_trackers_list = track_streams[stream_name]
             tracker = StreamTracker(
                 stream=stream, trackers=stream_trackers_list,
@@ -171,8 +173,12 @@ class ExperimentStats:
     @staticmethod
     def append_sim_mae(diff_tag, tags: list[str], metrics: dict):
         i = 0
-        while tags[i] not in metrics:
+        while i < len(tags) and tags[i] not in metrics:
             i += 1
+
+        if i >= len(tags):
+            return
+
         baseline_tag = tags[i]
         baseline_sim_mx = metrics[baseline_tag]
         diff_dict = {baseline_tag: baseline_sim_mx}
@@ -198,14 +204,6 @@ class ExperimentStats:
                 metrics[metric_key] = plot_single_heatmap(metric_value)
             if isinstance(metric_value, dict):
                 metrics[metric_key] = plot_heatmaps_row(**metric_value)
-
-
-def parse_stream_name(stream_name: str, blocks: dict[str, Block]) -> Optional[Stream]:
-    block_name, stream_name = stream_name.split('.')
-    if block_name not in blocks:
-        # skip unused blocks
-        return None
-    return blocks[block_name].stream_registry[stream_name]
 
 
 def compute_loss(components, layer_discount) -> float:
