@@ -324,6 +324,9 @@ class DCHMM:
         obs_factor[cells] = 1
 
         self.next_forward_messages *= obs_factor
+        self.next_forward_messages = normalize(
+            self.next_forward_messages.reshape((self.n_hidden_vars, -1))
+        ).flatten()
 
         if learn:
             next_active_cells = self._sample_cells(
