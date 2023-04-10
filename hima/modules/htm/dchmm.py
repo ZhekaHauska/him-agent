@@ -23,6 +23,14 @@ def softmax(x, beta=1.0):
     return e_x / e_x.sum()
 
 
+def normalize(x):
+    norm = x.sum(axis=-1)
+    mask = norm == 0
+    x[mask] = 1
+    norm[mask] = x.shape[-1]
+    return x / norm.reshape((-1, 1))
+
+
 class DCHMM:
     def __init__(
             self,
@@ -36,9 +44,11 @@ class DCHMM:
             initial_factor_value: float = 0,
             initial_alpha_value: float = 0,
             lr: float = 0.01,
+            lr_off: float = 0.01,
             beta: float = 0.0,
             gamma: float = 0.1,
             punishment: float = 0.0,
+            punishment_off: float = 0.0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
             max_segments_for_off_state: int = 1000,
@@ -98,6 +108,9 @@ class DCHMM:
         self.beta = beta
         self.gamma = gamma
         self.punishment = punishment
+
+        self.lr_off = lr_off
+        self.punishment_off = punishment_off
 
         # low probability clipping
         self.cell_activation_threshold = cell_activation_threshold
@@ -182,6 +195,11 @@ class DCHMM:
             self.forward_messages >= self.cell_activation_threshold
         )
 
+        if not self.allow_synapses_to_off_states:
+            active_cells.sparse = active_cells.sparse[
+                np.isin(active_cells.sparse, self.off_states, invert=True)
+            ]
+
         num_connected_segment = self.connections.computeActivity(
             active_cells,
             False
@@ -215,6 +233,7 @@ class DCHMM:
             log_base_for_cells = np.repeat(log_base, self.n_hidden_states)
             factors_for_cells = np.repeat(active_factors, self.n_hidden_states)
 
+            # uniquely encode pairs (factor, cell)
             cell_factor_id_per_cell = (
                 factors_for_cells * self.total_cells + cells_for_factor_vars
             )
@@ -232,6 +251,7 @@ class DCHMM:
                 # advantage per segment
                 log_advantage = log_likelihood + np.log(shifted_factor_value)
 
+                # uniquely encode pairs (factor, cell) for each segment
                 cell_factor_id_per_segment = (
                         factors_for_active_segments * self.total_cells
                         + cells_for_active_segments
@@ -276,8 +296,7 @@ class DCHMM:
         # rescale
         log_prediction -= log_prediction.min(axis=-1).reshape((-1, 1))
 
-        norm = np.exp(log_prediction).sum(axis=-1).reshape((-1, 1))
-        prediction = np.exp(log_prediction) / norm
+        prediction = normalize(np.exp(log_prediction))
 
         # boost off states
         prediction_entropy = entropy(
@@ -287,8 +306,7 @@ class DCHMM:
 
         prediction[:, -1] *= (1 + self.alpha * np.exp(prediction_entropy))
 
-        norm = prediction.sum(axis=-1).reshape((-1, 1))
-        prediction /= norm
+        prediction = normalize(prediction)
 
         prediction = prediction.flatten()
 
@@ -331,8 +349,9 @@ class DCHMM:
             # adapt off states
             off_states_to_reinforce = np.isin(self.off_states, next_active_cells)
             p = self.forward_messages[self.off_states[off_states_to_reinforce]]
-            self.alpha[off_states_to_reinforce] += (1 - p) * self.lr
-            self.alpha[~off_states_to_reinforce] -= self.punishment
+            self.alpha[off_states_to_reinforce] += (1 - p) * self.lr_off
+            self.alpha[~off_states_to_reinforce] -= self.punishment_off
+            np.clip(self.alpha, a_min=0, a_max=None, out=self.alpha)
 
             new_segments = self._grow_new_segments(
                 cells_to_grow_new_segments,
