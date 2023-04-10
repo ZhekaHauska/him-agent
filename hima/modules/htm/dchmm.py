@@ -205,17 +205,10 @@ class DCHMM:
             False
         )
 
-        active_vars = SDR(self.n_hidden_vars)
-
-        active_vars.sparse = np.unique(active_cells.sparse // self.n_hidden_states)
-        num_active_vars_per_factor = self.factor_connections.computeActivity(
-            active_vars, False
-        )
-
         active_segments = np.flatnonzero(num_connected_segment >= self.segment_activation_threshold)
         cells_for_active_segments = self.connections.mapSegmentsToCells(active_segments)
 
-        active_factors = np.flatnonzero(num_active_vars_per_factor > 0)
+        active_factors = np.unique(self.factor_for_segment[active_segments])
 
         if len(active_factors) > 0:
             # base activity level

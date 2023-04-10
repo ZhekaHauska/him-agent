@@ -17,4 +17,4 @@ hmm_conf: 'configs/dhmm/dchmm_pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'
 setup: 'frog'
 
-seed: null
+seed: 123
