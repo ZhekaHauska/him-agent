@@ -20,6 +20,7 @@ from hima.experiments.temporal_pooling.graph.pipe import Pipe, SdrPipe
 from hima.experiments.temporal_pooling.graph.pipeline import Pipeline
 from hima.experiments.temporal_pooling.graph.repeat import Repeat
 from hima.experiments.temporal_pooling.graph.stream import Stream, SdrStream
+from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 
 
 class Model(Stretchable, Stateful, Node):
@@ -32,7 +33,7 @@ class Model(Stretchable, Stateful, Node):
     blocks: dict[str, Block]
     trackers: dict
 
-    metrics: dict[str, Any]
+    metrics: TMetrics
 
     def __init__(
             self,
@@ -106,6 +107,11 @@ class Model(Stretchable, Stateful, Node):
         # allow both just for simpler and shorter usage. We expect blocks and streams have
         # separate contexts such that the usage is unambiguous
         return item in self.blocks or item in self.streams
+
+    def flush_metrics(self) -> TMetrics:
+        metrics = self.metrics
+        self.metrics = {}
+        return metrics
 
     # =========== Blocks/Streams API =========
 
@@ -184,7 +190,7 @@ class Model(Stretchable, Stateful, Node):
             if stream is None:
                 non_existed_streams.append(stream_name)
 
-            stream = self.register_stream(name, allow_block_resolve=False)
+            stream = self.register_stream(stream_name, allow_block_resolve=False)
             if stream is None:
                 valid = False
                 break

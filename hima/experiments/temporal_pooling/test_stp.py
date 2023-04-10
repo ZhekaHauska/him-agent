@@ -14,6 +14,7 @@ from hima.common.config.global_config import GlobalConfig
 from hima.common.run.wandb import get_logger
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import timed
+from hima.experiments.temporal_pooling.blocks.tracker import TRACKING_ENABLED
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
 from hima.experiments.temporal_pooling.graph.model import Model
 from hima.experiments.temporal_pooling.iteration import IterationConfig
@@ -84,6 +85,7 @@ class StpExperiment:
     def run(self):
         self.print_with_timestamp('==> Run')
         self.stats.define_metrics()
+        self.model.streams[TRACKING_ENABLED].set(self.logger is not None)
 
         for epoch in range(self.iterate.epochs):
             _, elapsed_time = self.train_epoch()
@@ -93,18 +95,21 @@ class StpExperiment:
     @timed
     def train_epoch(self):
         self.progress.next_epoch()
+        self.model.streams['epoch'].set(self.progress.epoch)
         self.stats.on_epoch_started()
 
         # noinspection PyTypeChecker
         for sequence in self.data:
             for i_repeat in range(self.iterate.sequence_repeats):
                 self.run_sequence(sequence, i_repeat, learn=True)
+            self.model.streams['sequence_finished'].set()
             self.stats.on_sequence_finished()
 
         epoch_final_log_scheduled = scheduled(
             i=self.progress.epoch, schedule=self.log_schedule['epoch'],
             always_report_first=True, always_report_last=True, i_max=self.iterate.epochs
         )
+        self.model.streams['epoch_finished'].set()
         self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
         # blocks = self.pipeline.blocks
@@ -121,13 +126,19 @@ class StpExperiment:
             always_report_first=True, always_report_last=True, i_max=self.iterate.sequence_repeats
         )
         self.stats.on_sequence_started(sequence.id, log_scheduled)
+        self.model.streams['sequence_id'].set(sequence.id)
 
         for _, input_sdr in enumerate(sequence):
             self.reset_blocks('spatial_pooler', 'custom_sp')
             for _ in range(self.iterate.element_repeats):
                 self.progress.next_step()
+                self.model.streams['step'].set(self.progress.step)
+                self.model.metrics.clear()
                 self.model.streams['input.sdr'].set(input_sdr)
+
                 self.model.forward()
+
+                self.model.streams['step_finished'].set()
                 self.stats.on_step()
 
     def reset_blocks(self, *blocks_family):

@@ -10,15 +10,16 @@ from typing import Optional, TYPE_CHECKING
 import numpy as np
 
 from hima.common.config.base import TConfig
-from hima.experiments.temporal_pooling.graph.block import Block
-from hima.experiments.temporal_pooling.graph.stream import Stream
-from hima.experiments.temporal_pooling.run_progress import RunProgress
 from hima.experiments.temporal_pooling._depr.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling._depr.stats.metrics import (
     multiplicative_loss
 )
 from hima.experiments.temporal_pooling._depr.stats.recall_tracker import AnomalyTracker
-from hima.experiments.temporal_pooling._depr.stats.stream_tracker import StreamTracker, rename_dict_keys
+from hima.experiments.temporal_pooling._depr.stats.stream_tracker import (
+    StreamTracker,
+    rename_dict_keys
+)
+from hima.experiments.temporal_pooling.run_progress import RunProgress
 
 if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run
@@ -129,7 +130,7 @@ class ExperimentStats:
 
         for name in self.stream_trackers:
             tracker = self.stream_trackers[name]
-            tracker.on_step(tracker.stream.sdr)
+            tracker.on_step(tracker.stream.get())
 
         for block, anomaly_tracker in self.tms:
             anomaly_tracker.on_step(block.tm.anomaly[-1])
@@ -142,6 +143,9 @@ class ExperimentStats:
         for block, anomaly_tracker in self.tms:
             res = anomaly_tracker.step_metrics()
             metrics |= rename_dict_keys(res, add_prefix=f'{block.name}/')
+
+        if self.model.metrics:
+            metrics |= self.model.flush_metrics()
 
         self.logger.log(metrics, step=self.progress.step)
 
@@ -157,6 +161,9 @@ class ExperimentStats:
         metrics = {}
         for name in self.stream_trackers:
             metrics |= self.stream_trackers[name].aggregate_metrics()
+
+        if self.model.metrics:
+            metrics |= self.model.flush_metrics()
 
         for name in self.diff_stats:
             self.append_sim_mae(diff_tag=name, tags=self.diff_stats[name], metrics=metrics)

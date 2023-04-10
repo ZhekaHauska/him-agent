@@ -47,11 +47,12 @@ class TrackerBlock:
 
         metrics = self.track[stream.name](new_value, reset)
         metrics = self.personalize_metrics(metrics)
-        self.model.metrics |= metrics
+        if metrics:
+            self.model.metrics |= metrics
 
     def personalize_metrics(self, metrics: TMetrics):
         return {
-            f'{self.name}{k}': metrics[k]
+            f'{self.name}/{k}': metrics[k]
             for k in metrics
         }
 
