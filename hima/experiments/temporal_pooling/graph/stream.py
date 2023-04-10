@@ -15,7 +15,7 @@ from hima.common.sds import Sds
 # circular import otherwise
 if TYPE_CHECKING:
     from hima.experiments.temporal_pooling.graph.block import Block
-    from hima.experiments.temporal_pooling.stats.alt_tracker import THandler
+    from hima.experiments.temporal_pooling.blocks.tracker import THandler
 
 
 class Stream:

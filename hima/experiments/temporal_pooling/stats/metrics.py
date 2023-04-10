@@ -4,13 +4,20 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Union
+from typing import Union, Any
 
 import numpy as np
 
 from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide, isnone
+
+
+TMetrics = dict[str, Any]
+
+SdrSequence = list[SparseSdr]
+SetSdrSequence = list[set[int]]
+SeqHistogram = np.ndarray
 
 SEQ_SIM_ELEMENTWISE = 'elementwise'
 DISTR_SIM_PMF = 'pmf_pointwise'
@@ -330,24 +337,6 @@ def standardize_sample_distribution(x: np.ndarray, normalization: str) -> np.nda
 def mean_absolute_error(x: np.ndarray, y: np.ndarray) -> float:
     # noinspection PyTypeChecker
     return np.mean(np.abs(x - y))
-
-
-# ==================== Loss ====================
-def simple_additive_loss(smae, pmf_coverage):
-    return smae + 0.1 * (1 - pmf_coverage) / pmf_coverage
-
-
-def multiplicative_loss(smae, pmf_coverage):
-    # Google it: y = 0.25 * ((1 - x) / (1.4 * x))^0.5 + 0.75
-    # == 1 around 0.41 pmf coverage — it's a target value
-    pmf_weight = (1 - pmf_coverage) / (1.4 * pmf_coverage)
-    # smooth with sqrt and shift it up
-    pmf_weight = 0.25 * (pmf_weight ** 0.55) + 0.75
-
-    # == 1 at smae = 0.08. At ~0.2 SMAE we get almost garbage
-    smae_weight = (smae / 0.06)**1.5
-
-    return pmf_weight * smae_weight
 
 
 # ================== Utility ====================

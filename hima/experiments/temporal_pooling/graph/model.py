@@ -12,6 +12,7 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.config.values import get_unresolved_value
 from hima.common.run.argparse import parse_str
+from hima.experiments.temporal_pooling.blocks.tracker import TrackerBlock
 from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.block_call import BlockCall
 from hima.experiments.temporal_pooling.graph.node import Node, Stretchable, Stateful
@@ -52,12 +53,9 @@ class Model(Stretchable, Stateful, Node):
         for external_var in external:
             self.register_stream(external_var)
 
-        self.trackers = {}
-        for tracker in track:
-            tracker = self.config.resolve_object(tracker, model=self)
-            if tracker.valid:
-                self.trackers[tracker.name] = tracker
-
+        # delay trackers creation until the rest of the model is compiled as it requires dimensions
+        # noinspection PyTypeChecker
+        self.trackers = track
         self.metrics = {}
 
     def compile(self):
@@ -65,6 +63,11 @@ class Model(Stretchable, Stateful, Node):
 
         for _, block in self.blocks.items():
             block.compile()
+
+        # create and register trackers
+        self.trackers, track = {}, self.trackers
+        for tracker in track:
+            self.try_register_tracker(**tracker)
 
     def fit_dimensions(self, max_iters: int = 100) -> bool:
         unaligned_objects = [
@@ -164,11 +167,37 @@ class Model(Stretchable, Stateful, Node):
         self.streams[stream.name] = stream
         return stream
 
-    def try_track_stream(self, name: str, tracker):
-        stream = self.register_stream(name, allow_block_resolve=False)
-        if stream is not None:
-            stream.track(tracker)
-        return stream
+    def try_register_tracker(self, name: str, tracker: TConfig, stream: str, on: dict):
+        stream = self.streams.get(stream)
+        if stream is None:
+            return
+
+        substitution_registry = {}
+        if stream.is_sdr:
+            substitution_registry |= dict(sds=stream.sds)
+        tracker = self.config.resolve_object(tracker, **substitution_registry)
+
+        # ensure all streams are valid, i.e. either exist or belong to existing blocks
+        valid, non_existed_streams = True, []
+        for handler_name, stream_name in on.items():
+            stream = self.streams.get(stream_name)
+            if stream is None:
+                non_existed_streams.append(stream_name)
+
+            stream = self.register_stream(name, allow_block_resolve=False)
+            if stream is None:
+                valid = False
+                break
+
+            on[handler_name] = stream
+
+        if not valid:
+            # not all stream are valid ==> abort — remove all new streams
+            for stream_name in non_existed_streams:
+                self.streams.pop(stream_name)
+            return
+
+        self.trackers[name] = TrackerBlock(model=self, name=name, tracker=tracker, on=on)
 
     # =========== Parse API =========
 

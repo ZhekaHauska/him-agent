@@ -61,9 +61,9 @@ def _resolve_block(type_tag: str):
 
 
 def _resolve_tracker(type_tag: str):
-    if type_tag == 'tracker.base':
-        from hima.experiments.temporal_pooling.stats.alt_tracker import AltTracker
-        return AltTracker
+    if type_tag == 'tracker.sdr':
+        from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
+        return SdrTracker
 
 
 def _resolve_spatial_pooler(type_tag: str):

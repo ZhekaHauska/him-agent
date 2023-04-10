@@ -12,8 +12,12 @@ model:
   global_config: ???
   external:
     - step
+    - step_finished
     - sequence_id
+    - sequence_finished
     - epoch
+    - epoch_finished
+    - tracking_enabled
   pipeline:
     - input.sdr -> sp0.feedforward.sdr
     - sp0.compute()
@@ -26,27 +30,29 @@ model:
     - tm1.correctly_predicted_cells.sdr -> output.sdr
   track:
     - name: input.sdr
-      _base_: trackers.default
-      on: {}
-#        input_sdr: input.sdr
-#        step: step
+      tracker: trackers.sdr
+      stream: input.sdr
+      on:
+        sequence_started: sequence_id
+        sdr_updated: input.sdr
+        sequence_finished: sequence_finished
 
 trackers:
-  default:
-    _type_: tracker.base
-    model: ???
+  sdr:
+    _type_: tracker.sdr
+    sds: ???
 
 track_streams:
-  gen.output:
+  input.sdr:
     - sdr
     - cross.online.el
-  sp0.output:
+  sp0.output.sdr:
     - sdr
     - cross.online.el
-  sp1.output:
+  sp1.output.sdr:
     - sdr
     - cross.online.el
-  tm1.correctly_predicted_cells:
+  tm1.correctly_predicted_cells.sdr:
     - sdr
     - cross.online.el
 
