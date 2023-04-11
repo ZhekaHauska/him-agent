@@ -3,36 +3,47 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
+from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
 from htm.bindings.sdr import SDR
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+from unittest import TestCase
+import yaml
 
-if __name__ == '__main__':
-    params = dict(
-        potentialPct=0.5,
-        globalInhibition=True,
-        localAreaDensity=0,
-        numActiveColumnsPerInhArea=1,
-        stimulusThreshold=1,
-        synPermInactiveDec=0.01,
-        synPermActiveInc=0.1,
-        synPermConnected=0.5,
-        minPctOverlapDutyCycle=0.001,
-        dutyCyclePeriod=1000,
-        boostStrength=0.0,
-        seed=432,
-        spVerbosity=0,
-        wrapAround=False
-    )
 
-    sp = HtmSpatialPooler([5, 5], [3, 3], **params)
-    decoder = SPDecoder(sp)
+class TestSPEncoderDecoder(TestCase):
+    def setUp(self) -> None:
+        with open('configs/sp_default.yaml', 'r') as file:
+            self.config = yaml.load(file, Loader=yaml.Loader)
 
-    probs = np.random.rand(sp.getNumColumns())
+        if 'n_sp' in self.config:
+            self.sp = SPEnsemble(
+                **self.config
+            )
+        else:
+            self.sp = HtmSpatialPooler(
+                **self.config
+            )
 
-    res = decoder.decode(probs, update=True)
+        self.decoder = SPDecoder(self.sp)
 
-    sns.heatmap(res.reshape(sp.getInputDimensions()))
-    plt.show()
+    def test_encoder(self):
+        input_sdr = SDR(self.sp.getNumInputs())
+        output_sdr = SDR(self.sp.getNumColumns())
+
+        input_sdr.sparse = np.random.randint(input_sdr.size, size=2)
+        self.sp.compute(input_sdr, True, output_sdr)
+
+        print(input_sdr.sparse)
+        print(output_sdr.sparse)
+
+        self.sp.getColumnDimensions()
+
+    def test_decoder(self):
+        probs = np.random.rand(self.sp.getNumColumns())
+
+        res = self.decoder.decode(probs, update=True)
+
+        sns.heatmap(res.reshape(self.sp.getInputDimensions()))
+        plt.show()

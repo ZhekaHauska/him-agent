@@ -15,6 +15,8 @@ from htm.bindings.sdr import SDR
 from hima.modules.htm.utils import ExponentialDecayFunction, NoDecayFunction, LogisticExciteFunction, \
     FixedExciteFunction
 
+from typing import Union
+
 EPS = 1e-12
 UINT_DTYPE = "uint32"
 REAL_DTYPE = "float32"
@@ -1007,8 +1009,52 @@ class SPFilter:
         )
 
 
+class SPEnsemble:
+    def __init__(
+            self,
+            n_sp,
+            **kwargs
+    ):
+        self.n_sp = n_sp
+
+        self.sps = []
+
+        for i in range(self.n_sp):
+            self.sps.append(
+                HtmSpatialPooler(
+                    **kwargs
+                )
+            )
+
+    def compute(self, input_sdr: SDR, learn: bool, output_sdr: SDR):
+        outputs = []
+        tmp_output_sdr = SDR(self.sps[0].getNumColumns())
+
+        for i, sp in enumerate(self.sps):
+            sp.compute(input_sdr, learn, tmp_output_sdr)
+            outputs.append(
+                tmp_output_sdr.sparse + i * self.sps[0].getNumColumns()
+            )
+
+        output_sdr.sparse = np.concatenate(
+            outputs
+        )
+
+    def getNumColumns(self):
+        return self.sps[0].getNumColumns() * self.n_sp
+
+    def getNumInputs(self):
+        return self.sps[0].getNumInputs()
+
+    def getColumnDimensions(self):
+        return [sp.getColumnDimensions() for sp in self.sps]
+
+    def getInputDimensions(self):
+        return self.sps[0].getInputDimensions()
+
+
 class SPDecoder:
-    def __init__(self, sp: HtmSpatialPooler):
+    def __init__(self, sp: Union[HtmSpatialPooler, SPEnsemble]):
         self.sp = sp
         self.receptive_fields = np.zeros((self.sp.getNumColumns(), self.sp.getNumInputs()))
 
@@ -1022,7 +1068,19 @@ class SPDecoder:
         return 1 - np.exp(log_product)
 
     def _update_receptive_fields(self):
+        is_ensemble = type(self.sp) is SPEnsemble
+
         for cell in range(self.sp.getNumColumns()):
             field = np.zeros(self.sp.getNumInputs())
-            field[self.sp.connections.connectedPresynapticCellsForSegment(cell)] = 1
+            if is_ensemble:
+                sp_id = cell // self.sp.sps[0].getNumColumns()
+                cell_id = cell % self.sp.sps[0].getNumColumns()
+                field[
+                    self.sp.sps[sp_id].connections.connectedPresynapticCellsForSegment(cell_id)
+                ] = 1
+            else:
+                field[self.sp.connections.connectedPresynapticCellsForSegment(cell)] = 1
+
             self.receptive_fields[cell] = field
+
+
