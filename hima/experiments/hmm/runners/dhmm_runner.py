@@ -7,7 +7,7 @@
 from hima.modules.htm.dchmm import DCHMM
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
 from hima.envs.pixel.pixball import Pixball
-from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
+from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
 from htm.bindings.sdr import SDR
 
 try:
@@ -742,8 +742,11 @@ class PinballTest:
         obs = self.env.obs()
         self.obs_shape = (obs.shape[0], obs.shape[1])
 
+        self.encoder_type = conf['run']['encoder']
         sp_conf = conf.get('sp', None)
-        if sp_conf is not None:
+
+        if self.encoder_type == 'one_sp':
+            assert sp_conf is not None
             sp_conf['seed'] = self.seed
             self.encoder = HtmSpatialPooler(
                 self.obs_shape,
@@ -754,14 +757,35 @@ class PinballTest:
             self.sp_output = SDR(self.encoder.getColumnDimensions())
 
             self.decoder = SPDecoder(self.encoder)
+
+            self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
+            self.n_obs_states = 1
+        elif self.encoder_type == 'sp_ensemble':
+            assert sp_conf is not None
+            sp_conf['seed'] = self.seed
+            sp_conf['inputDimensions'] = list(self.obs_shape)
+            n_sp = sp_conf.pop('n_sp')
+            self.encoder = SPEnsemble(
+                n_sp,
+                **sp_conf
+            )
+            shape = self.encoder.sps[0].getColumnDimensions()
+            self.obs_shape = (shape[0], shape[1]*self.encoder.n_sp)
+            self.sp_input = SDR(self.encoder.getNumInputs())
+            self.sp_output = SDR(self.encoder.getNumColumns())
+
+            self.decoder = SPDecoder(self.encoder)
+
+            self.n_obs_vars = self.encoder.n_sp
+            self.n_obs_states = self.encoder.sps[0].getNumColumns()
         else:
             self.encoder = None
             self.sp_input = None
             self.sp_output = None
             self.decoder = None
 
-        self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
-        self.n_obs_states = 1
+            self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
+            self.n_obs_states = 1
 
         conf['hmm']['n_obs_states'] = self.n_obs_states
         conf['hmm']['n_obs_vars'] = self.n_obs_vars
@@ -814,7 +838,7 @@ class PinballTest:
             prev_diff = np.zeros_like(prev_im)
 
             if self.encoder is not None:
-                prev_latent = np.zeros(self.encoder.getColumnDimensions())
+                prev_latent = np.zeros(self.obs_shape)
             else:
                 prev_latent = None
 
@@ -962,7 +986,7 @@ class PinballTest:
 
                 steps += 1
                 prev_diff = diff.copy()
-                prev_latent = self.sp_output.dense.copy()
+                prev_latent = self.sp_output.dense.reshape(self.obs_shape).copy()
 
                 if steps >= self.max_steps:
                     if writer_raw is not None:
