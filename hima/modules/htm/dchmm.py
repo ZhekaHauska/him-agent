@@ -38,6 +38,7 @@ class DCHMM:
             n_obs_states: int,
             shape: tuple[int, int],
             cells_per_column: int,
+            use_off_states: bool,
             n_vars_per_factor: int,
             factors_per_var: int,
             factor_activation_threshold: int,
@@ -69,17 +70,25 @@ class DCHMM:
 
         self.n_obs_states = n_obs_states
 
-        # plus reset state
-        self.n_hidden_states = cells_per_column*n_obs_states + 1
+        self.use_off_states = use_off_states
 
-        self.n_off_states = 1
-        self.off_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
+        self.n_hidden_states = cells_per_column * n_obs_states + int(self.use_off_states)
+        self.total_cells = self.n_hidden_vars * self.n_hidden_states
+
+        if self.use_off_states:
+            self.n_off_states = 1
+            self.off_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
+        else:
+            self.n_off_states = 0
+            self.off_states = np.empty(0, dtype=UINT_DTYPE)
+
+        self.filter_off_states_mask = np.ones(self.total_cells, dtype=bool)
+        self.filter_off_states_mask[self.off_states] = False
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
         self.max_segments_per_cell = max_segments_per_cell
         self.max_segments_for_off_state = max_segments_for_off_state
-        self.total_cells = self.n_hidden_vars * self.n_hidden_states
 
         self.total_segments = (
                 (self.n_hidden_states - self.n_off_states) * self.max_segments_per_cell +
@@ -90,9 +99,6 @@ class DCHMM:
         self.total_factors = self.n_hidden_vars * self.factors_per_var
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
-
-        self.filter_off_states_mask = np.ones(self.total_cells, dtype=bool)
-        self.filter_off_states_mask[self.off_states] = False
 
         # number of variables assigned to a segment
         self.n_vars_per_factor = n_vars_per_factor
@@ -292,14 +298,15 @@ class DCHMM:
         prediction = normalize(np.exp(log_prediction))
 
         # boost off states
-        prediction_entropy = entropy(
-            prediction[:, :-1],
-            axis=-1
-        )
+        if self.use_off_states:
+            prediction_entropy = entropy(
+                prediction[:, :-1],
+                axis=-1
+            )
 
-        prediction[:, -1] *= (1 + self.alpha * np.exp(prediction_entropy))
+            prediction[:, -1] *= (1 + self.alpha * np.exp(prediction_entropy))
 
-        prediction = normalize(prediction)
+            prediction = normalize(prediction)
 
         prediction = prediction.flatten()
 
@@ -343,11 +350,12 @@ class DCHMM:
             )
 
             # adapt off states
-            off_states_to_reinforce = np.isin(self.off_states, next_active_cells)
-            p = self.forward_messages[self.off_states[off_states_to_reinforce]]
-            self.alpha[off_states_to_reinforce] += (1 - p) * self.lr_off
-            self.alpha[~off_states_to_reinforce] -= self.punishment_off
-            np.clip(self.alpha, a_min=0, a_max=None, out=self.alpha)
+            if self.use_off_states:
+                off_states_to_reinforce = np.isin(self.off_states, next_active_cells)
+                p = self.forward_messages[self.off_states[off_states_to_reinforce]]
+                self.alpha[off_states_to_reinforce] += (1 - p) * self.lr_off
+                self.alpha[~off_states_to_reinforce] -= self.punishment_off
+                np.clip(self.alpha, a_min=0, a_max=None, out=self.alpha)
 
             new_segments = self._grow_new_segments(
                 cells_to_grow_new_segments,
@@ -450,11 +458,16 @@ class DCHMM:
                 np.arange(self.cells_per_column, dtype=UINT_DTYPE)
             ).flatten()
 
-        vars_without_states = ~np.isin(np.arange(self.n_obs_vars), vars_for_obs_states)
+        if self.use_off_states:
 
-        empty_states = self.off_states[vars_without_states]
+            vars_without_states = ~np.isin(np.arange(self.n_obs_vars), vars_for_obs_states)
 
-        cells = np.concatenate([empty_states, cells_in_columns])
+            empty_states = self.off_states[vars_without_states]
+
+            cells = np.concatenate([empty_states, cells_in_columns])
+        else:
+            cells = cells_in_columns
+
         return cells
 
     def _get_cells_in_vars(self, variables):

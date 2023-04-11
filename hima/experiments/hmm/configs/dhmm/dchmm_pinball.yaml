@@ -8,6 +8,7 @@ lr: 1.0
 gamma: 0.1
 punishment: 0.1
 
+use_off_states: False
 # off state boosting
 initial_alpha_value: 0
 lr_off: 0.1
