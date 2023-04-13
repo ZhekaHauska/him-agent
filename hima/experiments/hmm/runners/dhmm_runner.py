@@ -760,6 +760,9 @@ class PinballTest:
 
             self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
             self.n_obs_states = 1
+
+            self.surprise_mode = 'bernoulli'
+
         elif self.encoder_type == 'sp_ensemble':
             assert sp_conf is not None
             sp_conf['seed'] = self.seed
@@ -778,6 +781,8 @@ class PinballTest:
 
             self.n_obs_vars = self.encoder.n_sp
             self.n_obs_states = self.encoder.sps[0].getNumColumns()
+
+            self.surprise_mode = 'bernoulli'
         else:
             self.encoder = None
             self.sp_input = None
@@ -786,6 +791,8 @@ class PinballTest:
 
             self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
             self.n_obs_states = 1
+
+            self.surprise_mode = 'bernoulli'
 
         conf['hmm']['n_obs_states'] = self.n_obs_states
         conf['hmm']['n_obs_vars'] = self.n_obs_vars
@@ -887,7 +894,7 @@ class PinballTest:
                 if steps > 0:
                     # metrics
                     # 1. surprise
-                    surprise = self.get_surprise(column_probs, obs_state)
+                    surprise = self.get_surprise(column_probs, obs_state, mode=self.surprise_mode)
                     surprises.append(surprise)
                     total_surprise += surprise
 
@@ -968,8 +975,15 @@ class PinballTest:
                         for p_obs, p_hid, s in zip(
                                 current_predictions_obs, current_predictions_hid, pred_horizon
                         ):
-                            surp_obs = self.get_surprise(p_obs.flatten(), self.sp_input.sparse)
-                            surp_hid = self.get_surprise(p_hid.flatten(), self.sp_output.sparse)
+                            surp_obs = self.get_surprise(
+                                p_obs.flatten(),
+                                self.sp_input.sparse
+                            )
+                            surp_hid = self.get_surprise(
+                                p_hid.flatten(),
+                                self.sp_output.sparse,
+                                mode=self.surprise_mode
+                            )
                             n_step_surprise_obs[s].append(surp_obs)
                             n_step_surprise_hid[s].append(surp_hid)
 
@@ -1125,20 +1139,47 @@ class PinballTest:
         return gray_im
 
     @staticmethod
-    def get_surprise(probs, obs):
+    def get_surprise(probs, obs, mode='bernoulli', normalize=True):
+        """
+        Calculate the surprise -log(p(o)), where o is observation
+
+        'probs': distribution parameters
+
+        'obs': indexes of variables in state 1
+
+        'mode': bernoulli | categorical
+
+            bernoulli
+                'probs' are parameters of Bernoulli distributed vector
+
+            categorical
+                'probs' are parameters of Categorical distributed vector
+
+        'normalize': bool
+        """
         is_coincide = np.isin(
             np.arange(len(probs)), obs
         )
+
         surprise = - np.sum(
             np.log(
                 np.clip(probs[is_coincide], 1e-7, 1)
             )
         )
-        surprise += - np.sum(
-            np.log(
-                np.clip(1 - probs[~is_coincide], 1e-7, 1)
+
+        if mode == 'bernoulli':
+            surprise += - np.sum(
+                np.log(
+                    np.clip(1 - probs[~is_coincide], 1e-7, 1)
+                )
             )
-        )
+            if normalize:
+                surprise /= len(probs)
+        elif mode == 'categorical':
+            if normalize:
+                surprise /= len(obs)
+        else:
+            raise ValueError(f'There is no such mode "{mode}"')
 
         return surprise
 
