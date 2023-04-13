@@ -1016,13 +1016,17 @@ class SPEnsemble:
             **kwargs
     ):
         self.n_sp = n_sp
+        self.seed = kwargs.pop('seed')
+        self._rng = np.random.default_rng(self.seed)
 
         self.sps = []
 
+        seeds = self._rng.integers(np.iinfo(np.int32).max, size=self.n_sp)
         for i in range(self.n_sp):
             self.sps.append(
                 HtmSpatialPooler(
-                    **kwargs
+                    **kwargs,
+                    seed=seeds[i]
                 )
             )
 
