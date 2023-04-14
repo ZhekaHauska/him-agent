@@ -828,9 +828,6 @@ class PinballTest:
         total_surprise_decoder = 0
 
         for i in range(self.n_episodes):
-            self.env.reset()
-            self.hmm.reset()
-
             surprises = []
             surprises_decoder = []
 
@@ -840,9 +837,6 @@ class PinballTest:
             n_step_surprise_hid = [list() for t in range(self.prediction_steps)]
 
             steps = 0
-
-            prev_im = self.preprocess(self.env.obs())
-            prev_diff = np.zeros_like(prev_im)
 
             if self.encoder is not None:
                 prev_latent = np.zeros(self.obs_shape)
@@ -872,6 +866,11 @@ class PinballTest:
             position = self.positions[init_i[0]]
             self.env.reset(position)
             self.env.act(action)
+
+            self.hmm.reset()
+
+            prev_im = self.preprocess(self.env.obs())
+            prev_diff = np.zeros_like(prev_im)
 
             while True:
                 raw_im = self.preprocess(self.env.obs())
