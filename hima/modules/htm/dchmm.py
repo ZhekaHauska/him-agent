@@ -9,6 +9,7 @@ from htm.bindings.math import Random
 
 import numpy as np
 from scipy.stats import entropy
+import pygraphviz as pgv
 
 EPS = 1e-24
 INT_TYPE = "int32"
@@ -152,6 +153,7 @@ class DCHMM:
             dtype=UINT_DTYPE
         )
 
+        # receptive fields for each segment
         self.receptive_fields = np.zeros(
             (self.total_segments, self.n_vars_per_factor),
             dtype=UINT_DTYPE
@@ -165,6 +167,8 @@ class DCHMM:
 
         self.factor_activation_threshold = factor_activation_threshold
 
+        self.factors_in_use = np.empty(0, dtype=UINT_DTYPE)
+
         self.factor_vars = np.zeros(
             (self.total_factors, self.n_vars_per_factor),
             dtype=UINT_DTYPE
@@ -175,6 +179,7 @@ class DCHMM:
             dtype=UINT_DTYPE
         )
 
+        # off state boosting coefficients
         self.initial_alpha_value = initial_alpha_value
         self.alpha = np.full(
             self.n_hidden_vars,
@@ -626,6 +631,7 @@ class DCHMM:
                 )
 
                 self.factor_vars[factor_id] = variables
+                self.factors_in_use = np.append(self.factors_in_use, factor_id)
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
 
@@ -650,3 +656,14 @@ class DCHMM:
             self.receptive_fields[new_segment] = candidates
 
         return np.array(new_segments, dtype=UINT_DTYPE)
+
+    def draw_factor_graph(self, path):
+        g = pgv.AGraph(strict=False, directed=False)
+        for fid in self.factors_in_use:
+            var_next = self.factor_connections.cellForSegment(fid)
+            g.add_node(f'f{fid}', shape='box')
+            g.add_edge(f'v{var_next}(t+1)', f'f{fid}')
+            for var_prev in self.factor_vars[fid]:
+                g.add_edge(f'f{fid}', f'v{var_prev}(t)',)
+        g.layout(prog='dot')
+        g.draw(path)

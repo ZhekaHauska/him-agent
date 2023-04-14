@@ -1120,6 +1120,19 @@ class PinballTest:
                     )
                     plt.close('all')
 
+                    self.hmm.draw_factor_graph(
+                        f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
+                    )
+
+                    self.logger.log(
+                        {
+                            'factors/graph': wandb.Image(
+                                f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
+                            )
+                        },
+                        step=i
+                    )
+
         if self.logger is not None and self.save_model:
             name = self.logger.name
 
