@@ -773,7 +773,7 @@ class PinballTest:
                 **sp_conf
             )
             shape = self.encoder.sps[0].getColumnDimensions()
-            self.obs_shape = (shape[0], shape[1]*self.encoder.n_sp)
+            self.obs_shape = (shape[0]*self.encoder.n_sp, shape[1])
             self.sp_input = SDR(self.encoder.getNumInputs())
             self.sp_output = SDR(self.encoder.getNumColumns())
 
