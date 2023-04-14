@@ -1058,8 +1058,9 @@ class SPEnsemble:
 
 
 class SPDecoder:
-    def __init__(self, sp: Union[HtmSpatialPooler, SPEnsemble]):
+    def __init__(self, sp: Union[HtmSpatialPooler, SPEnsemble], mode='max'):
         self.sp = sp
+        self.mode = mode
         self.receptive_fields = np.zeros((self.sp.getNumColumns(), self.sp.getNumInputs()))
 
     def decode(self, cell_probs, update=False):
@@ -1068,8 +1069,16 @@ class SPDecoder:
         if update:
             self._update_receptive_fields()
 
-        log_product = np.dot(self.receptive_fields.T, np.log(np.clip(1 - cell_probs, 1e-7, 1)))
-        return 1 - np.exp(log_product)
+        if self.mode == 'max':
+            probs_for_bit = self.receptive_fields * cell_probs.reshape((-1, 1))
+            probs_for_bit = probs_for_bit.max(axis=0)
+        elif self.mode == 'sum':
+            log_product = np.dot(self.receptive_fields.T, np.log(np.clip(1 - cell_probs, 1e-7, 1)))
+            probs_for_bit = 1 - np.exp(log_product)
+        else:
+            raise ValueError(f'There no such mode: "{self.mode}"!')
+
+        return probs_for_bit
 
     def _update_receptive_fields(self):
         is_ensemble = type(self.sp) is SPEnsemble
