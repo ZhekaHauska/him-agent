@@ -12,7 +12,7 @@ from scipy.stats import entropy
 import pygraphviz as pgv
 
 EPS = 1e-24
-INT_TYPE = "int32"
+INT_TYPE = "int64"
 UINT_DTYPE = "uint32"
 REAL_DTYPE = "float32"
 REAL64_DTYPE = "float64"
@@ -42,7 +42,8 @@ class DCHMM:
             use_off_states: bool,
             n_vars_per_factor: int,
             factors_per_var: int,
-            factor_activation_threshold: int,
+            factor_boost_scale: float = 10,
+            factor_boost_decay: float = 0.01,
             initial_factor_value: float = 0,
             initial_alpha_value: float = 0,
             lr: float = 0.01,
@@ -97,6 +98,8 @@ class DCHMM:
         ) * self.n_hidden_vars
 
         self.factors_per_var = factors_per_var
+        self.factor_boost_scale = factor_boost_scale
+        self.factor_boost_decay = factor_boost_decay
         self.total_factors = self.n_hidden_vars * self.factors_per_var
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
@@ -148,15 +151,17 @@ class DCHMM:
             dtype=REAL64_DTYPE
         )
 
-        self.factor_for_segment = np.zeros(
+        self.factor_for_segment = np.full(
             self.total_segments,
-            dtype=UINT_DTYPE
+            fill_value=-1,
+            dtype=INT_TYPE
         )
 
         # receptive fields for each segment
-        self.receptive_fields = np.zeros(
+        self.receptive_fields = np.full(
             (self.total_segments, self.n_vars_per_factor),
-            dtype=UINT_DTYPE
+            fill_value=-1,
+            dtype=INT_TYPE
         )
 
         # treat factors as segments
@@ -165,18 +170,20 @@ class DCHMM:
             connectedThreshold=0.5
         )
 
-        self.factor_activation_threshold = factor_activation_threshold
-
+        self.segments_in_use = np.empty(0, dtype=UINT_DTYPE)
         self.factors_in_use = np.empty(0, dtype=UINT_DTYPE)
+        self.factors_boost = np.empty(0, dtype=REAL_DTYPE)
 
-        self.factor_vars = np.zeros(
+        self.factor_vars = np.full(
             (self.total_factors, self.n_vars_per_factor),
-            dtype=UINT_DTYPE
+            fill_value=-1,
+            dtype=INT_TYPE
         )
 
-        self.factors_for_var = np.zeros(
+        self.factors_for_var = np.full(
             (self.n_hidden_vars, self.factors_per_var),
-            dtype=UINT_DTYPE
+            fill_value=-1,
+            dtype=INT_TYPE
         )
 
         # off state boosting coefficients
@@ -340,11 +347,11 @@ class DCHMM:
             self.next_forward_messages.reshape((self.n_hidden_vars, -1))
         ).flatten()
 
-        if learn:
-            next_active_cells = self._sample_cells(
-                cells
-            )
+        next_active_cells = self._sample_cells(
+            cells
+        )
 
+        if learn and (len(self.active_cells.sparse) > 0):
             (
                 segments_to_reinforce,
                 segments_to_punish,
@@ -367,6 +374,8 @@ class DCHMM:
                 self.active_cells.sparse
             )
 
+            self.segments_in_use = np.append(self.segments_in_use, new_segments)
+
             segments_to_prune = self._update_factors(
                 np.concatenate(
                     [
@@ -377,10 +386,12 @@ class DCHMM:
                 segments_to_punish
             )
 
+            self.segments_in_use = np.delete(self.segments_in_use, segments_to_prune)
+
             for segment in segments_to_prune:
                 self.connections.destroySegment(segment)
 
-            self.active_cells.sparse = next_active_cells
+        self.active_cells.sparse = next_active_cells
 
         self.forward_messages = self.next_forward_messages
 
@@ -560,9 +571,22 @@ class DCHMM:
         ]
 
         active_vars.sparse = active_cells // self.n_hidden_states
-        num_active_vars_per_factor = self.factor_connections.computeActivity(
-            active_vars, False
-        )
+
+        # TODO add pruning of inefficient factors
+        # sum factor values for every factor
+        if len(self.segments_in_use) > 0:
+            factor_for_segment = self.factor_for_segment[self.segments_in_use]
+            log_factor_values = self.log_factor_values_per_segment[self.segments_in_use]
+
+            sort_ind = np.argsort(factor_for_segment)
+            factors_sorted = factor_for_segment[sort_ind]
+            segments_sorted = log_factor_values[sort_ind]
+
+            _, split_ind, counts = np.unique(factors_sorted, return_index=True, return_counts=True)
+            factor_score = np.add.reduceat(segments_sorted, split_ind) / counts
+            factor_score += self.factor_boost_scale * self.factors_boost
+        else:
+            factor_score = np.empty(0)
 
         new_segments = list()
 
@@ -573,19 +597,20 @@ class DCHMM:
                 self.factor_connections.segmentsForCell(var)
             )
 
-            # sample factors by their activity
-            # TODO score factors by their predictive ability, remove factor if it cause errors a lot
-            if len(cell_factors) > 0:
-                num_active = num_active_vars_per_factor[cell_factors]
-                active_factors_mask = num_active >= self.factor_activation_threshold
-                active_factors = cell_factors[active_factors_mask]
-                num_active = num_active[active_factors_mask]
-            else:
-                active_factors = []
+            score = np.zeros(self.factors_per_var)
+            factors = np.full(self.factors_per_var, fill_value=-1)
 
-            if len(active_factors) > 0:
-                factor_id = self._rng.choice(active_factors, size=1, p=softmax(num_active))
+            if len(cell_factors) > 0:
+                score[:len(cell_factors)] = factor_score[cell_factors]
+                factors[:len(cell_factors)] = cell_factors
+
+            factor_id = self._rng.choice(factors, size=1, p=softmax(score))
+
+            if factor_id != -1:
                 variables = self.factor_vars[factor_id]
+                self.factors_boost[self.factors_in_use == factor_id] *= (
+                        1 - self.factor_boost_decay
+                )
             else:
                 # select cells for a new factor
                 # TODO check factor intersections
@@ -632,6 +657,7 @@ class DCHMM:
 
                 self.factor_vars[factor_id] = variables
                 self.factors_in_use = np.append(self.factors_in_use, factor_id)
+                self.factors_boost = np.append(self.factors_boost, 1)
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
 
