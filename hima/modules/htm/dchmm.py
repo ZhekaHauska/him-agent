@@ -531,7 +531,6 @@ class DCHMM:
                 )
             else:
                 # select cells for a new factor
-                # TODO check factor intersections
                 h_vars = np.arange(self.n_hidden_vars)
 
                 # sample size can't be smaller than number of variables
@@ -540,6 +539,9 @@ class DCHMM:
                 if sample_size == 0:
                     return np.empty(0, dtype=UINT_DTYPE)
 
+                # TODO score vars by their usage,
+                #   sample cells that are less used so,
+                #   there are less intersections
                 variables = self._rng.choice(
                     h_vars,
                     size=sample_size,

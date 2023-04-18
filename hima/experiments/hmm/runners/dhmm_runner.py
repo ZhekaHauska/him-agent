@@ -797,7 +797,6 @@ class PinballTest:
 
         conf['hmm']['n_obs_states'] = self.n_obs_states
         conf['hmm']['n_obs_vars'] = self.n_obs_vars
-        conf['hmm']['shape'] = self.obs_shape
 
         self.hmm = DCHMM(**conf['hmm'])
 
@@ -1082,22 +1081,8 @@ class PinballTest:
                         n_segments[cell] = len(segments)
                         sum_factor_value[cell] = value
 
-                    n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
-                    n_segments = np.pad(
-                        n_segments,
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
-                        'constant',
-                        constant_values=0
-                    ).flatten()
                     n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
 
-                    sum_factor_value = sum_factor_value.reshape((-1, self.hmm.n_hidden_states))
-                    sum_factor_value = np.pad(
-                        sum_factor_value,
-                        ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
-                        'constant',
-                        constant_values=0
-                    ).flatten()
                     sum_factor_value = sum_factor_value.reshape((-1, self.hmm.cells_per_column)).T
 
                     self.logger.log(
