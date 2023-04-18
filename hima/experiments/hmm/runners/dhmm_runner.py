@@ -9,6 +9,7 @@ from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
 from hima.envs.pixel.pixball import Pixball
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
 from htm.bindings.sdr import SDR
+from hima.experiments.hmm.runners.utils import get_surprise
 
 try:
     from pinball import Pinball
@@ -782,7 +783,7 @@ class PinballTest:
             self.n_obs_vars = self.encoder.n_sp
             self.n_obs_states = self.encoder.sps[0].getNumColumns()
 
-            self.surprise_mode = 'bernoulli'
+            self.surprise_mode = 'categorical'
         else:
             self.encoder = None
             self.sp_input = None
@@ -893,14 +894,14 @@ class PinballTest:
                 if steps > 0:
                     # metrics
                     # 1. surprise
-                    surprise = self.get_surprise(column_probs, obs_state, mode=self.surprise_mode)
+                    surprise = get_surprise(column_probs, obs_state, mode=self.surprise_mode)
                     surprises.append(surprise)
                     total_surprise += surprise
 
                     if self.decoder is not None:
                         decoded_probs = self.decoder.decode(column_probs, update=True)
 
-                        surprise_decoder = self.get_surprise(decoded_probs, self.sp_input.sparse)
+                        surprise_decoder = get_surprise(decoded_probs, self.sp_input.sparse)
 
                         surprises_decoder.append(surprise_decoder)
                         total_surprise_decoder += surprise_decoder
@@ -974,11 +975,11 @@ class PinballTest:
                         for p_obs, p_hid, s in zip(
                                 current_predictions_obs, current_predictions_hid, pred_horizon
                         ):
-                            surp_obs = self.get_surprise(
+                            surp_obs = get_surprise(
                                 p_obs.flatten(),
                                 self.sp_input.sparse
                             )
-                            surp_hid = self.get_surprise(
+                            surp_hid = get_surprise(
                                 p_hid.flatten(),
                                 self.sp_output.sparse,
                                 mode=self.surprise_mode
@@ -1149,51 +1150,6 @@ class PinballTest:
         gray_im /= gray_im.max()
 
         return gray_im
-
-    @staticmethod
-    def get_surprise(probs, obs, mode='bernoulli', normalize=True):
-        """
-        Calculate the surprise -log(p(o)), where o is observation
-
-        'probs': distribution parameters
-
-        'obs': indexes of variables in state 1
-
-        'mode': bernoulli | categorical
-
-            bernoulli
-                'probs' are parameters of Bernoulli distributed vector
-
-            categorical
-                'probs' are parameters of Categorical distributed vector
-
-        'normalize': bool
-        """
-        is_coincide = np.isin(
-            np.arange(len(probs)), obs
-        )
-
-        surprise = - np.sum(
-            np.log(
-                np.clip(probs[is_coincide], 1e-7, 1)
-            )
-        )
-
-        if mode == 'bernoulli':
-            surprise += - np.sum(
-                np.log(
-                    np.clip(1 - probs[~is_coincide], 1e-7, 1)
-                )
-            )
-            if normalize:
-                surprise /= len(probs)
-        elif mode == 'categorical':
-            if normalize:
-                surprise /= len(obs)
-        else:
-            raise ValueError(f'There is no such mode "{mode}"')
-
-        return surprise
 
 
 class PixballTest:

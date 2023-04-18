@@ -10,7 +10,7 @@ log_gif_fps: 5
 prediction_steps: 5
 actions: [[ 3.14, 5 ], [0, 3]]
 positions: [[0, -9], [0, 0]]
-# sp_ensemble | one_sp | None
+# sp_ensemble | one_sp | null
 encoder: sp_ensemble
 
 experiment: pinball
@@ -19,4 +19,4 @@ hmm_conf: 'configs/dhmm/dchmm_pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'
 setup: 'frog'
 
-seed: 123
+seed: null
