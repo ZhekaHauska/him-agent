@@ -8,7 +8,6 @@ from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
 
 import numpy as np
-from scipy.stats import entropy
 import pygraphviz as pgv
 
 EPS = 1e-24
@@ -37,24 +36,18 @@ class DCHMM:
             self,
             n_obs_vars: int,
             n_obs_states: int,
-            shape: tuple[int, int],
             cells_per_column: int,
-            use_off_states: bool,
             n_vars_per_factor: int,
             factors_per_var: int,
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
             initial_factor_value: float = 0,
-            initial_alpha_value: float = 0,
             lr: float = 0.01,
-            lr_off: float = 0.01,
             beta: float = 0.0,
             gamma: float = 0.1,
             punishment: float = 0.0,
-            punishment_off: float = 0.0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
-            max_segments_for_off_state: int = 1000,
             segment_prune_threshold: float = 0.001,
             allow_synapses_to_off_states: bool = False,
             seed: int = None,
@@ -68,33 +61,17 @@ class DCHMM:
 
         self.n_obs_vars = n_obs_vars
         self.n_hidden_vars = n_obs_vars
-        self.shape = shape
-
         self.n_obs_states = n_obs_states
 
-        self.use_off_states = use_off_states
-
-        self.n_hidden_states = cells_per_column * n_obs_states + int(self.use_off_states)
+        self.n_hidden_states = cells_per_column * n_obs_states
         self.total_cells = self.n_hidden_vars * self.n_hidden_states
-
-        if self.use_off_states:
-            self.n_off_states = 1
-            self.off_states = (np.arange(self.n_hidden_vars) + 1) * self.n_hidden_states - 1
-        else:
-            self.n_off_states = 0
-            self.off_states = np.empty(0, dtype=UINT_DTYPE)
-
-        self.filter_off_states_mask = np.ones(self.total_cells, dtype=bool)
-        self.filter_off_states_mask[self.off_states] = False
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
         self.max_segments_per_cell = max_segments_per_cell
-        self.max_segments_for_off_state = max_segments_for_off_state
 
         self.total_segments = (
-                (self.n_hidden_states - self.n_off_states) * self.max_segments_per_cell +
-                self.n_off_states * self.max_segments_for_off_state
+                self.n_hidden_states * self.max_segments_per_cell
         ) * self.n_hidden_vars
 
         self.factors_per_var = factors_per_var
@@ -119,15 +96,10 @@ class DCHMM:
         self.gamma = gamma
         self.punishment = punishment
 
-        self.lr_off = lr_off
-        self.punishment_off = punishment_off
-
         # low probability clipping
         self.cell_activation_threshold = cell_activation_threshold
 
         self.active_cells = SDR(self.total_cells)
-        # set all variables to the reset state
-        self.active_cells.sparse = self.off_states
 
         self.forward_messages = np.zeros(
             self.total_cells,
@@ -186,16 +158,8 @@ class DCHMM:
             dtype=INT_TYPE
         )
 
-        # off state boosting coefficients
-        self.initial_alpha_value = initial_alpha_value
-        self.alpha = np.full(
-            self.n_hidden_vars,
-            fill_value=self.initial_alpha_value,
-            dtype=REAL64_DTYPE
-        )
-
     def reset(self):
-        self.active_cells.sparse = self.off_states
+        self.active_cells.sparse = []
 
         self.forward_messages = np.zeros(
             self.total_cells,
@@ -212,11 +176,6 @@ class DCHMM:
         active_cells.sparse = np.flatnonzero(
             self.forward_messages >= self.cell_activation_threshold
         )
-
-        if not self.allow_synapses_to_off_states:
-            active_cells.sparse = active_cells.sparse[
-                np.isin(active_cells.sparse, self.off_states, invert=True)
-            ]
 
         num_connected_segment = self.connections.computeActivity(
             active_cells,
@@ -309,17 +268,6 @@ class DCHMM:
 
         prediction = normalize(np.exp(log_prediction))
 
-        # boost off states
-        if self.use_off_states:
-            prediction_entropy = entropy(
-                prediction[:, :-1],
-                axis=-1
-            )
-
-            prediction[:, -1] *= (1 + self.alpha * np.exp(prediction_entropy))
-
-            prediction = normalize(prediction)
-
         prediction = prediction.flatten()
 
         assert ~np.any(np.isnan(prediction))
@@ -331,8 +279,7 @@ class DCHMM:
     def predict_columns(self):
         assert self.prediction is not None
 
-        prediction = self.prediction[self.filter_off_states_mask]
-        prediction = prediction.reshape((self.n_columns, self.cells_per_column))
+        prediction = self.prediction.reshape((self.n_columns, self.cells_per_column))
         return prediction.sum(axis=-1)
 
     def observe(self, observation: np.ndarray, learn: bool = True):
@@ -360,14 +307,6 @@ class DCHMM:
                 self.active_cells.sparse,
                 next_active_cells
             )
-
-            # adapt off states
-            if self.use_off_states:
-                off_states_to_reinforce = np.isin(self.off_states, next_active_cells)
-                p = self.forward_messages[self.off_states[off_states_to_reinforce]]
-                self.alpha[off_states_to_reinforce] += (1 - p) * self.lr_off
-                self.alpha[~off_states_to_reinforce] -= self.punishment_off
-                np.clip(self.alpha, a_min=0, a_max=None, out=self.alpha)
 
             new_segments = self._grow_new_segments(
                 cells_to_grow_new_segments,
@@ -417,11 +356,6 @@ class DCHMM:
             ~np.isin(next_active_cells, cells_for_active_segments)
         ]
 
-        if self.max_segments_for_off_state == 0:
-            cells_to_grow_new_segments = cells_to_grow_new_segments[
-                np.isin(cells_to_grow_new_segments, self.off_states, invert=True)
-            ]
-
         return (
             segments_to_learn.astype(UINT_DTYPE),
             segments_to_punish.astype(UINT_DTYPE),
@@ -465,26 +399,14 @@ class DCHMM:
         return segments_to_prune
 
     def _get_cells_for_observation(self, obs_states):
-        vars_for_obs_states = obs_states // self.n_obs_states
         cells_in_columns = (
                 (
-                        obs_states * self.cells_per_column +
-                        self.n_off_states * vars_for_obs_states
+                    obs_states * self.cells_per_column
                 ).reshape((-1, 1)) +
                 np.arange(self.cells_per_column, dtype=UINT_DTYPE)
             ).flatten()
 
-        if self.use_off_states:
-
-            vars_without_states = ~np.isin(np.arange(self.n_obs_vars), vars_for_obs_states)
-
-            empty_states = self.off_states[vars_without_states]
-
-            cells = np.concatenate([empty_states, cells_in_columns])
-        else:
-            cells = cells_in_columns
-
-        return cells
+        return cells_in_columns
 
     def _get_cells_in_vars(self, variables):
         cells_in_vars = (
@@ -564,11 +486,7 @@ class DCHMM:
         # determine factor activity
         active_vars = SDR(self.n_hidden_vars)
 
-        active_cells = growth_candidates[
-            np.isin(
-                growth_candidates, self.off_states, invert=True
-            )
-        ]
+        active_cells = growth_candidates
 
         active_vars.sparse = active_cells // self.n_hidden_states
 
@@ -615,19 +533,6 @@ class DCHMM:
                 # select cells for a new factor
                 # TODO check factor intersections
                 h_vars = np.arange(self.n_hidden_vars)
-                rows = h_vars // self.shape[1]
-                cols = h_vars % self.shape[1]
-
-                row = var // self.shape[1]
-                col = var % self.shape[1]
-                distance = np.abs(rows - row) + np.abs(cols - col)
-
-                # beta doesn't have effect if synapses to off states are not allowed
-                score = - distance + self.beta * active_vars.dense
-
-                if not self.allow_synapses_to_off_states:
-                    h_vars = h_vars[active_vars.sparse]
-                    score = score[active_vars.sparse]
 
                 # sample size can't be smaller than number of variables
                 sample_size = min(self.n_vars_per_factor, len(h_vars))
@@ -638,7 +543,6 @@ class DCHMM:
                 variables = self._rng.choice(
                     h_vars,
                     size=sample_size,
-                    p=softmax(score),
                     replace=False
                 )
 
@@ -661,12 +565,7 @@ class DCHMM:
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
 
-            if self.filter_off_states_mask[cell]:
-                max_segments = self.max_segments_per_cell
-            else:
-                max_segments = self.max_segments_for_off_state
-
-            new_segment = self.connections.createSegment(cell, max_segments)
+            new_segment = self.connections.createSegment(cell, self.max_segments_per_cell)
             self.factor_for_segment[new_segment] = factor_id
 
             new_segments.append(new_segment)
