@@ -6,8 +6,9 @@
 
 from hima.modules.baselines.lstm import LSTMWMIterative
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
-from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
+from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
 from htm.bindings.sdr import SDR
+from hima.experiments.hmm.runners.utils import get_surprise
 
 try:
     from pinball import Pinball
@@ -348,8 +349,11 @@ class PinballTest:
         obs = self.env.obs()
         self.obs_shape = (obs.shape[0], obs.shape[1])
 
+        self.encoder_type = conf['run']['encoder']
         sp_conf = conf.get('sp', None)
-        if sp_conf is not None:
+
+        if self.encoder_type == 'one_sp':
+            assert sp_conf is not None
             sp_conf['seed'] = self.seed
             self.encoder = HtmSpatialPooler(
                 self.obs_shape,
@@ -360,15 +364,44 @@ class PinballTest:
             self.sp_output = SDR(self.encoder.getColumnDimensions())
 
             self.decoder = SPDecoder(self.encoder)
+
+            self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
+            self.n_obs_states = 1
+
+            self.surprise_mode = 'bernoulli'
+
+        elif self.encoder_type == 'sp_ensemble':
+            assert sp_conf is not None
+            sp_conf['seed'] = self.seed
+            sp_conf['inputDimensions'] = list(self.obs_shape)
+            n_sp = sp_conf.pop('n_sp')
+            self.encoder = SPEnsemble(
+                n_sp,
+                **sp_conf
+            )
+            shape = self.encoder.sps[0].getColumnDimensions()
+            self.obs_shape = (shape[0]*self.encoder.n_sp, shape[1])
+            self.sp_input = SDR(self.encoder.getNumInputs())
+            self.sp_output = SDR(self.encoder.getNumColumns())
+
+            self.decoder = SPDecoder(self.encoder)
+
+            self.n_obs_vars = self.encoder.n_sp
+            self.n_obs_states = self.encoder.sps[0].getNumColumns()
+
+            self.surprise_mode = 'categorical'
         else:
             self.encoder = None
             self.sp_input = None
             self.sp_output = None
             self.decoder = None
 
-        self.n_obs_states = self.obs_shape[0] * self.obs_shape[1]
+            self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
+            self.n_obs_states = 1
 
-        conf['hmm']['n_obs_states'] = self.n_obs_states
+            self.surprise_mode = 'bernoulli'
+
+        conf['hmm']['n_obs_states'] = self.n_obs_states * self.n_obs_vars
         conf['hmm']['n_hidden_states'] *= conf['hmm']['n_obs_states']
 
         self.hmm = LSTMWMIterative(**conf['hmm'])
@@ -416,7 +449,7 @@ class PinballTest:
             steps = 0
 
             if self.encoder is not None:
-                prev_latent = np.zeros(self.encoder.getColumnDimensions())
+                prev_latent = np.zeros(self.obs_shape)
             else:
                 prev_latent = None
 
@@ -469,15 +502,14 @@ class PinballTest:
                 if steps > 0:
                     # metrics
                     # 1. surprise
-                    surprise = self.get_surprise(column_probs, obs_state)
-
+                    surprise = get_surprise(column_probs, obs_state, mode=self.surprise_mode)
                     surprises.append(surprise)
                     total_surprise += surprise
 
                     if self.decoder is not None:
                         decoded_probs = self.decoder.decode(column_probs, update=True)
 
-                        surprise_decoder = self.get_surprise(decoded_probs, self.sp_input.sparse)
+                        surprise_decoder = get_surprise(decoded_probs, self.sp_input.sparse)
 
                         surprises_decoder.append(surprise_decoder)
                         total_surprise_decoder += surprise_decoder
@@ -551,8 +583,15 @@ class PinballTest:
                         for p_obs, p_hid, s in zip(
                                 current_predictions_obs, current_predictions_hid, pred_horizon
                         ):
-                            surp_obs = self.get_surprise(p_obs.flatten(), self.sp_input.sparse)
-                            surp_hid = self.get_surprise(p_hid.flatten(), self.sp_output.sparse)
+                            surp_obs = get_surprise(
+                                p_obs.flatten(),
+                                self.sp_input.sparse
+                            )
+                            surp_hid = get_surprise(
+                                p_hid.flatten(),
+                                self.sp_output.sparse,
+                                mode=self.surprise_mode
+                            )
                             n_step_surprise_obs[s].append(surp_obs)
                             n_step_surprise_hid[s].append(surp_hid)
 
@@ -569,7 +608,7 @@ class PinballTest:
 
                 steps += 1
                 prev_diff = diff.copy()
-                prev_latent = self.sp_output.dense.copy()
+                prev_latent = self.sp_output.dense.reshape(self.obs_shape).copy()
 
                 if steps >= self.max_steps:
                     if writer_raw is not None:
@@ -651,24 +690,6 @@ class PinballTest:
         gray_im /= gray_im.max()
 
         return gray_im
-
-    @staticmethod
-    def get_surprise(probs, obs):
-        is_coincide = np.isin(
-            np.arange(len(probs)), obs
-        )
-        surprise = - np.sum(
-            np.log(
-                np.clip(probs[is_coincide], 1e-7, 1)
-            )
-        )
-        surprise += - np.sum(
-            np.log(
-                np.clip(1 - probs[~is_coincide], 1e-7, 1)
-            )
-        )
-
-        return surprise
 
 
 def main(config_path):
