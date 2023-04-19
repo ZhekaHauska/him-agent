@@ -535,6 +535,14 @@ class DCHMM:
             else:
                 # select cells for a new factor
                 h_vars = np.arange(self.n_hidden_vars)
+                var_score = np.zeros_like(h_vars)
+
+                used_vars, counts = np.unique(
+                    self.factor_vars[self.factors_in_use].flatten(),
+                    return_counts=True
+                )
+
+                var_score[used_vars] = -counts
 
                 # sample size can't be smaller than number of variables
                 sample_size = min(self.n_vars_per_factor, len(h_vars))
@@ -542,12 +550,10 @@ class DCHMM:
                 if sample_size == 0:
                     return np.empty(0, dtype=UINT_DTYPE)
 
-                # TODO score vars by their usage,
-                #   sample cells that are less used so,
-                #   there are less intersections
                 variables = self._rng.choice(
                     h_vars,
                     size=sample_size,
+                    p=softmax(var_score),
                     replace=False
                 )
 
