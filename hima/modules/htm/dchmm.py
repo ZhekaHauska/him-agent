@@ -41,6 +41,7 @@ class DCHMM:
             factors_per_var: int,
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
+            factor_score_inverse_temp: float = 1.0,
             initial_factor_value: float = 0,
             lr: float = 0.01,
             beta: float = 0.0,
@@ -49,7 +50,6 @@ class DCHMM:
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
             segment_prune_threshold: float = 0.001,
-            allow_synapses_to_off_states: bool = False,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -77,6 +77,7 @@ class DCHMM:
         self.factors_per_var = factors_per_var
         self.factor_boost_scale = factor_boost_scale
         self.factor_boost_decay = factor_boost_decay
+        self.factor_score_inverse_temp = factor_score_inverse_temp
         self.total_factors = self.n_hidden_vars * self.factors_per_var
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
@@ -85,8 +86,6 @@ class DCHMM:
         self.n_vars_per_factor = n_vars_per_factor
 
         self.segment_prune_threshold = segment_prune_threshold
-
-        self.allow_synapses_to_off_states = allow_synapses_to_off_states
 
         # for now leave it strict
         self.segment_activation_threshold = n_vars_per_factor
@@ -522,7 +521,11 @@ class DCHMM:
                 score[:len(cell_factors)] = factor_score[cell_factors]
                 factors[:len(cell_factors)] = cell_factors
 
-            factor_id = self._rng.choice(factors, size=1, p=softmax(score))
+            factor_id = self._rng.choice(
+                factors,
+                size=1,
+                p=softmax(score, beta=self.factor_score_inverse_temp)
+            )
 
             if factor_id != -1:
                 variables = self.factor_vars[factor_id]
