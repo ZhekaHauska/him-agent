@@ -482,13 +482,6 @@ class DCHMM:
             new_segment_cells,
             growth_candidates,
     ):
-        # determine factor activity
-        active_vars = SDR(self.n_hidden_vars)
-
-        active_cells = growth_candidates
-
-        active_vars.sparse = active_cells // self.n_hidden_states
-
         # TODO add pruning of inefficient factors
         # sum factor values for every factor
         if len(self.segments_in_use) > 0:
@@ -499,14 +492,21 @@ class DCHMM:
             factors_sorted = factor_for_segment[sort_ind]
             segments_sorted = log_factor_values[sort_ind]
 
-            _, split_ind, counts = np.unique(factors_sorted, return_index=True, return_counts=True)
-            factor_score = np.add.reduceat(segments_sorted, split_ind) / counts
-            factor_score += self.factor_boost_scale * self.factors_boost
+            factors_with_segments, split_ind, counts = np.unique(
+                factors_sorted,
+                return_index=True,
+                return_counts=True
+            )
+
+            factor_score = self.factor_boost_scale * self.factors_boost
+            mask = np.isin(self.factors_in_use, factors_with_segments)
+            factor_score[mask] += np.add.reduceat(segments_sorted, split_ind) / counts
         else:
             factor_score = np.empty(0)
 
         new_segments = list()
 
+        # each cell corresponds to one variable
         for cell in new_segment_cells:
             # get factors for cell
             var = cell // self.n_hidden_states
@@ -569,11 +569,7 @@ class DCHMM:
                 self.factors_boost = np.append(self.factors_boost, 1)
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
-
             new_segment = self.connections.createSegment(cell, self.max_segments_per_cell)
-            self.factor_for_segment[new_segment] = factor_id
-
-            new_segments.append(new_segment)
 
             self.connections.growSynapses(
                 new_segment,
@@ -583,7 +579,11 @@ class DCHMM:
                 maxNew=self.n_vars_per_factor
             )
 
+            self.factor_for_segment[new_segment] = factor_id
+            self.log_factor_values_per_segment[new_segment] = self.initial_factor_value
             self.receptive_fields[new_segment] = candidates
+
+            new_segments.append(new_segment)
 
         return np.array(new_segments, dtype=UINT_DTYPE)
 
