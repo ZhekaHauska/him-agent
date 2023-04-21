@@ -129,25 +129,22 @@ models:
       - AA.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
   +AA:
-    api_block: ___
-    pipeline:
-      - ___.input -> gen.output
-      - TM.predict
-      - activate + predict by AA:
-        - TM.predicted_cells -> AA.feedforward
-        - AA.set_active_columns
-        - AA.predict
-        - AA.set_predicted_cells
-      - correct TM predicted cells:
-        - AA.predicted_cells -> TM.predicted_cells
-        - TM.set_predicted_cells
-      - learn TM:
-        - gen.output -> TM.feedforward
-        - TM.activate
-      - learn AA:
-        - TM.active_cells -> AA.feedforward
-        - AA.activate
-      - TM.correctly_predicted_cells -> ___.output
+    - TM.predict()
+    - activate + predict by AA:
+      - TM.predicted_cells.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.set_predicted_cells()
+    - learn TM:
+      - input.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.active_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
   +SE:
     - input.sdr -> SE.feedforward.sdr
     - SE.compute()
