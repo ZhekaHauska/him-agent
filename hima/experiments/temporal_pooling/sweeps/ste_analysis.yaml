@@ -10,7 +10,7 @@ parameters:
 
   iterate..epochs:
     value: 40
-  iterate..switch_every:
+  iterate..resample_frequency:
     value: 4
   iterate..sequences:
     value: [20, 1]
