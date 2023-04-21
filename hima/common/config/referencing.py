@@ -122,10 +122,13 @@ class ConfigResolver:
                 config_type=config_type,
                 config_path=reference_path,
             )
-            # by the implementation we override the innermost base config with each outer one
-            resolved_base_config.update(**config)
-            config = resolved_base_config
+            if config_type == dict:
+                # by the implementation we override the innermost base config with each outer one
+                resolved_base_config.update(**config)
+            else:
+                resolved_base_config.extend(*config)
 
+            config = resolved_base_config
         return config
 
     def _resolve_reference(self, config_path: str, *, default_base_path: str) -> TConfig:
