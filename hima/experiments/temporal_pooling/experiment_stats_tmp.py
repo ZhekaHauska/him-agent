@@ -118,10 +118,6 @@ class ExperimentStats:
         for name in self.stream_trackers:
             self.stream_trackers[name].on_sequence_started(sequence_id)
 
-    def on_sequence_finished(self):
-        for name in self.stream_trackers:
-            self.stream_trackers[name].on_sequence_finished()
-
     def on_step(self):
         if self.logger is None:
             return
@@ -149,6 +145,22 @@ class ExperimentStats:
 
         self.logger.log(metrics, step=self.progress.step)
 
+    def on_sequence_finished(self):
+        if self.logger is None:
+            return
+        if self.logging_temporally_disabled:
+            return
+
+        for name in self.stream_trackers:
+            self.stream_trackers[name].on_sequence_finished()
+
+        metrics = {
+            'epoch': self.progress.epoch
+        }
+        if self.model.metrics:
+            metrics |= self.model.flush_metrics()
+            self.logger.log(metrics, step=self.progress.step)
+
     def on_epoch_finished(self, logging_scheduled: bool):
         if not self.logger:
             return
@@ -158,7 +170,9 @@ class ExperimentStats:
         for name in self.stream_trackers:
             self.stream_trackers[name].on_epoch_finished()
 
-        metrics = {}
+        metrics = {
+            'epoch': self.progress.epoch
+        }
         for name in self.stream_trackers:
             metrics |= self.stream_trackers[name].aggregate_metrics()
 
