@@ -22,8 +22,8 @@ dataset:
     # mid similarity
     general:
       _base_: base
-      sequence_similarity: 0.35
-      sequence_similarity_std: 0.35
+      sequence_similarity: 0.2
+      sequence_similarity_std: 0.33
 
     # TODO: low similarity
     dissimilar:
