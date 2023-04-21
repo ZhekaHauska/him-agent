@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -58,7 +59,7 @@ class StpExperiment:
         self.iterate = self.config.resolve_object(iterate, object_type_or_factory=IterationConfig)
         self.data = self.config.resolve_object(
             data,
-            n_sequences=self.iterate.sequences,
+            n_sequences=self.iterate.total_sequences,
             sequence_length=self.iterate.elements
         )
         self.model = self.config.resolve_object(model, object_type_or_factory=Model)
@@ -98,6 +99,11 @@ class StpExperiment:
         self.model.streams['epoch'].set(self.progress.epoch)
         self.stats.on_epoch_started()
 
+        # TODO: FINISH
+        if self.iterate.resample_frequency < self.iterate.epochs:
+            self.train_epoch_with_switch_data()
+            return
+
         # noinspection PyTypeChecker
         for sequence in self.data:
             for i_repeat in range(self.iterate.sequence_repeats):
@@ -117,6 +123,26 @@ class StpExperiment:
         # print(f'{round(sp.n_computes / sp.run_time / 1000, 2)} kcps')
         # print(.sp.activation_entropy())
         # print('_____')
+
+    def train_epoch_with_switch_data(self):
+        stage = self.progress.epoch // self.iterate.resample_frequency
+        start = stage * self.iterate.sequences
+        stop = start + self.iterate.sequences
+
+        # noinspection PyTypeChecker
+        for sequence in islice(self.data, start, stop):
+            # HACK
+            sequence.id = sequence.id % self.iterate.sequences
+
+            for i_repeat in range(self.iterate.sequence_repeats):
+                self.run_sequence(sequence, i_repeat, learn=True)
+            self.stats.on_sequence_finished()
+
+        epoch_final_log_scheduled = scheduled(
+            i=self.progress.epoch, schedule=self.log_schedule['epoch'],
+            always_report_first=True, always_report_last=True, i_max=self.iterate.epochs
+        )
+        self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
     def run_sequence(self, sequence: Sequence, i_repeat: int = 0, learn=True):
         self.reset_blocks('temporal_memory', 'temporal_pooler')

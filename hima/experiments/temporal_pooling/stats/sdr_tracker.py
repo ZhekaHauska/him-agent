@@ -35,7 +35,6 @@ class SdrTracker:
     aggregate_entropy: float
 
     def __init__(self, sds: Sds):
-        print(sds)
         self.sds = sds
         self.sequence = []
         self.pmf_coverage_history = []

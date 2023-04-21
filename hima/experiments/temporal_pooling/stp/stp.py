@@ -3,13 +3,15 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
+
 import numpy as np
 from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling._depr.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
     sample_for_each_neuron
@@ -21,39 +23,46 @@ class SpatialTemporalPooler:
 
     # input
     feedforward_sds: Sds
+    feedforward_trace: np.ndarray
 
-    initial_rf_sparsity: float
-    max_rf_sparsity: float
-    max_rf_to_input_ratio: float
+    # connections
+    rf: np.ndarray
+    weights: np.ndarray
+    temporal_decay: float | np.ndarray
+    temporal_decay_mean: float
+    overlap_trace: np.ndarray
 
     # output
     output_sds: Sds
     min_overlap_for_activation: float
+    n_computes: int
+    output_trace: np.ndarray
 
     # learning
     learning_rate: float
     global_inhibition_strength: float
 
-    # connections
+    # Newborn stage
+    base_boosting_k: float
+    initial_rf_sparsity: float
+    max_rf_sparsity: float
+    max_rf_to_input_ratio: float
+    # Newborn pruning
     newborn_pruning_cycle: float
     newborn_pruning_stages: int
     newborn_pruning_stage: int
+    # Adult pruning/growing/resampling
     prune_grow_cycle: float
 
-    # stats
-    n_computes: int
-    feedforward_trace: np.ndarray
-    output_trace: np.ndarray
-
-    # vectorized fields
-    rf: np.ndarray
-    weights: np.ndarray
-    threshold = 0.3
-    base_boosting_k: float
-    output_trace: np.ndarray
+    # auxiliary
+    sparse_input: SparseSdr
+    dense_input: np.ndarray
+    recognition_strength_trace: float
+    run_time: float
 
     def __init__(
             self, feedforward_sds: Sds,
+            pooling_window: float,
             # newborn / mature
             initial_rf_to_input_ratio: float, max_rf_to_input_ratio: float, max_rf_sparsity: float,
             output_sds: Sds,
@@ -63,6 +72,7 @@ class SpatialTemporalPooler:
             prune_grow_cycle: float,
             boosting_k: float, seed: int,
             adapt_to_ff_sparsity: bool = True,
+            rand_decay_max_ratio: float = 1.,
     ):
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = feedforward_sds
@@ -93,6 +103,15 @@ class SpatialTemporalPooler:
         self.w_min = 0.
         self.weights = self.normalize_weights(
             self.rng.normal(w0, w0, size=self.rf.shape)
+        )
+
+        # temporal decay
+        self.overlap_trace = np.zeros(self.output_size)
+        assert rand_decay_max_ratio >= 1., 'Decay max ratio must be >= 1.0'
+        self.temporal_decay = _make_decay_matrix(
+            rng=self.rng, size=self.output_size,
+            temporal_window_mean=pooling_window,
+            temporal_window_max_ratio=rand_decay_max_ratio
         )
 
         self.sparse_input = []
@@ -133,7 +152,6 @@ class SpatialTemporalPooler:
                 self.prune_grow_synapses()
 
         self.update_input(input_sdr)
-
         match_mask = self.match_input(self.dense_input)
         overlaps = (match_mask * self.weights).sum(axis=1)
 
@@ -143,9 +161,11 @@ class SpatialTemporalPooler:
             # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
             overlaps = overlaps * boosting_alpha ** np.sign(overlaps)
 
+        self.overlap_trace = self.overlap_trace * self.temporal_decay + overlaps
+
         n_winners = self.output_sds.active_size
         winners = np.sort(
-            np.argpartition(-overlaps, n_winners)[:n_winners]
+            np.argpartition(-self.overlap_trace, n_winners)[:n_winners]
         )
 
         # update winners activation stats
@@ -329,3 +349,37 @@ class SpatialTemporalPooler:
     @property
     def recognition_strength(self):
         return self.recognition_strength_trace / self.n_computes
+
+
+def _resolve_temporal_decay(temporal_window: float = None) -> float:
+    if 0.0 <= temporal_window < 1.0:
+        decay = temporal_window
+        return decay
+    elif temporal_window >= 1.0:
+        # temporal window: decay ^ window = 1 / 10 ==> ten-time decrease
+        base = 0.1
+        return np.power(base, 1 / temporal_window)
+
+    raise ValueError(f'Invalid temporal window value {temporal_window}!')
+
+
+def _make_decay_matrix(rng, size, temporal_window_mean, temporal_window_max_ratio):
+    if temporal_window_max_ratio == 1.0:
+        scales = np.ones(size)
+    else:
+        scales = _loguniform(rng, temporal_window_max_ratio, size=size)
+
+    temporal_window_mx = temporal_window_mean * scales
+    temporal_window_mx[temporal_window_mx <= 1.0] = 0.
+    base = 0.1
+    temporal_window_mx[temporal_window_mx > 1.0] = np.power(
+        base,
+        1. / temporal_window_mx[temporal_window_mx > 1.0]
+    )
+    return temporal_window_mx
+
+
+def _loguniform(rng, std, size):
+    low = np.log(1 / std)
+    high = np.log(std)
+    return np.exp(rng.uniform(low, high, size))

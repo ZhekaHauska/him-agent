@@ -13,10 +13,11 @@ class StpLazyTypeResolver(LazyTypeResolver):
             ('block.', _resolve_block),
             ('tracker.', _resolve_tracker),
             ('encoder.', _resolve_encoder),
-            ('stp.', _resolve_runner),
             ('ds.', _resolve_dataset),
             ('sp.', _resolve_spatial_pooler),
+            ('stp.', _resolve_spatial_temporal_pooler),
             ('tm.', _resolve_temporal_memory),
+            ('stp_experiment.', _resolve_runner),
         ]
 
     def resolve(self, type_tag: str) -> TTypeOrFactory:
@@ -75,6 +76,12 @@ def _resolve_spatial_pooler(type_tag: str):
         return SpatialPooler
 
 
+def _resolve_spatial_temporal_pooler(type_tag: str):
+    if type_tag == 'stp.base':
+        from hima.experiments.temporal_pooling.stp.stp import SpatialTemporalPooler
+        return SpatialTemporalPooler
+
+
 def _resolve_dataset(type_tag):
     if type_tag == 'ds.synthetic_sequences':
         from hima.experiments.temporal_pooling.data.synthetic_sequences import SyntheticSequences
@@ -91,7 +98,7 @@ def _resolve_encoder(type_tag):
 
 
 def _resolve_runner(type_tag: str):
-    if type_tag == 'stp.synthetic_sequences':
+    if type_tag == 'stp_experiment.synthetic_sequences':
         from hima.experiments.temporal_pooling.test_stp import StpExperiment
         return StpExperiment
 
