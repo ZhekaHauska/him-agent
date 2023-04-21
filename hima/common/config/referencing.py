@@ -126,7 +126,7 @@ class ConfigResolver:
                 # by the implementation we override the innermost base config with each outer one
                 resolved_base_config.update(**config)
             else:
-                resolved_base_config.extend(*config)
+                resolved_base_config.extend(config)
 
             config = resolved_base_config
         return config
