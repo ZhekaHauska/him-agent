@@ -324,7 +324,9 @@ class DCHMM:
                 segments_to_punish
             )
 
-            self.segments_in_use = np.delete(self.segments_in_use, segments_to_prune)
+            self.segments_in_use = self.segments_in_use[
+                np.isin(self.segments_in_use, segments_to_prune, invert=True)
+            ]
 
             for segment in segments_to_prune:
                 self.connections.destroySegment(segment)
@@ -482,7 +484,7 @@ class DCHMM:
             new_segment_cells,
             growth_candidates,
     ):
-        # TODO add pruning of inefficient factors
+        # TODO add pruning or rewriting of inefficient factors
         # sum factor values for every factor
         if len(self.segments_in_use) > 0:
             factor_for_segment = self.factor_for_segment[self.segments_in_use]
@@ -500,9 +502,12 @@ class DCHMM:
 
             factor_score = self.factor_boost_scale * self.factors_boost
             mask = np.isin(self.factors_in_use, factors_with_segments)
-            factor_score[mask] += np.add.reduceat(segments_sorted, split_ind) / counts
+            factor_eff = np.add.reduceat(segments_sorted, split_ind) / counts
+            factor_score[mask] += factor_eff
         else:
             factor_score = np.empty(0)
+
+        self.factor_score = factor_score
 
         new_segments = list()
 
@@ -575,6 +580,9 @@ class DCHMM:
                 self.factors_boost = np.append(self.factors_boost, 1)
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
+            # TODO it may rewrite segments randomly, but we want to do it wisely
+            #   so, check if we reached the limit of segments and delete a segment with
+            #   least log factor value
             new_segment = self.connections.createSegment(cell, self.max_segments_per_cell)
 
             self.connections.growSynapses(
