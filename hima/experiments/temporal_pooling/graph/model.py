@@ -48,6 +48,8 @@ class Model(Stretchable, Stateful, Node):
         self.blocks = {}
 
         if not isinstance(pipeline, Pipeline):
+            if isinstance(pipeline, str):
+                pipeline = self.config.config_resolver.resolve(pipeline, config_type=list)
             pipeline = self.parse(pipeline)
         self.pipeline = pipeline
 
