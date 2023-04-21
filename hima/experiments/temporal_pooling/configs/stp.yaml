@@ -20,10 +20,9 @@ model:
     - epoch_finished
     - tracking_enabled
   pipeline:
-    - input.sdr -> SE'.feedforward.sdr
-    - SE'.compute()
-#    - SE.output.sdr -> output.sdr
-    - SE'.output.sdr -> TM.feedforward.sdr
+    - input.sdr -> STE.feedforward.sdr
+    - STE.compute()
+    - STE.output.sdr -> TM.feedforward.sdr
     - compute TM:
       - TM.predict()
       - TM.set_predicted_cells()
@@ -83,8 +82,8 @@ data:
 
 models:
   +STE+AA:
-    - input.sdr -> SE'.feedforward.sdr
-    - SE'.compute()
+    - input.sdr -> STE.feedforward.sdr
+    - STE.compute()
     - TM.predict()
     - activate + predict by AA:
       - TM.predicted_cells.sdr -> AA.feedforward.sdr
@@ -95,16 +94,16 @@ models:
       - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
       - TM.set_predicted_cells()
     - learn TM:
-      - SE'.output.sdr -> TM.feedforward.sdr
+      - STE.output.sdr -> TM.feedforward.sdr
       - TM.activate()
     - learn AA:
       - TM.active_cells.sdr -> AA.feedforward.sdr
       - AA.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
   +STE:
-    - input.sdr -> SE'.feedforward.sdr
-    - SE'.compute()
-    - SE'.output.sdr -> TM.feedforward.sdr
+    - input.sdr -> STE.feedforward.sdr
+    - STE.compute()
+    - STE.output.sdr -> TM.feedforward.sdr
     - compute TM:
         - TM.predict()
         - TM.set_predicted_cells()
@@ -183,7 +182,7 @@ blocks:
       prune_grow_cycle: 8.0
       adapt_to_ff_sparsity: False
       boosting_k: 0.5
-  SE':
+  STE:
     _type_: block.sp
     output_sds: [500, 10]
     sp:
