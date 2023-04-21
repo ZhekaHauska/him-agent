@@ -42,6 +42,7 @@ class DCHMM:
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
             factor_score_inverse_temp: float = 1.0,
+            prediction_inverse_temp: float = 1.0,
             initial_factor_value: float = 0,
             lr: float = 0.01,
             beta: float = 0.0,
@@ -78,6 +79,7 @@ class DCHMM:
         self.factor_boost_scale = factor_boost_scale
         self.factor_boost_decay = factor_boost_decay
         self.factor_score_inverse_temp = factor_score_inverse_temp
+        self.prediction_inverse_temp = prediction_inverse_temp
         self.total_factors = self.n_hidden_vars * self.factors_per_var
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
@@ -144,6 +146,7 @@ class DCHMM:
         self.segments_in_use = np.empty(0, dtype=UINT_DTYPE)
         self.factors_in_use = np.empty(0, dtype=UINT_DTYPE)
         self.factors_boost = np.empty(0, dtype=REAL_DTYPE)
+        self.factors_score = np.empty(0, dtype=REAL_DTYPE)
 
         self.factor_vars = np.full(
             (self.total_factors, self.n_vars_per_factor),
@@ -264,6 +267,9 @@ class DCHMM:
 
         # rescale
         log_prediction -= log_prediction.min(axis=-1).reshape((-1, 1))
+        max_log_pred = log_prediction.max(axis=-1).reshape((-1, 1))
+        log_prediction = np.divide(log_prediction, max_log_pred, where=(max_log_pred != 0))
+        log_prediction = self.prediction_inverse_temp * log_prediction
 
         prediction = normalize(np.exp(log_prediction))
 

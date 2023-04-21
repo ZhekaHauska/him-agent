@@ -1,15 +1,16 @@
 cells_per_column: 10
 n_vars_per_factor: 3
 factors_per_var: 10
-initial_factor_value: 10
-lr: 0.01
+initial_factor_value: 0.001
+lr: 0.001
 gamma: 0
-punishment: 0.01
+punishment: 0.001
 
 # new factor boosting
-factor_boost_scale: 10
-factor_boost_decay: 0.01
-factor_score_inverse_temp: 0.1
+factor_boost_scale: 1
+factor_boost_decay: 0.001
+factor_score_inverse_temp: 10.0
+prediction_inverse_temp: 8.0
 
 cell_activation_threshold: 0.0001
 max_segments_per_cell: 10
