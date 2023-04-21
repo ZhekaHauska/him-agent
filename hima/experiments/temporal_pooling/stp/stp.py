@@ -31,6 +31,7 @@ class SpatialTemporalPooler:
     temporal_decay: float | np.ndarray
     temporal_decay_mean: float
     overlap_trace: np.ndarray
+    reset_on_activation: bool
 
     # output
     output_sds: Sds
@@ -73,6 +74,7 @@ class SpatialTemporalPooler:
             boosting_k: float, seed: int,
             adapt_to_ff_sparsity: bool = True,
             rand_decay_max_ratio: float = 1.,
+            reset_on_activation: bool = True,
     ):
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = feedforward_sds
@@ -121,7 +123,8 @@ class SpatialTemporalPooler:
             temporal_window_mean=pooling_window,
             temporal_window_max_ratio=rand_decay_max_ratio
         )
-        self.match_mask_trace = np.zeros(self.ff_size)
+        self.match_mask_trace = np.zeros_like(self.rf)
+        self.reset_on_activation = reset_on_activation
 
         self.base_boosting_k = boosting_k
         self.newborn_pruning_cycle = newborn_pruning_cycle
@@ -162,6 +165,10 @@ class SpatialTemporalPooler:
             # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
             overlaps = overlaps * boosting_alpha ** np.sign(overlaps)
 
+        # print(self.match_mask_trace.shape, self.temporal_decay.shape, match_mask.shape)
+        self.match_mask_trace = (
+                self.match_mask_trace * self.temporal_decay[..., np.newaxis] + match_mask
+        )
         self.overlap_trace = self.overlap_trace * self.temporal_decay + overlaps
 
         n_winners = self.output_sds.active_size
@@ -171,32 +178,39 @@ class SpatialTemporalPooler:
 
         # update winners activation stats
         self.output_trace[winners] += 1
-        self.recognition_strength_trace += overlaps[winners].sum() / n_winners
-
-        # reset overlap trace for winners
-        self.overlap_trace[winners] = 0.
+        self.recognition_strength_trace += (
+                self.overlap_trace[winners].sum() / n_winners / self.rf_size
+        )
 
         if learn:
-            self.learn(winners, match_mask[winners])
+            self.learn(winners)
+
+        # reset overlap and match mask traces for winners
+        if self.reset_on_activation:
+            self.match_mask_trace[winners] = 0.
+            self.overlap_trace[winners] = 0.
+
         return winners
 
-    def learn(self, neurons: np.ndarray, match_input_mask: np.ndarray, modulation: float = 1.0):
+    def learn(self, neurons: np.ndarray, modulation: float = 1.0):
         w = self.weights[neurons]
-        mask = match_input_mask
-        matched = mask.sum(axis=1, keepdims=True)
+        match_trace = self.match_mask_trace[neurons]
+        matched = match_trace.sum(axis=1, keepdims=True)
         # add anti zero-division term
         matched = matched + (matched == 0.) * 1e-5
 
         lr = modulation * self.polarity * self.learning_rate
         inh = self.global_inhibition_strength
-        dw_inh = lr * inh * (1 - mask)
+        dw_inh = lr * inh * (1 - match_trace)
 
+        # inhibition frees weights to be used for reinforcement
         dw_pool = dw_inh.sum(axis=1, keepdims=True)
-        dw_exc = mask * dw_pool / matched
+        dw_exc = match_trace * dw_pool / matched
 
         self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
 
     def process_feedback(self, feedback_sdr: SparseSdr):
+        assert False, 'Fix feedback processing as match mask is incorrect now'
         # feedback SDR is the SP neurons that should be reinforced
         feedback_strength = self.no_feedback_count
         fb_match_mask, _ = self.match_input(self.dense_input, neurons=feedback_sdr)
@@ -228,6 +242,7 @@ class SpatialTemporalPooler:
         self.weights = self.normalize_weights(
             gather_rows(self.weights, keep_connections_i)
         )
+        self.match_mask_trace = gather_rows(self.match_mask_trace, keep_connections_i)
         print(f'Prune newborns: {self._state_str()}')
 
         if not self.is_newborn_phase:
