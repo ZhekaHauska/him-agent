@@ -105,6 +105,14 @@ class SpatialTemporalPooler:
             self.rng.normal(w0, w0, size=self.rf.shape)
         )
 
+        self.sparse_input = []
+        self.dense_input = np.zeros(self.ff_size)
+
+        self.n_computes = 0
+        self.feedforward_trace = np.full(self.ff_size, 1e-5)
+        self.output_trace = np.full(self.output_size, 1e-5)
+        self.recognition_strength_trace = 0
+
         # temporal decay
         self.overlap_trace = np.zeros(self.output_size)
         assert rand_decay_max_ratio >= 1., 'Decay max ratio must be >= 1.0'
@@ -113,14 +121,7 @@ class SpatialTemporalPooler:
             temporal_window_mean=pooling_window,
             temporal_window_max_ratio=rand_decay_max_ratio
         )
-
-        self.sparse_input = []
-        self.dense_input = np.zeros(self.ff_size, dtype=int)
-
-        self.n_computes = 0
-        self.feedforward_trace = np.full(self.ff_size, 1e-5)
-        self.output_trace = np.full(self.output_size, 1e-5)
-        self.recognition_strength_trace = 0
+        self.match_mask_trace = np.zeros(self.ff_size)
 
         self.base_boosting_k = boosting_k
         self.newborn_pruning_cycle = newborn_pruning_cycle
@@ -172,6 +173,9 @@ class SpatialTemporalPooler:
         self.output_trace[winners] += 1
         self.recognition_strength_trace += overlaps[winners].sum() / n_winners
 
+        # reset overlap trace for winners
+        self.overlap_trace[winners] = 0.
+
         if learn:
             self.learn(winners, match_mask[winners])
         return winners
@@ -180,6 +184,7 @@ class SpatialTemporalPooler:
         w = self.weights[neurons]
         mask = match_input_mask
         matched = mask.sum(axis=1, keepdims=True)
+        # add anti zero-division term
         matched = matched + (matched == 0.) * 1e-5
 
         lr = modulation * self.polarity * self.learning_rate
