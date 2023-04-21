@@ -46,7 +46,7 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
         for name in self.supported_streams:
             stream = self[name]
             if stream is None and name in required_streams:
-                stream = self.model.register_stream(name)
+                stream = self.model.register_stream(self.supported_streams[name])
             if stream is None:
                 continue
 
@@ -112,7 +112,6 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
         self.tm.activate_basal_dendrites(learn)
         self.tm.predict_cells()
 
-        # if self[PREDICTED_CELLS] is not None:
         self[PREDICTED_CELLS].set(self.tm.get_predicted_cells())
 
     def set_predicted_cells(self):
@@ -131,5 +130,4 @@ class GeneralFeedbackTemporalMemoryBlock(Block):
         self.tm.activate_cells(learn)
 
         self[ACTIVE_CELLS].set(self.tm.get_active_cells())
-        # if self[CORRECTLY_PREDICTED_CELLS] is not None:
         self[CORRECTLY_PREDICTED_CELLS].set(self.tm.get_correctly_predicted_cells())
