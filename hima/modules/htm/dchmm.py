@@ -41,13 +41,10 @@ class DCHMM:
             factors_per_var: int,
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
-            factor_score_inverse_temp: float = 1.0,
+            segment_boost_scale: float = 10,
+            segment_boost_decay: float = 0.01,
             prediction_inverse_temp: float = 1.0,
             initial_factor_value: float = 0,
-            lr: float = 0.01,
-            beta: float = 0.0,
-            gamma: float = 0.1,
-            punishment: float = 0.0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
             segment_prune_threshold: float = 0.001,
@@ -88,14 +85,11 @@ class DCHMM:
         self.n_vars_per_factor = n_vars_per_factor
 
         self.segment_prune_threshold = segment_prune_threshold
+        self.segment_boost_scale = segment_boost_scale
+        self.segment_boost_decay = segment_boost_decay
 
         # for now leave it strict
         self.segment_activation_threshold = n_vars_per_factor
-
-        self.lr = lr
-        self.beta = beta
-        self.gamma = gamma
-        self.punishment = punishment
 
         # low probability clipping
         self.cell_activation_threshold = cell_activation_threshold
@@ -122,6 +116,11 @@ class DCHMM:
             self.total_segments,
             fill_value=self.initial_factor_value,
             dtype=REAL64_DTYPE
+        )
+        self.segment_boost = np.full(
+            self.total_segments,
+            fill_value=self.segment_boost_scale,
+            dtype=REAL_DTYPE
         )
 
         self.factor_for_segment = np.full(
@@ -214,7 +213,10 @@ class DCHMM:
             if len(active_segments) > 0:
                 factors_for_active_segments = self.factor_for_segment[active_segments]
                 shifted_factor_value = np.expm1(
-                    self.log_factor_values_per_segment[active_segments]
+                    (
+                            self.log_factor_values_per_segment[active_segments] +
+                            self.segment_boost[active_segments]
+                    )
                 )
 
                 likelihood = self.forward_messages[self.receptive_fields[active_segments]]
@@ -370,27 +372,12 @@ class DCHMM:
         )
 
     def _update_factors(self, segments_to_reinforce, segments_to_punish):
-        cells_for_segments_reinforce = self.connections.mapSegmentsToCells(segments_to_reinforce)
-        cells_for_segments_punish = self.connections.mapSegmentsToCells(segments_to_punish)
-
         w = self.log_factor_values_per_segment[segments_to_reinforce]
         self.log_factor_values_per_segment[
             segments_to_reinforce
-        ] += self.lr * (
-                1 - self.prediction[cells_for_segments_reinforce]
-        ) * np.exp(-self.gamma*w)
+        ] += np.log1p(1/np.exp(w))
 
-        self.log_factor_values_per_segment[
-            segments_to_punish
-        ] -= self.punishment * self.prediction[cells_for_segments_punish]
-
-        self.log_factor_values_per_segment[segments_to_punish] = (
-            np.clip(
-                self.log_factor_values_per_segment[segments_to_punish],
-                a_min=0.0,
-                a_max=None
-            )
-        )
+        self.segment_boost[self.segments_in_use] *= (1 - self.segment_boost_decay)
 
         segments = np.concatenate(
                 [
