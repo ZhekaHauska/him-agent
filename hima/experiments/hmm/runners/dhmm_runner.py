@@ -103,10 +103,10 @@ class MPGTest:
                 self.hmm.predict_cells()
                 column_probs = self.hmm.predict_columns()
                 self.hmm.observe(obs_state, learn=True)
-                
+
                 if letter is None:
                     break
-                    
+
                 # metrics
                 # 1. surprise
                 if prev_state != 0:
@@ -128,9 +128,9 @@ class MPGTest:
                 # 3. Kl distance
                 if prev_state != 0:
                     dkl = min(
-                            rel_entr(true_dist[prev_state], column_probs).sum(),
-                            200.0
-                        )
+                        rel_entr(true_dist[prev_state], column_probs).sum(),
+                        200.0
+                    )
                     dkls.append(dkl)
                     total_dkl += dkl
 
@@ -485,9 +485,9 @@ class MMPGTest:
 
                 # 3. Kl distance
                 dkl = min(
-                        rel_entr(true_dist[policy][prev_state], column_probs).sum(),
-                        200.0
-                    )
+                    rel_entr(true_dist[policy][prev_state], column_probs).sum(),
+                    200.0
+                )
                 dkls.append(dkl)
                 total_dkl += dkl
 
@@ -576,7 +576,7 @@ class MMPGTest:
 
                     n_segments = n_segments.reshape((-1, self.hmm.n_hidden_states))
                     n_segments = np.pad(
-                        n_segments, 
+                        n_segments,
                         ((0, 0), (0, self.hmm.cells_per_column - self.hmm.n_off_states)),
                         'constant',
                         constant_values=0
@@ -594,9 +594,11 @@ class MMPGTest:
 
                     self.logger.log(
                         {
-                            'factors/n_segments': wandb.Image(sns.heatmap(
-                                n_segments
-                            ))
+                            'factors/n_segments': wandb.Image(
+                                sns.heatmap(
+                                    n_segments
+                                )
+                            )
                         },
                         step=i
                     )
@@ -774,7 +776,7 @@ class PinballTest:
                 **sp_conf
             )
             shape = self.encoder.sps[0].getColumnDimensions()
-            self.obs_shape = (shape[0]*self.encoder.n_sp, shape[1])
+            self.obs_shape = (shape[0] * self.encoder.n_sp, shape[1])
             self.sp_input = SDR(self.encoder.getNumInputs())
             self.sp_output = SDR(self.encoder.getNumColumns())
 
@@ -921,10 +923,10 @@ class PinballTest:
                             decoded_probs = column_probs.reshape(self.obs_shape)
                             hidden_prediction = None
 
-                        raw_predictions = [(decoded_probs * 255).astype(np.uint8)]
+                        raw_predictions = [(np.sqrt(decoded_probs) * 255).astype(np.uint8)]
 
                         if hidden_prediction is not None:
-                            hidden_predictions = [(hidden_prediction * 255).astype(np.uint8)]
+                            hidden_predictions = [(np.sqrt(hidden_prediction) * 255).astype(np.uint8)]
                         else:
                             hidden_predictions = None
 
@@ -938,7 +940,9 @@ class PinballTest:
                             if self.decoder is not None:
                                 hidden_prediction = column_probs.reshape(self.obs_shape)
                                 decoded_probs = self.decoder.decode(column_probs)
-                                decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
+                                decoded_probs = decoded_probs.reshape(
+                                    self.encoder.getInputDimensions()
+                                )
                             else:
                                 decoded_probs = column_probs.reshape(self.obs_shape)
                                 hidden_prediction = None
@@ -947,12 +951,12 @@ class PinballTest:
                             hidden_probs.append(hidden_prediction.copy())
 
                             raw_predictions.append(
-                                (decoded_probs * 255).astype(np.uint8)
+                                (np.sqrt(decoded_probs) * 255).astype(np.uint8)
                             )
 
                             if hidden_predictions is not None:
                                 hidden_predictions.append(
-                                    (hidden_prediction * 255).astype(np.uint8)
+                                    (np.sqrt(hidden_prediction) * 255).astype(np.uint8)
                                 )
 
                             self.hmm.forward_messages = self.hmm.next_forward_messages
@@ -986,13 +990,13 @@ class PinballTest:
                             n_step_surprise_obs[s].append(surp_obs)
                             n_step_surprise_hid[s].append(surp_hid)
 
-                        raw_im = [prev_diff.astype(np.uint8)*255]
+                        raw_im = [np.sqrt(prev_diff).astype(np.uint8) * 255]
                         raw_im.extend(raw_predictions)
                         raw_im = np.hstack(raw_im)
                         writer_raw.append_data(raw_im)
 
                         if hidden_predictions is not None:
-                            hid_im = [prev_latent.astype(np.uint8) * 255]
+                            hid_im = [np.sqrt(prev_latent).astype(np.uint8) * 255]
                             hid_im.extend(hidden_predictions)
                             hid_im = np.hstack(hid_im)
                             writer_hidden.append_data(hid_im)
@@ -1087,9 +1091,11 @@ class PinballTest:
 
                     self.logger.log(
                         {
-                            'factors/n_segments': wandb.Image(sns.heatmap(
-                                n_segments
-                            ))
+                            'factors/n_segments': wandb.Image(
+                                sns.heatmap(
+                                    n_segments
+                                )
+                            )
                         },
                         step=i
                     )
@@ -1118,6 +1124,33 @@ class PinballTest:
                         },
                         step=i
                     )
+
+                    if len(self.hmm.factor_score) > 0:
+                        self.logger.log(
+                            {
+                                'factors/score': wandb.Image(
+                                    sns.histplot(
+                                        self.hmm.factor_score
+                                    )
+                                ),
+                            },
+                            step=i
+                        )
+                        plt.close('all')
+
+                        self.logger.log(
+                            {
+                                'factors/log_values': wandb.Image(
+                                    sns.histplot(
+                                        self.hmm.log_factor_values_per_segment[
+                                            self.hmm.segments_in_use
+                                        ]
+                                    )
+                                )
+                            },
+                            step=i
+                        )
+                        plt.close('all')
 
         if self.logger is not None and self.save_model:
             name = self.logger.name
@@ -1292,9 +1325,11 @@ class PixballTest:
 
                     self.logger.log(
                         {
-                            'factors/n_segments': wandb.Image(sns.heatmap(
-                                n_segments
-                            ))
+                            'factors/n_segments': wandb.Image(
+                                sns.heatmap(
+                                    n_segments
+                                )
+                            )
                         },
                         step=i
                     )
