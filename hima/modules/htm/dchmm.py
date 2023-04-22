@@ -75,9 +75,9 @@ class DCHMM:
         self.factors_per_var = factors_per_var
         self.factor_boost_scale = factor_boost_scale
         self.factor_boost_decay = factor_boost_decay
-        self.factor_score_inverse_temp = factor_score_inverse_temp
-        self.prediction_inverse_temp = prediction_inverse_temp
         self.total_factors = self.n_hidden_vars * self.factors_per_var
+
+        self.prediction_inverse_temp = prediction_inverse_temp
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
@@ -279,8 +279,6 @@ class DCHMM:
 
         # rescale
         log_prediction -= log_prediction.min(axis=-1).reshape((-1, 1))
-        max_log_pred = log_prediction.max(axis=-1).reshape((-1, 1))
-        log_prediction = np.divide(log_prediction, max_log_pred, where=(max_log_pred != 0))
         log_prediction = self.prediction_inverse_temp * log_prediction
 
         prediction = normalize(np.exp(log_prediction))
@@ -342,9 +340,10 @@ class DCHMM:
                 segments_to_punish
             )
 
-            self.segments_in_use = self.segments_in_use[
-                np.isin(self.segments_in_use, segments_to_prune, invert=True)
-            ]
+            filter_destroyed_segments = np.isin(
+                self.segments_in_use, segments_to_prune, invert=True
+            )
+            self.segments_in_use = self.segments_in_use[filter_destroyed_segments]
 
             for segment in segments_to_prune:
                 self.connections.destroySegment(segment)
@@ -532,7 +531,7 @@ class DCHMM:
             factor_id = self._rng.choice(
                 factors,
                 size=1,
-                p=softmax(score, beta=self.factor_score_inverse_temp)
+                p=softmax(score)
             )
 
             if factor_id != -1:
