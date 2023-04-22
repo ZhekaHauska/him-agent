@@ -10,7 +10,7 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed
+from hima.common.utils import timed, lin_sum, exp_sum
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
@@ -27,17 +27,21 @@ class SpatialTemporalPooler:
 
     # connections
     rf: np.ndarray
+    corrected_rf_size: np.ndarray
     weights: np.ndarray
-    temporal_decay: float | np.ndarray
+
+    # temporal decay
+    temporal_decay_threshold: float = 0.33
+    temporal_window: np.ndarray
+    temporal_decay: np.ndarray
     temporal_decay_mean: float
-    overlap_trace: np.ndarray
-    reset_on_activation: bool
+    potentials: np.ndarray
+    reset_potential_on_activation: bool
 
     # output
     output_sds: Sds
     min_overlap_for_activation: float
-    n_computes: int
-    output_trace: np.ndarray
+    output_histogram: np.ndarray
 
     # learning
     learning_rate: float
@@ -56,9 +60,12 @@ class SpatialTemporalPooler:
     prune_grow_cycle: float
 
     # auxiliary
+    n_computes: int
     sparse_input: SparseSdr
     dense_input: np.ndarray
-    recognition_strength_trace: float
+    avg_recognition_ratio: float
+    avg_normalized_winner_potential: float
+    stats_learning_rate: float = 0.04
     run_time: float
 
     def __init__(
@@ -73,8 +80,7 @@ class SpatialTemporalPooler:
             prune_grow_cycle: float,
             boosting_k: float, seed: int,
             adapt_to_ff_sparsity: bool = True,
-            rand_decay_max_ratio: float = 1.,
-            reset_on_activation: bool = True,
+            reset_potential_on_activation: bool = True,
     ):
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = feedforward_sds
@@ -108,23 +114,27 @@ class SpatialTemporalPooler:
         )
 
         self.sparse_input = []
-        self.dense_input = np.zeros(self.ff_size)
+        # +1 for always-inactive element that is used to additionally turn off parts of neuron's RF
+        # — this way
+        self.dense_input = np.zeros(self.ff_size + 1)
 
         self.n_computes = 0
         self.feedforward_trace = np.full(self.ff_size, 1e-5)
-        self.output_trace = np.full(self.output_size, 1e-5)
-        self.recognition_strength_trace = 0
+        self.output_histogram = np.full(self.output_size, 1e-5)
+        self.avg_recognition_ratio = 0.
+        self.avg_normalized_winner_potential = 0.
 
         # temporal decay
-        self.overlap_trace = np.zeros(self.output_size)
-        assert rand_decay_max_ratio >= 1., 'Decay max ratio must be >= 1.0'
-        self.temporal_decay = _make_decay_matrix(
-            rng=self.rng, size=self.output_size,
-            temporal_window_mean=pooling_window,
-            temporal_window_max_ratio=rand_decay_max_ratio
-        )
+        self.potentials = np.zeros(self.output_size)
+        # NB: ~half will have < 1 window
+        self.temporal_window = _loguniform(self.rng, std=pooling_window, size=self.output_size)
+        # threshold = decay ^ window ===> decay = threshold ^ (1 / window)
+        self.temporal_decay = np.power(self.temporal_decay_threshold, 1. / self.temporal_window)
         self.match_mask_trace = np.zeros_like(self.rf)
-        self.reset_on_activation = reset_on_activation
+        self.reset_potential_on_activation = reset_potential_on_activation
+
+        self.corrected_rf_size = self.get_corrected_rf_size()
+        self.mask_out_rf_according_to_temporal_window()
 
         self.base_boosting_k = boosting_k
         self.newborn_pruning_cycle = newborn_pruning_cycle
@@ -157,38 +167,46 @@ class SpatialTemporalPooler:
 
         self.update_input(input_sdr)
         match_mask = self.match_input(self.dense_input)
-        overlaps = (match_mask * self.weights).sum(axis=1)
+        delta_potentials = (match_mask * self.weights).sum(axis=1)
 
         if self.is_newborn_phase:
             # boosting
             boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
             # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
-            overlaps = overlaps * boosting_alpha ** np.sign(overlaps)
+            delta_potentials = delta_potentials * boosting_alpha ** np.sign(delta_potentials)
 
-        # print(self.match_mask_trace.shape, self.temporal_decay.shape, match_mask.shape)
-        self.match_mask_trace = (
-                self.match_mask_trace * self.temporal_decay[..., np.newaxis] + match_mask
+        self.match_mask_trace = exp_sum(
+            self.match_mask_trace,
+            self.temporal_decay[..., np.newaxis],
+            match_mask
         )
-        self.overlap_trace = self.overlap_trace * self.temporal_decay + overlaps
+        self.potentials = exp_sum(self.potentials, self.temporal_decay, delta_potentials)
 
         n_winners = self.output_sds.active_size
         winners = np.sort(
-            np.argpartition(-self.overlap_trace, n_winners)[:n_winners]
+            np.argpartition(-self.potentials, n_winners)[:n_winners]
         )
 
         # update winners activation stats
-        self.output_trace[winners] += 1
-        self.recognition_strength_trace += (
-                self.overlap_trace[winners].sum() / n_winners / self.rf_size
+        self.output_histogram[winners] += 1
+        self.avg_recognition_ratio = lin_sum(
+            self.avg_recognition_ratio, lr=self.stats_learning_rate,
+            y=np.mean(match_mask[winners].sum(axis=-1) / self.ff_avg_active_size)
+        )
+        self.avg_normalized_winner_potential = lin_sum(
+            self.avg_normalized_winner_potential, lr=self.stats_learning_rate,
+            y=np.mean(
+                self.potentials[winners].sum(axis=-1) / self.corrected_rf_size
+            )
         )
 
         if learn:
             self.learn(winners)
 
         # reset overlap and match mask traces for winners
-        if self.reset_on_activation:
+        if self.reset_potential_on_activation:
             self.match_mask_trace[winners] = 0.
-            self.overlap_trace[winners] = 0.
+            self.potentials[winners] = 0.
 
         return winners
 
@@ -210,7 +228,8 @@ class SpatialTemporalPooler:
         self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
 
     def process_feedback(self, feedback_sdr: SparseSdr):
-        assert False, 'Fix feedback processing as match mask is incorrect now'
+        raise NotImplementedError('Fix feedback processing as match mask is incorrect now')
+
         # feedback SDR is the SP neurons that should be reinforced
         feedback_strength = self.no_feedback_count
         fb_match_mask, _ = self.match_input(self.dense_input, neurons=feedback_sdr)
@@ -228,7 +247,7 @@ class SpatialTemporalPooler:
             return
 
         # probabilities to keep connection
-        keep_prob = np.power(np.abs(self.weights), 2.0) + 0.01
+        keep_prob = np.power(np.abs(self.weights) + 1e-5, 2.0)
         keep_prob /= keep_prob.sum(axis=1, keepdims=True)
 
         # sample what connections to keep for each neuron independently
@@ -243,6 +262,7 @@ class SpatialTemporalPooler:
             gather_rows(self.weights, keep_connections_i)
         )
         self.match_mask_trace = gather_rows(self.match_mask_trace, keep_connections_i)
+        self.mask_out_rf_according_to_temporal_window()
         print(f'Prune newborns: {self._state_str()}')
 
         if not self.is_newborn_phase:
@@ -252,7 +272,11 @@ class SpatialTemporalPooler:
         self.prune_grow_synapses()
 
     def prune_grow_synapses(self):
-        print(f'Force neurogenesis: {self.output_entropy():.3f} | {self.recognition_strength:.1f}')
+        print(
+            f'Force neurogenesis: {self.output_entropy():.3f} '
+            f'| Rec = {self.avg_recognition_ratio:.2f} '
+            f'| Pot = {self.avg_normalized_winner_potential:.2f}'
+        )
         # prune-grow operation combined results to resample of a part of
         # the most inactive or just randomly selected synapses;
         # new synapses are distributed according to the feedforward distribution
@@ -287,7 +311,7 @@ class SpatialTemporalPooler:
     def normalize_weights(self, weights):
         return np.clip(
             weights / np.abs(weights).sum(axis=1, keepdims=True),
-            self.w_min, 1
+            self.w_min, 1.0
         )
 
     def get_active_rf(self, weights):
@@ -345,7 +369,7 @@ class SpatialTemporalPooler:
 
     @property
     def output_rate(self):
-        return self.output_trace / self.n_computes
+        return self.output_histogram / self.n_computes
 
     @property
     def output_relative_rate(self):
@@ -368,35 +392,34 @@ class SpatialTemporalPooler:
 
     @property
     def recognition_strength(self):
-        return self.recognition_strength_trace / self.n_computes
+        return self.avg_recognition_ratio / self.n_computes
 
+    def mask_out_rf_according_to_temporal_window(self):
+        indices = np.arange(self.rf_size)
+        self.corrected_rf_size = self.get_corrected_rf_size()
+        correcting_mask = indices >= self.corrected_rf_size
 
-def _resolve_temporal_decay(temporal_window: float = None) -> float:
-    if 0.0 <= temporal_window < 1.0:
-        decay = temporal_window
-        return decay
-    elif temporal_window >= 1.0:
-        # temporal window: decay ^ window = 1 / 10 ==> ten-time decrease
-        base = 0.1
-        return np.power(base, 1 / temporal_window)
+        # We use an index that is not appear in input SDRs.
+        # That's also why `self.dense_input` is 1 element longer than SDR size -> we access this
+        # last element index, while being sure it won't be active
+        masking_value = self.ff_size
+        self.rf[correcting_mask] = masking_value
 
-    raise ValueError(f'Invalid temporal window value {temporal_window}!')
+        self.weights[correcting_mask] = self.w_min
+        self.weights = self.normalize_weights(self.weights)
 
+        self.match_mask_trace[correcting_mask] = 0.
 
-def _make_decay_matrix(rng, size, temporal_window_mean, temporal_window_max_ratio):
-    if temporal_window_max_ratio == 1.0:
-        scales = np.ones(size)
-    else:
-        scales = _loguniform(rng, temporal_window_max_ratio, size=size)
+    def get_corrected_rf_size(self) -> np.ndarray:
+        k = (self.temporal_window + 1) ** self.temporal_decay_threshold
+        # shape: (N,) --> (N, 1)
+        return np.expand_dims(self.rf_size / k, -1)
 
-    temporal_window_mx = temporal_window_mean * scales
-    temporal_window_mx[temporal_window_mx <= 1.0] = 0.
-    base = 0.1
-    temporal_window_mx[temporal_window_mx > 1.0] = np.power(
-        base,
-        1. / temporal_window_mx[temporal_window_mx > 1.0]
-    )
-    return temporal_window_mx
+    def make_decay_matrix(self, max_temporal_window):
+        temporal_window_mx = _loguniform(self.rng, max_temporal_window, size=self.output_size)
+        # threshold = decay ^ window ===> decay = threshold ^ (1 / window)
+        temporal_decay = np.power(self.temporal_decay_threshold, 1. / temporal_window_mx)
+        return temporal_decay
 
 
 def _loguniform(rng, std, size):

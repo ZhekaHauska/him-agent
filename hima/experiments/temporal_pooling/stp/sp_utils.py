@@ -27,7 +27,7 @@ def sample_rf(ff_size: int, rf_sparsity: float, rng: Generator) -> np.ndarray:
 
 def sample_for_each_neuron(
         rng: Generator, n_neurons,
-        set_size: int, sample_size: int,
+        set_size: int | np.ndarray, sample_size: int,
         probs_2d: np.ndarray = None
 ) -> np.ndarray:
     return np.array([
