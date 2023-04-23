@@ -41,8 +41,7 @@ class DCHMM:
             factors_per_var: int,
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
-            segment_boost_scale: float = 10,
-            segment_boost_decay: float = 0.01,
+            predicted_cell_boost_factor: float = 1.0,
             prediction_inverse_temp: float = 1.0,
             initial_factor_value: float = 0,
             cell_activation_threshold: float = EPS,
@@ -78,6 +77,7 @@ class DCHMM:
         self.total_factors = self.n_hidden_vars * self.factors_per_var
 
         self.prediction_inverse_temp = prediction_inverse_temp
+        self.predicted_cell_boost_factor = predicted_cell_boost_factor
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
@@ -85,8 +85,6 @@ class DCHMM:
         self.n_vars_per_factor = n_vars_per_factor
 
         self.segment_prune_threshold = segment_prune_threshold
-        self.segment_boost_scale = segment_boost_scale
-        self.segment_boost_decay = segment_boost_decay
 
         # for now leave it strict
         self.segment_activation_threshold = n_vars_per_factor
@@ -95,6 +93,8 @@ class DCHMM:
         self.cell_activation_threshold = cell_activation_threshold
 
         self.active_cells = SDR(self.total_cells)
+
+        self.predicted_cells = SDR(self.total_cells)
 
         self.forward_messages = np.zeros(
             self.total_cells,
@@ -116,11 +116,6 @@ class DCHMM:
             self.total_segments,
             fill_value=self.initial_factor_value,
             dtype=REAL64_DTYPE
-        )
-        self.segment_boost = np.full(
-            self.total_segments,
-            fill_value=self.segment_boost_scale,
-            dtype=REAL_DTYPE
         )
 
         self.factor_for_segment = np.full(
@@ -185,6 +180,7 @@ class DCHMM:
 
         active_segments = np.flatnonzero(num_connected_segment >= self.segment_activation_threshold)
         cells_for_active_segments = self.connections.mapSegmentsToCells(active_segments)
+        self.predicted_cells.sparse = np.unique(cells_for_active_segments)
 
         active_vars = SDR(self.n_hidden_vars)
         active_vars.sparse = np.unique(active_cells.sparse // self.n_hidden_states)
@@ -223,10 +219,7 @@ class DCHMM:
             if len(active_segments) > 0:
                 factors_for_active_segments = self.factor_for_segment[active_segments]
                 shifted_factor_value = np.expm1(
-                    (
-                            self.log_factor_values_per_segment[active_segments] +
-                            self.segment_boost[active_segments]
-                    )
+                            self.log_factor_values_per_segment[active_segments]
                 )
 
                 likelihood = self.forward_messages[self.receptive_fields[active_segments]]
@@ -328,7 +321,10 @@ class DCHMM:
                 self.active_cells.sparse
             )
 
-            self.segments_in_use = np.append(self.segments_in_use, new_segments)
+            self.segments_in_use = np.append(
+                self.segments_in_use,
+                new_segments[np.isin(new_segments, self.segments_in_use, invert=True)]
+            )
 
             segments_to_prune = self._update_factors(
                 np.concatenate(
@@ -386,8 +382,6 @@ class DCHMM:
             segments_to_reinforce
         ] += np.log1p(1/np.exp(w))
 
-        self.segment_boost[self.segments_in_use] *= (1 - self.segment_boost_decay)
-
         segments = np.concatenate(
                 [
                     segments_to_punish,
@@ -427,9 +421,14 @@ class DCHMM:
         return cells[mask]
 
     def _sample_cells(self, cells_for_obs):
+        # boost cells with active segments
+        prediction = self.prediction.copy()
+        prediction[self.predicted_cells.sparse] *= self.predicted_cell_boost_factor
+        prediction = normalize(prediction.reshape((self.n_hidden_vars, self.n_hidden_states)))
+
         # sample predicted distribution
         next_states = self._sample_categorical_variables(
-            self.prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
+            prediction
         )
         # transform states to cell ids
         next_cells = next_states + np.arange(
