@@ -1,13 +1,14 @@
 cells_per_column: 10
-n_vars_per_factor: 1
+n_vars_per_factor: 3
 factors_per_var: 10
 initial_factor_value: 0.0
+lr: 10.0
 
 # new factor boosting
 factor_boost_scale: 10
 factor_boost_decay: 0.001
-# predicted cell boosting
-predicted_cell_boost_factor: 1000000
+# predicted cell boosting (multiplicative)
+predicted_cell_boost_factor: 1.0
 
 prediction_inverse_temp: 1.0
 

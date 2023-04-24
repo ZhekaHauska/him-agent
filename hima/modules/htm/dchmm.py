@@ -39,6 +39,7 @@ class DCHMM:
             cells_per_column: int,
             n_vars_per_factor: int,
             factors_per_var: int,
+            lr: float = 1.0,
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
             predicted_cell_boost_factor: float = 1.0,
@@ -71,6 +72,7 @@ class DCHMM:
                 self.n_hidden_states * self.max_segments_per_cell
         ) * self.n_hidden_vars
 
+        self.lr = lr
         self.factors_per_var = factors_per_var
         self.factor_boost_scale = factor_boost_scale
         self.factor_boost_decay = factor_boost_decay
@@ -380,7 +382,7 @@ class DCHMM:
         w = self.log_factor_values_per_segment[segments_to_reinforce]
         self.log_factor_values_per_segment[
             segments_to_reinforce
-        ] += np.log1p(1/np.exp(w))
+        ] += np.log1p(self.lr/np.exp(w))
 
         segments = np.concatenate(
                 [
