@@ -31,7 +31,7 @@ class SpatialTemporalPooler:
     weights: np.ndarray
 
     # temporal decay
-    temporal_decay_threshold: float = 0.33
+    temporal_decay_threshold: float = 1/3
     temporal_window: np.ndarray
     temporal_decay: np.ndarray
     temporal_decay_mean: float
@@ -65,12 +65,12 @@ class SpatialTemporalPooler:
     dense_input: np.ndarray
     avg_recognition_ratio: float
     avg_normalized_winner_potential: float
-    stats_learning_rate: float = 0.04
+    stats_learning_rate: float = 0.01
     run_time: float
 
     def __init__(
             self, feedforward_sds: Sds,
-            pooling_window: float,
+            max_pooling_window: float,
             # newborn / mature
             initial_rf_to_input_ratio: float, max_rf_to_input_ratio: float, max_rf_sparsity: float,
             output_sds: Sds,
@@ -107,11 +107,11 @@ class SpatialTemporalPooler:
         )
         print(f'SP vec init shape: {self.rf.shape}')
 
-        w0 = 1 / rf_size
         self.w_min = 0.
         self.weights = self.normalize_weights(
-            self.rng.normal(w0, w0, size=self.rf.shape)
+            np.abs(self.rng.normal(loc=1.0, scale=0.5, size=self.rf.shape))
         )
+        print(self.weights)
 
         self.sparse_input = []
         # +1 for always-inactive element that is used to additionally turn off parts of neuron's RF
@@ -127,7 +127,9 @@ class SpatialTemporalPooler:
         # temporal decay
         self.potentials = np.zeros(self.output_size)
         # NB: ~half will have < 1 window
-        self.temporal_window = _loguniform(self.rng, std=pooling_window, size=self.output_size)
+        self.temporal_window = _loguniform(self.rng, std=max_pooling_window, size=self.output_size)
+        print(f'E[TW] = {np.mean(self.temporal_window)}')
+        print(np.bincount(np.round(self.temporal_window).astype(int)))
         # threshold = decay ^ window ===> decay = threshold ^ (1 / window)
         self.temporal_decay = np.power(self.temporal_decay_threshold, 1. / self.temporal_window)
         self.match_mask_trace = np.zeros_like(self.rf)
@@ -210,9 +212,68 @@ class SpatialTemporalPooler:
 
         return winners
 
+    def learn_new(self, neurons: np.ndarray, modulation: float = 1.0):
+        w = self.weights[neurons]
+
+        # RF pattern recognition for each neuron
+        recognition_trace = self.match_mask_trace[neurons]
+        # FIXME: Try if exp sum gets too high and several neurons dominate others
+        # recognition_trace = np.clip(self.match_mask_trace[neurons], 0., 1.0)
+        # Clip to remove zero-division
+        recognition_trace_norm = np.clip(recognition_trace.sum(axis=-1, keepdims=True), 1e-10, None)
+
+        errors = np.argwhere(np.isclose(recognition_trace_norm.flatten(), 0.))
+        if len(errors) > 0:
+            print('EEEEE', errors)
+            print(recognition_trace_norm.flatten()[errors])
+
+        # Normalized recognition trace
+        # shape: (n_neurons, 1)
+        R = recognition_trace / recognition_trace_norm
+
+        tt = R.sum(axis=-1)
+        errors = np.argwhere(np.logical_not(np.isclose(tt, 1.)))
+        if len(errors) > 0:
+            print(tt[errors])
+
+        lr = modulation * self.polarity * self.learning_rate
+        # inhibition is proportional to the synapse's weight and to the inverted its contribution
+        # to the neuron's final potential [and therefore the neuron's winning].
+        dw_inh = lr * (1.0 - R) * w
+
+        # synapse inhibition contributes [an individual] part of the synapse's weight to the shared
+        # pool to be redistributed also personally between synapses via reinforcement
+        # shape: (n_neurons, 1)
+        dw_pool = dw_inh.sum(axis=-1, keepdims=True)
+
+        # excitation is proportional to its contribution to the neuron's final potential
+        dw_exc = dw_pool * R
+        assert np.allclose(dw_pool, dw_exc.sum(axis=-1, keepdims=True))
+
+        n = 1
+        # print('dw-', dw_pool[:n])
+        # print('dw+', dw_exc[:n].sum(axis=1, keepdims=True))
+
+        before = self.weights[neurons].copy()
+        new_weights = self.normalize_weights(self.weights[neurons] + dw_exc - dw_inh)
+        assert np.allclose(self.normalize_weights(new_weights), new_weights)
+
+        self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
+        after = self.weights[neurons]
+        # print(before[0])
+        # print(after[0])
+        # print(self.normalize_weights(after)[0])
+        # print((after - before).sum(-1))
+        assert np.allclose((after - before).sum(-1), 0.)
+        # print('Before', before[:n])
+        # print('After', after[:n])
+        # print('Delta', after[:n] - before[:n])
+
     def learn(self, neurons: np.ndarray, modulation: float = 1.0):
         w = self.weights[neurons]
+        # RF pattern recognition for each neuron
         match_trace = self.match_mask_trace[neurons]
+        # shape: (n_neurons, 1)
         matched = match_trace.sum(axis=1, keepdims=True)
         # add anti zero-division term
         matched = matched + (matched == 0.) * 1e-5
@@ -221,11 +282,20 @@ class SpatialTemporalPooler:
         inh = self.global_inhibition_strength
         dw_inh = lr * inh * (1 - match_trace)
 
+        n = 1
         # inhibition frees weights to be used for reinforcement
+        # shape: (n_neurons, 1)
         dw_pool = dw_inh.sum(axis=1, keepdims=True)
-        dw_exc = match_trace * dw_pool / matched
+        # print('Pool', dw_pool[:n])
+        dw_exc = (match_trace / matched) * dw_pool
+        # print('+dw', dw_exc[:n].sum(axis=1, keepdims=True))
 
+        # before = self.weights[neurons].copy()
         self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
+        # after = self.weights[neurons]
+        # print('Before', before[:n])
+        # print('After', after[:n])
+        # print('Delta', after[:n] - before[:n])
 
     def process_feedback(self, feedback_sdr: SparseSdr):
         raise NotImplementedError('Fix feedback processing as match mask is incorrect now')
@@ -275,7 +345,8 @@ class SpatialTemporalPooler:
         print(
             f'Force neurogenesis: {self.output_entropy():.3f} '
             f'| Rec = {self.avg_recognition_ratio:.2f} '
-            f'| Pot = {self.avg_normalized_winner_potential:.2f}'
+            f'| Pot = {self.avg_normalized_winner_potential:.2f} '
+            f'| Act E[TW] = {self.expected_active_temporal_window():.4f}'
         )
         # prune-grow operation combined results to resample of a part of
         # the most inactive or just randomly selected synapses;
@@ -309,10 +380,8 @@ class SpatialTemporalPooler:
         return dense_input[rf]
 
     def normalize_weights(self, weights):
-        return np.clip(
-            weights / np.abs(weights).sum(axis=1, keepdims=True),
-            self.w_min, 1.0
-        )
+        weights = np.clip(weights, self.w_min, 1.0)
+        return weights / np.abs(weights).sum(axis=1, keepdims=True)
 
     def get_active_rf(self, weights):
         w_thr = 1 / self.rf_size
@@ -376,6 +445,9 @@ class SpatialTemporalPooler:
         target_rate = self.output_sds.sparsity
         return self.output_rate / target_rate
 
+    def expected_active_temporal_window(self):
+        return np.sum(self.output_rate * self.temporal_window) / self.output_sds.active_size
+
     @property
     def rf_match_trace(self):
         return self.feedforward_trace[self.rf]
@@ -415,14 +487,10 @@ class SpatialTemporalPooler:
         # shape: (N,) --> (N, 1)
         return np.expand_dims(self.rf_size / k, -1)
 
-    def make_decay_matrix(self, max_temporal_window):
-        temporal_window_mx = _loguniform(self.rng, max_temporal_window, size=self.output_size)
-        # threshold = decay ^ window ===> decay = threshold ^ (1 / window)
-        temporal_decay = np.power(self.temporal_decay_threshold, 1. / temporal_window_mx)
-        return temporal_decay
-
 
 def _loguniform(rng, std, size):
+    if std == 0:
+        return np.zeros(size)
     low = np.log(1 / std)
     high = np.log(std)
     return np.exp(rng.uniform(low, high, size))

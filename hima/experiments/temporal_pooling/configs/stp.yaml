@@ -185,7 +185,7 @@ blocks:
     sp:
       _type_: stp.base
       _base_: $_base.spatial_pooler.default
-      pooling_window: 16
+      max_pooling_window: 4
       reset_potential_on_activation: True
       initial_rf_to_input_ratio: 8.0
       max_rf_to_input_ratio: 1.5
