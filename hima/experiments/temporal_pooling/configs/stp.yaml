@@ -175,8 +175,8 @@ blocks:
       learning_rate: 0.02
       global_inhibition_strength: 0.2
       newborn_pruning_cycle: 2.0
-      newborn_pruning_stages: 4
-      prune_grow_cycle: 8.0
+      newborn_pruning_stages: 6
+      prune_grow_cycle: 10.0
       adapt_to_ff_sparsity: False
       boosting_k: 0.5
   STE:
@@ -192,8 +192,8 @@ blocks:
       learning_rate: 0.02
       global_inhibition_strength: 0.2
       newborn_pruning_cycle: 2.0
-      newborn_pruning_stages: 4
-      prune_grow_cycle: 8.0
+      newborn_pruning_stages: 6
+      prune_grow_cycle: 10.0
       adapt_to_ff_sparsity: False
       boosting_k: 0.5
   SA:

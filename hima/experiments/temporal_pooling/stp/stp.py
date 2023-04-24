@@ -212,31 +212,19 @@ class SpatialTemporalPooler:
 
         return winners
 
-    def learn_new(self, neurons: np.ndarray, modulation: float = 1.0):
+    def learn(self, neurons: np.ndarray, modulation: float = 1.0):
         w = self.weights[neurons]
+        lr = modulation * self.polarity * self.learning_rate
 
         # RF pattern recognition for each neuron
         recognition_trace = self.match_mask_trace[neurons]
-        # FIXME: Try if exp sum gets too high and several neurons dominate others
-        # recognition_trace = np.clip(self.match_mask_trace[neurons], 0., 1.0)
         # Clip to remove zero-division
         recognition_trace_norm = np.clip(recognition_trace.sum(axis=-1, keepdims=True), 1e-10, None)
-
-        errors = np.argwhere(np.isclose(recognition_trace_norm.flatten(), 0.))
-        if len(errors) > 0:
-            print('EEEEE', errors)
-            print(recognition_trace_norm.flatten()[errors])
 
         # Normalized recognition trace
         # shape: (n_neurons, 1)
         R = recognition_trace / recognition_trace_norm
 
-        tt = R.sum(axis=-1)
-        errors = np.argwhere(np.logical_not(np.isclose(tt, 1.)))
-        if len(errors) > 0:
-            print(tt[errors])
-
-        lr = modulation * self.polarity * self.learning_rate
         # inhibition is proportional to the synapse's weight and to the inverted its contribution
         # to the neuron's final potential [and therefore the neuron's winning].
         dw_inh = lr * (1.0 - R) * w
@@ -248,54 +236,8 @@ class SpatialTemporalPooler:
 
         # excitation is proportional to its contribution to the neuron's final potential
         dw_exc = dw_pool * R
-        assert np.allclose(dw_pool, dw_exc.sum(axis=-1, keepdims=True))
-
-        n = 1
-        # print('dw-', dw_pool[:n])
-        # print('dw+', dw_exc[:n].sum(axis=1, keepdims=True))
-
-        before = self.weights[neurons].copy()
-        new_weights = self.normalize_weights(self.weights[neurons] + dw_exc - dw_inh)
-        assert np.allclose(self.normalize_weights(new_weights), new_weights)
 
         self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
-        after = self.weights[neurons]
-        # print(before[0])
-        # print(after[0])
-        # print(self.normalize_weights(after)[0])
-        # print((after - before).sum(-1))
-        assert np.allclose((after - before).sum(-1), 0.)
-        # print('Before', before[:n])
-        # print('After', after[:n])
-        # print('Delta', after[:n] - before[:n])
-
-    def learn(self, neurons: np.ndarray, modulation: float = 1.0):
-        w = self.weights[neurons]
-        # RF pattern recognition for each neuron
-        match_trace = self.match_mask_trace[neurons]
-        # shape: (n_neurons, 1)
-        matched = match_trace.sum(axis=1, keepdims=True)
-        # add anti zero-division term
-        matched = matched + (matched == 0.) * 1e-5
-
-        lr = modulation * self.polarity * self.learning_rate
-        inh = self.global_inhibition_strength
-        dw_inh = lr * inh * (1 - match_trace)
-
-        n = 1
-        # inhibition frees weights to be used for reinforcement
-        # shape: (n_neurons, 1)
-        dw_pool = dw_inh.sum(axis=1, keepdims=True)
-        # print('Pool', dw_pool[:n])
-        dw_exc = (match_trace / matched) * dw_pool
-        # print('+dw', dw_exc[:n].sum(axis=1, keepdims=True))
-
-        # before = self.weights[neurons].copy()
-        self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
-        # after = self.weights[neurons]
-        # print('Before', before[:n])
-        # print('After', after[:n])
-        # print('Delta', after[:n] - before[:n])
 
     def process_feedback(self, feedback_sdr: SparseSdr):
         raise NotImplementedError('Fix feedback processing as match mask is incorrect now')
