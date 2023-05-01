@@ -15,6 +15,8 @@ class GifViewer:
     def __init__(self, directory='./', res=1000):
         self.directory = directory
         self.res = res
+        self.frames = []
+
         self.files = pn.widgets.FileSelector(directory)
         self.time_step = pn.widgets.Player(start=0)
         self.frames = []
@@ -49,7 +51,7 @@ class GifViewer:
                 frame = self.preprocess(frames[time_step])
                 aspect = frame.shape[0] / frame.shape[1]
                 x, y = np.indices(frame.shape)
-                df = pd.DataFrame({'y': x.flatten(), 'x': y.flatten(), 'p': frame.flatten()})
+                df = pd.DataFrame({'y': x.flatten()[::-1], 'x': y.flatten(), 'p': frame.flatten()})
                 img.append(
                     df.hvplot.heatmap(
                         x='x',
