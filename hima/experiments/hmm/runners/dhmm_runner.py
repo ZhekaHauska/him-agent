@@ -923,10 +923,10 @@ class PinballTest:
                             decoded_probs = column_probs.reshape(self.obs_shape)
                             hidden_prediction = None
 
-                        raw_predictions = [(np.sqrt(decoded_probs) * 255).astype(np.uint8)]
+                        raw_predictions = [(decoded_probs * 255).astype(np.uint8)]
 
                         if hidden_prediction is not None:
-                            hidden_predictions = [(np.sqrt(hidden_prediction) * 255).astype(np.uint8)]
+                            hidden_predictions = [(hidden_prediction * 255).astype(np.uint8)]
                         else:
                             hidden_predictions = None
 
@@ -951,12 +951,12 @@ class PinballTest:
                             hidden_probs.append(hidden_prediction.copy())
 
                             raw_predictions.append(
-                                (np.sqrt(decoded_probs) * 255).astype(np.uint8)
+                                (decoded_probs * 255).astype(np.uint8)
                             )
 
                             if hidden_predictions is not None:
                                 hidden_predictions.append(
-                                    (np.sqrt(hidden_prediction) * 255).astype(np.uint8)
+                                    (hidden_prediction * 255).astype(np.uint8)
                                 )
 
                             self.hmm.forward_messages = self.hmm.next_forward_messages
@@ -990,13 +990,13 @@ class PinballTest:
                             n_step_surprise_obs[s].append(surp_obs)
                             n_step_surprise_hid[s].append(surp_hid)
 
-                        raw_im = [np.sqrt(prev_diff).astype(np.uint8) * 255]
+                        raw_im = [prev_diff.astype(np.uint8) * 255]
                         raw_im.extend(raw_predictions)
                         raw_im = np.hstack(raw_im)
                         writer_raw.append_data(raw_im)
 
                         if hidden_predictions is not None:
-                            hid_im = [np.sqrt(prev_latent).astype(np.uint8) * 255]
+                            hid_im = [prev_latent.astype(np.uint8) * 255]
                             hid_im.extend(hidden_predictions)
                             hid_im = np.hstack(hid_im)
                             writer_hidden.append_data(hid_im)
