@@ -7,6 +7,7 @@ import pandas as pd
 import panel as pn
 import imageio
 import holoviews
+import hvplot.pandas
 import numpy as np
 
 
