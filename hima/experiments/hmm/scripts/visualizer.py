@@ -7,7 +7,6 @@ import pandas as pd
 import panel as pn
 import imageio
 import holoviews
-import hvplot.pandas
 import numpy as np
 
 
@@ -69,12 +68,12 @@ class GifViewer:
             return
 
     @staticmethod
-    def preprocess(im):
+    def preprocess(im, channel=0):
         im = im.astype('float')
         if len(im.shape) > 2:
-            im = im.mean(axis=-1)
+            im = im[:, :, channel]
         im /= im.max()
-        return np.power(im, 2)
+        return im
 
 
 if __name__ == '__main__':
