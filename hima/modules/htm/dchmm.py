@@ -180,37 +180,27 @@ class DCHMM:
             False
         )
 
-        active_segments = np.flatnonzero(num_connected_segment >= self.segment_activation_threshold)
+        active_segments = np.flatnonzero(
+            num_connected_segment >= self.segment_activation_threshold
+        )
         cells_for_active_segments = self.connections.mapSegmentsToCells(active_segments)
         self.predicted_cells.sparse = np.unique(cells_for_active_segments)
 
-        active_vars = SDR(self.n_hidden_vars)
-        active_vars.sparse = np.unique(active_cells.sparse // self.n_hidden_states)
-
-        num_connected_factor = self.factor_connections.computeActivity(
-            active_vars,
-            False
+        log_prediction = np.full(
+            self.total_cells,
+            fill_value=-np.inf,
+            dtype=REAL_DTYPE
         )
 
-        active_factors = np.flatnonzero(
-            num_connected_factor >= self.n_vars_per_factor
-        )
-
-        if len(active_factors) > 0:
-            # base activity level
-            message_norm = self.forward_messages.reshape(
-                (self.n_hidden_vars, self.n_hidden_states)
-            ).sum(axis=-1)
-
-            base = message_norm[self.factor_vars[active_factors]]
-            # base per factor
-            log_base = np.sum(np.log(base), axis=-1)
-            vars_for_factors = self.factor_connections.mapSegmentsToCells(
-                active_factors
-            )
+        if len(self.factors_in_use) > 0:
+            vars_for_factors = self.factor_connections.mapSegmentsToCells(self.factors_in_use)
             cells_for_factor_vars = self._get_cells_in_vars(vars_for_factors)
-            log_base_for_cells = np.repeat(log_base, self.n_hidden_states)
-            factors_for_cells = np.repeat(active_factors, self.n_hidden_states)
+            factors_for_cells = np.repeat(self.factors_in_use, self.n_hidden_states)
+            log_base_for_cells = np.full(
+                len(cells_for_factor_vars),
+                fill_value=-np.inf,
+                dtype=REAL_DTYPE
+            )
 
             # uniquely encode pairs (factor, cell)
             cell_factor_id_per_cell = (
@@ -220,15 +210,13 @@ class DCHMM:
             # deviation activity
             if len(active_segments) > 0:
                 factors_for_active_segments = self.factor_for_segment[active_segments]
-                shifted_factor_value = np.expm1(
-                            self.log_factor_values_per_segment[active_segments]
-                )
+                factor_value = self.log_factor_values_per_segment[active_segments]
 
                 likelihood = self.forward_messages[self.receptive_fields[active_segments]]
                 log_likelihood = np.sum(np.log(likelihood), axis=-1)
 
                 # advantage per segment
-                log_advantage = log_likelihood + np.log(shifted_factor_value)
+                log_advantage = log_likelihood + np.log(factor_value)
 
                 # uniquely encode pairs (factor, cell) for each segment
                 cell_factor_id_per_segment = (
@@ -250,9 +238,7 @@ class DCHMM:
                 log_deviation = np.maximum.reduceat(log_advantage, reduce_inxs)
 
                 deviation_mask = np.isin(cell_factor_id_per_cell, cell_factor_id_deviation)
-                log_base_for_cells[deviation_mask] = np.logaddexp(
-                    log_base_for_cells[deviation_mask], log_deviation
-                )
+                log_base_for_cells[deviation_mask] = log_deviation
 
             sort_inxs = np.argsort(cells_for_factor_vars)
             log_base_for_cells = log_base_for_cells[sort_inxs]
@@ -264,16 +250,19 @@ class DCHMM:
                 log_base_for_cells, indices=reduce_inxs
             )
 
-            log_prediction = np.zeros(self.total_cells)
-
             log_prediction[cells_with_factors] = log_prediction_for_cells_with_factors
-        else:
-            log_prediction = np.zeros(self.total_cells)
 
         log_prediction = log_prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
 
-        # rescale
-        log_prediction -= log_prediction.min(axis=-1).reshape((-1, 1))
+        # shift log value for stability
+        means = log_prediction.mean(
+            axis=-1,
+            where=~np.isinf(log_prediction)
+        ).reshape((-1, 1))
+        means[np.isnan(means)] = 0
+
+        log_prediction -= means
+
         log_prediction = self.prediction_inverse_temp * log_prediction
 
         prediction = normalize(np.exp(log_prediction))
