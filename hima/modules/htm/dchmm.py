@@ -263,10 +263,14 @@ class DCHMM:
         log_prediction = log_prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
 
         # shift log value for stability
-        means = log_prediction.mean(
-            axis=-1,
-            where=~np.isinf(log_prediction)
-        ).reshape((-1, 1))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=RuntimeWarning)
+
+            means = log_prediction.mean(
+                axis=-1,
+                where=~np.isinf(log_prediction)
+            ).reshape((-1, 1))
+
         means[np.isnan(means)] = 0
 
         log_prediction -= means
