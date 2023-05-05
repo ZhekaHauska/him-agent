@@ -218,13 +218,13 @@ class DCHMM:
             # deviation activity
             if len(active_segments) > 0:
                 factors_for_active_segments = self.factor_for_segment[active_segments]
-                factor_value = self.log_factor_values_per_segment[active_segments]
+                log_factor_value = self.log_factor_values_per_segment[active_segments]
 
                 likelihood = self.forward_messages[self.receptive_fields[active_segments]]
                 log_likelihood = np.sum(np.log(likelihood), axis=-1)
 
                 # advantage per segment
-                log_advantage = log_likelihood + np.log(factor_value)
+                log_advantage = log_likelihood + log_factor_value
 
                 # uniquely encode pairs (factor, cell) for each segment
                 cell_factor_id_per_segment = (
