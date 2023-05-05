@@ -100,6 +100,7 @@ class DCHMM:
         self.cell_activation_threshold = cell_activation_threshold
 
         self.active_cells = SDR(self.total_cells)
+        self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
 
         self.predicted_cells = SDR(self.total_cells)
 
@@ -162,7 +163,7 @@ class DCHMM:
         )
 
     def reset(self):
-        self.active_cells.sparse = []
+        self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
 
         self.forward_messages = np.zeros(
             self.total_cells,
