@@ -1069,7 +1069,10 @@ class SPDecoder:
         if update:
             self._update_receptive_fields()
 
-        if self.mode == 'max':
+        if self.mode == 'mean':
+            probs_for_bit = self.receptive_fields * cell_probs.reshape((-1, 1))
+            probs_for_bit = probs_for_bit.mean(axis=0)
+        elif self.mode == 'max':
             probs_for_bit = self.receptive_fields * cell_probs.reshape((-1, 1))
             probs_for_bit = probs_for_bit.max(axis=0)
         elif self.mode == 'sum':
