@@ -9,6 +9,7 @@ from htm.bindings.math import Random
 
 import numpy as np
 import pygraphviz as pgv
+import warnings
 
 EPS = 1e-24
 INT_TYPE = "int64"
@@ -23,11 +24,15 @@ def softmax(x, beta=1.0):
     return e_x / e_x.sum()
 
 
-def normalize(x):
+def normalize(x, default_values=None):
     norm = x.sum(axis=-1)
     mask = norm == 0
-    x[mask] = 1
-    norm[mask] = x.shape[-1]
+
+    if default_values is None:
+        default_values = np.ones_like(x)
+
+    x[mask] = default_values[mask]
+    norm[mask] = x[mask].sum(axis=-1)
     return x / norm.reshape((-1, 1))
 
 
@@ -300,9 +305,13 @@ class DCHMM:
         obs_factor[cells] = 1
 
         self.next_forward_messages *= obs_factor
-        self.next_forward_messages = normalize(
-            self.next_forward_messages.reshape((self.n_hidden_vars, -1))
-        ).flatten()
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            self.next_forward_messages = normalize(
+                self.next_forward_messages.reshape((self.n_hidden_vars, -1)),
+                obs_factor.reshape((self.n_hidden_vars, -1))
+            ).flatten()
 
         next_active_cells = self._sample_cells(
             cells
