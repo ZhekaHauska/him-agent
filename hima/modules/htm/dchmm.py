@@ -403,6 +403,12 @@ class DCHMM:
         return segments_to_prune
 
     def _get_cells_for_observation(self, obs_states):
+        vars_for_obs_states = obs_states // self.n_obs_states
+        all_vars = np.arange(self.n_obs_vars)
+        vars_without_states = all_vars[np.isin(all_vars, vars_for_obs_states, invert=True)]
+
+        cells_for_empty_vars = self._get_cells_in_vars(vars_without_states)
+
         cells_in_columns = (
                 (
                     obs_states * self.cells_per_column
@@ -410,7 +416,7 @@ class DCHMM:
                 np.arange(self.cells_per_column, dtype=UINT_DTYPE)
             ).flatten()
 
-        return cells_in_columns
+        return np.concatenate([cells_for_empty_vars, cells_in_columns])
 
     def _get_cells_in_vars(self, variables):
         cells_in_vars = (
