@@ -12,6 +12,7 @@ pygraphviz
 torch
 torchvision
 torchaudio
+hmmlearn
 
 # Install also (see `install.md`):
 #   1. Our fork of the htm.core
