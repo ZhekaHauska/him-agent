@@ -10,6 +10,8 @@ from htm.bindings.math import Random
 import numpy as np
 import pygraphviz as pgv
 import warnings
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 EPS = 1e-24
 INT_TYPE = "int64"
@@ -612,3 +614,15 @@ class DCHMM:
                 g.add_edge(f'f{fid}', f'v{var_prev}(t)',)
         g.layout(prog='dot')
         g.draw(path)
+
+    def draw_messages(self):
+        fig, ax = plt.subplots(2, 1)
+        sns.heatmap(
+            self.forward_messages.reshape((self.n_hidden_vars, -1)),
+            ax=ax[0]
+        )
+        sns.heatmap(
+            self.next_forward_messages.reshape((self.n_hidden_vars, -1)),
+            ax=ax[1]
+        )
+        plt.show()
