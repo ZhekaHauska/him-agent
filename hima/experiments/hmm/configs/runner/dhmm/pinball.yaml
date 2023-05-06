@@ -1,10 +1,10 @@
 log: True
 save_model: False
-project_name: 'ijcai_test'
-run_tag: dchmm
+project_name: 'dchmm_06-05-2023_weekly_test'
+run_tag: nonzero_factor
 
 n_episodes: 501
-update_rate: 10
+update_rate: 50
 max_steps: 15
 log_gif_fps: 5
 prediction_steps: 5

@@ -1,5 +1,5 @@
 n_sp: 5
-columnDimensions: [ 12, 12 ]
+columnDimensions: [ 6, 6 ]
 potentialPct: 1.0
 globalInhibition: True
 potentialRadius: 6

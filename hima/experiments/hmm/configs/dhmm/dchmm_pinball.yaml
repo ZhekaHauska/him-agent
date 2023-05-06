@@ -1,8 +1,8 @@
-cells_per_column: 10
-n_vars_per_factor: 3
-factors_per_var: 10
-initial_factor_value: 0.0
-lr: 10.0
+cells_per_column: 5
+n_vars_per_factor: 2
+factors_per_var: 1
+initial_factor_value: 10.0
+lr: 1.0
 
 # new factor boosting
 factor_boost_scale: 10
