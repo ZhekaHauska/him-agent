@@ -200,62 +200,45 @@ class DCHMM:
             dtype=REAL_DTYPE
         )
 
-        if len(self.factors_in_use) > 0:
-            vars_for_factors = self.factor_connections.mapSegmentsToCells(self.factors_in_use)
-            cells_for_factor_vars = self._get_cells_in_vars(vars_for_factors)
-            factors_for_cells = np.repeat(self.factors_in_use, self.n_hidden_states)
-            log_base_for_cells = np.full(
-                len(cells_for_factor_vars),
-                fill_value=-np.inf,
-                dtype=REAL_DTYPE
+        # excitation activity
+        if len(active_segments) > 0:
+            factors_for_active_segments = self.factor_for_segment[active_segments]
+            log_factor_value = self.log_factor_values_per_segment[active_segments]
+
+            likelihood = self.forward_messages[self.receptive_fields[active_segments]]
+            log_likelihood = np.sum(np.log(likelihood), axis=-1)
+
+            log_excitation_per_segment = log_likelihood + log_factor_value
+
+            # uniquely encode pairs (factor, cell) for each segment
+            cell_factor_id_per_segment = (
+                    factors_for_active_segments * self.total_cells
+                    + cells_for_active_segments
             )
 
-            # uniquely encode pairs (factor, cell)
-            cell_factor_id_per_cell = (
-                factors_for_cells * self.total_cells + cells_for_factor_vars
+            # group segments by factors
+            sorting_inxs = np.argsort(cell_factor_id_per_segment)
+            cell_factor_id_per_segment = cell_factor_id_per_segment[sorting_inxs]
+            log_excitation_per_segment = log_excitation_per_segment[sorting_inxs]
+
+            cell_factor_id_excitation, reduce_inxs = np.unique(
+                cell_factor_id_per_segment, return_index=True
             )
 
-            # deviation activity
-            if len(active_segments) > 0:
-                factors_for_active_segments = self.factor_for_segment[active_segments]
-                log_factor_value = self.log_factor_values_per_segment[active_segments]
+            # approximate log sum with max
+            log_excitation_per_factor = np.maximum.reduceat(log_excitation_per_segment, reduce_inxs)
 
-                likelihood = self.forward_messages[self.receptive_fields[active_segments]]
-                log_likelihood = np.sum(np.log(likelihood), axis=-1)
+            # group segments by cells
+            cells_for_factors = cells_for_active_segments[reduce_inxs]
+            sort_inxs = np.argsort(cells_for_factors)
 
-                # advantage per segment
-                log_advantage = log_likelihood + log_factor_value
+            cells_for_factors = cells_for_factors[sort_inxs]
+            log_excitation_per_factor = log_excitation_per_factor[sort_inxs]
 
-                # uniquely encode pairs (factor, cell) for each segment
-                cell_factor_id_per_segment = (
-                        factors_for_active_segments * self.total_cells
-                        + cells_for_active_segments
-                )
-
-                # group segments by factors
-                sorting_inxs = np.argsort(cell_factor_id_per_segment)
-                cell_factor_id_per_segment = cell_factor_id_per_segment[sorting_inxs]
-                log_advantage = log_advantage[sorting_inxs]
-
-                cell_factor_id_deviation, reduce_inxs = np.unique(
-                    cell_factor_id_per_segment, return_index=True
-                )
-
-                # deviation per factor and cell
-                # approximate log sum with max
-                log_deviation = np.maximum.reduceat(log_advantage, reduce_inxs)
-
-                deviation_mask = np.isin(cell_factor_id_per_cell, cell_factor_id_deviation)
-                log_base_for_cells[deviation_mask] = log_deviation
-
-            sort_inxs = np.argsort(cells_for_factor_vars)
-            log_base_for_cells = log_base_for_cells[sort_inxs]
-            cells_for_factor_vars = cells_for_factor_vars[sort_inxs]
-
-            cells_with_factors, reduce_inxs = np.unique(cells_for_factor_vars, return_index=True)
+            cells_with_factors, reduce_inxs = np.unique(cells_for_factors, return_index=True)
 
             log_prediction_for_cells_with_factors = np.add.reduceat(
-                log_base_for_cells, indices=reduce_inxs
+                log_excitation_per_factor, indices=reduce_inxs
             )
 
             log_prediction[cells_with_factors] = log_prediction_for_cells_with_factors
