@@ -46,6 +46,8 @@ class DCHMM:
             cells_per_column: int,
             n_vars_per_factor: int,
             factors_per_var: int,
+            n_external_vars: int = 0,
+            n_external_states: int = 0,
             lr: float = 1.0,
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
@@ -67,9 +69,12 @@ class DCHMM:
         self.n_obs_vars = n_obs_vars
         self.n_hidden_vars = n_obs_vars
         self.n_obs_states = n_obs_states
+        self.n_external_vars = n_external_vars
+        self.n_external_states = n_external_states
 
         self.n_hidden_states = cells_per_column * n_obs_states
         self.total_cells = self.n_hidden_vars * self.n_hidden_states
+        self.external_input_size = self.n_external_vars * self.n_external_states
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
@@ -101,8 +106,10 @@ class DCHMM:
         # low probability clipping
         self.cell_activation_threshold = cell_activation_threshold
 
-        self.active_cells = SDR(self.total_cells)
+        self.active_cells = SDR(self.total_cells + self.external_input_size)
         self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
+
+        self.external_active_cells = SDR(self.external_input_size)
 
         self.predicted_cells = SDR(self.total_cells)
 
@@ -114,9 +121,10 @@ class DCHMM:
 
         self.next_forward_messages = None
         self.prediction = None
+        self.external_messages = np.zeros(self.external_input_size)
 
         self.connections = Connections(
-            numCells=self.total_cells,
+            numCells=self.total_cells + self.external_input_size,
             connectedThreshold=0.5
         )
 
@@ -178,9 +186,16 @@ class DCHMM:
 
     def predict_cells(self):
         # filter dendrites that have low activation likelihood
-        active_cells = SDR(self.total_cells)
+        active_cells = SDR(self.total_cells + self.external_input_size)
+        forward_messages = np.concatenate(
+            [
+                self.forward_messages,
+                self.external_messages
+            ]
+        )
+
         active_cells.sparse = np.flatnonzero(
-            self.forward_messages >= self.cell_activation_threshold
+            forward_messages >= self.cell_activation_threshold
         )
 
         num_connected_segment = self.connections.computeActivity(
@@ -205,7 +220,7 @@ class DCHMM:
             factors_for_active_segments = self.factor_for_segment[active_segments]
             log_factor_value = self.log_factor_values_per_segment[active_segments]
 
-            likelihood = self.forward_messages[self.receptive_fields[active_segments]]
+            likelihood = forward_messages[self.receptive_fields[active_segments]]
             log_likelihood = np.sum(np.log(likelihood), axis=-1)
 
             log_excitation_per_segment = log_likelihood + log_factor_value
@@ -277,8 +292,26 @@ class DCHMM:
         prediction = self.prediction.reshape((self.n_columns, self.cells_per_column))
         return prediction.sum(axis=-1)
 
-    def observe(self, observation: np.ndarray, learn: bool = True):
+    def observe(
+            self,
+            observation: np.ndarray,
+            learn: bool = True,
+            external_active_cells: np.ndarray = None,
+            external_messages: np.ndarray = None
+    ):
         assert self.next_forward_messages is not None
+
+        if external_active_cells is not None:
+            self.external_active_cells.sparse = external_active_cells
+        else:
+            self.external_active_cells.sparse = []
+
+        if external_messages is not None:
+            self.external_messages = external_messages
+        else:
+            self.external_messages = normalize(
+                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
+            ).flatten()
 
         cells = self._get_cells_for_observation(observation)
         obs_factor = np.zeros_like(self.forward_messages)
@@ -335,7 +368,12 @@ class DCHMM:
             for segment in segments_to_prune:
                 self.connections.destroySegment(segment)
 
-        self.active_cells.sparse = next_active_cells
+        self.active_cells.sparse = np.concatenate(
+            [
+                next_active_cells,
+                self.total_cells + self.external_active_cells.sparse
+            ]
+        )
 
         self.forward_messages = self.next_forward_messages
 
@@ -403,12 +441,19 @@ class DCHMM:
         return np.concatenate([cells_for_empty_vars, cells_in_columns])
 
     def _get_cells_in_vars(self, variables):
-        cells_in_vars = (
-                (variables * self.n_hidden_states).reshape((-1, 1)) +
+        local_vars_mask = variables < self.n_hidden_vars
+
+        cells_in_local_vars = (
+                (variables[local_vars_mask] * self.n_hidden_states).reshape((-1, 1)) +
                 np.arange(self.n_hidden_states, dtype=UINT_DTYPE)
         ).flatten()
 
-        return cells_in_vars
+        cells_in_ext_vars = (
+                (variables[~local_vars_mask] * self.n_external_states).reshape((-1, 1)) +
+                np.arange(self.n_external_states, dtype=UINT_DTYPE)
+        ).flatten()
+
+        return np.concatenate([cells_in_local_vars, cells_in_ext_vars])
 
     def _filter_cells_by_vars(self, cells, variables):
         cells_in_vars = self._get_cells_in_vars(variables)
@@ -537,7 +582,7 @@ class DCHMM:
                 )
             else:
                 # select cells for a new factor
-                h_vars = np.arange(self.n_hidden_vars)
+                h_vars = np.arange(self.n_hidden_vars + self.n_external_vars)
                 var_score = np.zeros_like(h_vars)
 
                 used_vars, counts = np.unique(
