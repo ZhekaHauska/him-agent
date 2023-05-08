@@ -218,6 +218,7 @@ class DCHMM:
 
             # group segments by factors
             sorting_inxs = np.argsort(cell_factor_id_per_segment)
+            cells_for_active_segments = cells_for_active_segments[sorting_inxs]
             cell_factor_id_per_segment = cell_factor_id_per_segment[sorting_inxs]
             log_excitation_per_segment = log_excitation_per_segment[sorting_inxs]
 
@@ -230,8 +231,8 @@ class DCHMM:
 
             # group segments by cells
             cells_for_factors = cells_for_active_segments[reduce_inxs]
-            sort_inxs = np.argsort(cells_for_factors)
 
+            sort_inxs = np.argsort(cells_for_factors)
             cells_for_factors = cells_for_factors[sort_inxs]
             log_excitation_per_factor = log_excitation_per_factor[sort_inxs]
 
