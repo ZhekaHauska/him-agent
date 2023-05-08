@@ -10,6 +10,7 @@ from hima.envs.pixel.pixball import Pixball
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
 from htm.bindings.sdr import SDR
 from hima.experiments.hmm.runners.utils import get_surprise
+from hima.common.sdr_encoders import IntBucketEncoder
 
 try:
     from pinball import Pinball
@@ -800,10 +801,19 @@ class PinballTest:
         conf['hmm']['n_obs_states'] = self.n_obs_states
         conf['hmm']['n_obs_vars'] = self.n_obs_vars
 
+        self.actions = conf['run']['actions']
+        conf['hmm']['n_external_vars'] = 1
+        conf['hmm']['n_external_states'] = len(self.actions)
+
         self.hmm = DCHMM(**conf['hmm'])
 
-        self.actions = conf['run']['actions']
-        self.positions = conf['run']['positions']
+        self.action = None
+        self.action_encoder = IntBucketEncoder(len(self.actions), 1)
+
+        self.is_action_observable = conf['run']['action_observable']
+        self.action_delay = conf['run']['action_delay']
+        self.start_actions = conf['run']['start_actions']
+        self.start_positions = conf['run']['start_positions']
         self.prediction_steps = conf['run']['prediction_steps']
         self.n_episodes = conf['run']['n_episodes']
         self.log_update_rate = conf['run']['update_rate']
@@ -863,9 +873,9 @@ class PinballTest:
                 writer_raw = None
                 writer_hidden = None
 
-            init_i = self._rng.integers(0, len(self.actions), 1)
-            action = self.actions[init_i[0]]
-            position = self.positions[init_i[0]]
+            init_i = self._rng.integers(0, len(self.start_actions), 1)
+            action = self.start_actions[init_i[0]]
+            position = self.start_positions[init_i[0]]
             self.env.reset(position)
             self.env.act(action)
 
@@ -890,7 +900,27 @@ class PinballTest:
                 self.hmm.predict_cells()
                 column_probs = self.hmm.predict_columns()
 
-                self.hmm.observe(obs_state, learn=True)
+                if (self.action is not None) and self.is_action_observable:
+                    action_code = self.action_encoder.encode(self.action)
+                    action_probs = np.zeros(len(self.actions))
+                    action_probs[self.action] = 1
+                else:
+                    action_code = None
+                    action_probs = None
+
+                self.hmm.observe(
+                    obs_state,
+                    learn=True,
+                    external_active_cells=action_code,
+                    external_messages=action_probs
+                )
+
+                if steps == self.action_delay:
+                    init_i = self._rng.integers(0, len(self.actions), 1)
+                    self.action = init_i[0]
+                    self.env.act(self.actions[self.action])
+                else:
+                    self.action = None
 
                 if steps > 0:
                     # metrics
