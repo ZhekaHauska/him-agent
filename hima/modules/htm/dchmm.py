@@ -625,6 +625,11 @@ class DCHMM:
                 self.factors_boost = np.append(self.factors_boost, 1)
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
+
+            # don't create a segment that will never activate
+            if len(candidates) < self.segment_activation_threshold:
+                continue
+
             # TODO it may rewrite segments randomly, but we want to do it wisely
             #   so, check if we reached the limit of segments and delete a segment with
             #   least log factor value
