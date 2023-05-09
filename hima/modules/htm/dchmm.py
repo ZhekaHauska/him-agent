@@ -12,6 +12,7 @@ import pygraphviz as pgv
 import warnings
 import seaborn as sns
 import matplotlib.pyplot as plt
+import colormap
 
 EPS = 1e-24
 INT_TYPE = "int64"
@@ -645,13 +646,32 @@ class DCHMM:
         return np.array(new_segments, dtype=UINT_DTYPE)
 
     def draw_factor_graph(self, path):
+        # count segments per factor
+        factors_in_use, n_segments = np.unique(
+            self.factor_for_segment[self.segments_in_use],
+            return_counts=True
+        )
+        cmap = colormap.Colormap().get_cmap_heat()
+        factor_score = n_segments / n_segments.max()
+
         g = pgv.AGraph(strict=False, directed=False)
-        for fid in self.factors_in_use:
+        for fid, score in zip(factors_in_use, factor_score):
             var_next = self.factor_connections.cellForSegment(fid)
-            g.add_node(f'f{fid}', shape='box')
-            g.add_edge(f'v{var_next}(t+1)', f'f{fid}')
+            g.add_node(
+                f'f{fid}',
+                shape='box',
+                style='filled',
+                fillcolor=colormap.rgb2hex(
+                    *(cmap(int(255*score))[:-1]),
+                    normalised=True
+                )
+            )
+            g.add_edge(f'h{var_next}(t+1)', f'f{fid}')
             for var_prev in self.factor_vars[fid]:
-                g.add_edge(f'f{fid}', f'v{var_prev}(t)',)
+                if var_prev < self.n_hidden_vars:
+                    g.add_edge(f'f{fid}', f'h{var_prev}(t)',)
+                else:
+                    g.add_edge(f'f{fid}', f'e{var_prev}(t)', )
         g.layout(prog='dot')
         g.draw(path)
 
