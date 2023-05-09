@@ -450,9 +450,10 @@ class DCHMM:
         ).flatten()
 
         cells_in_ext_vars = (
-                (variables[~local_vars_mask] * self.n_external_states).reshape((-1, 1)) +
+                ((variables[~local_vars_mask] - self.n_hidden_vars) *
+                 self.n_external_states).reshape((-1, 1)) +
                 np.arange(self.n_external_states, dtype=UINT_DTYPE)
-        ).flatten()
+        ).flatten() + self.total_cells
 
         return np.concatenate([cells_in_local_vars, cells_in_ext_vars])
 
