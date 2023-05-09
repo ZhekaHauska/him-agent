@@ -17,7 +17,7 @@ class GifViewer:
         self.res = res
         self.frames = []
 
-        self.files = pn.widgets.FileSelector(directory)
+        self.files = pn.widgets.FileSelector(directory, file_pattern='*.gif')
         self.time_step = pn.widgets.Player(start=0)
         self.frames = []
 
