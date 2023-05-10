@@ -49,6 +49,7 @@ class DCHMM:
             factors_per_var: int,
             n_external_vars: int = 0,
             n_external_states: int = 0,
+            external_vars_boost: float = 0,
             lr: float = 1.0,
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
@@ -72,6 +73,7 @@ class DCHMM:
         self.n_obs_states = n_obs_states
         self.n_external_vars = n_external_vars
         self.n_external_states = n_external_states
+        self.external_vars_boost = external_vars_boost
 
         self.n_hidden_states = cells_per_column * n_obs_states
         self.total_cells = self.n_hidden_vars * self.n_hidden_states
@@ -530,6 +532,8 @@ class DCHMM:
             growth_candidates,
     ):
         # TODO add pruning or rewriting of inefficient factors
+        factor_score = self.factor_boost_scale * self.factors_boost
+
         # sum factor values for every factor
         if len(self.segments_in_use) > 0:
             factor_for_segment = self.factor_for_segment[self.segments_in_use]
@@ -545,12 +549,9 @@ class DCHMM:
                 return_counts=True
             )
 
-            factor_score = self.factor_boost_scale * self.factors_boost
             mask = np.isin(self.factors_in_use, factors_with_segments)
             factor_eff = np.add.reduceat(segments_sorted, split_ind) / counts
             factor_score[mask] += factor_eff
-        else:
-            factor_score = np.empty(0)
 
         self.factor_score = factor_score
 
@@ -593,6 +594,7 @@ class DCHMM:
                 )
 
                 var_score[used_vars] = -counts
+                var_score[h_vars >= self.n_hidden_vars] += self.external_vars_boost
 
                 # sample size can't be smaller than number of variables
                 sample_size = min(self.n_vars_per_factor, len(h_vars))
