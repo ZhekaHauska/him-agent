@@ -46,7 +46,7 @@ class GifViewer:
         self.time_step.end = max_frames - 1
 
         img = []
-        for frames in self.frames:
+        for i, frames in enumerate(self.frames):
             if time_step < len(frames):
                 frame = self.preprocess(frames[time_step])
                 aspect = frame.shape[0] / frame.shape[1]
@@ -59,7 +59,8 @@ class GifViewer:
                         C='p',
                         cmap='Blues',
                         width=self.res,
-                        height=int(aspect * self.res)
+                        height=int(aspect * self.res),
+                        title=files[i].split('/')[-1]
                     )
                 )
 
