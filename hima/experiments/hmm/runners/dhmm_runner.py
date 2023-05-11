@@ -802,14 +802,16 @@ class PinballTest:
         conf['hmm']['n_obs_vars'] = self.n_obs_vars
 
         self.actions = conf['run']['actions']
+        # add idle action
+        self.actions.append([0.0, 0.0])
 
         conf['hmm']['n_external_vars'] = 1
-        conf['hmm']['n_external_states'] = len(self.actions) + 1
+        conf['hmm']['n_external_states'] = len(self.actions)
 
         self.hmm = DCHMM(**conf['hmm'])
 
         self.action = len(self.actions)
-        self.action_encoder = IntBucketEncoder(len(self.actions) + 1, 1)
+        self.action_encoder = IntBucketEncoder(len(self.actions), 1)
 
         self.is_action_observable = conf['run']['action_observable']
         self.action_delay = conf['run']['action_delay']
@@ -901,9 +903,17 @@ class PinballTest:
                 self.hmm.predict_cells()
                 column_probs = self.hmm.predict_columns()
 
+                if steps == self.action_delay:
+                    # choose between non-idle actions
+                    init_i = self._rng.integers(0, len(self.actions)-1, 1)
+                    self.action = init_i[0]
+                else:
+                    # choose idle action
+                    self.action = len(self.actions) - 1
+
                 if (self.action is not None) and self.is_action_observable:
                     action_code = self.action_encoder.encode(self.action)
-                    action_probs = np.zeros(len(self.actions) + 1)
+                    action_probs = np.zeros(len(self.actions))
                     action_probs[self.action] = 1
                 else:
                     action_code = None
@@ -915,13 +925,10 @@ class PinballTest:
                     external_active_cells=action_code,
                     external_messages=action_probs
                 )
-                # should we observe action before acting?
-                if steps == self.action_delay:
-                    init_i = self._rng.integers(0, len(self.actions), 1)
-                    self.action = init_i[0]
+
+                # if not idle action
+                if self.action < (len(self.actions) - 1):
                     self.env.act(self.actions[self.action])
-                else:
-                    self.action = len(self.actions)
 
                 if steps > 0:
                     # metrics
