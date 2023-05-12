@@ -304,17 +304,18 @@ class DCHMM:
     ):
         assert self.next_forward_messages is not None
 
-        if external_active_cells is not None:
-            self.external_active_cells.sparse = external_active_cells
-        else:
-            self.external_active_cells.sparse = []
-
         if external_messages is not None:
             self.external_messages = external_messages
         else:
             self.external_messages = normalize(
                 np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
             ).flatten()
+
+        if external_active_cells is not None:
+            self.external_active_cells.sparse = external_active_cells
+        else:
+            # TODO sample external cells from messages
+            self.external_active_cells.sparse = []
 
         cells = self._get_cells_for_observation(observation)
         obs_factor = np.zeros_like(self.forward_messages)
