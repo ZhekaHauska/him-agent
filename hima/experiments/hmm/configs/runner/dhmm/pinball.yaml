@@ -1,7 +1,7 @@
 log: True
 save_model: False
-project_name: 'dchmm_multi_factor_feature'
-run_tag: zero_factor_multi
+project_name: 'awesome_project'
+run_tag: awesome_model
 
 n_episodes: 501
 update_rate: 50
