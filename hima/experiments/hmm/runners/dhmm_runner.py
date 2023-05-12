@@ -105,20 +105,27 @@ class PinballTest:
         conf['hmm']['n_obs_states'] = self.n_obs_states
         conf['hmm']['n_obs_vars'] = self.n_obs_vars
 
-        self.actions = conf['run']['actions']
-        # add idle action
-        self.actions.append([0.0, 0.0])
+        if 'actions' in conf['run']:
+            self.actions = conf['run']['actions']
+            # add idle action
+            self.actions.append([0.0, 0.0])
 
-        conf['hmm']['n_external_vars'] = 1
-        conf['hmm']['n_external_states'] = len(self.actions)
+            conf['hmm']['n_external_vars'] = 1
+            conf['hmm']['n_external_states'] = len(self.actions)
+
+            self.action = len(self.actions)
+            self.action_encoder = IntBucketEncoder(len(self.actions), 1)
+
+            self.is_action_observable = conf['run']['action_observable']
+            self.action_delay = conf['run']['action_delay']
+        else:
+            conf['hmm']['n_external_vars'] = 0
+            conf['hmm']['n_external_states'] = 0
+            self.actions = None
+            self.action = None
 
         self.hmm = DCHMM(**conf['hmm'])
 
-        self.action = len(self.actions)
-        self.action_encoder = IntBucketEncoder(len(self.actions), 1)
-
-        self.is_action_observable = conf['run']['action_observable']
-        self.action_delay = conf['run']['action_delay']
         self.start_actions = conf['run']['start_actions']
         self.start_positions = conf['run']['start_positions']
         self.prediction_steps = conf['run']['prediction_steps']
@@ -209,24 +216,28 @@ class PinballTest:
                 self.hmm.predict_cells()
                 column_probs = self.hmm.predict_columns()
 
-                if steps == self.action_delay:
-                    # choose between non-idle actions
-                    init_i = self._rng.integers(0, len(self.actions)-1, 1)
-                    self.action = init_i[0]
-                    self.env.act(self.actions[self.action])
+                if self.actions is not None:
+                    if steps == self.action_delay:
+                        # choose between non-idle actions
+                        init_i = self._rng.integers(0, len(self.actions)-1, 1)
+                        self.action = init_i[0]
+                        self.env.act(self.actions[self.action])
+                    else:
+                        # choose idle action
+                        self.action = len(self.actions) - 1
+
+                    if self.is_action_observable:
+                        action = self.action
+                    else:
+                        action = len(self.actions) - 1
+
+                    action_code = self.action_encoder.encode(action)
+
+                    action_probs = np.zeros(len(self.actions))
+                    action_probs[action] = 1
                 else:
-                    # choose idle action
-                    self.action = len(self.actions) - 1
-
-                if self.is_action_observable:
-                    action = self.action
-                else:
-                    action = len(self.actions) - 1
-
-                action_code = self.action_encoder.encode(action)
-
-                action_probs = np.zeros(len(self.actions))
-                action_probs[action] = 1
+                    action_code = None
+                    action_probs = None
 
                 self.hmm.observe(
                     obs_state,
@@ -455,18 +466,19 @@ class PinballTest:
                     )
                     plt.close('all')
 
-                    self.hmm.draw_factor_graph(
-                        f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
-                    )
+                    if len(self.hmm.segments_in_use) > 0:
+                        self.hmm.draw_factor_graph(
+                            f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
+                        )
 
-                    self.logger.log(
-                        {
-                            'factors/graph': wandb.Image(
-                                f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
-                            )
-                        },
-                        step=i
-                    )
+                        self.logger.log(
+                            {
+                                'factors/graph': wandb.Image(
+                                    f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
+                                )
+                            },
+                            step=i
+                        )
 
                     if len(self.hmm.factor_score) > 0:
                         self.logger.log(
