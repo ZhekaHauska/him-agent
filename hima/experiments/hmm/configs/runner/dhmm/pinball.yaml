@@ -1,15 +1,19 @@
 log: True
 save_model: False
-project_name: 'dchmm_06-05-2023_weekly_test'
-run_tag: nonzero_factor
+project_name: 'awesome_project'
+run_tag: awesome_model
 
 n_episodes: 501
 update_rate: 50
 max_steps: 15
 log_gif_fps: 5
 prediction_steps: 5
-actions: [[ 3.14, 5 ], [0, 3]]
-positions: [[0, -9], [0, 0]]
+start_actions: [[ 3.14, 5 ], [0, 3]]
+start_positions: [[0, -9], [0, 0]]
+# simple policy consisting of one action
+actions: [[1.57, 5], [-1.57, 5]]
+action_delay: 5  # frames to wait before acting
+action_observable: True
 # sp_ensemble | one_sp | null
 encoder: sp_ensemble
 
@@ -17,6 +21,6 @@ experiment: pinball
 sp_conf: 'configs/sp/ensemble.yaml'
 hmm_conf: 'configs/dhmm/dchmm_pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'
-setup: 'frog'
+setup: 'empty'
 
 seed: null

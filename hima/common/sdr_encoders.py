@@ -14,6 +14,9 @@ from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone
 
+INT_TYPE = "int64"
+UINT_DTYPE = "uint32"
+
 
 class IntBucketEncoder:
     """
@@ -68,13 +71,13 @@ class IntBucketEncoder:
             f'Value must be in [0, {self.n_values}] or {self.ALL} or None; got {x}'
 
         if x is None:
-            return np.array([], dtype=np.int)
+            return np.array([], dtype=int)
         if x == self.ALL:
-            return np.arange(self.output_sdr_size, dtype=np.int)
+            return np.arange(self.output_sdr_size, dtype=int)
 
         left = self._bucket_starting_pos(x)
         right = left + self._bucket_size
-        return np.arange(left, right, dtype=np.int)
+        return np.arange(left, right, dtype=int)
 
     def _bucket_starting_pos(self, i):
         return i * self._buckets_step
@@ -137,7 +140,7 @@ class IntRandomEncoder:
     @staticmethod
     def _make_encoding_map(n_values, total_bits, n_active_bits, seed: int) -> np.ndarray:
         rng = np.random.default_rng(seed=seed)
-        encoding_map = np.empty(shape=(n_values, n_active_bits), dtype=np.int)
+        encoding_map = np.empty(shape=(n_values, n_active_bits), dtype=int)
         for x in range(n_values):
             encoding_map[x, :] = rng.choice(total_bits, size=n_active_bits, replace=False)
         return encoding_map
@@ -167,7 +170,7 @@ class SdrConcatenator:
     def concatenate(self, *sparse_sdrs: SparseSdr) -> SparseSdr:
         """Concatenates `sparse_sdrs` fixing their relative indexes."""
         size = sum(len(sdr) for sdr in sparse_sdrs)
-        result = np.empty(size, dtype=np.int)
+        result = np.empty(size, dtype=int)
 
         # to speed things up do not apply zero shift to the first sdr
         first = sparse_sdrs[0]

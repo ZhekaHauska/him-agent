@@ -10,6 +10,9 @@ from htm.bindings.math import Random
 import numpy as np
 import pygraphviz as pgv
 import warnings
+import seaborn as sns
+import matplotlib.pyplot as plt
+import colormap
 
 EPS = 1e-24
 INT_TYPE = "int64"
@@ -44,6 +47,9 @@ class DCHMM:
             cells_per_column: int,
             n_vars_per_factor: int,
             factors_per_var: int,
+            n_external_vars: int = 0,
+            n_external_states: int = 0,
+            external_vars_boost: float = 0,
             lr: float = 1.0,
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
@@ -65,9 +71,13 @@ class DCHMM:
         self.n_obs_vars = n_obs_vars
         self.n_hidden_vars = n_obs_vars
         self.n_obs_states = n_obs_states
+        self.n_external_vars = n_external_vars
+        self.n_external_states = n_external_states
+        self.external_vars_boost = external_vars_boost
 
         self.n_hidden_states = cells_per_column * n_obs_states
         self.total_cells = self.n_hidden_vars * self.n_hidden_states
+        self.external_input_size = self.n_external_vars * self.n_external_states
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
@@ -99,8 +109,10 @@ class DCHMM:
         # low probability clipping
         self.cell_activation_threshold = cell_activation_threshold
 
-        self.active_cells = SDR(self.total_cells)
+        self.active_cells = SDR(self.total_cells + self.external_input_size)
         self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
+
+        self.external_active_cells = SDR(self.external_input_size)
 
         self.predicted_cells = SDR(self.total_cells)
 
@@ -112,9 +124,10 @@ class DCHMM:
 
         self.next_forward_messages = None
         self.prediction = None
+        self.external_messages = np.zeros(self.external_input_size)
 
         self.connections = Connections(
-            numCells=self.total_cells,
+            numCells=self.total_cells + self.external_input_size,
             connectedThreshold=0.5
         )
 
@@ -176,9 +189,16 @@ class DCHMM:
 
     def predict_cells(self):
         # filter dendrites that have low activation likelihood
-        active_cells = SDR(self.total_cells)
+        active_cells = SDR(self.total_cells + self.external_input_size)
+        forward_messages = np.concatenate(
+            [
+                self.forward_messages,
+                self.external_messages
+            ]
+        )
+
         active_cells.sparse = np.flatnonzero(
-            self.forward_messages >= self.cell_activation_threshold
+            forward_messages >= self.cell_activation_threshold
         )
 
         num_connected_segment = self.connections.computeActivity(
@@ -186,100 +206,77 @@ class DCHMM:
             False
         )
 
-        active_segments = np.flatnonzero(num_connected_segment >= self.segment_activation_threshold)
+        active_segments = np.flatnonzero(
+            num_connected_segment >= self.segment_activation_threshold
+        )
         cells_for_active_segments = self.connections.mapSegmentsToCells(active_segments)
         self.predicted_cells.sparse = np.unique(cells_for_active_segments)
 
-        active_vars = SDR(self.n_hidden_vars)
-        active_vars.sparse = np.unique(active_cells.sparse // self.n_hidden_states)
-
-        num_connected_factor = self.factor_connections.computeActivity(
-            active_vars,
-            False
+        log_prediction = np.full(
+            self.total_cells,
+            fill_value=-np.inf,
+            dtype=REAL_DTYPE
         )
 
-        active_factors = np.flatnonzero(
-            num_connected_factor >= self.n_vars_per_factor
-        )
+        # excitation activity
+        if len(active_segments) > 0:
+            factors_for_active_segments = self.factor_for_segment[active_segments]
+            log_factor_value = self.log_factor_values_per_segment[active_segments]
 
-        if len(active_factors) > 0:
-            # base activity level
-            message_norm = self.forward_messages.reshape(
-                (self.n_hidden_vars, self.n_hidden_states)
-            ).sum(axis=-1)
+            likelihood = forward_messages[self.receptive_fields[active_segments]]
+            log_likelihood = np.sum(np.log(likelihood), axis=-1)
 
-            base = message_norm[self.factor_vars[active_factors]]
-            # base per factor
-            log_base = np.sum(np.log(base), axis=-1)
-            vars_for_factors = self.factor_connections.mapSegmentsToCells(
-                active_factors
-            )
-            cells_for_factor_vars = self._get_cells_in_vars(vars_for_factors)
-            log_base_for_cells = np.repeat(log_base, self.n_hidden_states)
-            factors_for_cells = np.repeat(active_factors, self.n_hidden_states)
+            log_excitation_per_segment = log_likelihood + log_factor_value
 
-            # uniquely encode pairs (factor, cell)
-            cell_factor_id_per_cell = (
-                factors_for_cells * self.total_cells + cells_for_factor_vars
+            # uniquely encode pairs (factor, cell) for each segment
+            cell_factor_id_per_segment = (
+                    factors_for_active_segments * self.total_cells
+                    + cells_for_active_segments
             )
 
-            # deviation activity
-            if len(active_segments) > 0:
-                factors_for_active_segments = self.factor_for_segment[active_segments]
-                shifted_factor_value = np.expm1(
-                            self.log_factor_values_per_segment[active_segments]
-                )
+            # group segments by factors
+            sorting_inxs = np.argsort(cell_factor_id_per_segment)
+            cells_for_active_segments = cells_for_active_segments[sorting_inxs]
+            cell_factor_id_per_segment = cell_factor_id_per_segment[sorting_inxs]
+            log_excitation_per_segment = log_excitation_per_segment[sorting_inxs]
 
-                likelihood = self.forward_messages[self.receptive_fields[active_segments]]
-                log_likelihood = np.sum(np.log(likelihood), axis=-1)
+            cell_factor_id_excitation, reduce_inxs = np.unique(
+                cell_factor_id_per_segment, return_index=True
+            )
 
-                # advantage per segment
-                log_advantage = log_likelihood + np.log(shifted_factor_value)
+            # approximate log sum with max
+            log_excitation_per_factor = np.maximum.reduceat(log_excitation_per_segment, reduce_inxs)
 
-                # uniquely encode pairs (factor, cell) for each segment
-                cell_factor_id_per_segment = (
-                        factors_for_active_segments * self.total_cells
-                        + cells_for_active_segments
-                )
+            # group segments by cells
+            cells_for_factors = cells_for_active_segments[reduce_inxs]
 
-                # group segments by factors
-                sorting_inxs = np.argsort(cell_factor_id_per_segment)
-                cell_factor_id_per_segment = cell_factor_id_per_segment[sorting_inxs]
-                log_advantage = log_advantage[sorting_inxs]
+            sort_inxs = np.argsort(cells_for_factors)
+            cells_for_factors = cells_for_factors[sort_inxs]
+            log_excitation_per_factor = log_excitation_per_factor[sort_inxs]
 
-                cell_factor_id_deviation, reduce_inxs = np.unique(
-                    cell_factor_id_per_segment, return_index=True
-                )
-
-                # deviation per factor and cell
-                # approximate log sum with max
-                log_deviation = np.maximum.reduceat(log_advantage, reduce_inxs)
-
-                deviation_mask = np.isin(cell_factor_id_per_cell, cell_factor_id_deviation)
-                log_base_for_cells[deviation_mask] = np.logaddexp(
-                    log_base_for_cells[deviation_mask], log_deviation
-                )
-
-            sort_inxs = np.argsort(cells_for_factor_vars)
-            log_base_for_cells = log_base_for_cells[sort_inxs]
-            cells_for_factor_vars = cells_for_factor_vars[sort_inxs]
-
-            cells_with_factors, reduce_inxs = np.unique(cells_for_factor_vars, return_index=True)
+            cells_with_factors, reduce_inxs = np.unique(cells_for_factors, return_index=True)
 
             log_prediction_for_cells_with_factors = np.add.reduceat(
-                log_base_for_cells, indices=reduce_inxs
+                log_excitation_per_factor, indices=reduce_inxs
             )
 
-            log_prediction = np.zeros(self.total_cells)
-
             log_prediction[cells_with_factors] = log_prediction_for_cells_with_factors
-        else:
-            log_prediction = np.zeros(self.total_cells)
 
         log_prediction = log_prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
 
-        # rescale
-        log_prediction -= log_prediction.min(axis=-1).reshape((-1, 1))
+        # shift log value for stability
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=RuntimeWarning)
+
+            means = log_prediction.mean(
+                axis=-1,
+                where=~np.isinf(log_prediction)
+            ).reshape((-1, 1))
+
+        means[np.isnan(means)] = 0
+
+        log_prediction -= means
+
         log_prediction = self.prediction_inverse_temp * log_prediction
 
         prediction = normalize(np.exp(log_prediction))
@@ -298,8 +295,27 @@ class DCHMM:
         prediction = self.prediction.reshape((self.n_columns, self.cells_per_column))
         return prediction.sum(axis=-1)
 
-    def observe(self, observation: np.ndarray, learn: bool = True):
+    def observe(
+            self,
+            observation: np.ndarray,
+            learn: bool = True,
+            external_active_cells: np.ndarray = None,
+            external_messages: np.ndarray = None
+    ):
         assert self.next_forward_messages is not None
+
+        if external_messages is not None:
+            self.external_messages = external_messages
+        else:
+            self.external_messages = normalize(
+                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
+            ).flatten()
+
+        if external_active_cells is not None:
+            self.external_active_cells.sparse = external_active_cells
+        else:
+            # TODO sample external cells from messages
+            self.external_active_cells.sparse = []
 
         cells = self._get_cells_for_observation(observation)
         obs_factor = np.zeros_like(self.forward_messages)
@@ -356,7 +372,12 @@ class DCHMM:
             for segment in segments_to_prune:
                 self.connections.destroySegment(segment)
 
-        self.active_cells.sparse = next_active_cells
+        self.active_cells.sparse = np.concatenate(
+            [
+                next_active_cells,
+                self.total_cells + self.external_active_cells.sparse
+            ]
+        )
 
         self.forward_messages = self.next_forward_messages
 
@@ -424,12 +445,20 @@ class DCHMM:
         return np.concatenate([cells_for_empty_vars, cells_in_columns])
 
     def _get_cells_in_vars(self, variables):
-        cells_in_vars = (
-                (variables * self.n_hidden_states).reshape((-1, 1)) +
+        local_vars_mask = variables < self.n_hidden_vars
+
+        cells_in_local_vars = (
+                (variables[local_vars_mask] * self.n_hidden_states).reshape((-1, 1)) +
                 np.arange(self.n_hidden_states, dtype=UINT_DTYPE)
         ).flatten()
 
-        return cells_in_vars
+        cells_in_ext_vars = (
+                ((variables[~local_vars_mask] - self.n_hidden_vars) *
+                 self.n_external_states).reshape((-1, 1)) +
+                np.arange(self.n_external_states, dtype=UINT_DTYPE)
+        ).flatten() + self.total_cells
+
+        return np.concatenate([cells_in_local_vars, cells_in_ext_vars])
 
     def _filter_cells_by_vars(self, cells, variables):
         cells_in_vars = self._get_cells_in_vars(variables)
@@ -504,6 +533,8 @@ class DCHMM:
             growth_candidates,
     ):
         # TODO add pruning or rewriting of inefficient factors
+        factor_score = self.factor_boost_scale * self.factors_boost
+
         # sum factor values for every factor
         if len(self.segments_in_use) > 0:
             factor_for_segment = self.factor_for_segment[self.segments_in_use]
@@ -519,12 +550,9 @@ class DCHMM:
                 return_counts=True
             )
 
-            factor_score = self.factor_boost_scale * self.factors_boost
             mask = np.isin(self.factors_in_use, factors_with_segments)
             factor_eff = np.add.reduceat(segments_sorted, split_ind) / counts
             factor_score[mask] += factor_eff
-        else:
-            factor_score = np.empty(0)
 
         self.factor_score = factor_score
 
@@ -558,7 +586,7 @@ class DCHMM:
                 )
             else:
                 # select cells for a new factor
-                h_vars = np.arange(self.n_hidden_vars)
+                h_vars = np.arange(self.n_hidden_vars + self.n_external_vars)
                 var_score = np.zeros_like(h_vars)
 
                 used_vars, counts = np.unique(
@@ -567,6 +595,7 @@ class DCHMM:
                 )
 
                 var_score[used_vars] = -counts
+                var_score[h_vars >= self.n_hidden_vars] += self.external_vars_boost
 
                 # sample size can't be smaller than number of variables
                 sample_size = min(self.n_vars_per_factor, len(h_vars))
@@ -599,6 +628,11 @@ class DCHMM:
                 self.factors_boost = np.append(self.factors_boost, 1)
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
+
+            # don't create a segment that will never activate
+            if len(candidates) < self.segment_activation_threshold:
+                continue
+
             # TODO it may rewrite segments randomly, but we want to do it wisely
             #   so, check if we reached the limit of segments and delete a segment with
             #   least log factor value
@@ -621,12 +655,43 @@ class DCHMM:
         return np.array(new_segments, dtype=UINT_DTYPE)
 
     def draw_factor_graph(self, path):
+        # count segments per factor
+        factors_in_use, n_segments = np.unique(
+            self.factor_for_segment[self.segments_in_use],
+            return_counts=True
+        )
+        cmap = colormap.Colormap().get_cmap_heat()
+        factor_score = n_segments / n_segments.max()
+
         g = pgv.AGraph(strict=False, directed=False)
-        for fid in self.factors_in_use:
+        for fid, score in zip(factors_in_use, factor_score):
             var_next = self.factor_connections.cellForSegment(fid)
-            g.add_node(f'f{fid}', shape='box')
-            g.add_edge(f'v{var_next}(t+1)', f'f{fid}')
+            g.add_node(
+                f'f{fid}',
+                shape='box',
+                style='filled',
+                fillcolor=colormap.rgb2hex(
+                    *(cmap(int(255*score))[:-1]),
+                    normalised=True
+                )
+            )
+            g.add_edge(f'h{var_next}(t+1)', f'f{fid}')
             for var_prev in self.factor_vars[fid]:
-                g.add_edge(f'f{fid}', f'v{var_prev}(t)',)
+                if var_prev < self.n_hidden_vars:
+                    g.add_edge(f'f{fid}', f'h{var_prev}(t)',)
+                else:
+                    g.add_edge(f'f{fid}', f'e{var_prev}(t)', )
         g.layout(prog='dot')
         g.draw(path)
+
+    def draw_messages(self):
+        fig, ax = plt.subplots(2, 1)
+        sns.heatmap(
+            self.forward_messages.reshape((self.n_hidden_vars, -1)),
+            ax=ax[0]
+        )
+        sns.heatmap(
+            self.next_forward_messages.reshape((self.n_hidden_vars, -1)),
+            ax=ax[1]
+        )
+        plt.show()
