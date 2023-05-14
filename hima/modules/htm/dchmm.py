@@ -306,7 +306,7 @@ class DCHMM:
 
         if external_messages is not None:
             self.external_messages = external_messages
-        else:
+        elif self.external_input_size != 0:
             self.external_messages = normalize(
                 np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
             ).flatten()
