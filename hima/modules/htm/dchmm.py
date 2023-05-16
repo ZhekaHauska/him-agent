@@ -413,7 +413,11 @@ class DCHMM:
         w = self.log_factor_values_per_segment[segments_to_reinforce]
         self.log_factor_values_per_segment[
             segments_to_reinforce
-        ] += np.log1p(self.lr/np.exp(w))
+        ] += np.log1p(self.lr * (np.exp(-w) - 1))
+
+        self.log_factor_values_per_segment[
+            segments_to_punish
+        ] += np.log1p(-self.lr)
 
         segments = np.concatenate(
                 [
@@ -424,7 +428,7 @@ class DCHMM:
 
         w = self.log_factor_values_per_segment[segments]
 
-        segments_to_prune = segments[np.abs(w) < self.segment_prune_threshold]
+        segments_to_prune = segments[np.exp(w) < self.segment_prune_threshold]
 
         return segments_to_prune
 
