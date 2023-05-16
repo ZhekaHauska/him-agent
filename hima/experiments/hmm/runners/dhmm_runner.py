@@ -33,9 +33,6 @@ class PinballTest:
     def __init__(self, logger, conf):
         self.seed = conf['run']['seed']
 
-        if self.seed is None:
-            self.seed = np.random.randint(0, np.iinfo(np.int32).max)
-
         conf['hmm']['seed'] = self.seed
         conf['env']['seed'] = self.seed
         conf['env']['exe_path'] = os.environ.get('PINBALL_EXE', None)
@@ -569,6 +566,9 @@ def main(config_path):
                 k = int(k)
             c = c[k]
         c[tokens[-1]] = value
+
+    if config['run']['seed'] is None:
+        config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
 
     if config['run']['log']:
         logger = wandb.init(

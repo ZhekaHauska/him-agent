@@ -58,7 +58,8 @@ class DCHMM:
             initial_factor_value: float = 0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
-            segment_prune_threshold: float = 0.001,
+            max_segments: int = 10000,
+            max_segments_margin: int = 0,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -82,11 +83,11 @@ class DCHMM:
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
 
+        self.max_segments = max_segments
+        self.max_segments_margin = max_segments_margin
         self.max_segments_per_cell = max_segments_per_cell
 
-        self.total_segments = (
-                self.n_hidden_states * self.max_segments_per_cell
-        ) * self.n_hidden_vars
+        self.total_segments = self.max_segments + self.max_segments_margin
 
         self.lr = lr
         self.factors_per_var = factors_per_var
@@ -101,8 +102,6 @@ class DCHMM:
 
         # number of variables assigned to a segment
         self.n_vars_per_factor = n_vars_per_factor
-
-        self.segment_prune_threshold = segment_prune_threshold
 
         # for now leave it strict
         self.segment_activation_threshold = n_vars_per_factor
@@ -410,7 +409,7 @@ class DCHMM:
             cells_to_grow_new_segments.astype(UINT_DTYPE)
         )
 
-    def _update_factors(self, segments_to_reinforce, segments_to_punish):
+    def _update_factors(self, segments_to_reinforce, segments_to_punish, prune=True):
         w = self.log_factor_values_per_segment[segments_to_reinforce]
         self.log_factor_values_per_segment[
             segments_to_reinforce
@@ -420,16 +419,29 @@ class DCHMM:
             segments_to_punish
         ] += np.log1p(-self.lr)
 
-        segments = np.concatenate(
-                [
-                    segments_to_punish,
-                    segments_to_reinforce
-                ]
+        if prune and (len(self.segments_in_use) > self.max_segments):
+            n_segments_to_prune = len(self.segments_in_use) - self.max_segments
+
+            score = self.log_factor_values_per_segment[self.segments_in_use]
+
+            candidates_to_prune = self.segments_in_use[
+                np.argpartition(score, n_segments_to_prune)[:n_segments_to_prune]
+            ]
+
+            candidates_to_prune = candidates_to_prune[
+                np.argsort(-self.log_factor_values_per_segment[candidates_to_prune])
+            ]
+
+            prob_to_prune = np.clip(
+                (np.arange(len(candidates_to_prune)) + 1) / (self.max_segments_margin + EPS),
+                a_min=0,
+                a_max=1
             )
 
-        w = self.log_factor_values_per_segment[segments]
-
-        segments_to_prune = segments[np.exp(w) < self.segment_prune_threshold]
+            gamma = self._rng.uniform(size=len(candidates_to_prune))
+            segments_to_prune = candidates_to_prune[gamma < prob_to_prune]
+        else:
+            segments_to_prune = np.empty(0, dtype=UINT_DTYPE)
 
         return segments_to_prune
 
