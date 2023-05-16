@@ -81,6 +81,7 @@ class DCHMM:
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
+
         self.max_segments_per_cell = max_segments_per_cell
 
         self.total_segments = (
@@ -564,6 +565,10 @@ class DCHMM:
 
         # each cell corresponds to one variable
         for cell in new_segment_cells:
+            n_segments = self.connections.numSegments(cell)
+            if n_segments >= self.max_segments_per_cell:
+                continue
+
             # get factors for cell
             var = cell // self.n_hidden_states
             cell_factors = np.array(
@@ -637,9 +642,6 @@ class DCHMM:
             if len(candidates) < self.segment_activation_threshold:
                 continue
 
-            # TODO it may rewrite segments randomly, but we want to do it wisely
-            #   so, check if we reached the limit of segments and delete a segment with
-            #   least log factor value
             new_segment = self.connections.createSegment(cell, self.max_segments_per_cell)
 
             self.connections.growSynapses(
