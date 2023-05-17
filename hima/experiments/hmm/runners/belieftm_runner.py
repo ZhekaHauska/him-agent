@@ -9,6 +9,7 @@ from hima.modules.htm.tm_writer import HTMWriter
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
 from htm.bindings.sdr import SDR
+from hima.experiments.hmm.runners.utils import get_surprise
 
 try:
     from pinball import Pinball
@@ -888,9 +889,6 @@ class PinballTest:
         total_surprise_decoder = 0
 
         for i in range(self.n_episodes):
-            self.env.reset()
-            self.hmm.reset()
-
             surprises = []
             anomalies = []
             surprises_decoder = []
@@ -901,9 +899,6 @@ class PinballTest:
             n_step_surprise_hid = [list() for t in range(self.prediction_steps)]
 
             steps = 0
-
-            prev_im = self.preprocess(self.env.obs())
-            prev_diff = np.zeros_like(prev_im)
 
             if self.encoder is not None:
                 prev_latent = np.zeros(self.encoder.getColumnDimensions())
@@ -934,7 +929,14 @@ class PinballTest:
             self.env.reset(position)
             self.env.act(action)
 
+            self.hmm.reset()
+
+            self.env.step()
+            prev_im = self.preprocess(self.env.obs())
+            prev_diff = np.zeros_like(prev_im)
+
             while True:
+                self.env.step()
                 raw_im = self.preprocess(self.env.obs())
                 thresh = raw_im.mean()
                 diff = np.abs(raw_im - prev_im) >= thresh
@@ -965,14 +967,14 @@ class PinballTest:
                     anomalies.append(self.hmm.anomaly[-1])
 
                     # 1. surprise
-                    surprise = self.get_surprise(column_probs, obs_state)
+                    surprise = get_surprise(column_probs, obs_state)
                     surprises.append(surprise)
                     total_surprise += surprise
 
                     if self.decoder is not None:
                         decoded_probs = self.decoder.decode(column_probs, update=True)
 
-                        surprise_decoder = self.get_surprise(decoded_probs, self.sp_input.sparse)
+                        surprise_decoder = get_surprise(decoded_probs, self.sp_input.sparse)
 
                         surprises_decoder.append(surprise_decoder)
                         total_surprise_decoder += surprise_decoder
@@ -1036,8 +1038,8 @@ class PinballTest:
                         current_predictions_hid = [x.pop(0) for x in hidden_probs_stack]
 
                         for p_obs, p_hid, s in zip(current_predictions_obs, current_predictions_hid, pred_horizon):
-                            surp_obs = self.get_surprise(p_obs.flatten(), self.sp_input.sparse)
-                            surp_hid = self.get_surprise(p_hid.flatten(), self.sp_output.sparse)
+                            surp_obs = get_surprise(p_obs.flatten(), self.sp_input.sparse)
+                            surp_hid = get_surprise(p_hid.flatten(), self.sp_output.sparse)
                             n_step_surprise_obs[s].append(surp_obs)
                             n_step_surprise_hid[s].append(surp_hid)
 
@@ -1139,24 +1141,6 @@ class PinballTest:
 
         return gray_im
 
-    @staticmethod
-    def get_surprise(probs, obs):
-        is_coincide = np.isin(
-            np.arange(len(probs)), obs
-        )
-        surprise = - np.sum(
-            np.log(
-                np.clip(probs[is_coincide], 1e-7, 1)
-            )
-        )
-        surprise += - np.sum(
-            np.log(
-                np.clip(1 - probs[~is_coincide], 1e-7, 1)
-            )
-        )
-
-        return surprise
-
 
 def main(config_path):
     if len(sys.argv) > 1:
@@ -1202,6 +1186,9 @@ def main(config_path):
                 k = int(k)
             c = c[k]
         c[tokens[-1]] = value
+
+    if config['run']['seed'] is None:
+        config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
 
     if config['run']['log']:
         logger = wandb.init(
