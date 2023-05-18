@@ -50,7 +50,8 @@ class DCHMM:
             n_external_vars: int = 0,
             n_external_states: int = 0,
             external_vars_boost: float = 0,
-            lr: float = 1.0,
+            lr: float = 0.01,
+            alpha: float = 0.001,
             factor_boost_scale: float = 10,
             factor_boost_decay: float = 0.01,
             predicted_cell_boost_factor: float = 1.0,
@@ -59,7 +60,8 @@ class DCHMM:
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
             max_segments: int = 10000,
-            max_segments_margin: int = 0,
+            developmental_period: int = 10000,
+            fraction_of_segments_to_prune: float = 0.5,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -69,6 +71,9 @@ class DCHMM:
         else:
             self._legacy_rng = Random()
 
+        self.timestep = 1
+        self.developmental_period = developmental_period
+        self.fraction_of_segments_to_prune = fraction_of_segments_to_prune
         self.n_obs_vars = n_obs_vars
         self.n_hidden_vars = n_obs_vars
         self.n_obs_states = n_obs_states
@@ -83,13 +88,11 @@ class DCHMM:
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.cells_per_column = cells_per_column
 
-        self.max_segments = max_segments
-        self.max_segments_margin = max_segments_margin
+        self.total_segments = max_segments
         self.max_segments_per_cell = max_segments_per_cell
 
-        self.total_segments = self.max_segments + self.max_segments_margin
-
         self.lr = lr
+        self.alpha = alpha
         self.factors_per_var = factors_per_var
         self.factor_boost_scale = factor_boost_scale
         self.factor_boost_decay = factor_boost_decay
@@ -136,6 +139,11 @@ class DCHMM:
         self.log_factor_values_per_segment = np.full(
             self.total_segments,
             fill_value=self.initial_factor_value,
+            dtype=REAL64_DTYPE
+        )
+
+        self.segment_activity = np.ones(
+            self.total_segments,
             dtype=REAL64_DTYPE
         )
 
@@ -354,23 +362,16 @@ class DCHMM:
                 new_segments[np.isin(new_segments, self.segments_in_use, invert=True)]
             )
 
-            segments_to_prune = self._update_factors(
+            self._update_factors(
                 np.concatenate(
                     [
                         segments_to_reinforce,
                         new_segments
                     ]
                 ),
-                segments_to_punish
+                segments_to_punish,
+                prune=(self.timestep % self.developmental_period) == 0
             )
-
-            filter_destroyed_segments = np.isin(
-                self.segments_in_use, segments_to_prune, invert=True
-            )
-            self.segments_in_use = self.segments_in_use[filter_destroyed_segments]
-
-            for segment in segments_to_prune:
-                self.connections.destroySegment(segment)
 
         self.active_cells.sparse = np.concatenate(
             [
@@ -380,6 +381,7 @@ class DCHMM:
         )
 
         self.forward_messages = self.next_forward_messages
+        self.timestep += 1
 
     def _calculate_learning_segments(self, prev_active_cells, next_active_cells):
         # determine which segments are learning and growing
@@ -409,7 +411,7 @@ class DCHMM:
             cells_to_grow_new_segments.astype(UINT_DTYPE)
         )
 
-    def _update_factors(self, segments_to_reinforce, segments_to_punish, prune=True):
+    def _update_factors(self, segments_to_reinforce, segments_to_punish, prune=False):
         w = self.log_factor_values_per_segment[segments_to_reinforce]
         self.log_factor_values_per_segment[
             segments_to_reinforce
@@ -419,29 +421,39 @@ class DCHMM:
             segments_to_punish
         ] += np.log1p(-self.lr)
 
-        if prune and (len(self.segments_in_use) > self.max_segments):
-            n_segments_to_prune = len(self.segments_in_use) - self.max_segments
+        active_segments = np.concatenate([segments_to_reinforce, segments_to_punish])
+        non_active_segments = self.segments_in_use[
+            np.isin(self.segments_in_use, active_segments, invert=True)
+        ]
 
-            score = self.log_factor_values_per_segment[self.segments_in_use]
+        self.segment_activity[active_segments] += self.alpha * (
+                1 - self.segment_activity[active_segments]
+        )
+        self.segment_activity[non_active_segments] -= self.alpha * non_active_segments
 
-            candidates_to_prune = self.segments_in_use[
-                np.argpartition(score, n_segments_to_prune)[:n_segments_to_prune]
-            ]
+        if prune:
+            n_segments_to_prune = int(self.fraction_of_segments_to_prune * len(self.segments_in_use))
+            self._prune_segments(n_segments_to_prune)
 
-            candidates_to_prune = candidates_to_prune[
-                np.argsort(-self.log_factor_values_per_segment[candidates_to_prune])
-            ]
+    def _prune_segments(self, n_segments):
+        log_value = self.log_factor_values_per_segment[self.segments_in_use]
+        activity = self.segment_activity[self.segments_in_use]
 
-            prob_to_prune = np.clip(
-                (np.arange(len(candidates_to_prune)) + 1) / (self.max_segments_margin + EPS),
-                a_min=0,
-                a_max=1
-            )
+        score = (
+                np.exp(log_value) * activity
+        )
 
-            gamma = self._rng.uniform(size=len(candidates_to_prune))
-            segments_to_prune = candidates_to_prune[gamma < prob_to_prune]
-        else:
-            segments_to_prune = np.empty(0, dtype=UINT_DTYPE)
+        segments_to_prune = self.segments_in_use[
+            np.argpartition(score, n_segments)[:n_segments]
+        ]
+
+        filter_destroyed_segments = np.isin(
+            self.segments_in_use, segments_to_prune, invert=True
+        )
+        self.segments_in_use = self.segments_in_use[filter_destroyed_segments]
+
+        for segment in segments_to_prune:
+            self.connections.destroySegment(segment)
 
         return segments_to_prune
 
@@ -574,6 +586,11 @@ class DCHMM:
         self.factor_score = factor_score
 
         new_segments = list()
+
+        n_segments_after_growing = len(self.segments_in_use) + len(new_segment_cells)
+        if n_segments_after_growing > self.total_segments:
+            n_segments_to_prune = n_segments_after_growing - self.total_segments
+            self._prune_segments(n_segments_to_prune)
 
         # each cell corresponds to one variable
         for cell in new_segment_cells:
