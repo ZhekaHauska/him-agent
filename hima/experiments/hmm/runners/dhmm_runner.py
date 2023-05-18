@@ -477,12 +477,13 @@ class PinballTest:
                             step=i
                         )
 
-                    if len(self.hmm.factor_score) > 0:
                         self.logger.log(
                             {
-                                'factors/score': wandb.Image(
+                                'factors/segment_activity': wandb.Image(
                                     sns.histplot(
-                                        self.hmm.factor_score
+                                        self.hmm.segment_activity[
+                                            self.hmm.segments_in_use
+                                        ]
                                     )
                                 ),
                             },
@@ -492,13 +493,44 @@ class PinballTest:
 
                         self.logger.log(
                             {
-                                'factors/log_values': wandb.Image(
+                                'factors/segment_log_values': wandb.Image(
                                     sns.histplot(
                                         self.hmm.log_factor_values_per_segment[
                                             self.hmm.segments_in_use
                                         ]
                                     )
                                 )
+                            },
+                            step=i
+                        )
+                        plt.close('all')
+
+                        self.logger.log(
+                            {
+                                'factors/segment_score': wandb.Image(
+                                    sns.histplot(
+                                        np.exp(
+                                            self.hmm.log_factor_values_per_segment[
+                                                self.hmm.segments_in_use
+                                            ]
+                                        ) * self.hmm.segment_activity[
+                                            self.hmm.segments_in_use
+                                        ]
+                                    )
+                                )
+                            },
+                            step=i
+                        )
+                        plt.close('all')
+
+                    if len(self.hmm.factor_score) > 0:
+                        self.logger.log(
+                            {
+                                'factors/score': wandb.Image(
+                                    sns.histplot(
+                                        self.hmm.factor_score
+                                    )
+                                ),
                             },
                             step=i
                         )
