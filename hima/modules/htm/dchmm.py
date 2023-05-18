@@ -429,7 +429,9 @@ class DCHMM:
         self.segment_activity[active_segments] += self.alpha * (
                 1 - self.segment_activity[active_segments]
         )
-        self.segment_activity[non_active_segments] -= self.alpha * non_active_segments
+        self.segment_activity[non_active_segments] -= self.alpha * self.segment_activity[
+            non_active_segments
+        ]
 
         if prune:
             n_segments_to_prune = int(self.fraction_of_segments_to_prune * len(self.segments_in_use))
