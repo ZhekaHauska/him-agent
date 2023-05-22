@@ -52,8 +52,6 @@ class DCHMM:
             external_vars_boost: float = 0,
             lr: float = 0.01,
             alpha: float = 0.001,
-            factor_boost_scale: float = 10,
-            factor_boost_decay: float = 0.01,
             predicted_cell_boost_factor: float = 1.0,
             prediction_inverse_temp: float = 1.0,
             initial_factor_value: float = 0,
@@ -94,8 +92,6 @@ class DCHMM:
         self.lr = lr
         self.alpha = alpha
         self.factors_per_var = factors_per_var
-        self.factor_boost_scale = factor_boost_scale
-        self.factor_boost_decay = factor_boost_decay
         self.total_factors = self.n_hidden_vars * self.factors_per_var
 
         self.prediction_inverse_temp = prediction_inverse_temp
@@ -168,17 +164,10 @@ class DCHMM:
 
         self.segments_in_use = np.empty(0, dtype=UINT_DTYPE)
         self.factors_in_use = np.empty(0, dtype=UINT_DTYPE)
-        self.factors_boost = np.empty(0, dtype=REAL_DTYPE)
         self.factors_score = np.empty(0, dtype=REAL_DTYPE)
 
         self.factor_vars = np.full(
             (self.total_factors, self.n_vars_per_factor),
-            fill_value=-1,
-            dtype=INT_TYPE
-        )
-
-        self.factors_for_var = np.full(
-            (self.n_hidden_vars, self.factors_per_var),
             fill_value=-1,
             dtype=INT_TYPE
         )
@@ -434,7 +423,9 @@ class DCHMM:
         ]
 
         if prune:
-            n_segments_to_prune = int(self.fraction_of_segments_to_prune * len(self.segments_in_use))
+            n_segments_to_prune = int(
+                self.fraction_of_segments_to_prune * len(self.segments_in_use)
+            )
             self._prune_segments(n_segments_to_prune)
 
     def _prune_segments(self, n_segments):
@@ -563,17 +554,22 @@ class DCHMM:
             new_segment_cells,
             growth_candidates,
     ):
-        # TODO add pruning or rewriting of inefficient factors
-        factor_score = self.factor_boost_scale * self.factors_boost
+        # free space for new segments
+        n_segments_after_growing = len(self.segments_in_use) + len(new_segment_cells)
+        if n_segments_after_growing > self.total_segments:
+            n_segments_to_prune = n_segments_after_growing - self.total_segments
+            self._prune_segments(n_segments_to_prune)
 
         # sum factor values for every factor
         if len(self.segments_in_use) > 0:
             factor_for_segment = self.factor_for_segment[self.segments_in_use]
             log_factor_values = self.log_factor_values_per_segment[self.segments_in_use]
+            segment_activation_freq = self.segment_activity[self.segments_in_use]
 
             sort_ind = np.argsort(factor_for_segment)
             factors_sorted = factor_for_segment[sort_ind]
-            segments_sorted = log_factor_values[sort_ind]
+            segments_sorted_values = log_factor_values[sort_ind]
+            segments_sorted_freq = segment_activation_freq[sort_ind]
 
             factors_with_segments, split_ind, counts = np.unique(
                 factors_sorted,
@@ -581,22 +577,31 @@ class DCHMM:
                 return_counts=True
             )
 
-            mask = np.isin(self.factors_in_use, factors_with_segments)
-            factor_eff = np.add.reduceat(segments_sorted, split_ind) / counts
-            factor_score[mask] += factor_eff
+            score = np.exp(segments_sorted_values) * segments_sorted_freq
+            factor_score = np.add.reduceat(score, split_ind) / counts
+
+            # destroy factors without segments
+            mask = np.isin(self.factors_in_use, factors_with_segments, invert=True)
+            factors_without_segments = self.factors_in_use[mask]
+
+            for factor in factors_without_segments:
+                self.factor_connections.destroySegment(factor)
+                self.factor_vars[factor] = np.full(self.n_vars_per_factor, fill_value=-1)
+
+            self.factors_in_use = self.factors_in_use[mask]
+        else:
+            factor_score = np.empty(0)
 
         self.factor_score = factor_score
 
         new_segments = list()
 
-        n_segments_after_growing = len(self.segments_in_use) + len(new_segment_cells)
-        if n_segments_after_growing > self.total_segments:
-            n_segments_to_prune = n_segments_after_growing - self.total_segments
-            self._prune_segments(n_segments_to_prune)
-
         # each cell corresponds to one variable
         for cell in new_segment_cells:
             n_segments = self.connections.numSegments(cell)
+
+            # this condition is usually loose,
+            # so it's just a placeholder for extreme cases
             if n_segments >= self.max_segments_per_cell:
                 continue
 
@@ -621,9 +626,6 @@ class DCHMM:
 
             if factor_id != -1:
                 variables = self.factor_vars[factor_id]
-                self.factors_boost[self.factors_in_use == factor_id] *= (
-                        1 - self.factor_boost_decay
-                )
             else:
                 # select cells for a new factor
                 h_vars = np.arange(self.n_hidden_vars + self.n_external_vars)
@@ -665,7 +667,6 @@ class DCHMM:
 
                 self.factor_vars[factor_id] = variables
                 self.factors_in_use = np.append(self.factors_in_use, factor_id)
-                self.factors_boost = np.append(self.factors_boost, 1)
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
 
