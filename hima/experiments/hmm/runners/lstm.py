@@ -207,7 +207,7 @@ class MPGTest:
                 pickle.dump((self.mpg, self.hmm), file)
 
         if self.n_steps is not None:
-            average_dkl = self.run_n_step()
+            self.run_n_step()
 
     def run_n_step(self):
         self.hmm.reset()
@@ -293,7 +293,6 @@ class MPGTest:
         average_dkls = np.abs(dkls).mean(where=~np.isinf(dkls))
 
         if self.logger is not None:
-            dkls = np.array(dkls)
             n_step_dists = np.vstack(n_step_dists)
 
             name = self.logger.name
@@ -331,9 +330,6 @@ class MPGTest:
 class PinballTest:
     def __init__(self, logger, conf):
         self.seed = conf['run']['seed']
-
-        if self.seed is None:
-            self.seed = np.random.randint(0, np.iinfo(np.int32).max)
 
         conf['hmm']['seed'] = self.seed
         conf['env']['seed'] = self.seed
@@ -415,6 +411,7 @@ class PinballTest:
         self.save_model = conf['run']['save_model']
         self.log_fps = conf['run']['log_gif_fps']
         self.mc_iterations = conf['run']['mc_iterations']
+        self.normalize_surprise = conf['run']['normalize_surprise']
 
         self._rng = np.random.default_rng(self.seed)
 
@@ -436,15 +433,13 @@ class PinballTest:
         total_surprise_decoder = 0
 
         for i in range(self.n_episodes):
-            self.hmm.reset()
-
             surprises = []
             surprises_decoder = []
 
             obs_probs_stack = []
             hidden_probs_stack = []
-            n_step_surprise_obs = [list() for t in range(self.prediction_steps)]
-            n_step_surprise_hid = [list() for t in range(self.prediction_steps)]
+            n_step_surprise_obs = [list() for _ in range(self.prediction_steps)]
+            n_step_surprise_hid = [list() for _ in range(self.prediction_steps)]
 
             steps = 0
 
@@ -474,14 +469,17 @@ class PinballTest:
             init_i = self._rng.integers(0, len(self.actions), 1)
             action = self.actions[init_i[0]]
             position = self.positions[init_i[0]]
-
             self.env.reset(position)
+            self.env.act(action)
+
+            self.hmm.reset()
+
+            self.env.step()
             prev_im = self.preprocess(self.env.obs())
             prev_diff = np.zeros_like(prev_im)
 
-            self.env.act(action)
-
             while True:
+                self.env.step()
                 raw_im = self.preprocess(self.env.obs())
                 thresh = raw_im.mean()
                 diff = np.abs(raw_im - prev_im) >= thresh
@@ -502,14 +500,23 @@ class PinballTest:
                 if steps > 0:
                     # metrics
                     # 1. surprise
-                    surprise = get_surprise(column_probs, obs_state, mode=self.surprise_mode)
+                    surprise = get_surprise(
+                        column_probs,
+                        obs_state,
+                        mode=self.surprise_mode,
+                        normalize=self.normalize_surprise
+                    )
                     surprises.append(surprise)
                     total_surprise += surprise
 
                     if self.decoder is not None:
                         decoded_probs = self.decoder.decode(column_probs, update=True)
 
-                        surprise_decoder = get_surprise(decoded_probs, self.sp_input.sparse)
+                        surprise_decoder = get_surprise(
+                            decoded_probs,
+                            self.sp_input.sparse,
+                            normalize=self.normalize_surprise
+                        )
 
                         surprises_decoder.append(surprise_decoder)
                         total_surprise_decoder += surprise_decoder
@@ -585,12 +592,14 @@ class PinballTest:
                         ):
                             surp_obs = get_surprise(
                                 p_obs.flatten(),
-                                self.sp_input.sparse
+                                self.sp_input.sparse,
+                                normalize=self.normalize_surprise
                             )
                             surp_hid = get_surprise(
                                 p_hid.flatten(),
                                 self.sp_output.sparse,
-                                mode=self.surprise_mode
+                                mode=self.surprise_mode,
+                                normalize=self.normalize_surprise
                             )
                             n_step_surprise_obs[s].append(surp_obs)
                             n_step_surprise_hid[s].append(surp_hid)
@@ -735,6 +744,9 @@ def main(config_path):
                 k = int(k)
             c = c[k]
         c[tokens[-1]] = value
+
+    if config['run']['seed'] is None:
+        config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
 
     if config['run']['log']:
         logger = wandb.init(
