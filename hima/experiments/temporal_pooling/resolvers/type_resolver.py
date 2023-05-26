@@ -86,6 +86,9 @@ def _resolve_dataset(type_tag):
     if type_tag == 'ds.synthetic_sequences':
         from hima.experiments.temporal_pooling.data.synthetic_sequences import SyntheticSequences
         return SyntheticSequences
+    if type_tag == 'ds.dvc_sequences':
+        from hima.experiments.temporal_pooling.data.dvc import DvcSequences
+        return DvcSequences
 
 
 def _resolve_encoder(type_tag):

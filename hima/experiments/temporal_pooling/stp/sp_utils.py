@@ -45,10 +45,9 @@ def boosting(relative_rate: float | np.ndarray, k: float, softness: float = 3.0)
     #   0 1 +inf  -> +inf 0 -inf
     x = -np.log(relative_rate)
 
-    # B = exp(logK * tanh(x))
     # relative_rate -> x -> B:
-    #   0 -> +inf -> exp(logK * 1) = K
-    #   1 -> 0 -> exp(logK * 0) = 1
-    #   +inf -> -inf -> exp(logK * -1) = 1 / K
-    # higher softness just makes the sigmoid curve smoother; default value is emprically optimizaed
+    #   0 -> +inf -> K^tanh(+inf) = K
+    #   1 -> 0 -> K^tanh(0) = 1
+    #   +inf -> -inf -> K^tanh(-inf) = 1 / K
+    # higher softness just makes the sigmoid curve smoother; default value is empirically optimized
     return np.power(k + 1, np.tanh(x / softness))

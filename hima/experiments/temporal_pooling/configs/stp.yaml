@@ -4,10 +4,10 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 
 seed: 42
 iterate:
-  epochs: 40
-  resample_frequency: 4
+  epochs: 100
+  resample_frequency: 5
   sequences: [20, 1]
-  elements: 20
+  elements: 200
 
 model:
   global_config: ???
@@ -73,12 +73,21 @@ log_schedule:
   epoch: 5
   repeat: 5
 
+#data: datas.synthetic_sequences
 data:
-  _base_: $_base.dataset.synthetic_sequences.general
-  alphabet_size: 200
-  encoder:
-    _base_: $_base.encoder.random.fixed_sds
-    sds: [500, 10]
+  _type_: ds.dvc_sequences
+  filepath: /Users/kuderov/data/outdoors_walking/sdrs.pkl
+  n_sequences: ???
+  sequence_length: ???
+
+
+datas:
+  synthetic_sequences:
+    _base_: $_base.dataset.synthetic_sequences.general
+    alphabet_size: 200
+    encoder:
+      _base_: $_base.encoder.random.fixed_sds
+      sds: [ 500, 10 ]
 
 models:
   +STE+AA:
