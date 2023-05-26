@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from hima.common.lazy_imports import lazy_import
 from hima.common.config.base import TConfig
+from hima.common.utils import isnone
 
 wandb = lazy_import('wandb')
 if TYPE_CHECKING:
@@ -49,15 +50,19 @@ class DryWandbLogger:
         pass
 
 
-def get_logger(config: TConfig, log: bool | str | None, project: str = None) -> Run | None:
+def get_logger(
+        config: TConfig, log: bool | str | None, project: str = None, wandb_init: TConfig = None
+) -> Run | None:
     if log is None or not log:
         return None
 
     if log == 'dry':
         # imitate wandb logger, but do nothing => useful for debugging
+        # noinspection PyTypeChecker
         return DryWandbLogger()
 
-    logger = wandb.init(project=project)
+    wandb_init = isnone(wandb_init, {})
+    logger = wandb.init(project=project, **wandb_init)
 
     # we have to pass the config with update instead of init because for sweep runs
     # it is already initialized with the sweep run config
