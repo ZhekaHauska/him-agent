@@ -14,7 +14,7 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.run.wandb import get_logger
 from hima.common.timer import timer, print_with_timestamp
-from hima.common.utils import timed
+from hima.common.utils import timed, isnone
 from hima.experiments.temporal_pooling.blocks.tracker import TRACKING_ENABLED
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
 from hima.experiments.temporal_pooling.graph.model import Model
@@ -45,6 +45,7 @@ class StpExperiment:
             track_streams: TConfig, stats_and_metrics: TConfig, diff_stats: TConfig,
             log_schedule: TConfig,
             project: str = None,
+            wandb_init: TConfig = None,
             **_
     ):
         self.init_time = timer()
@@ -53,7 +54,10 @@ class StpExperiment:
         self.config = GlobalConfig(
             config=config, config_path=config_path, type_resolver=StpLazyTypeResolver()
         )
-        self.logger = get_logger(config, log=log, project=project)
+        self.logger = self.config.resolve_object(
+            dict(config=config, log=log, project=project) | isnone(wandb_init, {}),
+            object_type_or_factory=get_logger
+        )
         self.seed = resolve_random_seed(seed)
 
         self.iterate = self.config.resolve_object(iterate, object_type_or_factory=IterationConfig)
