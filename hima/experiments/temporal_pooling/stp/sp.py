@@ -92,7 +92,7 @@ class SpatialPooler:
         w0 = 1 / rf_size
         self.w_min = 0.
         self.weights = self.normalize_weights(
-            self.rng.normal(w0, w0, size=self.rf.shape)
+            self.rng.normal(w0, 0.02, size=self.rf.shape)
         )
 
         self.sparse_input = []

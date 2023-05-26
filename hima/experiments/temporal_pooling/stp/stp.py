@@ -109,7 +109,7 @@ class SpatialTemporalPooler:
 
         self.w_min = 0.
         self.weights = self.normalize_weights(
-            np.abs(self.rng.normal(loc=1.0, scale=0.5, size=self.rf.shape))
+            np.abs(self.rng.normal(loc=1.0, scale=0.02, size=self.rf.shape))
         )
         print(self.weights)
 
