@@ -176,35 +176,34 @@ blocks:
     _type_: block.concatenator
   SE:
     _type_: block.sp
-#    output_sds: [500, 10]
-    output_sds: [2000, 32]
+    output_sds: [2500, 32]
     sp:
       _base_: $_base.spatial_pooler.default
-      initial_rf_to_input_ratio: 8.0
-      max_rf_to_input_ratio: 1.5
-      learning_rate: 0.02
+      initial_rf_to_input_ratio: 4.0
+      max_rf_to_input_ratio: .2
+      learning_rate: 0.01
       global_inhibition_strength: 0.2
       newborn_pruning_cycle: 2.0
-      newborn_pruning_stages: 6
+      newborn_pruning_stages: 8
       prune_grow_cycle: 10.0
-      adapt_to_ff_sparsity: False
+      adapt_to_ff_sparsity: True
       boosting_k: 0.5
   STE:
     _type_: block.sp
-    output_sds: [500, 10]
+    output_sds: [2500, 32]
     sp:
       _type_: stp.base
       _base_: $_base.spatial_pooler.default
       max_pooling_window: 4
       reset_potential_on_activation: True
-      initial_rf_to_input_ratio: 8.0
-      max_rf_to_input_ratio: 1.5
-      learning_rate: 0.02
+      initial_rf_to_input_ratio: 4.0
+      max_rf_to_input_ratio: .2
+      learning_rate: 0.01
       global_inhibition_strength: 0.2
       newborn_pruning_cycle: 2.0
-      newborn_pruning_stages: 6
+      newborn_pruning_stages: 8
       prune_grow_cycle: 10.0
-      adapt_to_ff_sparsity: False
+      adapt_to_ff_sparsity: True
       boosting_k: 0.5
   SA:
     _type_: block.sp
@@ -232,7 +231,7 @@ blocks:
       activation_threshold_apical: 1
       learning_threshold_apical: 1
       max_synapses_per_segment_basal: 2.1
-      max_segments_per_cell_basal: 16
+      max_segments_per_cell_basal: 8
   AA:
     _type_: block.tm.general_feedback
     active_cells_sds: ???
@@ -245,7 +244,7 @@ blocks:
       activation_threshold_apical: 1
       learning_threshold_apical: 1
       max_synapses_per_segment_basal: 4.4
-      max_segments_per_cell_basal: 32
+      max_segments_per_cell_basal: 16
 
 stats_and_metrics:
   mae_normalization: no
