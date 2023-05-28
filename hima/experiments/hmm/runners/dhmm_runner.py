@@ -463,6 +463,18 @@ class PinballTest:
                     )
                     plt.close('all')
 
+                    self.logger.log(
+                        {
+                            'factors/var_score': wandb.Image(
+                                sns.scatterplot(
+                                    self.hmm.var_score
+                                )
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+
                     if len(self.hmm.segments_in_use) > 0:
                         self.hmm.draw_factor_graph(
                             f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'

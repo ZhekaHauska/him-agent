@@ -50,9 +50,10 @@ class DCHMM:
             n_external_vars: int = 0,
             n_external_states: int = 0,
             external_vars_boost: float = 0,
+            unused_vars_boost: float = 0,
             lr: float = 0.01,
-            alpha: float = 0.001,
-            predicted_cell_boost_factor: float = 1.0,
+            segment_activity_lr: float = 0.001,
+            var_score_lr: float = 0.001,
             prediction_inverse_temp: float = 1.0,
             initial_factor_value: float = 0,
             cell_activation_threshold: float = EPS,
@@ -78,6 +79,7 @@ class DCHMM:
         self.n_external_vars = n_external_vars
         self.n_external_states = n_external_states
         self.external_vars_boost = external_vars_boost
+        self.unused_vars_boost = unused_vars_boost
 
         self.n_hidden_states = cells_per_column * n_obs_states
         self.total_cells = self.n_hidden_vars * self.n_hidden_states
@@ -90,12 +92,12 @@ class DCHMM:
         self.max_segments_per_cell = max_segments_per_cell
 
         self.lr = lr
-        self.alpha = alpha
+        self.segment_activity_lr = segment_activity_lr
+        self.var_score_lr = var_score_lr
         self.factors_per_var = factors_per_var
         self.total_factors = self.n_hidden_vars * self.factors_per_var
 
         self.prediction_inverse_temp = prediction_inverse_temp
-        self.predicted_cell_boost_factor = predicted_cell_boost_factor
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
@@ -170,6 +172,11 @@ class DCHMM:
             (self.total_factors, self.n_vars_per_factor),
             fill_value=-1,
             dtype=INT_TYPE
+        )
+
+        self.var_score = np.ones(
+            self.n_hidden_vars + self.n_external_vars,
+            dtype=REAL64_DTYPE
         )
 
     def reset(self):
@@ -415,11 +422,27 @@ class DCHMM:
             np.isin(self.segments_in_use, active_segments, invert=True)
         ]
 
-        self.segment_activity[active_segments] += self.alpha * (
+        self.segment_activity[active_segments] += self.segment_activity_lr * (
                 1 - self.segment_activity[active_segments]
         )
-        self.segment_activity[non_active_segments] -= self.alpha * self.segment_activity[
+        self.segment_activity[non_active_segments] -= self.segment_activity_lr * self.segment_activity[
             non_active_segments
+        ]
+
+        vars_for_correct_segments = np.unique(
+            self.receptive_fields[segments_to_reinforce].flatten() // self.n_hidden_states
+        )
+
+        vars_for_incorrect_segments = np.unique(
+            self.receptive_fields[segments_to_punish].flatten() // self.n_hidden_states
+        )
+
+        self.var_score[vars_for_correct_segments] += self.var_score_lr * (
+                1 - self.var_score[vars_for_correct_segments]
+        )
+
+        self.var_score[vars_for_incorrect_segments] -= self.var_score_lr * self.var_score[
+            vars_for_incorrect_segments
         ]
 
         if prune:
@@ -490,10 +513,7 @@ class DCHMM:
         return cells[mask]
 
     def _sample_cells(self, cells_for_obs):
-        # boost cells with active segments
-        prediction = self.prediction.copy()
-        prediction[self.predicted_cells.sparse] *= self.predicted_cell_boost_factor
-        prediction = normalize(prediction.reshape((self.n_hidden_vars, self.n_hidden_states)))
+        prediction = self.prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
 
         # sample predicted distribution
         next_states = self._sample_categorical_variables(
@@ -629,14 +649,14 @@ class DCHMM:
             else:
                 # select cells for a new factor
                 h_vars = np.arange(self.n_hidden_vars + self.n_external_vars)
-                var_score = np.zeros_like(h_vars)
+                var_score = self.var_score.copy()
 
                 used_vars, counts = np.unique(
                     self.factor_vars[self.factors_in_use].flatten(),
                     return_counts=True
                 )
 
-                var_score[used_vars] = -counts
+                var_score[used_vars] *= np.exp(-self.unused_vars_boost * counts)
                 var_score[h_vars >= self.n_hidden_vars] += self.external_vars_boost
 
                 # sample size can't be smaller than number of variables
