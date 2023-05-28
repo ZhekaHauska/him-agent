@@ -160,7 +160,7 @@ class DCHMM:
 
         # treat factors as segments
         self.factor_connections = Connections(
-            numCells=self.n_hidden_vars,
+            numCells=self.n_hidden_vars + self.n_external_vars,
             connectedThreshold=0.5
         )
 
@@ -608,11 +608,12 @@ class DCHMM:
                 self.factor_connections.destroySegment(factor)
                 self.factor_vars[factor] = np.full(self.n_vars_per_factor, fill_value=-1)
 
-            self.factors_in_use = self.factors_in_use[mask]
+            self.factors_in_use = factors_with_segments.copy()
         else:
+            factors_with_segments = np.empty(0)
             factor_score = np.empty(0)
 
-        self.factor_score = factor_score
+        self.factor_score = factor_score.copy()
 
         new_segments = list()
 
@@ -635,8 +636,10 @@ class DCHMM:
             factors = np.full(self.factors_per_var, fill_value=-1)
 
             if len(cell_factors) > 0:
-                score[:len(cell_factors)] = factor_score[cell_factors]
-                factors[:len(cell_factors)] = cell_factors
+                mask = np.isin(factors_with_segments, cell_factors)
+
+                score[:len(cell_factors)] = factor_score[mask]
+                factors[:len(cell_factors)] = factors_with_segments[mask]
 
             factor_id = self._rng.choice(
                 factors,
