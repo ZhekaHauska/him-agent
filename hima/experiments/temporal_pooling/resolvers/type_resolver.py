@@ -89,6 +89,9 @@ def _resolve_dataset(type_tag):
     if type_tag == 'ds.dvc_sequences':
         from hima.experiments.temporal_pooling.data.dvc import DvcSequences
         return DvcSequences
+    if type_tag == 'ds.text_sequences':
+        from hima.experiments.temporal_pooling.data.text import TextSequences
+        return TextSequences
 
 
 def _resolve_encoder(type_tag):

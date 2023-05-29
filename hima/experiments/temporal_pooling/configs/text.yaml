@@ -73,7 +73,7 @@ log_schedule:
   epoch: 5
   repeat: 5
 
-data: datas.synthetic_sequences
+data: datas.text_sequences
 
 datas:
   synthetic_sequences:
@@ -82,6 +82,24 @@ datas:
     encoder:
       _base_: $_base.encoder.random.fixed_sds
       sds: [ 500, 10 ]
+  dvc_sequences:
+    _type_: ds.dvc_sequences
+    filepath: /Users/kuderov/data/outdoors_walking/sdrs.pkl
+    n_sequences: ???
+    sequence_length: ???
+    seed: ???
+    sequential: True
+  text_sequences:
+    _type_: ds.text_sequences
+    global_config: ???
+    seed: ???
+    filepath: /Users/kuderov/data/text/test_stp.py
+    n_sequences: ???
+    sequence_length: ???
+    encoder:
+      _base_: $_base.encoder.random.fixed_sds
+      sds: [ 500, 10 ]
+
 
 models:
   +STE+AA:

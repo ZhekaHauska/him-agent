@@ -22,6 +22,7 @@ class TextSequences:
 
     def __init__(
             self, global_config: GlobalConfig,
+            filepath: str,
             n_sequences: int,
             sequence_length: int,
             encoder: TConfig,
@@ -30,34 +31,31 @@ class TextSequences:
     ):
         self.n_sequences = n_sequences
         dataset = self._read_dataset(filepath)
-        self.sds = Sds.make(dataset.sds)
-        sdrs = dataset.sdrs
-        sdrs = sdrs[3000:-4000]
-        ds_size = len(sdrs)
+        ds_set = set(dataset)
+        alphabet_size = len(ds_set)
+        mapping = {
+            c: i
+            for i, c in enumerate(ds_set)
+        }
+        dataset = np.array([mapping[c] for c in dataset])
 
-        self.sequences = []
-        i_sequence = 0
-        rng = np.random.default_rng(seed)
-        while len(self.sequences) < n_sequences or i_sequence > 100_000:
-            if sequential:
-                start = i_sequence*sequence_length % ds_size
-            else:
-                start = rng.integers(ds_size - sequence_length)
-            end = start + sequence_length
-            i_sequence += 1
-            if end >= ds_size:
-                continue
+        print(len(dataset), alphabet_size)
+        self.encoder = global_config.resolve_object(encoder, n_values=alphabet_size)
+        self.sds = self.encoder.output_sds
 
-            self.sequences.append(
-                Sequence(id=len(self.sequences), seq=sdrs[start:end])
-            )
+        self.sequences = [
+            Sequence(id=i, seq=self.encoder.encode(dataset))
+            for i in range(n_sequences)
+        ]
 
     def __iter__(self):
         return iter(self.sequences)
 
     @staticmethod
-    def _read_dataset(filepath: str) -> DvcSdrs:
-        with open(filepath, mode='rb') as f:
-            dataset = pickle.load(f)
-        return DvcSdrs(**dataset)
+    def _read_dataset(filepath: str):
+        with open(filepath, mode='r') as f:
+            text = str.join('\n', f.readlines())
+
+        text = list(text)
+        return text
 

@@ -94,22 +94,24 @@ class StpExperiment:
 
         from hima.experiments.temporal_pooling.stp.stp import SpatialTemporalPooler
         import numpy as np
+        stp = None
         if 'STE' in self.model.blocks:
             stp: SpatialTemporalPooler = self.model.blocks['STE'].sp
-        else:
+        elif 'SE' in self.model.blocks:
             stp: SpatialTemporalPooler = self.model.blocks['SE'].sp
 
         for epoch in range(self.iterate.epochs):
             _, elapsed_time = self.train_epoch()
 
-            if isinstance(stp, SpatialTemporalPooler):
-                indices = np.arange(stp.rf_size)
-                mask = (indices < stp.corrected_rf_size).flatten()
-                ws = stp.weights.flatten()[mask]
-            else:
-                ws = stp.weights
-            print(np.mean(ws), np.std(ws))
-            print(np.round(np.histogram(ws, bins=20)[0] / stp.output_size, 1))
+            if stp is not None:
+                if isinstance(stp, SpatialTemporalPooler):
+                    indices = np.arange(stp.rf_size)
+                    mask = (indices < stp.corrected_rf_size).flatten()
+                    ws = stp.weights.flatten()[mask]
+                else:
+                    ws = stp.weights
+                print(np.mean(ws), np.std(ws))
+                print(np.round(np.histogram(ws, bins=20)[0] / stp.output_size, 1))
             self.print_with_timestamp(f'Epoch {epoch}')
         self.print_with_timestamp('<==')
 
