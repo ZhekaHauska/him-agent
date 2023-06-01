@@ -7,7 +7,7 @@
 import numpy as np
 from hima.envs.mpg import MarkovProcessGrammar
 from hima.common.sdr_encoders import IntBucketEncoder
-from hima.modules.htm.belief_tm import NaiveBayesTM, HybridNaiveBayesTM
+from hima.modules.belief.belief_tm import NaiveBayesTM, HybridNaiveBayesTM
 from hima.modules.htm.temporal_memory import ClassicTemporalMemory
 from htm.bindings.sdr import SDR
 import pickle

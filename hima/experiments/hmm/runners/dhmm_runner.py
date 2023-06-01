@@ -4,7 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.modules.htm.dchmm import DCHMM
+from hima.modules.belief.dchmm import DCHMM
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
 from htm.bindings.sdr import SDR
 from hima.experiments.hmm.runners.utils import get_surprise

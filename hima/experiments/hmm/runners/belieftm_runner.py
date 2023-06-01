@@ -4,7 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from hima.common.sdr_encoders import IntBucketEncoder
-from hima.modules.htm.belief_tm import HybridNaiveBayesTM
+from hima.modules.belief.belief_tm import HybridNaiveBayesTM
 from hima.modules.htm.tm_writer import HTMWriter
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler

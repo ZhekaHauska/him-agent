@@ -7,7 +7,7 @@
 import numpy as np
 from hima.envs.mpg import MultiMarkovProcessGrammar
 from hima.common.sdr_encoders import IntBucketEncoder
-from hima.modules.htm.belief_tm import HybridNaiveBayesTM
+from hima.modules.belief.belief_tm import HybridNaiveBayesTM
 from hima.modules.htm.pattern_sorter import PatternToStateMemory
 from hima.modules.htm.tm_writer import HTMWriter
 
