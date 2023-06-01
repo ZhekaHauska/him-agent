@@ -1,0 +1,12 @@
+log: True
+project_name: 'sp_attractor'
+run_tag: null
+
+n_episodes: 201
+update_rate: 10
+max_steps: 100
+
+encoder_conf: 'configs/sp/encoder.yaml'
+attractor_conf: 'configs/sp/attractor.yaml'
+
+seed: null
