@@ -56,6 +56,7 @@ class SPAttractorRunner:
         self.log_update_rate = conf['run'].get('update_rate')
         self.n_trajectories = conf['run'].get('n_trajectories', 0)
         self.attractor_steps = conf['run'].get('attractor_steps', 0)
+        self.learn_attractor = conf['run'].get('learn_attractor_in_loop', False)
 
     def run(self):
         for i in range(self.n_episodes):
@@ -102,7 +103,8 @@ class SPAttractorRunner:
 
                         trajectory = self.attract(
                             self.attractor_steps,
-                            self.preprocess(image)
+                            self.preprocess(image),
+                            learn=self.learn_attractor
                         )
 
                         trajectories.append(trajectory)
