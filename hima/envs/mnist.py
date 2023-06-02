@@ -19,8 +19,14 @@ class MNISTEnv:
         self.reset()
         self.time_step = 0
 
-    def obs(self):
-        return self.digits.images[self.time_step % self.size]
+    def obs(self, return_class=False):
+        if return_class:
+            return (
+                self.digits.images[self.time_step % self.size],
+                self.digits.target[self.time_step % self.size]
+            )
+        else:
+            return self.digits.images[self.time_step % self.size]
 
     def act(self):
         pass
