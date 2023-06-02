@@ -8,7 +8,10 @@ import numpy as np
 from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
 from hima.common.sds import Sds
 from hima.envs.mnist import MNISTEnv
+from sklearn.decomposition import NMF
 
+import seaborn as sns
+import matplotlib.pyplot as plt
 import wandb
 import os
 
@@ -51,6 +54,8 @@ class SPAttractorRunner:
 
         self.n_episodes = conf['run']['n_episodes']
         self.log_update_rate = conf['run'].get('update_rate')
+        self.n_trajectories = conf['run'].get('n_trajectories', 0)
+        self.attractor_steps = conf['run'].get('attractor_steps', 0)
 
     def run(self):
         for i in range(self.n_episodes):
@@ -61,9 +66,8 @@ class SPAttractorRunner:
             self.env.reset()
 
             while True:
-                obs = self.env.obs()
-                thresh = obs.mean()
-                obs = np.flatnonzero(obs >= thresh)
+                obs = self.preprocess(self.env.obs())
+                self.env.step()
 
                 if self.encoder is not None:
                     obs = self.encoder.compute(obs, learn=True)
@@ -88,7 +92,58 @@ class SPAttractorRunner:
                     )
 
                 if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
-                    ...
+                    trajectories = list()
+                    final_points = list()
+                    start_classes = list()
+
+                    for _ in range(self.n_trajectories):
+                        image, cls = self.env.obs(return_class=True)
+                        self.env.step()
+
+                        trajectory = self.attract(
+                            self.attractor_steps,
+                            self.preprocess(image)
+                        )
+
+                        trajectories.append(trajectory)
+                        final_points.append(trajectory[-1])
+                        start_classes.append(cls)
+
+                    nmf = NMF(2)
+                    projection = nmf.fit_transform(np.array(final_points))
+                    self.logger.log(
+                        {
+                            'attractor/final_states': wandb.Image(
+                                sns.scatterplot(
+                                    x=projection[:, 0],
+                                    y=projection[:, 1],
+                                    hue=np.array(start_classes)
+                                )
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+
+    def attract(self, steps, pattern, learn=False):
+        trajectory = list()
+
+        if self.encoder is not None:
+            pattern = self.encoder.compute(pattern, learn=False)
+
+        trajectory.append(pattern)
+        for step in range(steps):
+            pattern = self.attractor.compute(pattern, learn)
+            dense_pattern = np.zeros(self.attractor.output_sds.size)
+            dense_pattern[pattern] = 1
+            trajectory.append(dense_pattern)
+
+        return trajectory
+
+    def preprocess(self, obs):
+        thresh = obs.mean()
+        obs = np.flatnonzero(obs >= thresh)
+        return obs
 
 
 def main(config_path):
