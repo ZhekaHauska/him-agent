@@ -17,7 +17,7 @@ import warnings
 
 class Layer:
     """
-        This class represents a layer of the neocortex.
+        This class represents a layer of the neocortex model.
     """
     def __init__(
             self,
@@ -36,7 +36,7 @@ class Layer:
             lr: float = 0.01,
             segment_activity_lr: float = 0.001,
             var_score_lr: float = 0.001,
-            prediction_inverse_temp: float = 1.0,
+            inverse_temp: float = 1.0,
             initial_factor_value: float = 0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
@@ -91,7 +91,7 @@ class Layer:
         self.factors_per_var = factors_per_var
         self.total_factors = self.n_hidden_vars * self.factors_per_var
 
-        self.prediction_inverse_temp = prediction_inverse_temp
+        self.inverse_temp = inverse_temp
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
@@ -104,23 +104,25 @@ class Layer:
         # low probability clipping
         self.cell_activation_threshold = cell_activation_threshold
 
-        self.active_cells = SDR(self.internal_cells)
-        self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
+        self.internal_active_cells = SDR(self.internal_cells)
+        self.internal_active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
 
         self.external_active_cells = SDR(self.external_input_size)
         self.context_active_cells = SDR(self.context_input_size)
 
-        self.forward_messages = np.zeros(
+        self.internal_forward_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
-        self.forward_messages[self.active_cells.sparse] = 1
-
-        self.next_forward_messages = None
-        self.prediction = None
+        self.internal_forward_messages[self.internal_active_cells.sparse] = 1
         self.external_messages = np.zeros(self.external_input_size)
         self.context_messages = np.zeros(self.context_input_size)
 
+        self.prediction_cells = None
+        self.prediction_columns = None
+
+        # cells are numbered in the following order:
+        # internal cells | context cells | external cells
         self.connections = Connections(
             numCells=self.total_cells,
             connectedThreshold=0.5
@@ -174,24 +176,24 @@ class Layer:
         )
 
     def reset(self):
-        self.active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
-
-        self.forward_messages = np.zeros(
+        self.internal_forward_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
+        self.internal_forward_messages[self.internal_active_cells.sparse] = 1
+        self.external_messages = np.zeros(self.external_input_size)
+        self.context_messages = np.zeros(self.context_input_size)
 
-        self.forward_messages[self.active_cells.sparse] = 1
-        self.next_forward_messages = None
-        self.prediction = None
+        self.prediction_cells = None
+        self.prediction_columns = None
 
-    def propagate_belief(self, messages):
+    def propagate_belief(self, messages: np.ndarray):
+        """
+        Calculate messages for internal cells based on messages from all cells.
+            messages: should be an array of size total_cells
+        """
         # filter dendrites that have low activation likelihood
-        active_cells = SDR(
-            self.internal_cells +
-            self.context_input_size +
-            self.external_input_size
-        )
+        active_cells = SDR(self.total_cells)
 
         active_cells.sparse = np.flatnonzero(
             messages >= self.cell_activation_threshold
@@ -272,7 +274,7 @@ class Layer:
 
         log_next_messages -= means
 
-        log_next_messages = self.prediction_inverse_temp * log_next_messages
+        log_next_messages = self.inverse_temp * log_next_messages
 
         next_messages = normalize(np.exp(log_next_messages))
 
@@ -280,45 +282,96 @@ class Layer:
 
         assert ~np.any(np.isnan(next_messages))
 
-        self.next_forward_messages = next_messages
+        self.internal_forward_messages = next_messages
 
-    def predict_columns(self):
-        assert self.prediction is not None
+    def set_external_messages(self, messages=None):
+        # update external cells
+        if messages is not None:
+            self.external_messages = messages
+        elif self.external_input_size != 0:
+            self.external_messages = normalize(
+                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
+            ).flatten()
 
-        prediction = self.prediction.reshape((self.n_columns, self.cells_per_column))
-        return prediction.sum(axis=-1)
+    def set_context_messages(self, messages=None):
+        # update external cells
+        if messages is not None:
+            self.context_messages = messages
+        elif self.context_input_size != 0:
+            self.context_messages = normalize(
+                np.zeros(self.context_input_size).reshape((self.n_context_vars, -1))
+            ).flatten()
+
+    def predict(self):
+        # step 1: predict cells based on context
+        # block all messages except context messages
+        # think about it as thalamus orchestration of the neocortex
+        messages = np.zeros(self.total_cells)
+        messages[
+            self.internal_cells:
+            self.internal_cells + self.context_input_size
+        ] = self.context_messages
+
+        self.propagate_belief(messages)
+
+        # step 2: update predictions based on internal and external connections
+        # block context messages
+        messages = np.zeros(self.total_cells)
+
+        messages[: self.internal_cells] = self.internal_forward_messages
+
+        messages[
+            self.internal_cells + self.context_input_size:
+            -1
+        ] = self.external_messages
+
+        self.propagate_belief(messages)
+
+        self.prediction_cells = self.internal_forward_messages.copy()
+
+        self.prediction_columns = self.prediction_cells.reshape(
+            (self.n_columns, self.cells_per_column)
+        ).sum(axis=-1)
 
     def observe(
             self,
             observation: np.ndarray,
-            learn: bool = True,
-            external_active_cells: np.ndarray = None,
-            external_messages: np.ndarray = None
+            learn: bool = True
     ):
-        assert self.next_forward_messages is not None
-
+        """
+            observation: pattern in sparse representation
+        """
+        # encode observation
         if self.spatial_pooler is not None:
             self.spatial_pooler.compute(self.sp_input, learn, self.sp_output)
             observation = self.sp_output.sparse
 
+        # update messages
         cells = self._get_cells_for_observation(observation)
-        obs_factor = np.zeros_like(self.forward_messages)
+        obs_factor = np.zeros_like(self.internal_forward_messages)
         obs_factor[cells] = 1
-
-        self.next_forward_messages *= obs_factor
+        self.internal_forward_messages *= obs_factor
 
         with warnings.catch_warnings():
             warnings.filterwarnings('error')
-            self.next_forward_messages = normalize(
-                self.next_forward_messages.reshape((self.n_hidden_vars, -1)),
+            self.internal_forward_messages = normalize(
+                self.internal_forward_messages.reshape((self.n_hidden_vars, -1)),
                 obs_factor.reshape((self.n_hidden_vars, -1))
             ).flatten()
 
-        next_active_cells = self._sample_cells(
-            cells
-        )
+        # update connections
+        if learn and (len(self.internal_active_cells.sparse) > 0):
+            # sample cells from messages (1-step Monte-Carlo learning)
+            self.internal_active_cells.sparse = self._sample_cells(
+                self.internal_forward_messages.reshape((self.n_hidden_vars, -1))
+            )
+            self.context_active_cells.sparse = self._sample_cells(
+                self.context_messages.reshape((self.n_context_vars, -1))
+            )
+            self.external_active_cells.sparse = self._sample_cells(
+                self.external_messages.reshape((self.n_external_vars, -1))
+            )
 
-        if learn and (len(self.active_cells.sparse) > 0):
             # learn context segments
             self._learn(
                 np.concatenate(
@@ -331,34 +384,16 @@ class Layer:
                          )
                     ]
                 ),
-                next_active_cells,
+                self.internal_active_cells.sparse,
                 prune_segments=(self.timestep % self.developmental_period) == 0
             )
 
             # learn internal segments
             self._learn(
-                self.active_cells.sparse,
-                self.active_cells.sparse
+                self.internal_active_cells.sparse,
+                self.internal_active_cells.sparse
             )
 
-        self.active_cells.sparse = next_active_cells
-
-        # update external cells
-        if external_messages is not None:
-            self.external_messages = external_messages
-        elif self.external_input_size != 0:
-            self.external_messages = normalize(
-                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
-            ).flatten()
-
-        if external_active_cells is not None:
-            self.external_active_cells.sparse = external_active_cells
-        else:
-            # TODO sample external cells from messages
-            self.external_active_cells.sparse = []
-
-        # finish timestep
-        self.forward_messages = self.next_forward_messages
         self.timestep += 1
 
     def _learn(self, active_cells, next_active_cells, prune_segments=False):
@@ -392,13 +427,13 @@ class Layer:
             prune=prune_segments
         )
 
-    def _calculate_learning_segments(self, prev_active_cells, next_active_cells):
+    def _calculate_learning_segments(self, active_cells, next_active_cells):
         # determine which segments are learning and growing
-        active_cells = SDR(self.internal_cells)
-        active_cells.sparse = prev_active_cells
+        active_cells_sdr = SDR(self.internal_cells)
+        active_cells_sdr.sparse = active_cells
 
         num_connected = self.connections.computeActivity(
-            active_cells,
+            active_cells_sdr,
             False
         )
 
@@ -525,41 +560,22 @@ class Layer:
 
         return cells[mask]
 
-    def _sample_cells(self, cells_for_obs):
-        prediction = self.prediction.reshape((self.n_hidden_vars, self.n_hidden_states))
+    def _sample_cells(self, messages, shift=0):
+        """
+            messages.shape = (n_vars, n_states)
+        """
+        n_vars, n_states = messages.shape
 
-        # sample predicted distribution
         next_states = self._sample_categorical_variables(
-            prediction
+            messages
         )
         # transform states to cell ids
         next_cells = next_states + np.arange(
             0,
-            self.n_hidden_states*self.n_hidden_vars,
-            self.n_hidden_states
+            n_states*n_vars,
+            n_states
         )
-
-        wrong_predictions = ~np.isin(next_cells, cells_for_obs)
-        wrong_predicted_vars = (
-                next_cells[wrong_predictions] // self.n_hidden_states
-        ).astype(UINT_DTYPE)
-
-        # resample cells for wrong predictions
-        new_forward_message = self.next_forward_messages.reshape(
-            (self.n_hidden_vars, self.n_hidden_states)
-        )[wrong_predicted_vars]
-
-        new_forward_message /= new_forward_message.sum(axis=-1).reshape(-1, 1)
-
-        next_states2 = self._sample_categorical_variables(
-            new_forward_message
-        )
-        # transform states to cell ids
-        next_cells2 = (
-                next_states2 + wrong_predicted_vars * self.n_hidden_states
-        )
-        # replace wrong predicted cells with resampled
-        next_cells[wrong_predictions] = next_cells2
+        next_cells += shift
 
         return next_cells.astype(UINT_DTYPE)
 
