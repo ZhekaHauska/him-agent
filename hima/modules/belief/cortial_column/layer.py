@@ -76,6 +76,11 @@ class Layer:
                 self.external_input_size +
                 self.context_input_size
         )
+        self.total_vars = (
+                self.n_hidden_vars +
+                self.n_context_vars +
+                self.n_external_vars
+        )
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.spatial_pooler = spatial_pooler
@@ -123,6 +128,19 @@ class Layer:
 
         # cells are numbered in the following order:
         # internal cells | context cells | external cells
+        self.internal_cells_range = (
+            0,
+            self.internal_cells
+        )
+        self.context_cells_range = (
+            self.internal_cells_range[1],
+            self.internal_cells_range[1] + self.context_input_size
+        )
+        self.external_cells_range = (
+            self.context_cells_range[1],
+            self.context_cells_range[1] + self.external_input_size
+        )
+
         self.connections = Connections(
             numCells=self.total_cells,
             connectedThreshold=0.5
@@ -156,7 +174,7 @@ class Layer:
 
         # treat factors as segments
         self.factor_connections = Connections(
-            numCells=self.total_cells,
+            numCells=self.total_vars,
             connectedThreshold=0.5
         )
 
@@ -171,7 +189,7 @@ class Layer:
         )
 
         self.var_score = np.ones(
-            self.n_hidden_vars + self.n_context_vars + self.n_external_vars,
+            self.total_vars,
             dtype=REAL64_DTYPE
         )
 
@@ -308,8 +326,8 @@ class Layer:
         # think about it as thalamus orchestration of the neocortex
         messages = np.zeros(self.total_cells)
         messages[
-            self.internal_cells:
-            self.internal_cells + self.context_input_size
+            self.context_cells_range[0]:
+            self.context_cells_range[1]
         ] = self.context_messages
 
         self.propagate_belief(messages)
@@ -318,11 +336,14 @@ class Layer:
         # block context messages
         messages = np.zeros(self.total_cells)
 
-        messages[: self.internal_cells] = self.internal_forward_messages
+        messages[
+            self.internal_cells_range[0]:
+            self.internal_cells_range[1]
+        ] = self.internal_forward_messages
 
         messages[
-            self.internal_cells + self.context_input_size:
-            -1
+            self.external_cells_range[0]:
+            self.external_cells_range[1]
         ] = self.external_messages
 
         self.propagate_belief(messages)
@@ -373,24 +394,28 @@ class Layer:
             )
 
             # learn context segments
+            # use context cells to predict internal cells
             self._learn(
-                np.concatenate(
-                    [
-                        self.internal_cells + self.context_active_cells.sparse,
-                        (
-                                self.internal_cells +
-                                self.context_input_size +
-                                self.external_active_cells.sparse
-                         )
-                    ]
+                (
+                    self.context_cells_range[0] +
+                    self.context_active_cells.sparse
                 ),
                 self.internal_active_cells.sparse,
                 prune_segments=(self.timestep % self.developmental_period) == 0
             )
 
             # learn internal segments
+            # use internal and external cells to predict internal cells
             self._learn(
-                self.internal_active_cells.sparse,
+                np.concatenate(
+                    [
+                        self.internal_active_cells.sparse,
+                        (
+                            self.external_cells_range[0] +
+                            self.external_active_cells.sparse
+                        )
+                    ]
+                ),
                 self.internal_active_cells.sparse
             )
 
@@ -538,20 +563,39 @@ class Layer:
         return np.concatenate([cells_for_empty_vars, cells_in_columns])
 
     def _get_cells_in_vars(self, variables):
-        local_vars_mask = variables < self.n_hidden_vars
+        internal_vars_mask = variables < self.n_hidden_vars
+        context_vars_mask = (
+                (variables >= self.n_hidden_vars) &
+                (variables < (self.n_hidden_vars + self.n_context_vars))
+        )
+        external_vars_mask = (
+                variables >= (self.n_hidden_vars + self.n_context_vars)
+        )
 
-        cells_in_local_vars = (
-                (variables[local_vars_mask] * self.n_hidden_states).reshape((-1, 1)) +
+        cells_in_internal_vars = (
+                (variables[internal_vars_mask] * self.n_hidden_states).reshape((-1, 1)) +
                 np.arange(self.n_hidden_states, dtype=UINT_DTYPE)
         ).flatten()
 
-        cells_in_ext_vars = (
-                ((variables[~local_vars_mask] - self.n_hidden_vars) *
+        cells_in_context_vars = (
+                ((variables[context_vars_mask] - self.n_hidden_vars) *
+                 self.n_context_states).reshape((-1, 1)) +
+                np.arange(self.n_context_states, dtype=UINT_DTYPE)
+        ).flatten() + self.context_cells_range[0]
+
+        cells_in_external_vars = (
+                ((variables[external_vars_mask] - self.n_hidden_vars - self.n_context_vars) *
                  self.n_external_states).reshape((-1, 1)) +
                 np.arange(self.n_external_states, dtype=UINT_DTYPE)
-        ).flatten() + self.internal_cells
+        ).flatten() + self.external_cells_range[0]
 
-        return np.concatenate([cells_in_local_vars, cells_in_ext_vars])
+        return np.concatenate(
+            [
+                cells_in_internal_vars,
+                cells_in_context_vars,
+                cells_in_external_vars
+            ]
+        )
 
     def _filter_cells_by_vars(self, cells, variables):
         cells_in_vars = self._get_cells_in_vars(variables)
@@ -598,11 +642,47 @@ class Layer:
 
         return samples
 
+    def _vars_for_cells(self, cells):
+        internal_cells_mask = (
+                (cells >= self.internal_cells_range[0]) &
+                (cells < self.internal_cells_range[1])
+            )
+        internal_cells = cells[internal_cells_mask]
+
+        context_cells_mask = (
+                (cells >= self.context_cells_range[0]) &
+                (cells < self.context_cells_range[1])
+        )
+        context_cells = cells[context_cells_mask]
+
+        external_cells_mask = (
+                    (cells >= self.external_cells_range[0]) &
+                    (cells < self.external_cells_range[1])
+            )
+        external_cells = cells[external_cells_mask]
+
+        internal_cells_vars = internal_cells // self.n_hidden_states
+        context_cells_vars = (
+            self.n_hidden_vars +
+            (context_cells - self.context_cells_range[0]) // self.n_context_states
+        )
+        external_cells_vars = (
+            self.n_hidden_vars + self.n_hidden_vars +
+            (external_cells - self.external_cells_range[0]) // self.n_external_states
+        )
+
+        vars_ = np.empty_like(cells, dtype=UINT_DTYPE)
+        vars_[internal_cells_mask] = internal_cells_vars
+        vars_[context_cells_mask] = context_cells_vars
+        vars_[external_cells_mask] = external_cells_vars
+        return vars_
+
     def _grow_new_segments(
             self,
             new_segment_cells,
             growth_candidates,
     ):
+        candidate_vars = np.unique(self._vars_for_cells(growth_candidates))
         # free space for new segments
         n_segments_after_growing = len(self.segments_in_use) + len(new_segment_cells)
         if n_segments_after_growing > self.total_segments:
@@ -647,6 +727,7 @@ class Layer:
         new_segments = list()
 
         # each cell corresponds to one variable
+        # we iterate only for internal cells here
         for cell in new_segment_cells:
             n_segments = self.connections.numSegments(cell)
 
@@ -680,7 +761,6 @@ class Layer:
                 variables = self.factor_vars[factor_id]
             else:
                 # select cells for a new factor
-                h_vars = np.arange(self.n_hidden_vars + self.n_external_vars)
                 var_score = self.var_score.copy()
 
                 used_vars, counts = np.unique(
@@ -689,16 +769,18 @@ class Layer:
                 )
 
                 var_score[used_vars] *= np.exp(-self.unused_vars_boost * counts)
-                var_score[h_vars >= self.n_hidden_vars] += self.external_vars_boost
+                var_score[
+                    candidate_vars >= (self.n_hidden_vars + self.n_context_vars)
+                ] += self.external_vars_boost
 
                 # sample size can't be smaller than number of variables
-                sample_size = min(self.n_vars_per_factor, len(h_vars))
+                sample_size = min(self.n_vars_per_factor, len(candidate_vars))
 
                 if sample_size == 0:
                     return np.empty(0, dtype=UINT_DTYPE)
 
                 variables = self._rng.choice(
-                    h_vars,
+                    candidate_vars,
                     size=sample_size,
                     p=softmax(var_score),
                     replace=False
