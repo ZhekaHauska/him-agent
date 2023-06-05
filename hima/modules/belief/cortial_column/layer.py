@@ -780,6 +780,8 @@ class Layer:
             if factor_id != -1:
                 variables = self.factor_vars[factor_id]
             else:
+                # exclude self-loop
+                candidate_vars_for_cell = candidate_vars[np.isin(candidate_vars, var, invert=True)]
                 # select cells for a new factor
                 var_score = self.var_score.copy()
 
@@ -791,16 +793,16 @@ class Layer:
                 var_score[used_vars] *= np.exp(-self.unused_vars_boost * counts)
                 var_score[self.n_hidden_vars + self.n_context_vars:] += self.external_vars_boost
 
-                var_score = var_score[candidate_vars]
+                var_score = var_score[candidate_vars_for_cell]
 
                 # sample size can't be smaller than number of variables
-                sample_size = min(self.n_vars_per_factor, len(candidate_vars))
+                sample_size = min(self.n_vars_per_factor, len(candidate_vars_for_cell))
 
                 if sample_size == 0:
                     return np.empty(0, dtype=UINT_DTYPE)
 
                 variables = self._rng.choice(
-                    candidate_vars,
+                    candidate_vars_for_cell,
                     size=sample_size,
                     p=softmax(var_score),
                     replace=False
