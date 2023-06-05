@@ -30,23 +30,28 @@ class TextSequences:
             sequential: bool = True,
     ):
         self.n_sequences = n_sequences
-        dataset = self._read_dataset(filepath)
-        ds_set = set(dataset)
-        alphabet_size = len(ds_set)
-        mapping = {
-            c: i
-            for i, c in enumerate(ds_set)
-        }
-        dataset = np.array([mapping[c] for c in dataset])
+        dataset, alphabet_size = self._read_dataset(filepath)
+        ds_size = len(dataset)
 
-        print(len(dataset), alphabet_size)
         self.encoder = global_config.resolve_object(encoder, n_values=alphabet_size)
         self.sds = self.encoder.output_sds
 
-        self.sequences = [
-            Sequence(id=i, seq=self.encoder.encode(dataset))
-            for i in range(n_sequences)
-        ]
+        self.sequences = []
+        i_sequence = 0
+        rng = np.random.default_rng(seed)
+        while len(self.sequences) < n_sequences or i_sequence > 100_000:
+            if sequential:
+                start = i_sequence*sequence_length % ds_size
+            else:
+                start = rng.integers(ds_size - sequence_length)
+            end = start + sequence_length
+            i_sequence += 1
+            if end >= ds_size:
+                continue
+
+            encoded_seq = self.encoder.encode(dataset[start:end])
+            seq = Sequence(id=len(self.sequences), seq=encoded_seq)
+            self.sequences.append(seq)
 
     def __iter__(self):
         return iter(self.sequences)
@@ -57,5 +62,13 @@ class TextSequences:
             text = str.join('\n', f.readlines())
 
         text = list(text)
-        return text
+        chars = set(text)
+        mapping = {
+            c: i
+            for i, c in enumerate(chars)
+        }
+
+        alphabet_size = len(chars)
+        dataset = np.array([mapping[c] for c in text])
+        return dataset, alphabet_size
 
