@@ -1,0 +1,21 @@
+cells_per_column: 10
+n_vars_per_factor: 3
+factors_per_var: 5
+
+# boosting
+external_vars_boost: 0  # set it non-zero to shift probability of choosing external var for factor
+unused_vars_boost: 0
+
+# learning
+initial_factor_value: 0.0
+lr: 0.05
+segment_activity_lr: 0.001
+var_score_lr: 0.001
+
+inverse_temp: 1.0
+
+cell_activation_threshold: 0.0001
+# max_segments_per_cell: 10
+max_segments: 5000
+developmental_period: 3000
+fraction_of_segments_to_prune: 0.3
