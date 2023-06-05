@@ -13,6 +13,8 @@ from htm.bindings.math import Random
 
 import numpy as np
 import warnings
+import pygraphviz as pgv
+import colormap
 
 
 class Layer:
@@ -84,8 +86,13 @@ class Layer:
 
         self.input_sdr_size = n_obs_vars * n_obs_states
         self.spatial_pooler = spatial_pooler
-        self.sp_input = SDR(self.input_sdr_size)
-        self.sp_output = SDR(self.spatial_pooler.getNumColumns())
+
+        if self.spatial_pooler is not None:
+            self.sp_input = SDR(self.input_sdr_size)
+            self.sp_output = SDR(self.spatial_pooler.getNumColumns())
+        else:
+            self.sp_input = None
+            self.sp_output = None
 
         self.total_segments = max_segments
         self.max_segments_per_cell = max_segments_per_cell
@@ -110,8 +117,6 @@ class Layer:
         self.cell_activation_threshold = cell_activation_threshold
 
         self.internal_active_cells = SDR(self.internal_cells)
-        self.internal_active_cells.sparse = np.arange(self.n_hidden_vars) * self.n_hidden_states
-
         self.external_active_cells = SDR(self.external_input_size)
         self.context_active_cells = SDR(self.context_input_size)
 
@@ -119,9 +124,14 @@ class Layer:
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
-        self.internal_forward_messages[self.internal_active_cells.sparse] = 1
-        self.external_messages = np.zeros(self.external_input_size)
-        self.context_messages = np.zeros(self.context_input_size)
+        self.external_messages = np.zeros(
+            self.external_input_size,
+            dtype=REAL64_DTYPE
+        )
+        self.context_messages = np.zeros(
+            self.context_input_size,
+            dtype=REAL64_DTYPE
+        )
 
         self.prediction_cells = None
         self.prediction_columns = None
@@ -180,7 +190,7 @@ class Layer:
 
         self.segments_in_use = np.empty(0, dtype=UINT_DTYPE)
         self.factors_in_use = np.empty(0, dtype=UINT_DTYPE)
-        self.factors_score = np.empty(0, dtype=REAL_DTYPE)
+        self.factor_score = np.empty(0, dtype=REAL_DTYPE)
 
         self.factor_vars = np.full(
             (self.total_factors, self.n_vars_per_factor),
@@ -193,19 +203,145 @@ class Layer:
             dtype=REAL64_DTYPE
         )
 
+    def set_external_messages(self, messages=None):
+        # update external cells
+        if messages is not None:
+            self.external_messages = messages
+        elif self.external_input_size != 0:
+            self.external_messages = normalize(
+                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
+            ).flatten()
+
+    def set_context_messages(self, messages=None):
+        # update external cells
+        if messages is not None:
+            self.context_messages = messages
+        elif self.context_input_size != 0:
+            self.context_messages = normalize(
+                np.zeros(self.context_input_size).reshape((self.n_context_vars, -1))
+            ).flatten()
+
     def reset(self):
         self.internal_forward_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
-        self.internal_forward_messages[self.internal_active_cells.sparse] = 1
-        self.external_messages = np.zeros(self.external_input_size)
-        self.context_messages = np.zeros(self.context_input_size)
+        self.external_messages = np.zeros(
+            self.external_input_size,
+            dtype=REAL64_DTYPE
+        )
+        self.context_messages = np.zeros(
+            self.context_input_size,
+            dtype=REAL64_DTYPE
+        )
 
         self.prediction_cells = None
         self.prediction_columns = None
 
-    def propagate_belief(self, messages: np.ndarray):
+    def predict(self):
+        # step 1: predict cells based on context
+        # block all messages except context messages
+        # think about it as thalamus orchestration of the neocortex
+        messages = np.zeros(self.total_cells)
+        messages[
+            self.context_cells_range[0]:
+            self.context_cells_range[1]
+        ] = self.context_messages
+
+        self._propagate_belief(messages)
+
+        # step 2: update predictions based on internal and external connections
+        # block context messages
+        messages = np.zeros(self.total_cells)
+
+        messages[
+            self.internal_cells_range[0]:
+            self.internal_cells_range[1]
+        ] = self.internal_forward_messages
+
+        messages[
+            self.external_cells_range[0]:
+            self.external_cells_range[1]
+        ] = self.external_messages
+
+        self._propagate_belief(messages)
+
+        self.prediction_cells = self.internal_forward_messages.copy()
+
+        self.prediction_columns = self.prediction_cells.reshape(
+            (self.n_columns, self.cells_per_column)
+        ).sum(axis=-1)
+
+    def observe(
+            self,
+            observation: np.ndarray,
+            learn: bool = True
+    ):
+        """
+            observation: pattern in sparse representation
+        """
+        # encode observation
+        if self.spatial_pooler is not None:
+            self.sp_input.sparse = observation
+            self.spatial_pooler.compute(self.sp_input, learn, self.sp_output)
+            observation = self.sp_output.sparse
+
+        # update messages
+        cells = self._get_cells_for_observation(observation)
+        obs_factor = np.zeros_like(self.internal_forward_messages)
+        obs_factor[cells] = 1
+        self.internal_forward_messages *= obs_factor
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            self.internal_forward_messages = normalize(
+                self.internal_forward_messages.reshape((self.n_hidden_vars, -1)),
+                obs_factor.reshape((self.n_hidden_vars, -1))
+            ).flatten()
+
+        # update connections
+        if learn:
+            # sample cells from messages (1-step Monte-Carlo learning)
+            self.internal_active_cells.sparse = self._sample_cells(
+                self.internal_forward_messages.reshape((self.n_hidden_vars, -1))
+            )
+            self.context_active_cells.sparse = self._sample_cells(
+                self.context_messages.reshape((self.n_context_vars, -1))
+            )
+            if len(self.external_messages) > 0:
+                self.external_active_cells.sparse = self._sample_cells(
+                    self.external_messages.reshape((self.n_external_vars, -1))
+                )
+
+            # learn context segments
+            # use context cells to predict internal cells
+            self._learn(
+                (
+                    self.context_cells_range[0] +
+                    self.context_active_cells.sparse
+                ),
+                self.internal_active_cells.sparse,
+                prune_segments=(self.timestep % self.developmental_period) == 0
+            )
+
+            # learn internal segments
+            # use internal and external cells to predict internal cells
+            self._learn(
+                np.concatenate(
+                    [
+                        self.internal_active_cells.sparse,
+                        (
+                            self.external_cells_range[0] +
+                            self.external_active_cells.sparse
+                        )
+                    ]
+                ),
+                self.internal_active_cells.sparse
+            )
+
+        self.timestep += 1
+
+    def _propagate_belief(self, messages: np.ndarray):
         """
         Calculate messages for internal cells based on messages from all cells.
             messages: should be an array of size total_cells
@@ -301,125 +437,6 @@ class Layer:
         assert ~np.any(np.isnan(next_messages))
 
         self.internal_forward_messages = next_messages
-
-    def set_external_messages(self, messages=None):
-        # update external cells
-        if messages is not None:
-            self.external_messages = messages
-        elif self.external_input_size != 0:
-            self.external_messages = normalize(
-                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
-            ).flatten()
-
-    def set_context_messages(self, messages=None):
-        # update external cells
-        if messages is not None:
-            self.context_messages = messages
-        elif self.context_input_size != 0:
-            self.context_messages = normalize(
-                np.zeros(self.context_input_size).reshape((self.n_context_vars, -1))
-            ).flatten()
-
-    def predict(self):
-        # step 1: predict cells based on context
-        # block all messages except context messages
-        # think about it as thalamus orchestration of the neocortex
-        messages = np.zeros(self.total_cells)
-        messages[
-            self.context_cells_range[0]:
-            self.context_cells_range[1]
-        ] = self.context_messages
-
-        self.propagate_belief(messages)
-
-        # step 2: update predictions based on internal and external connections
-        # block context messages
-        messages = np.zeros(self.total_cells)
-
-        messages[
-            self.internal_cells_range[0]:
-            self.internal_cells_range[1]
-        ] = self.internal_forward_messages
-
-        messages[
-            self.external_cells_range[0]:
-            self.external_cells_range[1]
-        ] = self.external_messages
-
-        self.propagate_belief(messages)
-
-        self.prediction_cells = self.internal_forward_messages.copy()
-
-        self.prediction_columns = self.prediction_cells.reshape(
-            (self.n_columns, self.cells_per_column)
-        ).sum(axis=-1)
-
-    def observe(
-            self,
-            observation: np.ndarray,
-            learn: bool = True
-    ):
-        """
-            observation: pattern in sparse representation
-        """
-        # encode observation
-        if self.spatial_pooler is not None:
-            self.spatial_pooler.compute(self.sp_input, learn, self.sp_output)
-            observation = self.sp_output.sparse
-
-        # update messages
-        cells = self._get_cells_for_observation(observation)
-        obs_factor = np.zeros_like(self.internal_forward_messages)
-        obs_factor[cells] = 1
-        self.internal_forward_messages *= obs_factor
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error')
-            self.internal_forward_messages = normalize(
-                self.internal_forward_messages.reshape((self.n_hidden_vars, -1)),
-                obs_factor.reshape((self.n_hidden_vars, -1))
-            ).flatten()
-
-        # update connections
-        if learn and (len(self.internal_active_cells.sparse) > 0):
-            # sample cells from messages (1-step Monte-Carlo learning)
-            self.internal_active_cells.sparse = self._sample_cells(
-                self.internal_forward_messages.reshape((self.n_hidden_vars, -1))
-            )
-            self.context_active_cells.sparse = self._sample_cells(
-                self.context_messages.reshape((self.n_context_vars, -1))
-            )
-            self.external_active_cells.sparse = self._sample_cells(
-                self.external_messages.reshape((self.n_external_vars, -1))
-            )
-
-            # learn context segments
-            # use context cells to predict internal cells
-            self._learn(
-                (
-                    self.context_cells_range[0] +
-                    self.context_active_cells.sparse
-                ),
-                self.internal_active_cells.sparse,
-                prune_segments=(self.timestep % self.developmental_period) == 0
-            )
-
-            # learn internal segments
-            # use internal and external cells to predict internal cells
-            self._learn(
-                np.concatenate(
-                    [
-                        self.internal_active_cells.sparse,
-                        (
-                            self.external_cells_range[0] +
-                            self.external_active_cells.sparse
-                        )
-                    ]
-                ),
-                self.internal_active_cells.sparse
-            )
-
-        self.timestep += 1
 
     def _learn(self, active_cells, next_active_cells, prune_segments=False):
         (
@@ -608,6 +625,9 @@ class Layer:
         """
             messages.shape = (n_vars, n_states)
         """
+        if messages.sum() == 0:
+            return np.empty(0, dtype=UINT_DTYPE)
+
         n_vars, n_states = messages.shape
 
         next_states = self._sample_categorical_variables(
@@ -767,11 +787,11 @@ class Layer:
                     self.factor_vars[self.factors_in_use].flatten(),
                     return_counts=True
                 )
-
+                # TODO can we make it more static to not compute it in cycle?
                 var_score[used_vars] *= np.exp(-self.unused_vars_boost * counts)
-                var_score[
-                    candidate_vars >= (self.n_hidden_vars + self.n_context_vars)
-                ] += self.external_vars_boost
+                var_score[self.n_hidden_vars + self.n_context_vars:] += self.external_vars_boost
+
+                var_score = var_score[candidate_vars]
 
                 # sample size can't be smaller than number of variables
                 sample_size = min(self.n_vars_per_factor, len(candidate_vars))
@@ -825,3 +845,35 @@ class Layer:
             new_segments.append(new_segment)
 
         return np.array(new_segments, dtype=UINT_DTYPE)
+
+    def draw_factor_graph(self, path):
+        # count segments per factor
+        factors_in_use, n_segments = np.unique(
+            self.factor_for_segment[self.segments_in_use],
+            return_counts=True
+        )
+        cmap = colormap.Colormap().get_cmap_heat()
+        factor_score = n_segments / n_segments.max()
+
+        g = pgv.AGraph(strict=False, directed=False)
+        for fid, score in zip(factors_in_use, factor_score):
+            var_next = self.factor_connections.cellForSegment(fid)
+            g.add_node(
+                f'f{fid}',
+                shape='box',
+                style='filled',
+                fillcolor=colormap.rgb2hex(
+                    *(cmap(int(255*score))[:-1]),
+                    normalised=True
+                )
+            )
+            g.add_edge(f'h{var_next}', f'f{fid}')
+            for var_prev in self.factor_vars[fid]:
+                if var_prev < self.n_hidden_vars:
+                    g.add_edge(f'f{fid}', f'h{var_prev}',)
+                elif self.n_hidden_vars <= var_prev < self.n_hidden_vars + self.n_context_vars:
+                    g.add_edge(f'f{fid}', f'c{var_prev}', )
+                else:
+                    g.add_edge(f'f{fid}', f'e{var_prev}', )
+        g.layout(prog='dot')
+        g.draw(path)
