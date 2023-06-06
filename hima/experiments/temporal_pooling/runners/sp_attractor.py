@@ -4,11 +4,12 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
+import pandas as pd
 
 from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
 from hima.common.sds import Sds
 from hima.envs.mnist import MNISTEnv
-from sklearn.decomposition import NMF
+from hima.experiments.temporal_pooling.stats.metrics import sdr_similarity
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -57,6 +58,13 @@ class SPAttractorRunner:
         self.n_trajectories = conf['run'].get('n_trajectories', 0)
         self.attractor_steps = conf['run'].get('attractor_steps', 0)
         self.learn_attractor = conf['run'].get('learn_attractor_in_loop', False)
+        self.pairs_per_trajectory = conf['run'].get('pairs_per_trajectory', 1)
+
+        if self.logger is not None:
+            self.logger.define_metric(
+                name='main_metrics/relative_similarity',
+                step_metric='iteration'
+            )
 
     def run(self):
         for i in range(self.n_episodes):
@@ -93,39 +101,118 @@ class SPAttractorRunner:
                     )
 
                 if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
-                    trajectories = list()
-                    final_points = list()
                     start_classes = list()
+                    trajectories = list()
 
                     for _ in range(self.n_trajectories):
+                        trajectory = list()
+
                         image, cls = self.env.obs(return_class=True)
                         self.env.step()
 
-                        trajectory = self.attract(
-                            self.attractor_steps,
-                            self.preprocess(image),
-                            learn=self.learn_attractor
-                        )
+                        pattern = self.preprocess(image)
+                        trajectory.append(pattern)
+
+                        for _ in range(self.attractor_steps):
+                            if (self.encoder is not None) and (_ == 0):
+                                pattern = self.encoder.compute(pattern, learn=False)
+                            else:
+                                pattern = self.attractor.compute(pattern, self.learn_attractor)
+
+                            trajectory.append(pattern)
 
                         trajectories.append(trajectory)
-                        final_points.append(trajectory[-1])
                         start_classes.append(cls)
 
-                    nmf = NMF(2)
-                    projection = nmf.fit_transform(np.array(final_points))
+                    similarities = list()
+                    sim_matrices = np.zeros((self.attractor_steps+1, 10, 10))
+                    class_counts = np.zeros((10, 10))
+
+                    # generate non-repetitive trajectory pairs
+                    pair1 = np.repeat(
+                        np.arange(len(trajectories) - self.pairs_per_trajectory),
+                        self.pairs_per_trajectory
+                    )
+                    pair2 = (
+                        np.tile(
+                            np.arange(self.pairs_per_trajectory) + 1,
+                            len(trajectories) - self.pairs_per_trajectory
+                        ) + pair1
+                    )
+                    for p1, p2 in zip(pair1, pair2):
+                        similarity = list()
+                        cls1 = start_classes[p1]
+                        cls2 = start_classes[p2]
+                        class_counts[cls1, cls2] += 1
+                        class_counts[cls2, cls1] += 1
+
+                        for att_step, x in enumerate(zip(trajectories[p1], trajectories[p2])):
+                            sim = self.similarity(x[0], x[1])
+
+                            sim_matrices[att_step, cls1, cls2] += sim
+                            sim_matrices[att_step, cls2, cls1] += sim
+
+                            similarity.append(sim)
+
+                        similarities.append(similarity)
+
+                    sim_matrices /= class_counts
+                    # divide each row in each matrix by its diagonal element
+                    rel_sim = pd.DataFrame(
+                        (
+                            sim_matrices / np.diagonal(sim_matrices, axis1=1, axis2=2)[:, :, None]
+                        ).mean(axis=-1)
+                    )
+
                     self.logger.log(
                         {
-                            'attractor/final_states': wandb.Image(
-                                sns.scatterplot(
-                                    x=projection[:, 0],
-                                    y=projection[:, 1],
-                                    hue=np.array(start_classes)
-                                )
+                            'convergence/relative_similarity': wandb.Image(
+                                sns.lineplot(rel_sim)
                             )
                         },
                         step=i
                     )
                     plt.close('all')
+
+                    self.logger.log(
+                        {
+                            'convergence/class_pair_counts': wandb.Image(
+                                sns.heatmap(class_counts)
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+
+                    fig, axs = plt.subplots(ncols=4, sharey='row', figsize=(12, 4))
+                    axs[0].set_title('raw_sim')
+                    axs[1].set_title('1-step')
+                    axs[2].set_title(f'{self.attractor_steps//2}-step')
+                    axs[3].set_title(f'{self.attractor_steps}-step')
+                    sns.heatmap(sim_matrices[0], ax=axs[0], vmin=0, vmax=1, cbar=False)
+                    sns.heatmap(sim_matrices[1], ax=axs[1], vmin=0, vmax=1, cbar=False)
+                    sns.heatmap(sim_matrices[self.attractor_steps//2], ax=axs[2], vmin=0, vmax=1, cbar=False)
+                    sns.heatmap(sim_matrices[-1], ax=axs[3], vmin=0, vmax=1)
+
+                    self.logger.log(
+                        {
+                            'convergence/similarity_per_class': wandb.Image(
+                                fig
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+
+        if self.logger is not None:
+            rel_sim = rel_sim.to_numpy().mean(axis=-1)
+            for j in range(rel_sim.shape[0]):
+                self.logger.log(
+                    {
+                        'main_metrics/relative_similarity': rel_sim[j],
+                        'iteration': j
+                    }
+                )
 
     def attract(self, steps, pattern, learn=False):
         trajectory = list()
@@ -136,11 +223,12 @@ class SPAttractorRunner:
         trajectory.append(pattern)
         for step in range(steps):
             pattern = self.attractor.compute(pattern, learn)
-            dense_pattern = np.zeros(self.attractor.output_sds.size)
-            dense_pattern[pattern] = 1
-            trajectory.append(dense_pattern)
+            trajectory.append(pattern)
 
         return trajectory
+
+    def similarity(self, x1, x2):
+        return np.count_nonzero(np.isin(x1, x2)) / x2.size
 
     def preprocess(self, obs):
         thresh = obs.mean()

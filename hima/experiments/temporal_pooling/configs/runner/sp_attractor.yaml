@@ -3,13 +3,14 @@ project_name: 'sp_attractor'
 run_tag: null
 
 n_episodes: 1001
-update_rate: 50
+update_rate: 200
 max_steps: 100
 
 # testing
 attractor_steps: 20
 n_trajectories: 500
-learn_attractor_in_loop: True
+learn_attractor_in_loop: False
+pairs_per_trajectory: 10
 
 encoder_conf: 'configs/sp/encoder.yaml'
 attractor_conf: 'configs/sp/attractor.yaml'
