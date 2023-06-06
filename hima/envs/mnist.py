@@ -13,23 +13,41 @@ class MNISTEnv:
         self._rng = np.random.default_rng(seed)
 
         self.digits = load_digits()
-        self.size = self.digits.images.shape[0]
+        self.images = self.digits.images
+        self.target = self.digits.target
+        self.size = self.target.size
+
         self.obs_shape = self.digits.images.shape[1:]
         self.order = np.arange(self.size)
         self.reset()
         self.time_step = 0
+        self.cls = None
 
     def obs(self, return_class=False):
+        idx = self.order[self.time_step % self.size]
         if return_class:
             return (
-                self.digits.images[self.time_step % self.size],
-                self.digits.target[self.time_step % self.size]
+                self.images[idx],
+                self.target[idx]
             )
         else:
-            return self.digits.images[self.time_step % self.size]
+            return self.images[idx]
 
-    def act(self):
-        pass
+    def act(self, cls: int):
+        """
+            Specify image class for environment to return.
+            If None then any class will be returned.
+        """
+        self.cls = cls
+        if cls is not None:
+            mask = self.target == self.cls
+            self.images = self.digits.images[mask]
+            self.target = self.digits.target[mask]
+        else:
+            self.images = self.digits.images
+            self.target = self.digits.target
+
+        self.size = self.target.size
 
     def step(self):
         self.time_step += 1
