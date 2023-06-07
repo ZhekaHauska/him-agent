@@ -11,6 +11,11 @@ attractor_steps: 20
 n_trajectories: 500
 learn_attractor_in_loop: False
 pairs_per_trajectory: 10
+# som
+som_iterations: 1000
+som_learning_rate: 0.1
+som_sigma: 1.0
+som_size: 100
 
 encoder_conf: 'configs/sp/encoder.yaml'
 attractor_conf: 'configs/sp/attractor.yaml'

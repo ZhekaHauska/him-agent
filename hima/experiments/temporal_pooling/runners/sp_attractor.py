@@ -9,7 +9,7 @@ import pandas as pd
 from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
 from hima.common.sds import Sds
 from hima.envs.mnist import MNISTEnv
-from hima.experiments.temporal_pooling.stats.metrics import sdr_similarity
+from minisom import MiniSom
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -60,6 +60,11 @@ class SPAttractorRunner:
         self.learn_attractor = conf['run'].get('learn_attractor_in_loop', False)
         self.pairs_per_trajectory = conf['run'].get('pairs_per_trajectory', 1)
 
+        self.som_iterations = conf['run'].get('som_iterations', 100)
+        self.som_learning_rate = conf['run'].get('som_learning_rate', 0.5)
+        self.som_sigma = conf['run'].get('som_sigma', 1.0)
+        self.som_size = conf['run'].get('som_size', 100)
+
         if self.logger is not None:
             self.logger.define_metric(
                 name='main_metrics/relative_similarity',
@@ -67,6 +72,10 @@ class SPAttractorRunner:
             )
             self.logger.define_metric(
                 name='convergence/io_hist',
+                step_metric='iteration'
+            )
+            self.logger.define_metric(
+                name='som/clusters',
                 step_metric='iteration'
             )
 
@@ -218,8 +227,99 @@ class SPAttractorRunner:
             similarities = np.array(similarities)
             in_sim = similarities[:, 0]
 
+            start_images = [x[0] for x in trajectories]
+            dense_start_images = np.zeros(
+                (len(start_images), self.encoder.feedforward_sds.size),
+                dtype='float32'
+            )
+            for im_id, x in enumerate(start_images):
+                dense_start_images[im_id, x] = 1
+
+            trajectories = np.array(
+                [x[1:] for x in trajectories]
+            )
+
             rel_sim = rel_sim.to_numpy()
             for j in range(rel_sim.shape[0]):
+                if j > 0:
+                    patterns = trajectories[:, j - 1]
+                    pattern_size = self.encoder.output_sds.size
+                    n_patterns = patterns.shape[0]
+                    dense_patterns = np.zeros((n_patterns, pattern_size), dtype='float32')
+                    for k, p in enumerate(patterns):
+                        dense_patterns[k, p] = 1
+                else:
+                    pattern_size = self.encoder.feedforward_sds.size
+                    dense_patterns = dense_start_images
+
+                dim = int(np.sqrt(self.som_size))
+                som = MiniSom(
+                    dim, dim,
+                    pattern_size,
+                    sigma=self.som_sigma,
+                    learning_rate=self.som_learning_rate,
+                    random_seed=self.seed
+                )
+                som.pca_weights_init(dense_patterns)
+                som.train(dense_patterns, self.som_iterations)
+
+                activation_map = np.zeros((dim, dim, 10))
+                fig = plt.figure(figsize=(8, 8))
+                plt.imshow(som.distance_map(), cmap='Greys', alpha=0.5)
+                plt.colorbar()
+
+                for p, cls in zip(dense_patterns, start_classes):
+                    activation_map[:, :, cls] += som.activate(p)
+
+                    cell = som.winner(p)
+                    plt.text(
+                        cell[0],
+                        cell[1],
+                        str(cls),
+                        color=plt.cm.rainbow(cls/10),
+                        alpha=0.1,
+                        fontdict={'weight': 'bold', 'size': 16}
+                    )
+                # plt.axis([0, som.get_weights().shape[0], 0, som.get_weights().shape[1]])
+
+                self.logger.log(
+                    {
+                        'som/clusters': wandb.Image(fig),
+                        'iteration': j
+                    },
+                    step=i
+                )
+                plt.close('all')
+
+                # normalize activation map
+                activation_map /= dense_patterns.shape[0]
+                activation_map /= activation_map.sum(axis=-1).reshape((dim, dim, 1))
+                # generate colormap
+                colors = [plt.cm.rainbow(c/10)[:-1] for c in range(10)]
+                color_map = (np.dot(activation_map.reshape((-1, 10)), colors) * 255)
+                color_map = color_map.reshape((dim, dim, 3))
+
+                for cls in range(10):
+                    self.logger.log(
+                        {
+                            f'som/activation {cls}': wandb.Image(
+                                sns.heatmap(activation_map[:, :, cls], cmap='viridis')
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+
+                self.logger.log(
+                    {
+                        'som/soft_clusters': wandb.Image(
+                            plt.imshow(color_map.astype('uint8'))
+                        )
+                    },
+                    step=i
+                )
+                plt.close('all')
+
                 out_sim = similarities[:, j]
                 hist, x, y = np.histogram2d(in_sim, out_sim)
                 x, y = np.meshgrid(x, y)
@@ -229,8 +329,7 @@ class SPAttractorRunner:
                         'main_metrics/relative_similarity': rel_sim[j].mean(),
                         'convergence/io_hist': wandb.Image(
                             plt.pcolormesh(x, y, hist.T)
-                        ),
-                        'iteration': j
+                        )
                     },
                     step=i
                 )
