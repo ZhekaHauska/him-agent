@@ -65,6 +65,16 @@ class SPAttractorRunner:
                 name='main_metrics/relative_similarity',
                 step_metric='iteration'
             )
+            self.logger.define_metric(
+                name='convergence/io_hist',
+                step_metric='iteration'
+            )
+
+            for cls in range(10):
+                self.logger.define_metric(
+                    name=f'relative_similarity/class {cls}',
+                    step_metric='iteration'
+                )
 
     def run(self):
         for i in range(self.n_episodes):
@@ -184,15 +194,15 @@ class SPAttractorRunner:
                     )
                     plt.close('all')
 
-                    fig, axs = plt.subplots(ncols=4, sharey='row', figsize=(12, 4))
+                    fig, axs = plt.subplots(ncols=4, sharey='row', figsize=(16, 4))
                     axs[0].set_title('raw_sim')
                     axs[1].set_title('1-step')
                     axs[2].set_title(f'{self.attractor_steps//2}-step')
                     axs[3].set_title(f'{self.attractor_steps}-step')
-                    sns.heatmap(sim_matrices[0], ax=axs[0], vmin=0, vmax=1, cbar=False)
-                    sns.heatmap(sim_matrices[1], ax=axs[1], vmin=0, vmax=1, cbar=False)
-                    sns.heatmap(sim_matrices[self.attractor_steps//2], ax=axs[2], vmin=0, vmax=1, cbar=False)
-                    sns.heatmap(sim_matrices[-1], ax=axs[3], vmin=0, vmax=1)
+                    sns.heatmap(sim_matrices[0], ax=axs[0], cmap='viridis')
+                    sns.heatmap(sim_matrices[1], ax=axs[1], cmap='viridis')
+                    sns.heatmap(sim_matrices[self.attractor_steps//2], ax=axs[2], cmap='viridis')
+                    sns.heatmap(sim_matrices[-1], ax=axs[3], cmap='viridis')
 
                     self.logger.log(
                         {
@@ -205,14 +215,35 @@ class SPAttractorRunner:
                     plt.close('all')
 
         if self.logger is not None:
-            rel_sim = rel_sim.to_numpy().mean(axis=-1)
+            similarities = np.array(similarities)
+            in_sim = similarities[:, 0]
+
+            rel_sim = rel_sim.to_numpy()
             for j in range(rel_sim.shape[0]):
+                out_sim = similarities[:, j]
+                hist, x, y = np.histogram2d(in_sim, out_sim)
+                x, y = np.meshgrid(x, y)
+
                 self.logger.log(
                     {
-                        'main_metrics/relative_similarity': rel_sim[j],
+                        'main_metrics/relative_similarity': rel_sim[j].mean(),
+                        'convergence/io_hist': wandb.Image(
+                            plt.pcolormesh(x, y, hist.T)
+                        ),
                         'iteration': j
-                    }
+                    },
+                    step=i
                 )
+
+                for cls in range(10):
+                    self.logger.log(
+                        {
+                            f'relative_similarity/class {cls}': rel_sim[j, cls]
+                        },
+                        step=i
+                    )
+
+                i += 1
 
     def attract(self, steps, pattern, learn=False):
         trajectory = list()
