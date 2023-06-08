@@ -1,5 +1,5 @@
 log: True
-project_name: 'sp_attractor'
+project_name: 'sp_attractor_rbits'
 run_tag: null
 
 n_episodes: 1001
@@ -9,8 +9,8 @@ max_steps: 100
 # testing
 attractor_steps: 20
 n_trajectories: 500
-learn_attractor_in_loop: False
-pairs_per_trajectory: 10
+learn_attractor_in_loop: True
+pairs_per_trajectory: 1
 # som
 som_iterations: 1000
 som_learning_rate: 0.1
@@ -19,7 +19,8 @@ som_size: 100
 
 encoder_conf: 'configs/sp/encoder.yaml'
 attractor_conf: 'configs/sp/attractor.yaml'
+env_conf: 'configs/rbits/default.yaml'
 
-experiment: mnist
+experiment: rbits
 
 seed: null
