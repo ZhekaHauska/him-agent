@@ -120,6 +120,8 @@ class ExperimentStats:
 
     def on_step(self):
         if self.logger is None:
+            for block, anomaly_tracker in self.tms:
+                anomaly_tracker.on_step(block.tm.anomaly[-1])
             return
         if self.logging_temporally_disabled:
             return
@@ -163,6 +165,8 @@ class ExperimentStats:
 
     def on_epoch_finished(self, logging_scheduled: bool):
         if not self.logger:
+            for block, anomaly_tracker in self.tms:
+                print(anomaly_tracker.aggregate_metrics())
             return
         if not logging_scheduled:
             return
@@ -175,6 +179,9 @@ class ExperimentStats:
         }
         for name in self.stream_trackers:
             metrics |= self.stream_trackers[name].aggregate_metrics()
+        for block, anomaly_tracker in self.tms:
+            res = anomaly_tracker.aggregate_metrics()
+            metrics |= rename_dict_keys(res, add_prefix=f'{block.name}/')
 
         if self.model.metrics:
             metrics |= self.model.flush_metrics()
@@ -189,6 +196,7 @@ class ExperimentStats:
             loss_components = [(loss_items[0], loss_items[1])]
             metrics['loss'] = compute_loss(loss_components, self.stats_config.loss_layer_discount)
 
+        print(metrics)
         self.logger.log(metrics, step=self.progress.step)
 
     @staticmethod
