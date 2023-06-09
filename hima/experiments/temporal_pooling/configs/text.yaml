@@ -4,10 +4,10 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 
 seed: 42
 iterate:
-  epochs: 100
-  resample_frequency: 5
-  sequences: 1
-  elements: 200
+  epochs: 2
+#  resample_frequency: 1
+  sequences: 10
+  elements: 10000
 
 model:
   global_config: ???
@@ -93,7 +93,7 @@ datas:
     _type_: ds.text_sequences
     global_config: ???
     seed: ???
-    filepath: /Users/kuderov/data/text/wiki_ai.txt
+    filepath: /Users/kuderov/data/text/hima_all.txt
     n_sequences: ???
     sequence_length: ???
     encoder:
@@ -103,6 +103,27 @@ datas:
 
 
 models:
+  +SE+STE+AA:
+    - input.sdr -> SE'.feedforward.sdr
+    - SE'.compute()
+    - SE'.output.sdr -> STE.feedforward.sdr
+    - STE.compute()
+    - TM.predict()
+    - activate + predict by AA:
+      - TM.predicted_cells.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.set_predicted_cells()
+    - learn TM:
+      - STE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.active_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
   +STE+AA:
     - input.sdr -> STE.feedforward.sdr
     - STE.compute()
@@ -121,6 +142,17 @@ models:
     - learn AA:
       - TM.active_cells.sdr -> AA.feedforward.sdr
       - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE+STE:
+    - input.sdr -> SE'.feedforward.sdr
+    - SE'.compute()
+    - SE'.output.sdr -> STE.feedforward.sdr
+    - STE.compute()
+    - STE.output.sdr -> TM.feedforward.sdr
+    - compute TM:
+        - TM.predict()
+        - TM.set_predicted_cells()
+        - TM.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
   +STE:
     - input.sdr -> STE.feedforward.sdr
@@ -197,7 +229,21 @@ blocks:
       learning_rate: 0.02
       global_inhibition_strength: 0.2
       newborn_pruning_cycle: 2.0
-      newborn_pruning_stages: 6
+      newborn_pruning_stages: 10
+      prune_grow_cycle: 10.0
+      adapt_to_ff_sparsity: False
+      boosting_k: 0.5
+  SE':
+    _type_: block.sp
+    output_sds: [500, 10]
+    sp:
+      _base_: $_base.spatial_pooler.default
+      initial_rf_to_input_ratio: 8.0
+      max_rf_to_input_ratio: 1.5
+      learning_rate: 0.02
+      global_inhibition_strength: 0.2
+      newborn_pruning_cycle: 2.0
+      newborn_pruning_stages: 10
       prune_grow_cycle: 10.0
       adapt_to_ff_sparsity: False
       boosting_k: 0.5
@@ -211,10 +257,10 @@ blocks:
       reset_potential_on_activation: True
       initial_rf_to_input_ratio: 8.0
       max_rf_to_input_ratio: 1.5
-      learning_rate: 0.02
+      learning_rate: 0.001
       global_inhibition_strength: 0.2
       newborn_pruning_cycle: 2.0
-      newborn_pruning_stages: 6
+      newborn_pruning_stages: 10
       prune_grow_cycle: 10.0
       adapt_to_ff_sparsity: False
       boosting_k: 0.5

@@ -31,7 +31,7 @@ class SpatialTemporalPooler:
     weights: np.ndarray
 
     # temporal decay
-    temporal_decay_threshold: float = 1/3
+    temporal_decay_threshold: float = 0.1
     temporal_window: np.ndarray
     temporal_decay: np.ndarray
     temporal_decay_mean: float
@@ -98,7 +98,6 @@ class SpatialTemporalPooler:
         self.min_overlap_for_activation = min_overlap_for_activation
         self.learning_rate = learning_rate
         self.global_inhibition_strength = global_inhibition_strength
-        self.polarity = 1
 
         rf_size = int(self.initial_rf_sparsity * self.ff_size)
         self.rf = sample_for_each_neuron(
@@ -109,9 +108,8 @@ class SpatialTemporalPooler:
 
         self.w_min = 0.
         self.weights = self.normalize_weights(
-            np.abs(self.rng.normal(loc=1.0, scale=0.02, size=self.rf.shape))
+            self.rng.normal(loc=1.0, scale=0.02, size=self.rf.shape)
         )
-        print(self.weights)
 
         self.sparse_input = []
         # +1 for always-inactive element that is used to additionally turn off parts of neuron's RF
@@ -127,7 +125,7 @@ class SpatialTemporalPooler:
         # temporal decay
         self.potentials = np.zeros(self.output_size)
         # NB: ~half will have < 1 window
-        self.temporal_window = _loguniform(self.rng, std=max_pooling_window, size=self.output_size)
+        self.temporal_window = self.make_temporal_windows(max_pooling_window)
         print(f'E[TW] = {np.mean(self.temporal_window)}')
         print(np.bincount(np.round(self.temporal_window).astype(int)))
         # threshold = decay ^ window ===> decay = threshold ^ (1 / window)
@@ -144,7 +142,6 @@ class SpatialTemporalPooler:
         self.newborn_pruning_stage = 0
         self.prune_grow_cycle = prune_grow_cycle
 
-        self.no_feedback_count = 0
         self.run_time = 0
 
     def compute(self, input_sdr: SparseSdr, learn: bool = False) -> SparseSdr:
@@ -157,7 +154,6 @@ class SpatialTemporalPooler:
     @timed
     def _compute(self, input_sdr: SparseSdr, learn: bool) -> SparseSdr:
         self.n_computes += 1
-        self.no_feedback_count += 1
         self.feedforward_trace[input_sdr] += 1
 
         if self.is_newborn_phase:
@@ -214,12 +210,21 @@ class SpatialTemporalPooler:
 
     def learn(self, neurons: np.ndarray, modulation: float = 1.0):
         w = self.weights[neurons]
-        lr = modulation * self.polarity * self.learning_rate
+        lr = modulation * self.learning_rate
 
         # RF pattern recognition for each neuron
         recognition_trace = self.match_mask_trace[neurons]
         # Clip to remove zero-division
-        recognition_trace_norm = np.clip(recognition_trace.sum(axis=-1, keepdims=True), 1e-10, None)
+        recognition_trace_norm = recognition_trace.sum(axis=-1, keepdims=True)
+
+        empty = recognition_trace_norm.flatten() == .0
+        if np.any(empty):
+            # exclude neurons that have zero match
+            non_empty = np.nonzero(empty)
+            neurons = neurons[non_empty]
+            w = w[non_empty]
+            recognition_trace = recognition_trace[non_empty]
+            recognition_trace_norm = recognition_trace_norm[non_empty]
 
         # Normalized recognition trace
         # shape: (n_neurons, 1)
@@ -243,7 +248,6 @@ class SpatialTemporalPooler:
         raise NotImplementedError('Fix feedback processing as match mask is incorrect now')
 
         # feedback SDR is the SP neurons that should be reinforced
-        feedback_strength = self.no_feedback_count
         fb_match_mask, _ = self.match_input(self.dense_input, neurons=feedback_sdr)
 
         self.learn(feedback_sdr, fb_match_mask, modulation=feedback_strength)
@@ -256,6 +260,7 @@ class SpatialTemporalPooler:
         if new_sparsity > self.rf_sparsity:
             # if feedforward sparsity is tracked, then it may change and lead to RF increase
             # ==> leave RF as is
+            print('New RF size should be greater than current, but RF increase is not implemented.')
             return
 
         # probabilities to keep connection
@@ -419,15 +424,26 @@ class SpatialTemporalPooler:
         masking_value = self.ff_size
         self.rf[correcting_mask] = masking_value
 
-        self.weights[correcting_mask] = self.w_min
+        self.weights[correcting_mask] = 0.
         self.weights = self.normalize_weights(self.weights)
 
         self.match_mask_trace[correcting_mask] = 0.
 
     def get_corrected_rf_size(self) -> np.ndarray:
-        k = (self.temporal_window + 1) ** self.temporal_decay_threshold
+        decay, tw = self.temporal_decay, self.temporal_window
+        # RF size reduction should balance exponentially decaying cumulative sum
+        max_cum_sum = (1 - decay ** tw) / (1 - decay)
+
+        # expect that not entire RF will be matched by the neuron, and it should be accumulated
+        cum_pattern_matching_relaxation = 0.98 ** (tw - 1)
+        cum_sum = max_cum_sum * cum_pattern_matching_relaxation
         # shape: (N,) --> (N, 1)
-        return np.expand_dims(self.rf_size / k, -1)
+        return np.expand_dims(self.rf_size / cum_sum, -1)
+
+    def make_temporal_windows(self, max_pooling_window):
+        tw = _loguniform(self.rng, std=max_pooling_window, size=self.output_size)
+        np.clip(tw, 1.0, max_pooling_window, out=tw)
+        return tw
 
 
 def _loguniform(rng, std, size):
