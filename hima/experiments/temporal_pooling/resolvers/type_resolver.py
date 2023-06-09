@@ -59,6 +59,9 @@ def _resolve_block(type_tag: str):
             GeneralFeedbackTemporalMemoryBlock
         )
         return GeneralFeedbackTemporalMemoryBlock
+    if type_tag == 'block.tm':
+        from hima.experiments.temporal_pooling.blocks.tm import TemporalMemoryBlock
+        return TemporalMemoryBlock
 
 
 def _resolve_tracker(type_tag: str):
