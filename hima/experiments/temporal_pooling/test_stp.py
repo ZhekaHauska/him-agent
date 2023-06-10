@@ -101,6 +101,7 @@ class StpExperiment:
             stp: SpatialTemporalPooler = self.model.blocks['SE'].sp
 
         for epoch in range(self.iterate.epochs):
+            self.print_with_timestamp(f'Epoch {epoch}')
             _, elapsed_time = self.train_epoch()
 
             if stp is not None:
@@ -112,7 +113,6 @@ class StpExperiment:
                     ws = stp.weights
                 print(np.mean(ws), np.std(ws))
                 print(np.round(np.histogram(ws, bins=20)[0] / stp.output_size, 1))
-            self.print_with_timestamp(f'Epoch {epoch}')
         self.print_with_timestamp('<==')
 
     @timed

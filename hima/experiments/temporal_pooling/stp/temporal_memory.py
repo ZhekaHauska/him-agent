@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from collections import deque
 from functools import reduce
 from math import exp
 
@@ -11,6 +12,7 @@ from htm.advanced.support.numpy_helpers import getAllCellsInColumns, argmaxMulti
 from htm.bindings.math import Random
 from htm.bindings.sdr import SDR
 
+from hima.common.utils import safe_divide
 from hima.modules.htm.connections import Connections
 from hima.modules.htm.temporal_memory import UINT_DTYPE, REAL64_DTYPE, EPS
 
@@ -116,11 +118,27 @@ class TemporalMemory:
 
         self.anomaly_window = anomaly_window
         self.confidence_window = confidence_window
-        self.anomaly = [0.0 for _ in range(self.anomaly_window)]
-        self.confidence = [0.0 for _ in range(self.confidence_window)]
+        self.anomaly = deque([0.] * self.anomaly_window, maxlen=self.anomaly_window)
+        self.confidence = deque([0.] * self.confidence_window, maxlen=self.confidence_window)
+        # running average anomaly [on window]
         self.anomaly_threshold = 0
+        # running average confidence [on window]
         self.confidence_threshold = 0
         self.mean_active_columns = 0
+        # NEW METRICS
+        self.n_columns = self.columns
+        self.n_cells = self.local_cells
+        self.n_predicted_cells = 0
+        self.n_predicted_columns = 0
+        self.column_prediction_volume = 0.
+        self.cell_prediction_volume = 0.
+        # miss rate, anomaly, false negative rate: 1 - recall
+        self.column_miss_rate = 0.
+        # positive predictive value: tp / (tp+fp)
+        self.column_precision = 0.
+        # false discovery rate: 1 - precision
+        self.column_imprecision = 0.
+        self.cell_imprecision = 0.
 
         if seed:
             self.rng = Random(seed)
@@ -242,11 +260,13 @@ class TemporalMemory:
             self._columns_for_cells(self.predicted_cells.sparse)
         )
 
-        confidence = min(len(self.predicted_cells.sparse) / (self.mean_active_columns + EPS), 1.0)
-        self.confidence_threshold = self.confidence_threshold + (
-                confidence - self.confidence[0]) / self.confidence_window
+        self.n_predicted_columns = len(self.predicted_columns.sparse)
+        self.n_predicted_cells = len(self.predicted_cells.sparse)
+
+        confidence = min(self.n_predicted_cells / (self.mean_active_columns + EPS), 1.0)
+        delta_confidence = confidence - self.confidence.popleft()
+        self.confidence_threshold += delta_confidence / self.confidence_window
         self.confidence.append(confidence)
-        self.confidence.pop(0)
 
     def activate_cells(self, learn: bool):
         """
@@ -255,14 +275,14 @@ class TemporalMemory:
         :return:
         """
         # Calculate active cells
-        correct_predicted_cells, bursting_columns = setCompare(
+        correctly_predicted_cells, bursting_columns = setCompare(
             self.predicted_cells.sparse, self.active_columns.sparse,
             aKey=self._columns_for_cells(self.predicted_cells.sparse),
             rightMinusLeft=True
         )
-        self.correct_predicted_cells.sparse = correct_predicted_cells
+        self.correct_predicted_cells.sparse = correctly_predicted_cells
         new_active_cells = np.concatenate((
-            correct_predicted_cells,
+            correctly_predicted_cells,
             getAllCellsInColumns(bursting_columns, self.cells_per_column) + self.local_range[0]
         ))
 
@@ -275,7 +295,7 @@ class TemporalMemory:
             apical_segments_to_punish,
             cells_to_grow_apical_and_basal_segments,
             new_winner_cells
-        ) = self._calculate_learning(bursting_columns, correct_predicted_cells)
+        ) = self._calculate_learning(bursting_columns, correctly_predicted_cells)
 
         # Learn
         if learn:
@@ -318,14 +338,14 @@ class TemporalMemory:
                     for segment in basal_segments_to_punish:
                         self.basal_connections.adaptSegment(
                             segment, self.active_cells_context,
-                            -self.predicted_segment_decrement_basal, 0.0,
+                            0.0, self.predicted_segment_decrement_basal,
                             self.prune_zero_synapses, self.learning_threshold_basal
                         )
                 if self.active_cells_feedback.sparse.size > 0:
                     for segment in apical_segments_to_punish:
                         self.apical_connections.adaptSegment(
                             segment, self.active_cells_feedback,
-                            -self.predicted_segment_decrement_apical, 0.0,
+                            0.0, self.predicted_segment_decrement_apical,
                             self.prune_zero_synapses, self.learning_threshold_apical
                         )
 
@@ -356,6 +376,7 @@ class TemporalMemory:
         self.active_cells.sparse = np.unique(new_active_cells.astype(UINT_DTYPE))
         self.winner_cells.sparse = np.unique(new_winner_cells)
 
+        # on cells activated
         n_active_columns = self.active_columns.sparse.size
         self.mean_active_columns = (
             self.sm_ac * self.mean_active_columns + (1 - self.sm_ac) * n_active_columns
@@ -366,10 +387,29 @@ class TemporalMemory:
             anomaly = 1.0
 
         self.anomaly_threshold = (
-            self.anomaly_threshold + (anomaly - self.anomaly[0]) / self.anomaly_window
+            self.anomaly_threshold + (anomaly - self.anomaly.popleft()) / self.anomaly_window
         )
         self.anomaly.append(anomaly)
-        self.anomaly.pop(0)
+
+        n_tp_fn_columns = n_active_columns
+        n_tp_fp_columns = self.n_predicted_columns
+        n_fn_columns = len(bursting_columns)
+        n_tp_columns = n_tp_fn_columns - n_fn_columns
+        # recall: tp / tp+fp
+        # anomaly, miss rate: 1 - recall = fp / tp+fp
+        self.column_miss_rate = safe_divide(n_fn_columns, n_tp_fn_columns)
+        # precision
+        self.column_precision = safe_divide(n_tp_columns, n_tp_fp_columns)
+        self.column_imprecision = 1 - self.column_precision
+        # predicted / actual == prediction relative sparsity
+        self.column_prediction_volume = safe_divide(n_tp_fp_columns, n_tp_fn_columns)
+
+        n_tp_fp_cells = self.n_predicted_cells
+        n_tp_fn_cells = len(self.winner_cells.sparse)
+        n_tp_cells = len(self.correct_predicted_cells.sparse)
+        self.cell_imprecision = 1 - safe_divide(n_tp_cells, n_tp_fp_cells)
+        # predicted / actual == prediction relative sparsity
+        self.cell_prediction_volume = safe_divide(n_tp_fp_cells, n_tp_fn_cells)
 
     def _learn(
             self, connections, learning_segments, active_cells, winner_cells,
