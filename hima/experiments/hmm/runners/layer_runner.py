@@ -130,6 +130,7 @@ class PinballTest:
         self.max_steps = conf['run']['max_steps']
         self.save_model = conf['run']['save_model']
         self.log_fps = conf['run']['log_gif_fps']
+        self.internal_dependence_1step = conf['run']['internal_dependence_1step']
 
         self._rng = np.random.default_rng(self.seed)
 
@@ -215,7 +216,10 @@ class PinballTest:
                     self.encoder.compute(self.sp_input, True, self.sp_output)
                     obs_state = self.sp_output.sparse
 
-                self.hmm.predict()
+                self.hmm.predict(include_internal_connections=(
+                        self.hmm.enable_internal_connections and self.internal_dependence_1step
+                    )
+                )
                 column_probs = self.hmm.prediction_columns
 
                 if self.actions is not None:
