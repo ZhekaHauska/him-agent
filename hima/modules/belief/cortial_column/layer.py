@@ -45,8 +45,10 @@ class Layer:
             max_segments: int = 10000,
             developmental_period: int = 10000,
             fraction_of_segments_to_prune: float = 0.5,
+            enable_internal_connections: bool = True,
             seed: int = None,
     ):
+        self.enable_internal_connections = enable_internal_connections
         self._rng = np.random.default_rng(seed)
 
         if seed:
@@ -238,7 +240,7 @@ class Layer:
         self.prediction_cells = None
         self.prediction_columns = None
 
-    def predict(self):
+    def predict(self, include_internal_connections=False):
         # step 1: predict cells based on context
         # block all messages except context messages
         # think about it as thalamus orchestration of the neocortex
@@ -252,19 +254,20 @@ class Layer:
 
         # step 2: update predictions based on internal and external connections
         # block context messages
-        messages = np.zeros(self.total_cells)
+        if include_internal_connections:
+            messages = np.zeros(self.total_cells)
 
-        messages[
-            self.internal_cells_range[0]:
-            self.internal_cells_range[1]
-        ] = self.internal_forward_messages
+            messages[
+                self.internal_cells_range[0]:
+                self.internal_cells_range[1]
+            ] = self.internal_forward_messages
 
-        messages[
-            self.external_cells_range[0]:
-            self.external_cells_range[1]
-        ] = self.external_messages
+            messages[
+                self.external_cells_range[0]:
+                self.external_cells_range[1]
+            ] = self.external_messages
 
-        self._propagate_belief(messages)
+            self._propagate_belief(messages)
 
         self.prediction_cells = self.internal_forward_messages.copy()
 
@@ -326,18 +329,19 @@ class Layer:
 
             # learn internal segments
             # use internal and external cells to predict internal cells
-            self._learn(
-                np.concatenate(
-                    [
-                        self.internal_active_cells.sparse,
-                        (
-                            self.external_cells_range[0] +
-                            self.external_active_cells.sparse
-                        )
-                    ]
-                ),
-                self.internal_active_cells.sparse
-            )
+            if self.enable_internal_connections:
+                self._learn(
+                    np.concatenate(
+                        [
+                            self.internal_active_cells.sparse,
+                            (
+                                self.external_cells_range[0] +
+                                self.external_active_cells.sparse
+                            )
+                        ]
+                    ),
+                    self.internal_active_cells.sparse
+                )
 
         self.timestep += 1
 
@@ -381,7 +385,7 @@ class Layer:
 
             # uniquely encode pairs (factor, cell) for each segment
             cell_factor_id_per_segment = (
-                    factors_for_active_segments * self.internal_cells
+                    factors_for_active_segments * self.total_cells
                     + cells_for_active_segments
             )
 
@@ -438,7 +442,13 @@ class Layer:
 
         self.internal_forward_messages = next_messages
 
-    def _learn(self, active_cells, next_active_cells, prune_segments=False):
+    def _learn(
+            self,
+            active_cells,
+            next_active_cells,
+            prune_segments=False,
+            update_factor_score=True
+    ):
         (
             segments_to_reinforce,
             segments_to_punish,
@@ -450,7 +460,8 @@ class Layer:
 
         new_segments = self._grow_new_segments(
             cells_to_grow_new_segments,
-            active_cells
+            active_cells,
+            update_factor_score=update_factor_score
         )
 
         self.segments_in_use = np.append(
@@ -697,18 +708,7 @@ class Layer:
         vars_[external_cells_mask] = external_cells_vars
         return vars_
 
-    def _grow_new_segments(
-            self,
-            new_segment_cells,
-            growth_candidates,
-    ):
-        candidate_vars = np.unique(self._vars_for_cells(growth_candidates))
-        # free space for new segments
-        n_segments_after_growing = len(self.segments_in_use) + len(new_segment_cells)
-        if n_segments_after_growing > self.total_segments:
-            n_segments_to_prune = n_segments_after_growing - self.total_segments
-            self._prune_segments(n_segments_to_prune)
-
+    def _update_factor_score(self):
         # sum factor values for every factor
         if len(self.segments_in_use) > 0:
             factor_for_segment = self.factor_for_segment[self.segments_in_use]
@@ -738,11 +738,40 @@ class Layer:
                 self.factor_vars[factor] = np.full(self.n_vars_per_factor, fill_value=-1)
 
             self.factors_in_use = factors_with_segments.copy()
+            self.factor_score = factor_score
         else:
-            factors_with_segments = np.empty(0)
-            factor_score = np.empty(0)
+            self.factor_score = np.empty(0)
 
-        self.factor_score = factor_score.copy()
+    def _grow_new_segments(
+            self,
+            new_segment_cells,
+            growth_candidates,
+            update_factor_score=True
+    ):
+        candidate_vars = np.unique(self._vars_for_cells(growth_candidates))
+        # free space for new segments
+        n_segments_after_growing = len(self.segments_in_use) + len(new_segment_cells)
+        if n_segments_after_growing > self.total_segments:
+            n_segments_to_prune = n_segments_after_growing - self.total_segments
+            self._prune_segments(n_segments_to_prune)
+
+        if update_factor_score:
+            self._update_factor_score()
+
+        factor_score = self.factor_score.copy()
+        factors_with_segments = self.factors_in_use
+
+        # filter non-active factors
+        active_vars = SDR(self.total_vars)
+        active_vars.sparse = candidate_vars
+        n_active_vars = self.factor_connections.computeActivity(
+            active_vars,
+            False
+        )
+        active_factors_mask = n_active_vars >= self.n_vars_per_factor
+
+        factor_score = factor_score[active_factors_mask[factors_with_segments]]
+        factors_with_segments = factors_with_segments[active_factors_mask[factors_with_segments]]
 
         new_segments = list()
 
@@ -761,6 +790,9 @@ class Layer:
             cell_factors = np.array(
                 self.factor_connections.segmentsForCell(var)
             )
+            cell_factors = cell_factors[np.isin(
+                cell_factors, factors_with_segments
+            )]
 
             score = np.zeros(self.factors_per_var)
             factors = np.full(self.factors_per_var, fill_value=-1)
