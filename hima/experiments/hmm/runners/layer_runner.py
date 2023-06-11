@@ -288,7 +288,9 @@ class PinballTest:
                         hidden_probs.append(hidden_prediction.copy())
 
                         for j in range(self.prediction_steps - 1):
-                            self.hmm.predict()
+                            self.hmm.predict(
+                                include_internal_connections=self.hmm.enable_internal_connections
+                            )
                             column_probs = self.hmm.prediction_columns
 
                             if self.decoder is not None:

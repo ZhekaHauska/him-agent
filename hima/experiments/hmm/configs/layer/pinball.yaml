@@ -1,6 +1,7 @@
 cells_per_column: 10
 n_vars_per_factor: 3
 factors_per_var: 5
+enable_internal_connections: false
 
 # boosting
 external_vars_boost: 0  # set it non-zero to shift probability of choosing external var for factor
