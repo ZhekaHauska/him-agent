@@ -1,15 +1,16 @@
 cells_per_column: 10
 n_vars_per_factor: 3
 factors_per_var: 5
-enable_internal_connections: false
+enable_internal_connections: False
 
 # boosting
 external_vars_boost: 0  # set it non-zero to shift probability of choosing external var for factor
 unused_vars_boost: 0
 
 # learning
-initial_factor_value: 0.0
-lr: 0.05
+initial_log_factor_value: 0.0
+context_lr: 0.05
+internal_lr: 0.001
 segment_activity_lr: 0.001
 var_score_lr: 0.001
 

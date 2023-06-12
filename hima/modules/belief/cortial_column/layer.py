@@ -35,11 +35,12 @@ class Layer:
             n_external_states: int = 0,
             external_vars_boost: float = 0,
             unused_vars_boost: float = 0,
-            lr: float = 0.01,
+            context_lr: float = 0.01,
+            internal_lr: float = 0.01,
             segment_activity_lr: float = 0.001,
             var_score_lr: float = 0.001,
             inverse_temp: float = 1.0,
-            initial_factor_value: float = 0,
+            initial_log_factor_value: float = 0,
             cell_activation_threshold: float = EPS,
             max_segments_per_cell: int = 255,
             max_segments: int = 10000,
@@ -99,7 +100,8 @@ class Layer:
         self.total_segments = max_segments
         self.max_segments_per_cell = max_segments_per_cell
 
-        self.lr = lr
+        self.context_lr = context_lr
+        self.internal_lr = internal_lr
         self.segment_activity_lr = segment_activity_lr
         self.var_score_lr = var_score_lr
         self.factors_per_var = factors_per_var
@@ -159,10 +161,10 @@ class Layer:
         )
 
         # each segment corresponds to a factor value
-        self.initial_factor_value = initial_factor_value
+        self.initial_log_factor_value = initial_log_factor_value
         self.log_factor_values_per_segment = np.full(
             self.total_segments,
-            fill_value=self.initial_factor_value,
+            fill_value=self.initial_log_factor_value,
             dtype=REAL64_DTYPE
         )
 
@@ -324,6 +326,7 @@ class Layer:
                     self.context_active_cells.sparse
                 ),
                 self.internal_active_cells.sparse,
+                self.context_lr,
                 prune_segments=(self.timestep % self.developmental_period) == 0
             )
 
@@ -340,7 +343,8 @@ class Layer:
                             )
                         ]
                     ),
-                    self.internal_active_cells.sparse
+                    self.internal_active_cells.sparse,
+                    self.internal_lr
                 )
 
         self.timestep += 1
@@ -446,8 +450,9 @@ class Layer:
             self,
             active_cells,
             next_active_cells,
+            lr,
             prune_segments=False,
-            update_factor_score=True
+            update_factor_score=True,
     ):
         (
             segments_to_reinforce,
@@ -477,7 +482,8 @@ class Layer:
                 ]
             ),
             segments_to_punish,
-            prune=prune_segments
+            lr,
+            prune=prune_segments,
         )
 
     def _calculate_learning_segments(self, active_cells, next_active_cells):
@@ -508,15 +514,21 @@ class Layer:
             cells_to_grow_new_segments.astype(UINT_DTYPE)
         )
 
-    def _update_factors(self, segments_to_reinforce, segments_to_punish, prune=False):
+    def _update_factors(
+            self,
+            segments_to_reinforce,
+            segments_to_punish,
+            lr,
+            prune=False,
+    ):
         w = self.log_factor_values_per_segment[segments_to_reinforce]
         self.log_factor_values_per_segment[
             segments_to_reinforce
-        ] += np.log1p(self.lr * (np.exp(-w) - 1))
+        ] += np.log1p(lr * (np.exp(-w) - 1))
 
         self.log_factor_values_per_segment[
             segments_to_punish
-        ] += np.log1p(-self.lr)
+        ] += np.log1p(-lr)
 
         active_segments = np.concatenate([segments_to_reinforce, segments_to_punish])
         non_active_segments = self.segments_in_use[
@@ -873,7 +885,7 @@ class Layer:
             )
 
             self.factor_for_segment[new_segment] = factor_id
-            self.log_factor_values_per_segment[new_segment] = self.initial_factor_value
+            self.log_factor_values_per_segment[new_segment] = self.initial_log_factor_value
             self.receptive_fields[new_segment] = candidates
 
             new_segments.append(new_segment)
