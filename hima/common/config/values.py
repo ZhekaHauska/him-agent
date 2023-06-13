@@ -55,15 +55,15 @@ def is_resolved_value(value: Any) -> bool:
     return value != _TO_BE_NONE_VALUE and value != _TO_BE_INDUCED_VALUE
 
 
-def resolve_init_params(config: TConfig, **induction_registry):
+def resolve_init_params(_config: TConfig, **induction_registry):
     """
     Resolve params defined with the config. Some values are intended to be resolved
     later at runtime - so, it tries to substitute special values with the
     values from the induction registry.
     """
     return {
-        k: resolve_value(config[k], key=k, induction_registry=induction_registry)
-        for k in config
+        k: resolve_value(_config[k], key=k, induction_registry=induction_registry)
+        for k in _config
     }
 
 
