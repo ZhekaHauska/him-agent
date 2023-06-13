@@ -31,7 +31,7 @@ _BASE_CONFIG_KEY = '_base_'
 
 # ==================== config meta info extraction ====================
 def extracted_type_tag(config: TConfig) -> tuple[TConfig, str | None]:
-    """Extracts the type tagusing the type hinting convention for configs."""
+    """Extracts the type tag using the type hinting convention for configs."""
     return extracted(config, _TYPE_KEY)
 
 

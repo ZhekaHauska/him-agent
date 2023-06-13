@@ -48,9 +48,9 @@ class Model(Stretchable, Stateful, Node):
         self.blocks = {}
 
         if not isinstance(pipeline, Pipeline):
-            if isinstance(pipeline, str):
-                pipeline = self.config.config_resolver.resolve(pipeline, config_type=list)
-            pipeline = self.parse(pipeline)
+            pipeline = self.config.resolve_object(
+                pipeline, object_type_or_factory=self.parse, config_type=list
+            )
         self.pipeline = pipeline
 
         for external_var in external:
@@ -175,16 +175,7 @@ class Model(Stretchable, Stateful, Node):
         self.streams[stream.name] = stream
         return stream
 
-    def try_register_tracker(self, name: str, tracker: TConfig, stream: str, on: dict):
-        stream = self.streams.get(stream)
-        if stream is None:
-            return
-
-        substitution_registry = {}
-        if stream.is_sdr:
-            substitution_registry |= dict(sds=stream.sds)
-        tracker = self.config.resolve_object(tracker, **substitution_registry)
-
+    def try_register_tracker(self, name: str, tracker: TConfig, on: dict):
         # ensure all streams are valid, i.e. either exist or belong to existing blocks
         valid, non_existed_streams = True, []
         for handler_name, stream_name in on.items():
@@ -200,16 +191,18 @@ class Model(Stretchable, Stateful, Node):
             on[handler_name] = stream
 
         if not valid:
-            # not all stream are valid ==> abort — remove all new streams
+            # not all stream are valid ==> abort: don't create tracker and remove all new streams
             for stream_name in non_existed_streams:
                 self.streams.pop(stream_name)
+            print(f'- {name} tracker')
             return
 
         self.trackers[name] = TrackerBlock(model=self, name=name, tracker=tracker, on=on)
+        print(f'+ {name} tracker')
 
     # =========== Parse API =========
 
-    def parse(self, pipeline: list) -> Pipeline:
+    def parse(self, *pipeline: list) -> Pipeline:
         return self.parse_pipeline(pipeline=pipeline)
 
     def parse_pipeline(self, **kwargs) -> Pipeline:

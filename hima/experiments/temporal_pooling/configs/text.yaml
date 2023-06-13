@@ -31,23 +31,30 @@ model:
   track:
     - name: all_input
       tracker: trackers.sdr
-      stream: input.sdr
       on:
         sequence_started: epoch
         sdr_updated: input.sdr
         sequence_finished: epoch_finished
     - name: seq_input
       tracker: trackers.sdr
-      stream: input.sdr
       on:
         sequence_started: sequence_id
         sdr_updated: input.sdr
         sequence_finished: sequence_finished
+    - name: tm
+      tracker: trackers.tm
+      on:
+        activate: TM.active_cells.sdr
+
 
 trackers:
   sdr:
     _type_: tracker.sdr
-    sds: ???
+    on: ???
+  tm:
+    _type_: tracker.tm
+    on: ???
+
 
 track_streams:
 #  input.sdr:
@@ -83,19 +90,10 @@ datas:
       _base_: $_base.encoder.random.fixed_sds
       sds: [ 500, 10 ]
   dvc_sequences:
-    _type_: ds.dvc_sequences
-    filepath: /Users/kuderov/data/outdoors_walking/sdrs.pkl
-    n_sequences: ???
-    sequence_length: ???
-    seed: ???
+    _base: $_base.dataset.dvc_sequences
     sequential: True
   text_sequences:
-    _type_: ds.text_sequences
-    global_config: ???
-    seed: ???
-    filepath: /Users/kuderov/data/text/hima_all.txt
-    n_sequences: ???
-    sequence_length: ???
+    _base_: $_base.dataset.text_sequences
     encoder:
       _base_: $_base.encoder.random.fixed_sds
       sds: [ 500, 10 ]
@@ -103,207 +101,99 @@ datas:
 
 
 models:
-  +SE+STE+AA:
-    - input.sdr -> SE'.feedforward.sdr
-    - SE'.compute()
-    - SE'.output.sdr -> STE.feedforward.sdr
-    - STE.compute()
-    - TM.predict()
-    - activate + predict by AA:
-      - TM.predicted_cells.sdr -> AA.feedforward.sdr
-      - AA.set_active_columns()
-      - AA.predict()
-      - AA.set_predicted_cells()
-    - correct TM predicted cells:
-      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
-      - TM.set_predicted_cells()
-    - learn TM:
-      - STE.output.sdr -> TM.feedforward.sdr
-      - TM.activate()
-    - learn AA:
-      - TM.active_cells.sdr -> AA.feedforward.sdr
-      - AA.activate()
-    - TM.correctly_predicted_cells.sdr -> output.sdr
-  +STE+AA:
-    - input.sdr -> STE.feedforward.sdr
-    - STE.compute()
-    - TM.predict()
-    - activate + predict by AA:
-      - TM.predicted_cells.sdr -> AA.feedforward.sdr
-      - AA.set_active_columns()
-      - AA.predict()
-      - AA.set_predicted_cells()
-    - correct TM predicted cells:
-      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
-      - TM.set_predicted_cells()
-    - learn TM:
-      - STE.output.sdr -> TM.feedforward.sdr
-      - TM.activate()
-    - learn AA:
-      - TM.active_cells.sdr -> AA.feedforward.sdr
-      - AA.activate()
-    - TM.correctly_predicted_cells.sdr -> output.sdr
-  +SE+STE:
-    - input.sdr -> SE'.feedforward.sdr
-    - SE'.compute()
-    - SE'.output.sdr -> STE.feedforward.sdr
-    - STE.compute()
-    - STE.output.sdr -> TM.feedforward.sdr
-    - compute TM:
-        - TM.predict()
-        - TM.set_predicted_cells()
-        - TM.activate()
-    - TM.correctly_predicted_cells.sdr -> output.sdr
-  +STE:
-    - input.sdr -> STE.feedforward.sdr
-    - STE.compute()
-    - STE.output.sdr -> TM.feedforward.sdr
-    - compute TM:
-        - TM.predict()
-        - TM.set_predicted_cells()
-        - TM.activate()
-    - TM.correctly_predicted_cells.sdr -> output.sdr
-  +SE+AA:
-    - input.sdr -> SE.feedforward.sdr
-    - SE.compute()
-    - TM.predict()
-    - activate + predict by AA:
-      - TM.predicted_cells.sdr -> AA.feedforward.sdr
-      - AA.set_active_columns()
-      - AA.predict()
-      - AA.set_predicted_cells()
-    - correct TM predicted cells:
-      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
-      - TM.set_predicted_cells()
-    - learn TM:
-      - SE.output.sdr -> TM.feedforward.sdr
-      - TM.activate()
-    - learn AA:
-      - TM.active_cells.sdr -> AA.feedforward.sdr
-      - AA.activate()
-    - TM.correctly_predicted_cells.sdr -> output.sdr
-  +AA:
-    - TM.predict()
-    - activate + predict by AA:
-      - TM.predicted_cells.sdr -> AA.feedforward.sdr
-      - AA.set_active_columns()
-      - AA.predict()
-      - AA.set_predicted_cells()
-    - correct TM predicted cells:
-      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
-      - TM.set_predicted_cells()
-    - learn TM:
-      - input.sdr -> TM.feedforward.sdr
-      - TM.activate()
-    - learn AA:
-      - TM.active_cells.sdr -> AA.feedforward.sdr
-      - AA.activate()
-    - TM.correctly_predicted_cells.sdr -> output.sdr
-  +SE:
-    - input.sdr -> SE.feedforward.sdr
-    - SE.compute()
-    - SE.output.sdr -> TM.feedforward.sdr
-    - compute TM:
-      - TM.predict()
-      - TM.set_predicted_cells()
-      - TM.activate()
-    - TM.correctly_predicted_cells.sdr -> output.sdr
-  Baseline TM:
-    - input.sdr -> TM.feedforward.sdr
-    - compute TM:
-      - TM.predict()
-      - TM.set_predicted_cells()
-      - TM.activate()
-    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE+AA: $_base.models.+SE+AA
+  +AA: $_base.models.+AA
+  +SE: $_base.models.+SE
+  Baseline TM: $_base.models.Baseline TM
+
+SE:
+  sp:
+    _base_: $_base.spatial_pooler.default
+    initial_rf_to_input_ratio: 8.0
+    max_rf_to_input_ratio: 1.5
+    learning_rate: 0.02
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+  stp:
+    _base_: $_base.spatial_temporal_pooler.default
+    max_pooling_window: 4
+    reset_potential_on_activation: True
+    initial_rf_to_input_ratio: 8.0
+    max_rf_to_input_ratio: 1.5
+    learning_rate: 0.001
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+
+TM:
+  general_feedback_tm:
+    _base_: $_base.temporal_memory.general_feedback_tm
+    cells_per_column: 12
+    activation_threshold_basal: .9
+    learning_threshold_basal: .7
+    max_synapses_per_segment_basal: 2.1
+    max_segments_per_cell_basal: 16
+  tm:
+    _base_: $_base.temporal_memory.default
+    cells_per_column: 12
+    activation_threshold_basal: .9
+    learning_threshold_basal: .7
+    max_synapses_per_segment_basal: 2.1
+    max_segments_per_cell_basal: 16
+
+AA:
+  general_feedback_tm:
+    _base_: $_base.temporal_memory.general_feedback_tm
+    cells_per_column: 1
+    activation_threshold_basal: .8
+    learning_threshold_basal: .6
+    max_synapses_per_segment_basal: 4.4
+    max_segments_per_cell_basal: 32
+  tm:
+    _base_: $_base.temporal_memory.default
+    cells_per_column: 1
+    activation_threshold_basal: .8
+    learning_threshold_basal: .6
+    max_synapses_per_segment_basal: 4.4
+    max_segments_per_cell_basal: 32
+
+SA:
+  sp:
+    _base_: $_base.spatial_pooler.default
+    initial_rf_to_input_ratio: 8.0  #12?
+    max_rf_to_input_ratio: 1.25
+    learning_rate: 0.02
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 1.0
+    newborn_pruning_stages: 4
+    prune_grow_cycle: 4.0
+    adapt_to_ff_sparsity: False
 
 blocks:
   concat:
     _type_: block.concatenator
   SE:
     _type_: block.sp
+    _base_: $_base.blocks.sp_like
     output_sds: [500, 10]
-    sp:
-      _base_: $_base.spatial_pooler.default
-      initial_rf_to_input_ratio: 8.0
-      max_rf_to_input_ratio: 1.5
-      learning_rate: 0.02
-      global_inhibition_strength: 0.2
-      newborn_pruning_cycle: 2.0
-      newborn_pruning_stages: 10
-      prune_grow_cycle: 10.0
-      adapt_to_ff_sparsity: False
-      boosting_k: 0.5
-  SE':
-    _type_: block.sp
-    output_sds: [500, 10]
-    sp:
-      _base_: $_base.spatial_pooler.default
-      initial_rf_to_input_ratio: 8.0
-      max_rf_to_input_ratio: 1.5
-      learning_rate: 0.02
-      global_inhibition_strength: 0.2
-      newborn_pruning_cycle: 2.0
-      newborn_pruning_stages: 10
-      prune_grow_cycle: 10.0
-      adapt_to_ff_sparsity: False
-      boosting_k: 0.5
-  STE:
-    _type_: block.sp
-    output_sds: [500, 10]
-    sp:
-      _type_: stp.base
-      _base_: $_base.spatial_pooler.default
-      max_pooling_window: 4
-      reset_potential_on_activation: True
-      initial_rf_to_input_ratio: 8.0
-      max_rf_to_input_ratio: 1.5
-      learning_rate: 0.001
-      global_inhibition_strength: 0.2
-      newborn_pruning_cycle: 2.0
-      newborn_pruning_stages: 10
-      prune_grow_cycle: 10.0
-      adapt_to_ff_sparsity: False
-      boosting_k: 0.5
+    sp: SE.sp
   SA:
     _type_: block.sp
-    output_sds: ??? #[500, 10]
-    sp:
-      _base_: $_base.spatial_pooler.default
-      initial_rf_to_input_ratio: 8.0  #12?
-      max_rf_to_input_ratio: 1.25
-      learning_rate: 0.02
-      global_inhibition_strength: 0.2
-      newborn_pruning_cycle: 1.0
-      newborn_pruning_stages: 4
-      prune_grow_cycle: 4.0
-      adapt_to_ff_sparsity: False
-      boosting_k: 0.5
+    _base_: $_base.blocks.sp_like
+    sp: SA.sp
   TM:
-    _type_: block.tm.general_feedback
-    active_cells_sds: ???
-    predicted_cells_sds: ???
-    tm:
-      seed: ???
-      cells_per_column: 12
-      activation_threshold_basal: .9
-      learning_threshold_basal: .7
-      activation_threshold_apical: 1
-      learning_threshold_apical: 1
-      max_synapses_per_segment_basal: 2.1
-      max_segments_per_cell_basal: 16
+    _type_: block.tm
+    _base_: $_base.blocks.tm_like
+    tm: TM.general_feedback_tm
   AA:
-    _type_: block.tm.general_feedback
-    active_cells_sds: ???
-    predicted_cells_sds: ???
-    tm:
-      seed: ???
-      cells_per_column: 1
-      activation_threshold_basal: .8
-      learning_threshold_basal: .6
-      activation_threshold_apical: 1
-      learning_threshold_apical: 1
-      max_synapses_per_segment_basal: 4.4
-      max_segments_per_cell_basal: 32
+    _type_: block.tm
+    _base_: $_base.blocks.tm_like
+    tm: TM.general_feedback_tm
 
 stats_and_metrics:
   mae_normalization: no
@@ -313,10 +203,3 @@ stats_and_metrics:
   pmf_decay: 1.
   loss_normalization: False
   loss_layer_discount: 0.75
-
-iterate_setups:
-  simple: ...
-
-temporal_memory:
-  default_general_feedback:
-    _type_: block.tm.general_feedback

@@ -33,41 +33,32 @@ class StpLazyTypeResolver(LazyTypeResolver):
         return resolved_type
 
 
-def _resolve_temporal_memory(type_tag: str):
-    if type_tag == 'tm.general_feedback':
-        from hima.experiments.temporal_pooling.blocks.general_feedback_tm import (
-            GeneralFeedbackTemporalMemoryBlock
-        )
-        return GeneralFeedbackTemporalMemoryBlock
-
-
 def _resolve_block(type_tag: str):
     if type_tag == 'block.storage':
         from hima.experiments.temporal_pooling.blocks.storage import StorageBlock
         return StorageBlock
-    if type_tag == 'block.spatial_pooler':
-        from hima.experiments.temporal_pooling.blocks.sp import SpatialPoolerBlock
-        return SpatialPoolerBlock
     if type_tag == 'block.concatenator':
         from hima.experiments.temporal_pooling.blocks.concat import ConcatenatorBlock
         return ConcatenatorBlock
     if type_tag == 'block.sp':
         from hima.experiments.temporal_pooling.blocks.sp import SpatialPoolerBlock
         return SpatialPoolerBlock
-    if type_tag == 'block.tm.general_feedback':
-        from hima.experiments.temporal_pooling.blocks.general_feedback_tm import (
-            GeneralFeedbackTemporalMemoryBlock
-        )
-        return GeneralFeedbackTemporalMemoryBlock
     if type_tag == 'block.tm':
         from hima.experiments.temporal_pooling.blocks.tm import TemporalMemoryBlock
         return TemporalMemoryBlock
 
 
-def _resolve_tracker(type_tag: str):
-    if type_tag == 'tracker.sdr':
-        from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
-        return SdrTracker
+def _resolve_temporal_memory(type_tag: str):
+    if type_tag == 'tm.general_feedback':
+        from hima.experiments.temporal_pooling.stp.general_feedback_tm import (
+            GeneralFeedbackTM
+        )
+        return GeneralFeedbackTM
+    if type_tag == 'tm.base':
+        from hima.experiments.temporal_pooling.stp.temporal_memory import (
+            TemporalMemory
+        )
+        return TemporalMemory
 
 
 def _resolve_spatial_pooler(type_tag: str):
@@ -83,6 +74,15 @@ def _resolve_spatial_temporal_pooler(type_tag: str):
     if type_tag == 'stp.base':
         from hima.experiments.temporal_pooling.stp.stp import SpatialTemporalPooler
         return SpatialTemporalPooler
+
+
+def _resolve_tracker(type_tag: str):
+    if type_tag == 'tracker.sdr':
+        from hima.experiments.temporal_pooling.stats.sdr_tracker import get_sdr_tracker
+        return get_sdr_tracker
+    if type_tag == 'tracker.tm':
+        from hima.experiments.temporal_pooling.stats.tm_tracker import get_tm_tracker
+        return get_tm_tracker
 
 
 def _resolve_dataset(type_tag):

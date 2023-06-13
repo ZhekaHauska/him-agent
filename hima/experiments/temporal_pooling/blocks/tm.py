@@ -5,10 +5,11 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from typing import Any
+
 from hima.common.config.base import extracted, resolve_absolute_quantity, TConfig
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.graph.block import Block
-from hima.experiments.temporal_pooling.stp.temporal_memory import TemporalMemory
 
 FEEDFORWARD = 'feedforward.sdr'
 ACTIVE_CELLS = 'active_cells.sdr'
@@ -20,11 +21,11 @@ class TemporalMemoryBlock(Block):
     family = 'temporal_memory'
     supported_streams = {FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS}
 
-    tm: TemporalMemory | TConfig
+    tm: Any | TConfig
 
     def __init__(self, tm: TConfig, **kwargs):
         super().__init__(**kwargs)
-        self.tm = tm
+        self.tm = self.model.config.config_resolver.resolve(tm, config_type=dict)
 
     def fit_dimensions(self) -> bool:
         # TODO: fix required streams
@@ -88,13 +89,12 @@ class TemporalMemoryBlock(Block):
                 learning_threshold_basal=resolve_absolute_quantity(
                     learning_threshold_basal, baseline=ff_sds.active_size
                 ),
-                activation_threshold_apical=1,
-                learning_threshold_apical=1,
+                activation_threshold_apical=activation_threshold_apical,
+                learning_threshold_apical=learning_threshold_apical,
                 max_synapses_per_segment_basal=resolve_absolute_quantity(
                     max_synapses_per_segment_basal, baseline=ff_sds.active_size
                 ),
-            ),
-            object_type_or_factory=TemporalMemory
+            )
         )
 
     def reset(self):
@@ -104,6 +104,7 @@ class TemporalMemoryBlock(Block):
     # =========== API ==========
     def compute(self, learn: bool = True):
         self.predict(learn)
+        self.set_predicted_cells()
         self.activate(learn)
 
     def predict(self, learn: bool = True):

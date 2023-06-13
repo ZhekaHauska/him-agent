@@ -29,28 +29,47 @@ class ObjectResolver:
         self.type_resolver = type_resolver
         self.config_resolver = config_resolver
 
+    def resolve_requirements(
+            self, _config: TConfig, *,
+            object_type_or_factory: TTypeOrFactory = None,
+            config_type: Type[dict | list] = dict,
+            **substitution_registry
+    ) -> tuple[TConfig, TTypeOrFactory]:
+        if not is_resolved_value(_config) or _config is None:
+            raise ValueError(f'{_config}')
+
+        if self.config_resolver is not None:
+            # we expect that referencing is enabled, so we need to resolve the config
+            _config = self.config_resolver.resolve(_config, config_type=config_type)
+
+        if config_type is dict:
+            # substitute inducible args using substitution registry
+            _config = resolve_init_params(_config, **substitution_registry)
+
+        if object_type_or_factory is None:
+            # have to resolve the type from the config as object type is not specified
+            _config, type_tag = extracted_type_tag(_config)
+            object_type_or_factory = self.type_resolver[type_tag]
+
+        return _config, object_type_or_factory
+
     def resolve(
-            self, config: TConfig, *,
+            self, _config: TConfig, *,
             object_type_or_factory: TTypeOrFactory = None,
             config_type: Type[dict | list] = dict,
             **substitution_registry
     ) -> Any:
-        if not is_resolved_value(config) or config is None:
-            return config
-
-        if self.config_resolver is not None:
-            # we expect that referencing is enabled, so we need to resolve the config
-            config = self.config_resolver.resolve(config, config_type=config_type)
-
-        if config_type is dict:
-            # substitute inducible args using substitution registry
-            config = resolve_init_params(config, **substitution_registry)
-
-        if object_type_or_factory is None:
-            # have to resolve the type from the config as object type is not specified
-            config, type_tag = extracted_type_tag(config)
-            object_type_or_factory = self.type_resolver[type_tag]
-
-        if config_type is list:
-            return object_type_or_factory(*config)
-        return object_type_or_factory(**config)
+        try:
+            _config, object_type_or_factory = self.resolve_requirements(
+                _config, object_type_or_factory=object_type_or_factory,
+                config_type=config_type, **substitution_registry
+            )
+            if config_type is list:
+                return object_type_or_factory(*_config)
+            return object_type_or_factory(**_config)
+        except (TypeError, AttributeError):
+            from pprint import pprint
+            pprint(_config)
+            pprint(substitution_registry)
+            print(f'object_type_or_factory: {object_type_or_factory} | config_type: {config_type}')
+            raise

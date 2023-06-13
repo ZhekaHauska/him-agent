@@ -117,3 +117,8 @@ class SdrTracker:
             self.aggregate_histogram, len(self.sequence),
             default=self.aggregate_histogram
         )
+
+
+def get_sdr_tracker(on: dict) -> SdrTracker:
+    tracked_stream = on['sdr_updated']
+    return SdrTracker(sds=tracked_stream.sds)

@@ -21,7 +21,7 @@ class SpatialPoolerBlock(Block):
 
     def __init__(self, sp: TConfig, **kwargs):
         super().__init__(**kwargs)
-        self.sp = sp
+        self.sp = self.model.config.config_resolver.resolve(sp, config_type=dict)
 
     def fit_dimensions(self) -> bool:
         output, feedback = self[self.OUTPUT], self[self.FEEDBACK]

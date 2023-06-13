@@ -32,7 +32,7 @@ class TextSequences:
         self.n_sequences = n_sequences
         dataset, alphabet_size = self._read_dataset(filepath)
         ds_size = len(dataset)
-        print(ds_size, alphabet_size)
+        print(f'Text dataset size: {ds_size} | Alphabet size: {alphabet_size}')
 
         self.encoder = global_config.resolve_object(encoder, n_values=alphabet_size)
         self.sds = self.encoder.output_sds

@@ -11,6 +11,7 @@ from htm.advanced.support.numpy_helpers import getAllCellsInColumns, argmaxMulti
 from htm.bindings.math import Random
 from htm.bindings.sdr import SDR
 
+from hima.common.utils import safe_divide
 from hima.modules.htm.connections import Connections
 from hima.modules.htm.temporal_memory import UINT_DTYPE, REAL64_DTYPE, EPS
 
@@ -118,9 +119,25 @@ class GeneralFeedbackTM:
         self.confidence_window = confidence_window
         self.anomaly = [0.0 for _ in range(self.anomaly_window)]
         self.confidence = [0.0 for _ in range(self.confidence_window)]
+        # running average anomaly [on window]
         self.anomaly_threshold = 0
+        # running average confidence [on window]
         self.confidence_threshold = 0
         self.mean_active_columns = 0
+        # NEW METRICS
+        self.n_columns = self.columns
+        self.n_cells = self.local_cells
+        self.n_predicted_cells = 0
+        self.n_predicted_columns = 0
+        self.column_prediction_volume = 0.
+        self.cell_prediction_volume = 0.
+        # miss rate, anomaly, false negative rate: 1 - recall
+        self.column_miss_rate = 0.
+        # positive predictive value: tp / (tp+fp)
+        self.column_precision = 0.
+        # false discovery rate: 1 - precision
+        self.column_imprecision = 0.
+        self.cell_imprecision = 0.
 
         if seed:
             self.rng = Random(seed)
@@ -241,6 +258,9 @@ class GeneralFeedbackTM:
         self.predicted_columns.sparse = np.unique(
             self._columns_for_cells(self.predicted_cells.sparse)
         )
+
+        self.n_predicted_columns = len(self.predicted_columns.sparse)
+        self.n_predicted_cells = len(self.predicted_cells.sparse)
 
         confidence = min(len(self.predicted_cells.sparse) / (self.mean_active_columns + EPS), 1.0)
         self.confidence_threshold = self.confidence_threshold + (
@@ -370,6 +390,26 @@ class GeneralFeedbackTM:
         )
         self.anomaly.append(anomaly)
         self.anomaly.pop(0)
+
+        n_tp_fn_columns = n_active_columns
+        n_tp_fp_columns = self.n_predicted_columns
+        n_fn_columns = len(bursting_columns)
+        n_tp_columns = n_tp_fn_columns - n_fn_columns
+        # recall: tp / tp+fp
+        # anomaly, miss rate: 1 - recall = fp / tp+fp
+        self.column_miss_rate = safe_divide(n_fn_columns, n_tp_fn_columns)
+        # precision
+        self.column_precision = safe_divide(n_tp_columns, n_tp_fp_columns)
+        self.column_imprecision = 1 - self.column_precision
+        # predicted / actual == prediction relative sparsity
+        self.column_prediction_volume = safe_divide(n_tp_fp_columns, n_tp_fn_columns)
+
+        n_tp_fp_cells = self.n_predicted_cells
+        n_tp_fn_cells = len(self.winner_cells.sparse)
+        n_tp_cells = len(self.correct_predicted_cells.sparse)
+        self.cell_imprecision = 1 - safe_divide(n_tp_cells, n_tp_fp_cells)
+        # predicted / actual == prediction relative sparsity
+        self.cell_prediction_volume = safe_divide(n_tp_fp_cells, n_tp_fn_cells)
 
     def _learn(
             self, connections, learning_segments, active_cells, winner_cells,

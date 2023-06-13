@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, TYPE_CHECKING
 
+from hima.common.config.base import TConfig
 from hima.experiments.temporal_pooling.graph.stream import Stream, SdrStream
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 
@@ -22,15 +23,18 @@ TRACKING_ENABLED = 'tracking_enabled'
 class TrackerBlock:
     model: Model
     name: str
+    # stream_name -> tracker.on_xxx
     track: dict
+    # each tracker listen special `enabled` stream, which controls trackers' activity
     enabled: Stream
 
-    _tracker: Any
+    # tracker object
+    tracker: Any
 
-    def __init__(self, model: Model, name: str, tracker, on: dict):
+    def __init__(self, model: Model, name: str, tracker: TConfig, on: dict[str, Stream]):
         self.model = model
         self.name = name
-        self._tracker = tracker
+        self.tracker = self.model.config.resolve_object(tracker, on=on, model=self.model)
         self.enabled = model.streams[TRACKING_ENABLED]
 
         self.track = {}
@@ -38,7 +42,7 @@ class TrackerBlock:
             # register general handler
             stream.track(tracker=self.handle)
             # save particular handler
-            handler = self.get_handler(self._tracker, handler_name)
+            handler = self.get_handler(self.tracker, handler_name)
             self.track[stream.name] = handler
 
     def handle(self, stream: Stream | SdrStream, new_value, reset: bool):

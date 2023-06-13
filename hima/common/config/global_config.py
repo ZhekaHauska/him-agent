@@ -41,13 +41,26 @@ class GlobalConfig:
         )
 
     def resolve_object(
-            self, config: TConfig, *,
+            self, _config: TConfig, *,
             object_type_or_factory: TTypeOrFactory = None,
             config_type: Type[dict | list] = dict,
             **substitution_registry
     ) -> Any:
         return self.object_resolver.resolve(
-            config,
+            _config,
+            object_type_or_factory=object_type_or_factory,
+            config_type=config_type,
+            **substitution_registry | self.global_substitution_registry
+        )
+
+    def resolve_object_requirements(
+            self, _config: TConfig, *,
+            object_type_or_factory: TTypeOrFactory = None,
+            config_type: Type[dict | list] = dict,
+            **substitution_registry
+    ) -> tuple[TConfig, TTypeOrFactory]:
+        return self.object_resolver.resolve_requirements(
+            _config,
             object_type_or_factory=object_type_or_factory,
             config_type=config_type,
             **substitution_registry | self.global_substitution_registry
