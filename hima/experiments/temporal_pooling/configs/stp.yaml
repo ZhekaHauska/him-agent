@@ -110,7 +110,7 @@ datas:
       _base_: $_base.encoder.random.fixed_sds
       sds: [ 600, 18 ]
   dvc_sequences:
-    _base: $_base.dataset.dvc_sequences
+    _base_: $_base.dataset.dvc_sequences
     sequential: True
   text_sequences:
     _base_: $_base.dataset.text_sequences
