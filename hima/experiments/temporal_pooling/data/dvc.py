@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import pickle
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -62,6 +63,8 @@ class DvcSequences:
 
     @staticmethod
     def _read_dataset(filepath: str) -> DvcSdrs:
+        filepath = Path(filepath)
+        filepath = filepath.expanduser()
         with open(filepath, mode='rb') as f:
             dataset = pickle.load(f)
         return DvcSdrs(**dataset)

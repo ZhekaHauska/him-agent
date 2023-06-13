@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import pickle
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -59,6 +60,8 @@ class TextSequences:
 
     @staticmethod
     def _read_dataset(filepath: str):
+        filepath = Path(filepath)
+        filepath = filepath.expanduser()
         with open(filepath, mode='r') as f:
             text = str.join('\n', f.readlines())
 

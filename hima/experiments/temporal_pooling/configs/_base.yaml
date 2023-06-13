@@ -33,7 +33,7 @@ dataset:
 
   dvc_sequences:
     _type_: ds.dvc_sequences
-    filepath: /Users/kuderov/data/outdoors_walking/sdrs.pkl
+    filepath: ~/data/outdoors_walking/sdrs.pkl
     n_sequences: ???
     sequence_length: ???
     seed: ???
@@ -43,7 +43,7 @@ dataset:
     _type_: ds.text_sequences
     global_config: ???
     seed: ???
-    filepath: /Users/kuderov/data/text/hima_all.txt
+    filepath: ~/data/text/hima_all.txt
     n_sequences: ???
     sequence_length: ???
     encoder: ???
