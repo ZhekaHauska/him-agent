@@ -47,9 +47,13 @@ def run_experiment(
     if args.wandb_entity:
         set_wandb_entity(args.wandb_entity)
 
-    if not args.multithread:
-        # prevent math parallelization as it usually only slows things down for us
-        set_single_threaded_math()
+    if args.math_threads > 0:
+        # manually set math parallelization as it usually only slows things down for us
+        set_number_cpu_threads_for_math(
+            num_threads=args.math_threads, cpu_affinity=args.cpu_affinity,
+            with_torch=args.with_torch
+        )
+        start_core = int(args.cpu_affinity.split(':')[0][1:])
 
     config_path = Path(args.config_filepath)
     config = read_config(config_path)
@@ -68,6 +72,7 @@ def run_experiment(
             n_agents=args.n_sweep_agents,
             sweep_run_params=run_params,
             run_arg_parser=arg_parser,
+            individual_cpu_cores=(start_core, args.ind_cpu_affinity)
         )
     else:
         # single run
@@ -103,9 +108,25 @@ def run_single_run_experiment(run_params: RunParams) -> None:
         runner.run()
 
 
-def set_single_threaded_math():
-    os.environ['OMP_NUM_THREADS'] = '1'
-    os.environ['MKL_NUM_THREADS'] = '1'
+def set_number_cpu_threads_for_math(
+        num_threads: int, cpu_affinity: str, with_torch: bool = False
+):
+    # Set cpu threads for math libraries
+    os.environ['OMP_NUM_THREADS'] = f'{num_threads}'
+    os.environ['OPENBLAS_NUM_THREADS'] = f'{num_threads}'
+    os.environ['MKL_NUM_THREADS'] = f'{num_threads}'
+    if with_torch:
+        import torch
+        torch.set_num_threads(num_threads)
+
+    # Math libraries also loves to set cpu affinity, restricting
+    # on which CPU cores your sub-processes can run... tell them explicitly to shut up
+    # Setting these variables doesn't affect the number of threads, btw
+    os.environ['OMP_PLACES'] = cpu_affinity
+    # duplicates OMP_PLACES
+    # os.environ['GOMP_CPU_AFFINITY'] = '{0-128}'
+    # dunno what does this mean
+    # os.environ['OPENBLAS_MAIN_FREE'] = '1'
 
 
 def default_run_arg_parser() -> ArgumentParser:
@@ -122,5 +143,9 @@ def default_run_arg_parser() -> ArgumentParser:
     parser.add_argument('--sweep_id', dest='wandb_sweep_id', default=None)
     parser.add_argument('-n', '--n_sweep_agents', type=int, default=None)
 
-    parser.add_argument('--multithread', dest='multithread', action='store_true', default=False)
+    parser.add_argument('--math_threads', dest='math_threads', type=int, default=1)
+    parser.add_argument('--with_torch', dest='with_torch', action='store_true', default=True)
+    parser.add_argument('--cpu_affinity', dest='cpu_affinity', default='{0:63}')
+    # set how many cores to fix after each process
+    parser.add_argument('--icpu_affinity', dest='ind_cpu_affinity', type=int, default=None)
     return parser

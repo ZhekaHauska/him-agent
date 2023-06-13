@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
 
 from argparse import ArgumentParser
 from copy import deepcopy
@@ -20,7 +21,8 @@ from hima.common.utils import isnone
 
 
 def run_sweep(
-    sweep_id: str, n_agents: int, sweep_run_params: RunParams, run_arg_parser: ArgumentParser
+        sweep_id: str, n_agents: int, sweep_run_params: RunParams, run_arg_parser: ArgumentParser,
+        individual_cpu_cores: tuple[int, int | None] = None
 ) -> None:
     """
     Manages a whole wandb sweep run.
@@ -32,7 +34,7 @@ def run_sweep(
     Finally, spawns the specified number of agents (=processes) and waits for their completion.
     """
     set_wandb_sweep_threading()
-    n_agents = isnone(n_agents, 1)
+    n_agents = n_agents if n_agents is not None else 1
 
     # read sweep config, extract command for parsing and wandb project for sweep initialization
     sweep_config, run_command, wandb_project = extracted(
@@ -61,11 +63,14 @@ def run_sweep(
             target=wandb.agent,
             kwargs={
                 'sweep_id': sweep_id,
-                'function': partial(_wandb_agent_entry_point, run_params=run_params),
+                'function': partial(
+                    _wandb_agent_entry_point, run_params=run_params,
+                    cpu_affinity=(i, ) + individual_cpu_cores
+                ),
                 'project': wandb_project,
             }
         )
-        for _ in range(n_agents)
+        for i in range(n_agents)
     ]
 
     print(f'==> Sweep {sweep_id}')
@@ -79,7 +84,9 @@ def run_sweep(
 
 
 # noinspection PyBroadException
-def _wandb_agent_entry_point(run_params: RunParams) -> None:
+def _wandb_agent_entry_point(
+        run_params: RunParams, cpu_affinity: tuple[int, int, int | None]
+) -> None:
     """
     This method is used by the spawned agents as a starting point for each single run job.
     """
@@ -87,6 +94,16 @@ def _wandb_agent_entry_point(run_params: RunParams) -> None:
     try:
         # we tell matplotlib to not touch GUI at all in each of the spawned sub-processes
         turn_off_gui_for_matplotlib()
+
+        i_agent, start_core, n_cores_per_agent = cpu_affinity
+        if n_cores_per_agent is not None:
+            # If setting cpu affinity via Math libs env variables doesn't work, use this
+            # It works only on linux, win, bsd, not on macos. But it won't raise any exception.
+            import os
+            start = start_core + i_agent * n_cores_per_agent
+            end = start + n_cores_per_agent - 1
+            cpu_list = f'{start}-{end}' if end > start else f'{start}'
+            os.system(f"taskset -p --cpu-list {cpu_list} {os.getpid()}")
 
         # we know here that it's a sweep-induced run and can expect single sweep run config
         # to be passed via wandb.config, hence we have to take it and apply all overrides;
