@@ -243,7 +243,6 @@ class TemporalMemory:
             predicted_cells = self.predictive_cells_apical
 
         self.predicted_cells.sparse = predicted_cells.astype(UINT_DTYPE)
-        # self._on_cells_predicted()
 
     def set_predicted_cells(self, cells_id):
         cells_id = cells_id + self.local_range[0]
@@ -338,14 +337,14 @@ class TemporalMemory:
                     for segment in basal_segments_to_punish:
                         self.basal_connections.adaptSegment(
                             segment, self.active_cells_context,
-                            0.0, self.predicted_segment_decrement_basal,
+                            -self.predicted_segment_decrement_basal, 0.0,
                             self.prune_zero_synapses, self.learning_threshold_basal
                         )
                 if self.active_cells_feedback.sparse.size > 0:
                     for segment in apical_segments_to_punish:
                         self.apical_connections.adaptSegment(
                             segment, self.active_cells_feedback,
-                            0.0, self.predicted_segment_decrement_apical,
+                            -self.predicted_segment_decrement_apical, 0.0,
                             self.prune_zero_synapses, self.learning_threshold_apical
                         )
 
@@ -386,9 +385,7 @@ class TemporalMemory:
         else:
             anomaly = 1.0
 
-        self.anomaly_threshold = (
-            self.anomaly_threshold + (anomaly - self.anomaly.popleft()) / self.anomaly_window
-        )
+        self.anomaly_threshold += (anomaly - self.anomaly.popleft()) / self.anomaly_window
         self.anomaly.append(anomaly)
 
         n_tp_fn_columns = n_active_columns

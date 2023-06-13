@@ -28,6 +28,7 @@ model:
       - TM.set_predicted_cells()
       - TM.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
+#  track_smoothing:
   track:
     - name: all_input
       tracker: trackers.sdr
@@ -57,8 +58,8 @@ trackers:
 
 
 track_streams:
-#  input.sdr:
-#    - cross.online.el
+  input.sdr:
+    - cross.online.el
   SE.output.sdr:
     - sdr
 #    - cross.online.el
@@ -67,7 +68,7 @@ track_streams:
 #    - cross.online.el
   TM.correctly_predicted_cells.sdr:
     - sdr
-#    - cross.online.el
+    - cross.online.el
 
 diff_stats:
   online_el:
@@ -189,11 +190,11 @@ blocks:
   TM:
     _type_: block.tm
     _base_: $_base.blocks.tm_like
-    tm: TM.general_feedback_tm
+    tm: TM.tm
   AA:
     _type_: block.tm
     _base_: $_base.blocks.tm_like
-    tm: TM.general_feedback_tm
+    tm: TM.tm
 
 stats_and_metrics:
   mae_normalization: no

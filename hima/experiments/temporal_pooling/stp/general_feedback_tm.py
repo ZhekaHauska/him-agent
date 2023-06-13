@@ -242,7 +242,6 @@ class GeneralFeedbackTM:
             predicted_cells = self.predictive_cells_apical
 
         self.predicted_cells.sparse = predicted_cells.astype(UINT_DTYPE)
-        # self._on_cells_predicted()
 
     def set_predicted_cells(self, cells_id):
         cells_id = cells_id + self.local_range[0]

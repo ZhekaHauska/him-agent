@@ -224,7 +224,10 @@ spatial_temporal_pooler:
 
 temporal_memory:
   default:
+    _base_: general_feedback_tm
     _type_: tm.base
+  general_feedback_tm:
+    _type_: tm.general_feedback
     seed: ???
     cells_per_column: ???
     activation_threshold_basal: ???
@@ -238,6 +241,3 @@ temporal_memory:
     feedback_cells: ???
     activation_threshold_apical: 1
     learning_threshold_apical: 1
-  general_feedback_tm:
-    _base_: default
-    _type_: tm.general_feedback
