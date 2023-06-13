@@ -191,6 +191,9 @@ class Model(Stretchable, Stateful, Node):
             on[handler_name] = stream
 
         if not valid:
+            # pop last as it's not valid, i.e. haven't been created
+            non_existed_streams.pop()
+
             # not all stream are valid ==> abort: don't create tracker and remove all new streams
             for stream_name in non_existed_streams:
                 self.streams.pop(stream_name)

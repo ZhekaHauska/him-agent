@@ -798,7 +798,7 @@ class TemporalMemory:
         :return: numpy array of columns id for every cell
         """
         if np.any(cells < self.local_range[0]) or np.any(cells >= self.local_range[1]):
-            raise ValueError('cells are not in bounds')
+            raise ValueError(f'{cells} cells are not in bounds')
 
         local_cells = cells - self.local_range[0]
         columns = local_cells // self.cells_per_column

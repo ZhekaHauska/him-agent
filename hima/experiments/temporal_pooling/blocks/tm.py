@@ -126,7 +126,7 @@ class TemporalMemoryBlock(Block):
         self.tm.activate_cells(learn=False)
 
     def activate(self, learn: bool = True):
-        self.set_active_columns()
+        self.tm.set_active_columns(self[FEEDFORWARD].get())
         self.tm.activate_cells(learn)
 
         self[ACTIVE_CELLS].set(self.tm.get_active_cells())

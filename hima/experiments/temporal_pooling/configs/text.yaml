@@ -4,10 +4,28 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 
 seed: 42
 iterate:
-  epochs: 2
-#  resample_frequency: 1
-  sequences: 10
-  elements: 10000
+  _base_: iterate_setups.synth
+
+iterate_setups:
+  synth:
+    epochs: 25
+    resample_frequency: 1
+    sequences: [20, 1]
+    elements: 200
+  dvc:
+    epochs: 25
+    resample_frequency: 1
+    sequences: [20, 1]
+    elements: 200
+  text:
+    epochs: 25
+    resample_frequency: 1
+    sequences: [20, 1]
+    elements: 200
+
+log_schedule:
+  epoch: 1
+  repeat: 5
 
 model:
   global_config: ???
@@ -20,9 +38,9 @@ model:
     - epoch_finished
     - tracking_enabled
   pipeline:
-    - input.sdr -> STE.feedforward.sdr
-    - STE.compute()
-    - STE.output.sdr -> TM.feedforward.sdr
+    - input.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - SE.output.sdr -> TM.feedforward.sdr
     - compute TM:
       - TM.predict()
       - TM.set_predicted_cells()
@@ -30,56 +48,47 @@ model:
     - TM.correctly_predicted_cells.sdr -> output.sdr
 #  track_smoothing:
   track:
-    - name: all_input
+    - name: input_all
       tracker: trackers.sdr
       on:
         sequence_started: epoch
         sdr_updated: input.sdr
         sequence_finished: epoch_finished
-    - name: seq_input
+    - name: input_seq
       tracker: trackers.sdr
       on:
         sequence_started: sequence_id
         sdr_updated: input.sdr
         sequence_finished: sequence_finished
-    - name: tm
+    - name: SE
+      tracker: trackers.sdr
+      on:
+        sequence_started: epoch
+        sdr_updated: SE.output.sdr
+        sequence_finished: epoch_finished
+    - name: TM
       tracker: trackers.tm
       on:
         activate: TM.active_cells.sdr
-
-
-trackers:
-  sdr:
-    _type_: tracker.sdr
-    on: ???
-  tm:
-    _type_: tracker.tm
-    on: ???
-
+    - name: AA
+      tracker: trackers.tm
+      on:
+        activate: AA.active_cells.sdr
 
 track_streams:
   input.sdr:
     - cross.online.el
-  SE.output.sdr:
-    - sdr
-#    - cross.online.el
   SA.output.sdr:
-    - sdr
-#    - cross.online.el
+    - cross.online.el
   TM.correctly_predicted_cells.sdr:
-    - sdr
     - cross.online.el
 
 diff_stats:
   online_el:
-    - gen.output/epoch/sim_mx_on_el
-    - SE.output/epoch/sim_mx_on_el
-    - SA.output/epoch/sim_mx_on_el
-    - TM.correctly_predicted_cells/epoch/sim_mx_on_el
-
-log_schedule:
-  epoch: 5
-  repeat: 5
+    - input.sdr/epoch/sim_mx_on_el
+    - SE.output.sdr/epoch/sim_mx_on_el
+    - SA.output.sdr/epoch/sim_mx_on_el
+    - TM.correctly_predicted_cells.sdr/epoch/sim_mx_on_el
 
 data: datas.text_sequences
 
@@ -194,7 +203,7 @@ blocks:
   AA:
     _type_: block.tm
     _base_: $_base.blocks.tm_like
-    tm: TM.tm
+    tm: AA.tm
 
 stats_and_metrics:
   mae_normalization: no
@@ -204,3 +213,11 @@ stats_and_metrics:
   pmf_decay: 1.
   loss_normalization: False
   loss_layer_discount: 0.75
+
+trackers:
+  sdr:
+    _type_: tracker.sdr
+    on: ???
+  tm:
+    _type_: tracker.tm
+    on: ???
