@@ -379,9 +379,7 @@ class PinballTest:
                     {
                         'main_metrics/surprise': np.array(surprises).mean(),
                         'main_metrics/total_surprise': total_surprise,
-                        'main_metrics/steps': steps,
-                        'connections/n_segments': self.hmm.connections.numSegments(),
-                        'connections/n_factors': self.hmm.factor_connections.numSegments()
+                        'main_metrics/steps': steps
                     }, step=i
                 )
 
@@ -432,130 +430,25 @@ class PinballTest:
                         )
 
                     # factors and segments
-                    n_segments = np.zeros(self.hmm.internal_cells)
-                    sum_factor_value = np.zeros(self.hmm.internal_cells)
-                    for cell in range(self.hmm.internal_cells):
-                        segments = self.hmm.connections.segmentsForCell(cell)
-
-                        if len(segments) > 0:
-                            value = self.hmm.log_factor_values_per_segment[segments].sum()
-                        else:
-                            value = 0
-
-                        n_segments[cell] = len(segments)
-                        sum_factor_value[cell] = value
-
-                    n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
-
-                    sum_factor_value = sum_factor_value.reshape((-1, self.hmm.cells_per_column)).T
+                    self.hmm.draw_factor_graph(
+                        f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
+                    )
 
                     self.logger.log(
                         {
-                            'factors/n_segments': wandb.Image(
-                                sns.heatmap(
-                                    n_segments
-                                )
+                            'factors/graph': wandb.Image(
+                                f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
                             )
                         },
                         step=i
                     )
-                    plt.close('all')
-                    self.logger.log(
-                        {
-                            'factors/sum_factor_value': wandb.Image(
-                                sns.heatmap(
-                                    sum_factor_value
-                                )
-                            )
-                        },
-                        step=i
-                    )
-                    plt.close('all')
 
-                    self.logger.log(
-                        {
-                            'factors/var_score': wandb.Image(
-                                sns.scatterplot(
-                                    self.hmm.var_score
-                                )
-                            )
-                        },
-                        step=i
-                    )
-                    plt.close('all')
-
-                    if len(self.hmm.segments_in_use) > 0:
-                        self.hmm.draw_factor_graph(
-                            f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
-                        )
-
-                        self.logger.log(
-                            {
-                                'factors/graph': wandb.Image(
-                                    f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
-                                )
-                            },
-                            step=i
-                        )
-
-                        self.logger.log(
-                            {
-                                'factors/segment_activity': wandb.Image(
-                                    sns.histplot(
-                                        self.hmm.segment_activity[
-                                            self.hmm.segments_in_use
-                                        ]
-                                    )
-                                ),
-                            },
-                            step=i
-                        )
-                        plt.close('all')
-
-                        self.logger.log(
-                            {
-                                'factors/segment_log_values': wandb.Image(
-                                    sns.histplot(
-                                        self.hmm.log_factor_values_per_segment[
-                                            self.hmm.segments_in_use
-                                        ]
-                                    )
-                                )
-                            },
-                            step=i
-                        )
-                        plt.close('all')
-
-                        self.logger.log(
-                            {
-                                'factors/segment_score': wandb.Image(
-                                    sns.histplot(
-                                        np.exp(
-                                            self.hmm.log_factor_values_per_segment[
-                                                self.hmm.segments_in_use
-                                            ]
-                                        ) * self.hmm.segment_activity[
-                                            self.hmm.segments_in_use
-                                        ]
-                                    )
-                                )
-                            },
-                            step=i
-                        )
-                        plt.close('all')
-
-                    if len(self.hmm.factor_score) > 0:
-                        self.logger.log(
-                            {
-                                'factors/score': wandb.Image(
-                                    sns.histplot(
-                                        self.hmm.factor_score
-                                    )
-                                ),
-                            },
-                            step=i
-                        )
-                        plt.close('all')
+                    for factors, type_ in zip(
+                            (self.hmm.context_factors, self.hmm.internal_factors),
+                            ('context', 'internal')
+                    ):
+                        if factors is not None:
+                            self.log_factors(factors, type_, i)
 
         if self.logger is not None and self.save_model:
             name = self.logger.name
@@ -573,6 +466,126 @@ class PinballTest:
         gray_im /= gray_im.max()
 
         return gray_im
+
+    def log_factors(self, factors, type_, step):
+        self.logger.log(
+            {
+                f'connections/n_{type_}_segments': factors.connections.numSegments(),
+                f'connections/n_{type_}_factors': factors.factor_connections.numSegments()
+            }, step=step
+        )
+
+        n_segments = np.zeros(self.hmm.internal_cells)
+        sum_factor_value = np.zeros(self.hmm.internal_cells)
+        for cell in range(self.hmm.internal_cells):
+            segments = factors.connections.segmentsForCell(cell)
+
+            if len(segments) > 0:
+                value = np.exp(factors.log_factor_values_per_segment[segments]).sum()
+            else:
+                value = 0
+
+            n_segments[cell] = len(segments)
+            sum_factor_value[cell] = value
+
+        n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
+
+        sum_factor_value = sum_factor_value.reshape((-1, self.hmm.cells_per_column)).T
+
+        self.logger.log(
+            {
+                f'{type_}_factors/n_segments': wandb.Image(
+                    sns.heatmap(
+                        n_segments
+                    )
+                )
+            },
+            step=step
+        )
+        plt.close('all')
+        self.logger.log(
+            {
+                f'{type_}_factors/sum_factor_value': wandb.Image(
+                    sns.heatmap(
+                        sum_factor_value
+                    )
+                )
+            },
+            step=step
+        )
+        plt.close('all')
+
+        self.logger.log(
+            {
+                f'{type_}_factors/var_score': wandb.Image(
+                    sns.scatterplot(
+                        factors.var_score
+                    )
+                )
+            },
+            step=step
+        )
+        plt.close('all')
+
+        if len(factors.segments_in_use) > 0:
+            self.logger.log(
+                {
+                    f'{type_}_factors/_segment_activity': wandb.Image(
+                        sns.histplot(
+                            factors.segment_activity[
+                                factors.segments_in_use
+                            ]
+                        )
+                    ),
+                },
+                step=step
+            )
+            plt.close('all')
+
+            self.logger.log(
+                {
+                    f'{type_}_factors/segment_log_values': wandb.Image(
+                        sns.histplot(
+                            factors.log_factor_values_per_segment[
+                                factors.segments_in_use
+                            ]
+                        )
+                    )
+                },
+                step=step
+            )
+            plt.close('all')
+
+            self.logger.log(
+                {
+                    f'{type_}_factors/segment_score': wandb.Image(
+                        sns.histplot(
+                            np.exp(
+                                factors.log_factor_values_per_segment[
+                                    factors.segments_in_use
+                                ]
+                            ) * factors.segment_activity[
+                                factors.segments_in_use
+                            ]
+                        )
+                    )
+                },
+                step=step
+            )
+            plt.close('all')
+
+            if len(factors.factor_score) > 0:
+                self.logger.log(
+                    {
+                        f'{type_}_factors/score': wandb.Image(
+                            sns.histplot(
+                                factors.factor_score
+                            )
+                        ),
+                    },
+                    step=step
+                )
+                plt.close('all')
 
 
 def main(config_path):
