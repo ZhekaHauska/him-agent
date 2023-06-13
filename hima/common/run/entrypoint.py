@@ -144,7 +144,7 @@ def default_run_arg_parser() -> ArgumentParser:
     parser.add_argument('-n', '--n_sweep_agents', type=int, default=None)
 
     parser.add_argument('--math_threads', dest='math_threads', type=int, default=1)
-    parser.add_argument('--with_torch', dest='with_torch', action='store_true', default=True)
+    parser.add_argument('--with_torch', dest='with_torch', action='store_true', default=False)
     parser.add_argument('--cpu_affinity', dest='cpu_affinity', default='{0:63}')
     # set how many cores to fix after each process
     parser.add_argument('--icpu_affinity', dest='ind_cpu_affinity', type=int, default=None)
