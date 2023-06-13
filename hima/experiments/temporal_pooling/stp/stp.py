@@ -217,10 +217,10 @@ class SpatialTemporalPooler:
         # Clip to remove zero-division
         recognition_trace_norm = recognition_trace.sum(axis=-1, keepdims=True)
 
-        empty = recognition_trace_norm.flatten() == .0
+        empty = recognition_trace_norm.flatten() < 1e-6
         if np.any(empty):
             # exclude neurons that have zero match
-            non_empty = np.nonzero(empty)
+            non_empty = np.logical_not(empty)
             neurons = neurons[non_empty]
             w = w[non_empty]
             recognition_trace = recognition_trace[non_empty]
@@ -353,7 +353,7 @@ class SpatialTemporalPooler:
 
     @property
     def ff_avg_active_size(self):
-        return self.feedforward_trace.sum() // self.n_computes
+        return max(self.feedforward_trace.sum() // self.n_computes, 1)
 
     @property
     def ff_avg_sparsity(self):
