@@ -15,11 +15,14 @@ FEEDFORWARD = 'feedforward.sdr'
 ACTIVE_CELLS = 'active_cells.sdr'
 PREDICTED_CELLS = 'predicted_cells.sdr'
 CORRECTLY_PREDICTED_CELLS = 'correctly_predicted_cells.sdr'
+WINNER_CELLS = 'winner_cells.sdr'
 
 
 class TemporalMemoryBlock(Block):
     family = 'temporal_memory'
-    supported_streams = {FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS}
+    supported_streams = {
+        FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
+    }
 
     tm: Any | TConfig
 
@@ -31,7 +34,9 @@ class TemporalMemoryBlock(Block):
         # TODO: fix required streams
 
         cells_per_column = self.tm['cells_per_column']
-        required_streams = {FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS}
+        required_streams = {
+            FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
+        }
 
         propagate_from, propagate_from_stream = None, None
         for short_name in self.supported_streams:
@@ -51,11 +56,11 @@ class TemporalMemoryBlock(Block):
                 continue
 
             if propagate_from == FEEDFORWARD and name in [
-                ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS
+                ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
             ]:
                 size = propagate_from_stream.sds.size * cells_per_column
             elif name == FEEDFORWARD and propagate_from in [
-                ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS
+                ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
             ]:
                 size = propagate_from_stream.sds.size // cells_per_column
             else:
@@ -131,3 +136,4 @@ class TemporalMemoryBlock(Block):
 
         self[ACTIVE_CELLS].set(self.tm.get_active_cells())
         self[CORRECTLY_PREDICTED_CELLS].set(self.tm.get_correctly_predicted_cells())
+        self[WINNER_CELLS].set(self.tm.get_winner_cells())

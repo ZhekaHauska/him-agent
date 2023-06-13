@@ -200,6 +200,9 @@ class TemporalMemory:
     def get_correctly_predicted_cells(self):
         return self.correct_predicted_cells.sparse - self.local_range[0]
 
+    def get_correctly_predicted_winner_cells(self):
+        return self.correct_predicted_winner_cells.sparse - self.local_range[0]
+
     # processing
     def activate_basal_dendrites(self, learn):
         (
@@ -375,6 +378,11 @@ class TemporalMemory:
         self.active_cells.sparse = np.unique(new_active_cells.astype(UINT_DTYPE))
         self.winner_cells.sparse = np.unique(new_winner_cells)
 
+        if not learn:
+            # TODO: correct way to say that it's just initialization
+            # NB: using learn for it is error prone
+            return
+
         # on cells activated
         n_active_columns = self.active_columns.sparse.size
         self.mean_active_columns = (
@@ -388,7 +396,7 @@ class TemporalMemory:
         self.anomaly_threshold += (anomaly - self.anomaly.popleft()) / self.anomaly_window
         self.anomaly.append(anomaly)
 
-        n_tp_fn_columns = n_active_columns
+        n_tp_fn_cells = n_tp_fn_columns = n_active_columns
         n_tp_fp_columns = self.n_predicted_columns
         n_fn_columns = len(bursting_columns)
         n_tp_columns = n_tp_fn_columns - n_fn_columns
@@ -402,7 +410,6 @@ class TemporalMemory:
         self.column_prediction_volume = safe_divide(n_tp_fp_columns, n_tp_fn_columns)
 
         n_tp_fp_cells = self.n_predicted_cells
-        n_tp_fn_cells = len(self.winner_cells.sparse)
         n_tp_cells = len(self.correct_predicted_cells.sparse)
         self.cell_imprecision = 1 - safe_divide(n_tp_cells, n_tp_fp_cells)
         # predicted / actual == prediction relative sparsity

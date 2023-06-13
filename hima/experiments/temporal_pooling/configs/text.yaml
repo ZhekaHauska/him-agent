@@ -98,7 +98,7 @@ datas:
     alphabet_size: 200
     encoder:
       _base_: $_base.encoder.random.fixed_sds
-      sds: [ 500, 10 ]
+      sds: [ 600, 18 ]
   dvc_sequences:
     _base: $_base.dataset.dvc_sequences
     sequential: True
@@ -106,7 +106,7 @@ datas:
     _base_: $_base.dataset.text_sequences
     encoder:
       _base_: $_base.encoder.random.fixed_sds
-      sds: [ 500, 10 ]
+      sds: [ 600, 18 ]
     sequential: True
 
 
@@ -152,7 +152,10 @@ TM:
     _base_: $_base.temporal_memory.default
     cells_per_column: 12
     activation_threshold_basal: .9
-    learning_threshold_basal: .7
+    learning_threshold_basal: .65
+    permanence_increment_basal: 0.1
+    permanence_decrement_basal: 0.01
+    predicted_segment_decrement_basal: 0.002
     max_synapses_per_segment_basal: 2.1
     max_segments_per_cell_basal: 16
 
@@ -167,9 +170,12 @@ AA:
   tm:
     _base_: $_base.temporal_memory.default
     cells_per_column: 1
+    permanence_increment_basal: 0.1
+    permanence_decrement_basal: 0.015
+    predicted_segment_decrement_basal: 0.004
     activation_threshold_basal: .8
     learning_threshold_basal: .6
-    max_synapses_per_segment_basal: 4.4
+    max_synapses_per_segment_basal: 4.2
     max_segments_per_cell_basal: 32
 
 SA:
@@ -190,7 +196,7 @@ blocks:
   SE:
     _type_: block.sp
     _base_: $_base.blocks.sp_like
-    output_sds: [500, 10]
+    output_sds: [600, 18]
     sp: SE.sp
   SA:
     _type_: block.sp
