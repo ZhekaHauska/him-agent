@@ -4,24 +4,34 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 
 seed: 42
 iterate:
-  _base_: iterate_setups.synth
+  _base_: iterate_setups.small_10k
 
 iterate_setups:
-  synth:
-    epochs: 25
+  small_10k:
+    epochs: 10
     resample_frequency: 1
-    sequences: [20, 1]
-    elements: 200
-  dvc:
-    epochs: 25
+    sequences: [10, 1]
+    elements: 100
+  default_100k:
+    epochs: 50
     resample_frequency: 1
-    sequences: [20, 1]
+    sequences: [10, 1]
     elements: 200
-  text:
-    epochs: 25
+  default_5x20k:
+    epochs: 50
+    resample_frequency: 5
+    sequences: [10, 1]
+    elements: 200
+  large_400k:
+    epochs: 100
     resample_frequency: 1
-    sequences: [20, 1]
-    elements: 200
+    sequences: [10, 1]
+    elements: 400
+  large_5x80k:
+    epochs: 100
+    resample_frequency: 5
+    sequences: [10, 1]
+    elements: 400
 
 log_schedule:
   epoch: 1
@@ -111,6 +121,7 @@ datas:
 
 
 models:
+  +SE+SA+AA: $_base.models.+SE+SA+AA
   +SE+AA: $_base.models.+SE+AA
   +AA: $_base.models.+AA
   +SE: $_base.models.+SE
@@ -150,12 +161,12 @@ TM:
     max_segments_per_cell_basal: 16
   tm:
     _base_: $_base.temporal_memory.default
-    cells_per_column: 12
+    cells_per_column: 8
     activation_threshold_basal: .9
-    learning_threshold_basal: .65
+    learning_threshold_basal: .7
     permanence_increment_basal: 0.1
-    permanence_decrement_basal: 0.01
-    predicted_segment_decrement_basal: 0.002
+    permanence_decrement_basal: 0.012
+    predicted_segment_decrement_basal: 0.004
     max_synapses_per_segment_basal: 2.1
     max_segments_per_cell_basal: 16
 
@@ -171,8 +182,8 @@ AA:
     _base_: $_base.temporal_memory.default
     cells_per_column: 1
     permanence_increment_basal: 0.1
-    permanence_decrement_basal: 0.015
-    predicted_segment_decrement_basal: 0.004
+    permanence_decrement_basal: 0.012
+    predicted_segment_decrement_basal: 0.006
     activation_threshold_basal: .8
     learning_threshold_basal: .6
     max_synapses_per_segment_basal: 4.2
@@ -182,12 +193,22 @@ SA:
   sp:
     _base_: $_base.spatial_pooler.default
     initial_rf_to_input_ratio: 8.0  #12?
-    max_rf_to_input_ratio: 1.25
+    max_rf_to_input_ratio: 1.75
+    learning_rate: 0.05
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 1.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: True
+  stp:
+    _base_: $_base.spatial_temporal_pooler.default
+    initial_rf_to_input_ratio: 4.0  #12?
+    max_rf_to_input_ratio: 1.5
     learning_rate: 0.02
     global_inhibition_strength: 0.2
     newborn_pruning_cycle: 1.0
     newborn_pruning_stages: 4
-    prune_grow_cycle: 4.0
+    prune_grow_cycle: 10.0
     adapt_to_ff_sparsity: False
 
 blocks:
@@ -227,3 +248,6 @@ trackers:
   tm:
     _type_: tracker.tm
     on: ???
+
+wandb_init:
+  _base_: $_base.wandb_init

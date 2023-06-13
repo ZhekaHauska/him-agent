@@ -55,8 +55,9 @@ class StpExperiment:
             config=config, config_path=config_path, type_resolver=StpLazyTypeResolver()
         )
         self.logger = self.config.resolve_object(
-            dict(config=config, log=log, project=project) | isnone(wandb_init, {}),
-            object_type_or_factory=get_logger
+            isnone(wandb_init, {}),
+            object_type_or_factory=get_logger,
+            config=config, log=log, project=project
         )
         self.seed = resolve_random_seed(seed)
 
@@ -113,6 +114,9 @@ class StpExperiment:
                     ws = stp.weights
                 print(np.mean(ws), np.std(ws))
                 print(np.round(np.histogram(ws, bins=20)[0] / stp.output_size, 1))
+
+        if self.logger:
+            self.logger.config.update(self.config.config, allow_val_change=True)
         self.print_with_timestamp('<==')
 
     @timed

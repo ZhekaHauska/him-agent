@@ -123,6 +123,28 @@ models:
         - TM.set_predicted_cells()
         - TM.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE+SA+AA:
+    - input.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - TM.predict()
+    - single SA step:
+      - TM.winner_cells.sdr -> SA.feedforward.sdr
+      - SA.compute()
+    - activate + predict by AA:
+      - SA.output.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.union_predicted_cells()
+    - learn TM:
+      - SE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.winner_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
   +SE+AA:
     - input.sdr -> SE.feedforward.sdr
     - SE.compute()
@@ -241,3 +263,11 @@ temporal_memory:
     feedback_cells: ???
     activation_threshold_apical: 1
     learning_threshold_apical: 1
+
+# additional params for wandb.init
+wandb_init:
+  log: ???
+  project: ???
+  config: ???
+  name: ...
+  group: ...
