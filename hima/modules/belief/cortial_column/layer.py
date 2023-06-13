@@ -243,8 +243,8 @@ class Layer:
         self.prediction_columns = None
 
     def predict(self, include_internal_connections=False):
-        # step 1: predict cells based on context
-        # block all messages except context messages
+        # step 1: predict cells based on context and external messages
+        # block internal messages
         # think about it as thalamus orchestration of the neocortex
         messages = np.zeros(self.total_cells)
         messages[
@@ -252,10 +252,15 @@ class Layer:
             self.context_cells_range[1]
         ] = self.context_messages
 
+        messages[
+            self.external_cells_range[0]:
+            self.external_cells_range[1]
+        ] = self.external_messages
+
         self._propagate_belief(messages)
 
         # step 2: update predictions based on internal and external connections
-        # block context messages
+        # block context and external messages
         if include_internal_connections:
             messages = np.zeros(self.total_cells)
 
@@ -263,11 +268,6 @@ class Layer:
                 self.internal_cells_range[0]:
                 self.internal_cells_range[1]
             ] = self.internal_forward_messages
-
-            messages[
-                self.external_cells_range[0]:
-                self.external_cells_range[1]
-            ] = self.external_messages
 
             self._propagate_belief(messages)
 
@@ -319,11 +319,19 @@ class Layer:
                 )
 
             # learn context segments
-            # use context cells to predict internal cells
+            # use context cells and external cells to predict internal cells
             self._learn(
-                (
-                    self.context_cells_range[0] +
-                    self.context_active_cells.sparse
+                np.concatenate(
+                    [
+                        (
+                            self.context_cells_range[0] +
+                            self.context_active_cells.sparse
+                        ),
+                        (
+                            self.external_cells_range[0] +
+                            self.external_active_cells.sparse
+                        )
+                    ]
                 ),
                 self.internal_active_cells.sparse,
                 self.context_lr,
@@ -331,18 +339,9 @@ class Layer:
             )
 
             # learn internal segments
-            # use internal and external cells to predict internal cells
             if self.enable_internal_connections:
                 self._learn(
-                    np.concatenate(
-                        [
-                            self.internal_active_cells.sparse,
-                            (
-                                self.external_cells_range[0] +
-                                self.external_active_cells.sparse
-                            )
-                        ]
-                    ),
+                    self.internal_active_cells.sparse,
                     self.internal_active_cells.sparse,
                     self.internal_lr
                 )
