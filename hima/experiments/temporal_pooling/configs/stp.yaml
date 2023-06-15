@@ -245,19 +245,23 @@ blocks:
     _type_: block.sp
     _base_: $_base.blocks.sp_like
     output_sds: [600, 18]
-    sp: SE.sp
+    sp:
+      _base_: SE.sp
   SA:
     _type_: block.sp
     _base_: $_base.blocks.sp_like
-    sp: SA.sp
+    sp:
+      _base_: SA.sp
   TM:
     _type_: block.tm
     _base_: $_base.blocks.tm_like
-    tm: TM.tm
+    tm:
+      _base_: TM.tm
   AA:
     _type_: block.tm
     _base_: $_base.blocks.tm_like
-    tm: AA.tm
+    tm:
+      _base_: AA.tm
   SE_DVS:
     _type_: block.sp
     _base_: $_base.blocks.sp_like
@@ -265,6 +269,7 @@ blocks:
     sp:
       _base_: SE_DVS.sp
       initial_rf_to_input_ratio: 4.0
+      max_rf_to_input_ratio: 2.0
       adapt_to_ff_sparsity: True
       learning_rate: 0.002
       newborn_pruning_cycle: 1.0
