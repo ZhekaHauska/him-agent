@@ -264,10 +264,7 @@ blocks:
     output_sds: [1200, 0.04]
     sp:
       _base_: SE_DVS.sp
-      max_pooling_window: 2
       initial_rf_to_input_ratio: 4.0
-      # max_rf_to_input_ratio: 1.2
-      newborn_pruning_cycle: 1.5
       adapt_to_ff_sparsity: True
 
 stats_and_metrics:

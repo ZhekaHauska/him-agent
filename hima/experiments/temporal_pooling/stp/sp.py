@@ -147,6 +147,7 @@ class SpatialPooler:
         winners = np.sort(
             np.argpartition(-overlaps, n_winners)[:n_winners]
         )
+        winners = winners[overlaps[winners] > 0]
 
         # update winners activation stats
         self.output_trace[winners] += 1
@@ -157,6 +158,9 @@ class SpatialPooler:
         return winners
 
     def learn(self, neurons: np.ndarray, match_input_mask: np.ndarray, modulation: float = 1.0):
+        if len(neurons) == 0:
+            return
+
         w = self.weights[neurons]
         mask = match_input_mask
         matched = mask.sum(axis=1, keepdims=True)
