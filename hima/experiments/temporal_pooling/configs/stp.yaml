@@ -121,6 +121,9 @@ datas:
 
 
 models:
+  +SE_DVS+SE+SA+AA: $_base.models.+SE_DVS+SE+SA+AA
+  +SE_DVS+SE+AA: $_base.models.+SE_DVS+SE+AA
+  +SE_DVS+SE: $_base.models.+SE_DVS+SE
   +SE+SA+AA: $_base.models.+SE+SA+AA
   +SE+AA: $_base.models.+SE+AA
   +AA: $_base.models.+AA
@@ -211,6 +214,30 @@ SA:
     prune_grow_cycle: 10.0
     adapt_to_ff_sparsity: False
 
+SE_DVS:
+  sp:
+    _base_: $_base.spatial_pooler.default
+    initial_rf_to_input_ratio: 8.0
+    max_rf_to_input_ratio: 1.5
+    learning_rate: 0.02
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+  stp:
+    _base_: $_base.spatial_temporal_pooler.default
+    max_pooling_window: 4
+    reset_potential_on_activation: True
+    initial_rf_to_input_ratio: 8.0
+    max_rf_to_input_ratio: 1.5
+    learning_rate: 0.001
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+
 blocks:
   concat:
     _type_: block.concatenator
@@ -231,6 +258,17 @@ blocks:
     _type_: block.tm
     _base_: $_base.blocks.tm_like
     tm: AA.tm
+  SE_DVS:
+    _type_: block.sp
+    _base_: $_base.blocks.sp_like
+    output_sds: [1200, 0.04]
+    sp:
+      _base_: SE_DVS.sp
+      max_pooling_window: 2
+      initial_rf_to_input_ratio: 4.0
+      # max_rf_to_input_ratio: 1.2
+      newborn_pruning_cycle: 1.5
+      adapt_to_ff_sparsity: True
 
 stats_and_metrics:
   mae_normalization: no

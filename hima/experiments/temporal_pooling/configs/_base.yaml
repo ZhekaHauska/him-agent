@@ -91,6 +91,62 @@ blocks:
     tm: ???
 
 models:
+  +SE_DVS+SE+SA+AA:
+    - input.sdr -> SE_DVS.feedforward.sdr
+    - SE_DVS.compute()
+    - SE_DVS.output.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - TM.predict()
+    - single SA step:
+      - TM.winner_cells.sdr -> SA.feedforward.sdr
+      - SA.compute()
+    - activate + predict by AA:
+      - SA.output.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.union_predicted_cells()
+    - learn TM:
+      - SE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.winner_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE_DVS+SE+AA:
+    - input.sdr -> SE_DVS.feedforward.sdr
+    - SE_DVS.compute()
+    - SE_DVS.output.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - TM.predict()
+    - activate + predict by AA:
+      - TM.predicted_cells.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.set_predicted_cells()
+    - learn TM:
+      - SE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.active_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE_DVS+SE:
+    - input.sdr -> SE_DVS.feedforward.sdr
+    - SE_DVS.compute()
+    - SE_DVS.output.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - SE.output.sdr -> TM.feedforward.sdr
+    - compute TM:
+        - TM.predict()
+        - TM.set_predicted_cells()
+        - TM.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
   +SE+SE+AA:
     - input.sdr -> SE'.feedforward.sdr
     - SE'.compute()
@@ -111,17 +167,6 @@ models:
     - learn AA:
       - TM.active_cells.sdr -> AA.feedforward.sdr
       - AA.activate()
-    - TM.correctly_predicted_cells.sdr -> output.sdr
-  +SE+SE:
-    - input.sdr -> SE'.feedforward.sdr
-    - SE'.compute()
-    - SE'.output.sdr -> STE.feedforward.sdr
-    - STE.compute()
-    - STE.output.sdr -> TM.feedforward.sdr
-    - compute TM:
-        - TM.predict()
-        - TM.set_predicted_cells()
-        - TM.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
   +SE+SA+AA:
     - input.sdr -> SE.feedforward.sdr
