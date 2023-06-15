@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import matplotlib.pyplot as plt
+
 from hima.modules.htm.connections import Connections
 from hima.modules.belief.utils import softmax, normalize
 from hima.modules.belief.utils import EPS, INT_TYPE, UINT_DTYPE, REAL_DTYPE, REAL64_DTYPE
@@ -11,6 +13,7 @@ from hima.modules.htm.spatial_pooler import SPEnsemble
 from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
 
+from scipy.stats import entropy
 import numpy as np
 import warnings
 import pygraphviz as pgv
@@ -400,6 +403,8 @@ class Layer:
         # step 2: update predictions based on internal and external connections
         # block context and external messages
         if include_internal_connections and self.enable_internal_connections:
+            previous_internal_messages = self.internal_forward_messages.copy()
+
             messages = np.zeros(self.total_cells)
 
             messages[
@@ -409,8 +414,15 @@ class Layer:
 
             self._propagate_belief(messages, self.internal_factors)
 
-        self.prediction_cells = self.internal_forward_messages.copy()
+            # consolidate previous and new messages
+            self.internal_forward_messages *= previous_internal_messages
+            self.internal_forward_messages = normalize(
+                self.internal_forward_messages.reshape(
+                    (self.n_hidden_vars, self.n_hidden_states)
+                )
+            ).flatten()
 
+        self.prediction_cells = self.internal_forward_messages.copy()
         self.prediction_columns = self.prediction_cells.reshape(
             (self.n_columns, self.cells_per_column)
         ).sum(axis=-1)
