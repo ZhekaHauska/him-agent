@@ -266,6 +266,8 @@ blocks:
       _base_: SE_DVS.sp
       initial_rf_to_input_ratio: 4.0
       adapt_to_ff_sparsity: True
+      learning_rate: 0.002
+      newborn_pruning_cycle: 1.0
 
 stats_and_metrics:
   mae_normalization: no
