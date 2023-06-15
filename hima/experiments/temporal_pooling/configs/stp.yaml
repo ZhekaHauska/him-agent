@@ -195,18 +195,18 @@ AA:
 SA:
   sp:
     _base_: $_base.spatial_pooler.default
-    initial_rf_to_input_ratio: 8.0  #12?
+    initial_rf_to_input_ratio: 4.0  #12?
     max_rf_to_input_ratio: 1.75
-    learning_rate: 0.05
+    learning_rate: 0.02
     global_inhibition_strength: 0.2
     newborn_pruning_cycle: 1.0
-    newborn_pruning_stages: 10
+    newborn_pruning_stages: 4
     prune_grow_cycle: 10.0
-    adapt_to_ff_sparsity: True
+    adapt_to_ff_sparsity: False
   stp:
     _base_: $_base.spatial_temporal_pooler.default
     initial_rf_to_input_ratio: 4.0  #12?
-    max_rf_to_input_ratio: 1.5
+    max_rf_to_input_ratio: 1.75
     learning_rate: 0.02
     global_inhibition_strength: 0.2
     newborn_pruning_cycle: 1.0
