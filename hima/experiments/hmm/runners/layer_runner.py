@@ -216,12 +216,6 @@ class PinballTest:
                     self.encoder.compute(self.sp_input, True, self.sp_output)
                     obs_state = self.sp_output.sparse
 
-                self.hmm.predict(include_internal_connections=(
-                        self.hmm.enable_internal_connections and self.internal_dependence_1step
-                    )
-                )
-                column_probs = self.hmm.prediction_columns
-
                 if self.actions is not None:
                     if steps == self.action_delay:
                         # choose between non-idle actions
@@ -243,6 +237,13 @@ class PinballTest:
                     action_probs = None
 
                 self.hmm.set_external_messages(action_probs)
+                self.hmm.predict(
+                    include_internal_connections=(
+                            self.hmm.enable_internal_connections and self.internal_dependence_1step
+                    )
+                )
+                column_probs = self.hmm.prediction_columns
+
                 self.hmm.observe(
                     obs_state,
                     learn=True
