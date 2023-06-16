@@ -273,6 +273,7 @@ class PinballTest:
 
                         if self.prediction_steps > 1:
                             back_up_massages = self.hmm.context_messages.copy()
+                            self.hmm.set_context_messages(self.hmm.prediction_cells)
 
                         if self.decoder is not None:
                             hidden_prediction = column_probs.reshape(self.obs_shape)
