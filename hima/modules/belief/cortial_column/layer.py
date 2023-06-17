@@ -941,7 +941,35 @@ class Layer:
 
         return np.array(new_segments, dtype=UINT_DTYPE)
 
-    def draw_factor_graph(self, path):
+    def draw_messages(self, messages, figsize=10, aspect_ratio=0.3, non_zero=True):
+        n_cols = int(np.ceil(np.sqrt(self.n_hidden_vars / aspect_ratio)))
+        n_rows = int(np.floor(n_cols * aspect_ratio))
+
+        fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(figsize, figsize*aspect_ratio))
+
+        for var in range(len(messages)):
+            message = messages[var]
+            if non_zero:
+                mask = message > 0
+                message = message[mask]
+                states = list(np.flatnonzero(mask))
+            else:
+                states = list(range(len(message)))
+
+            if n_rows == 1:
+                ax = axs[var]
+            else:
+                ax = axs[var // n_cols][var % n_cols]
+            ax.grid()
+            ax.set_ylim(0, 1)
+            ax.bar(
+                np.arange(len(message)),
+                message,
+                tick_label=states
+            )
+        return fig
+
+    def draw_factor_graph(self, path, show_messages=False):
         g = pgv.AGraph(strict=False, directed=False)
 
         for factors, type_ in zip(
@@ -960,6 +988,11 @@ class Layer:
                 )
                 cmap = colormap.Colormap().get_cmap_heat()
                 factor_score = n_segments / n_segments.max()
+                var_score = entropy(
+                    self.internal_forward_messages.reshape((self.n_hidden_vars, -1)),
+                    axis=-1
+                )
+                var_score /= (EPS + var_score.max())
 
                 for fid, score in zip(factors_in_use, factor_score):
                     var_next = factors.factor_connections.cellForSegment(fid)
@@ -973,6 +1006,16 @@ class Layer:
                         ),
                         color=line_color
                     )
+                    if show_messages:
+                        g.add_node(
+                            f'h{var_next}',
+                            style='filled',
+                            fillcolor=colormap.rgb2hex(
+                                *(cmap(int(255*var_score[var_next]))[:-1]),
+                                normalised=True
+                            ),
+                        )
+
                     g.add_edge(f'h{var_next}', f'f{fid}{type_}', color=line_color)
                     for var_prev in factors.factor_vars[fid]:
                         if var_prev < self.n_hidden_vars:
