@@ -3,7 +3,8 @@ cells_per_column: 10
 external_vars_boost: 0  # set it non-zero to shift probability of choosing external var for factor
 unused_vars_boost: 0
 
-inverse_temp: 1.0
+inverse_temp_context: 0.8
+inverse_temp_internal: 0.5
 
 cell_activation_threshold: 0.0001
 developmental_period: 3000

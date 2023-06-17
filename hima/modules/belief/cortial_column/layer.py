@@ -226,7 +226,8 @@ class Layer:
             n_external_states: int = 0,
             external_vars_boost: float = 0,
             unused_vars_boost: float = 0,
-            inverse_temp: float = 1.0,
+            inverse_temp_context: float = 1.0,
+            inverse_temp_internal: float = 1.0,
             cell_activation_threshold: float = EPS,
             developmental_period: int = 10000,
             enable_context_connections: bool = True,
@@ -280,7 +281,8 @@ class Layer:
             self.sp_input = None
             self.sp_output = None
 
-        self.inverse_temp = inverse_temp
+        self.inverse_temp_context = inverse_temp_context
+        self.inverse_temp_internal = inverse_temp_internal
 
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
@@ -398,7 +400,7 @@ class Layer:
                 self.external_cells_range[1]
             ] = self.external_messages
 
-            self._propagate_belief(messages, self.context_factors)
+            self._propagate_belief(messages, self.context_factors, self.inverse_temp_context)
 
         # step 2: update predictions based on internal and external connections
         # block context and external messages
@@ -412,7 +414,7 @@ class Layer:
                 self.internal_cells_range[1]
             ] = self.internal_forward_messages
 
-            self._propagate_belief(messages, self.internal_factors)
+            self._propagate_belief(messages, self.internal_factors, self.inverse_temp_internal)
 
             # consolidate previous and new messages
             self.internal_forward_messages *= previous_internal_messages
@@ -500,7 +502,7 @@ class Layer:
 
         self.timestep += 1
 
-    def _propagate_belief(self, messages: np.ndarray, factors: Factors):
+    def _propagate_belief(self, messages: np.ndarray, factors: Factors, inverse_temperature=1.0):
         """
         Calculate messages for internal cells based on messages from all cells.
             messages: should be an array of size total_cells
@@ -587,7 +589,7 @@ class Layer:
 
         log_next_messages -= means
 
-        log_next_messages = self.inverse_temp * log_next_messages
+        log_next_messages = inverse_temperature * log_next_messages
 
         next_messages = normalize(np.exp(log_next_messages))
 
