@@ -642,7 +642,7 @@ class Layer:
 
     def _calculate_learning_segments(self, active_cells, next_active_cells, factors: Factors):
         # determine which segments are learning and growing
-        active_cells_sdr = SDR(self.internal_cells)
+        active_cells_sdr = SDR(self.total_cells)
         active_cells_sdr.sparse = active_cells
 
         num_connected = factors.connections.computeActivity(
