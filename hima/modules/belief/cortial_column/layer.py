@@ -29,10 +29,12 @@ class Factors:
             n_hidden_vars,
             n_vars_per_factor,
             max_factors_per_var,
-            lr,
+            factor_lr,
+            synapse_lr,
             segment_activity_lr,
             var_score_lr,
             initial_log_factor_value,
+            initial_synapse_value,
             max_segments,
             fraction_of_segments_to_prune,
             max_segments_per_cell
@@ -43,9 +45,11 @@ class Factors:
         self.fraction_of_segments_to_prune = fraction_of_segments_to_prune
         self.max_segments = max_segments
         self.initial_log_factor_value = initial_log_factor_value
+        self.initial_synapse_value = initial_synapse_value
         self.var_score_lr = var_score_lr
         self.segment_activity_lr = segment_activity_lr
-        self.lr = lr
+        self.factor_lr = factor_lr
+        self.synapse_lr = synapse_lr
         self.max_factors_per_var = max_factors_per_var
         self.n_vars_per_factor = n_vars_per_factor
         self.n_cells = n_cells
@@ -68,6 +72,12 @@ class Factors:
             (max_segments, n_vars_per_factor),
             fill_value=-1,
             dtype=INT_TYPE
+        )
+
+        self.synapse_efficiency = np.full(
+            (max_segments, n_vars_per_factor),
+            fill_value=self.initial_synapse_value,
+            dtype=REAL64_DTYPE
         )
 
         self.log_factor_values_per_segment = np.full(
@@ -167,11 +177,11 @@ class Factors:
         w = self.log_factor_values_per_segment[segments_to_reinforce]
         self.log_factor_values_per_segment[
             segments_to_reinforce
-        ] += np.log1p(self.lr * (np.exp(-w) - 1))
+        ] += np.log1p(self.factor_lr * (np.exp(-w) - 1))
 
         self.log_factor_values_per_segment[
             segments_to_punish
-        ] += np.log1p(-self.lr)
+        ] += np.log1p(-self.factor_lr)
 
         active_segments = np.concatenate([segments_to_reinforce, segments_to_punish])
         non_active_segments = self.segments_in_use[
@@ -185,27 +195,46 @@ class Factors:
             non_active_segments
         ]
 
-        vars_for_correct_segments = np.unique(
-            self.receptive_fields[segments_to_reinforce].flatten() // self.n_hidden_states
-        )
-
-        vars_for_incorrect_segments = np.unique(
-            self.receptive_fields[segments_to_punish].flatten() // self.n_hidden_states
-        )
-
-        self.var_score[vars_for_correct_segments] += self.var_score_lr * (
-                1 - self.var_score[vars_for_correct_segments]
-        )
-
-        self.var_score[vars_for_incorrect_segments] -= self.var_score_lr * self.var_score[
-            vars_for_incorrect_segments
-        ]
-
         if prune:
             n_segments_to_prune = int(
                 self.fraction_of_segments_to_prune * len(self.segments_in_use)
             )
             self.prune_segments(n_segments_to_prune)
+
+    def update_synapses(
+            self,
+            active_segments,
+            active_cells
+    ):
+        active_synapses_dense = np.isin(
+            self.receptive_fields,
+            active_cells
+        ).astype(REAL64_DTYPE)
+
+        active_segments_dense = np.zeros(self.receptive_fields.shape[0])
+        active_segments_dense[active_segments] = 1
+
+        delta = active_segments_dense.reshape((-1, 1)) - self.synapse_efficiency
+        delta *= active_synapses_dense
+
+        self.synapse_efficiency += self.synapse_lr * delta
+
+    def calculate_segment_likelihood(
+            self,
+            messages,
+            active_segments
+    ):
+        messages = messages[self.receptive_fields[active_segments]]
+        synapse_efficiency = self.synapse_efficiency[active_segments]
+
+        dependent_part = messages * synapse_efficiency
+        dependent_part = np.log(np.mean(dependent_part, axis=-1))
+
+        independent_part = np.sum((1 - synapse_efficiency) * np.log(messages), axis=-1)
+
+        log_likelihood = dependent_part + independent_part
+
+        return log_likelihood
 
 
 class Layer:
@@ -400,7 +429,11 @@ class Layer:
                 self.external_cells_range[1]
             ] = self.external_messages
 
-            self._propagate_belief(messages, self.context_factors, self.inverse_temp_context)
+            self._propagate_belief(
+                messages,
+                self.context_factors,
+                self.inverse_temp_context,
+            )
 
         # step 2: update predictions based on internal and external connections
         # block context and external messages
@@ -414,7 +447,11 @@ class Layer:
                 self.internal_cells_range[1]
             ] = self.internal_forward_messages
 
-            self._propagate_belief(messages, self.internal_factors, self.inverse_temp_internal)
+            self._propagate_belief(
+                messages,
+                self.internal_factors,
+                self.inverse_temp_internal,
+            )
 
             # consolidate previous and new messages
             self.internal_forward_messages *= previous_internal_messages
@@ -502,7 +539,12 @@ class Layer:
 
         self.timestep += 1
 
-    def _propagate_belief(self, messages: np.ndarray, factors: Factors, inverse_temperature=1.0):
+    def _propagate_belief(
+            self,
+            messages: np.ndarray,
+            factors: Factors,
+            inverse_temperature=1.0,
+    ):
         """
         Calculate messages for internal cells based on messages from all cells.
             messages: should be an array of size total_cells
@@ -535,8 +577,10 @@ class Layer:
             factors_for_active_segments = factors.factor_for_segment[active_segments]
             log_factor_value = factors.log_factor_values_per_segment[active_segments]
 
-            likelihood = messages[factors.receptive_fields[active_segments]]
-            log_likelihood = np.sum(np.log(likelihood), axis=-1)
+            log_likelihood = factors.calculate_segment_likelihood(
+                messages,
+                active_segments
+            )
 
             log_excitation_per_segment = log_likelihood + log_factor_value
 
@@ -639,6 +683,34 @@ class Layer:
             segments_to_punish,
             prune=prune_segments,
         )
+
+        factors.update_synapses(
+            np.concatenate(
+                [
+                    segments_to_reinforce,
+                    new_segments,
+                    segments_to_punish
+                ]
+            ),
+            active_cells
+        )
+
+        # update var score
+        vars_for_correct_segments = np.unique(
+            self._vars_for_cells(factors.receptive_fields[segments_to_reinforce].flatten())
+        )
+
+        vars_for_incorrect_segments = np.unique(
+            self._vars_for_cells(factors.receptive_fields[segments_to_punish].flatten())
+        )
+
+        factors.var_score[vars_for_correct_segments] += factors.var_score_lr * (
+                1 - factors.var_score[vars_for_correct_segments]
+        )
+
+        factors.var_score[vars_for_incorrect_segments] -= factors.var_score_lr * factors.var_score[
+            vars_for_incorrect_segments
+        ]
 
     def _calculate_learning_segments(self, active_cells, next_active_cells, factors: Factors):
         # determine which segments are learning and growing
