@@ -3,8 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-
-from hima.modules.belief.cortial_column.layer import Layer
+from hima.modules.belief.cortial_column.layer import Layer, REAL_DTYPE, UINT_DTYPE
+from hima.modules.belief.cortial_column.input_layer import Encoder, Decoder
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
 from htm.bindings.sdr import SDR
 from hima.experiments.hmm.runners.utils import get_surprise
@@ -44,16 +44,18 @@ class PinballTest:
         self.env = Pinball(**conf['env'])
 
         obs = self.env.obs()
-        self.obs_shape = (obs.shape[0], obs.shape[1])
+        self.raw_obs_shape = (obs.shape[0], obs.shape[1])
 
         self.encoder_type = conf['run']['encoder']
         sp_conf = conf.get('sp', None)
+        input_layer_conf = conf.get('input_layer', None)
+        decoder_conf = conf.get('decoder', None)
 
         if self.encoder_type == 'one_sp':
             assert sp_conf is not None
             sp_conf['seed'] = self.seed
             self.encoder = HtmSpatialPooler(
-                self.obs_shape,
+                self.raw_obs_shape,
                 **sp_conf
             )
             self.obs_shape = self.encoder.getColumnDimensions()
@@ -66,11 +68,10 @@ class PinballTest:
             self.n_obs_states = 1
 
             self.surprise_mode = 'bernoulli'
-
         elif self.encoder_type == 'sp_ensemble':
             assert sp_conf is not None
             sp_conf['seed'] = self.seed
-            sp_conf['inputDimensions'] = list(self.obs_shape)
+            sp_conf['inputDimensions'] = list(self.raw_obs_shape)
             n_sp = sp_conf.pop('n_sp')
             self.encoder = SPEnsemble(
                 n_sp,
@@ -81,20 +82,53 @@ class PinballTest:
             self.sp_input = SDR(self.encoder.getNumInputs())
             self.sp_output = SDR(self.encoder.getNumColumns())
 
-            self.decoder = SPDecoder(self.encoder)
+            if decoder_conf is not None:
+                decoder_conf['n_context_vars'] = n_sp
+                decoder_conf['n_context_states'] = shape[0]*shape[1]
+                decoder_conf['n_obs_vars'] = self.raw_obs_shape[0] * self.raw_obs_shape[1]
+                decoder_conf['n_obs_states'] = 2
+                self.decoder = Decoder(**decoder_conf)
+            else:
+                self.decoder = SPDecoder(self.encoder)
 
             self.n_obs_vars = self.encoder.n_sp
             self.n_obs_states = self.encoder.sps[0].getNumColumns()
 
             self.surprise_mode = 'categorical'
+        elif self.encoder_type == 'input_layer':
+            assert input_layer_conf is not None
+            encoder_conf = input_layer_conf.get('encoder')
+            decoder_conf = input_layer_conf.get('decoder')
+            encoder_conf['seed'] = self.seed
+            decoder_conf['seed'] = self.seed
+
+            encoder_conf['n_context_vars'] = self.raw_obs_shape[0] * self.raw_obs_shape[1]
+            encoder_conf['n_context_states'] = 2
+
+            self.encoder = Encoder(**encoder_conf)
+            self.n_obs_vars = self.encoder.n_hidden_vars
+            self.n_obs_states = self.encoder.n_hidden_states
+            self.obs_shape = (self.n_obs_vars, self.n_obs_states)
+
+            decoder_conf['n_context_vars'] = self.encoder.n_hidden_vars
+            decoder_conf['n_context_states'] = self.encoder.n_hidden_states
+            decoder_conf['n_obs_vars'] = self.encoder.n_context_vars
+            decoder_conf['n_obs_states'] = self.encoder.n_context_states
+
+            self.decoder = Decoder(**decoder_conf)
+
+            self.surprise_mode = 'categorical'
+            self.sp_input = None
+            self.sp_output = None
         else:
             self.encoder = None
             self.sp_input = None
             self.sp_output = None
             self.decoder = None
 
-            self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
+            self.n_obs_vars = self.raw_obs_shape[0] * self.raw_obs_shape[1]
             self.n_obs_states = 1
+            self.obs_shape = self.raw_obs_shape
 
             self.surprise_mode = 'bernoulli'
 
@@ -209,12 +243,7 @@ class PinballTest:
                 diff = np.abs(raw_im - prev_im) >= thresh
                 prev_im = raw_im.copy()
 
-                obs_state = np.flatnonzero(diff)
-
-                if self.encoder is not None:
-                    self.sp_input.sparse = obs_state
-                    self.encoder.compute(self.sp_input, True, self.sp_output)
-                    obs_state = self.sp_output.sparse
+                raw_obs_state = np.flatnonzero(diff)
 
                 if self.actions is not None:
                     if steps == self.action_delay:
@@ -244,6 +273,42 @@ class PinballTest:
                 )
                 column_probs = self.hmm.prediction_columns
 
+                if self.decoder is not None:
+                    if type(self.decoder) is SPDecoder:
+                        decoded_probs = self.decoder.decode(column_probs, learn=True)
+                    else:
+                        dense_raw_obs = np.asarray(diff, dtype=REAL_DTYPE).flatten()
+                        observation = np.arange(
+                            0,
+                            self.decoder.n_obs_vars * self.decoder.n_obs_states,
+                            self.decoder.n_obs_states
+                        ) + dense_raw_obs
+
+                        decoded_probs = self.decoder.decode(
+                            column_probs, observation.astype(UINT_DTYPE)
+                        )
+
+                        decoded_probs = decoded_probs[1::2]
+
+                if self.encoder is not None:
+                    if self.encoder_type == 'input_layer':
+                        dense_raw_obs = np.asarray(diff, dtype=REAL_DTYPE).flatten()
+                        observation = np.zeros(self.encoder.context_input_size)
+                        observation[1::2] = dense_raw_obs
+                        observation[::2] = 1 - observation[1::2]
+
+                        obs_state = self.encoder.encode(
+                            observation,
+                            # column_probs,
+                            # decoded_probs
+                        )
+                    else:
+                        self.sp_input.sparse = raw_obs_state
+                        self.encoder.compute(self.sp_input, True, self.sp_output)
+                        obs_state = self.sp_output.sparse
+                else:
+                    obs_state = raw_obs_state
+
                 self.hmm.observe(
                     obs_state,
                     learn=True
@@ -259,10 +324,7 @@ class PinballTest:
                     total_surprise += surprise
 
                     if self.decoder is not None:
-                        decoded_probs = self.decoder.decode(column_probs, update=True)
-
-                        surprise_decoder = get_surprise(decoded_probs, self.sp_input.sparse)
-
+                        surprise_decoder = get_surprise(decoded_probs, raw_obs_state)
                         surprises_decoder.append(surprise_decoder)
                         total_surprise_decoder += surprise_decoder
 
@@ -277,8 +339,12 @@ class PinballTest:
 
                         if self.decoder is not None:
                             hidden_prediction = column_probs.reshape(self.obs_shape)
-                            decoded_probs = self.decoder.decode(column_probs, update=True)
-                            decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
+                            decoded_probs = self.decoder.decode(column_probs, learn=False)
+
+                            if type(self.decoder) is Decoder:
+                                decoded_probs = decoded_probs[1::2]
+
+                            decoded_probs = decoded_probs.reshape(self.raw_obs_shape)
                         else:
                             decoded_probs = column_probs.reshape(self.obs_shape)
                             hidden_prediction = None
@@ -301,9 +367,13 @@ class PinballTest:
 
                             if self.decoder is not None:
                                 hidden_prediction = column_probs.reshape(self.obs_shape)
-                                decoded_probs = self.decoder.decode(column_probs)
+                                decoded_probs = self.decoder.decode(column_probs, learn=False)
+
+                                if type(self.decoder) is Decoder:
+                                    decoded_probs = decoded_probs[1::2]
+
                                 decoded_probs = decoded_probs.reshape(
-                                    self.encoder.getInputDimensions()
+                                    self.raw_obs_shape
                                 )
                             else:
                                 decoded_probs = column_probs.reshape(self.obs_shape)
@@ -342,11 +412,11 @@ class PinballTest:
                         ):
                             surp_obs = get_surprise(
                                 p_obs.flatten(),
-                                self.sp_input.sparse
+                                raw_obs_state
                             )
                             surp_hid = get_surprise(
                                 p_hid.flatten(),
-                                self.sp_output.sparse,
+                                obs_state,
                                 mode=self.surprise_mode
                             )
                             n_step_surprise_obs[s].append(surp_obs)
@@ -365,7 +435,13 @@ class PinballTest:
 
                 steps += 1
                 prev_diff = diff.copy()
-                prev_latent = self.sp_output.dense.reshape(self.obs_shape).copy()
+
+                if self.encoder is not None:
+                    prev_latent = np.zeros(self.obs_shape).flatten()
+                    prev_latent[obs_state] = 1
+                    prev_latent = prev_latent.reshape(self.obs_shape)
+                else:
+                    prev_latent = None
 
                 if steps >= self.max_steps:
                     if writer_raw is not None:
@@ -576,18 +652,18 @@ class PinballTest:
             )
             plt.close('all')
 
-            if len(factors.factor_score) > 0:
-                self.logger.log(
-                    {
-                        f'{type_}_factors/score': wandb.Image(
-                            sns.histplot(
-                                factors.factor_score
-                            )
-                        ),
-                    },
-                    step=step
-                )
-                plt.close('all')
+            # if len(factors.factor_score) > 0:
+            #     self.logger.log(
+            #         {
+            #             f'{type_}_factors/score': wandb.Image(
+            #                 sns.histplot(
+            #                     factors.factor_score
+            #                 )
+            #             ),
+            #         },
+            #         step=step
+            #     )
+            #     plt.close('all')
 
 
 def main(config_path):
@@ -609,6 +685,16 @@ def main(config_path):
     if sp_conf is not None:
         with open(sp_conf, 'r') as file:
             config['sp'] = yaml.load(file, Loader=yaml.Loader)
+
+    input_layer_conf = config['run'].get('input_layer_conf', None)
+    if input_layer_conf is not None:
+        with open(input_layer_conf, 'r') as file:
+            config['input_layer'] = yaml.load(file, Loader=yaml.Loader)
+
+    decoder_conf = config['run'].get('decoder_conf', None)
+    if decoder_conf is not None:
+        with open(decoder_conf, 'r') as file:
+            config['decoder'] = yaml.load(file, Loader=yaml.Loader)
 
     for arg in sys.argv[2:]:
         key, value = arg.split('=')

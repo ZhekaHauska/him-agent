@@ -18,10 +18,12 @@ internal_dependence_1step: False
 #action_delay: 5  # frames to wait before acting
 #action_observable: True
 
-# sp_ensemble | one_sp | null
+# input_layer | sp_ensemble | one_sp | null
 encoder: sp_ensemble
 
 experiment: pinball
+# input_layer_conf: 'configs/input_layer/pinball.yaml'
+# decoder_conf: 'configs/decoder/pinball.yaml'
 sp_conf: 'configs/sp/ensemble.yaml'
 hmm_conf: 'configs/layer/pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'

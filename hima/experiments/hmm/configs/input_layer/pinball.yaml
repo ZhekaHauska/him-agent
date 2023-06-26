@@ -1,0 +1,51 @@
+encoder:
+  n_obs_vars: 5
+  n_obs_states: 36
+  cells_per_column: 1
+
+  external_vars_boost: 0  # set it non-zero to shift probability of choosing external var for factor
+  unused_vars_boost: 0
+
+  inverse_temp_context: 0.5
+
+  cell_activation_threshold: 0.0001
+  developmental_period: 3000
+
+  enable_internal_connections: False
+  enable_context_connections: True
+
+  context_factors_conf:
+    n_vars_per_factor: 10
+    max_factors_per_var: 1
+    lr: 0.001
+    segment_activity_lr: 0.001
+    var_score_lr: 0.001
+    initial_log_factor_value: 0
+    max_segments: 5000
+    fraction_of_segments_to_prune: 0.0
+    max_segments_per_cell: 255
+
+decoder:
+  cells_per_column: 1
+
+  external_vars_boost: 0  # set it non-zero to shift probability of choosing external var for factor
+  unused_vars_boost: 0
+
+  inverse_temp_context: 0.5
+
+  cell_activation_threshold: 0.0001
+  developmental_period: 3000
+
+  enable_internal_connections: False
+  enable_context_connections: True
+
+  context_factors_conf:
+    n_vars_per_factor: 3
+    max_factors_per_var: 1
+    lr: 0.001
+    segment_activity_lr: 0.001
+    var_score_lr: 0.001
+    initial_log_factor_value: 0
+    max_segments: 5000
+    fraction_of_segments_to_prune: 0.0
+    max_segments_per_cell: 255

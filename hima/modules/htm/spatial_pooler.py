@@ -1063,10 +1063,10 @@ class SPDecoder:
         self.mode = mode
         self.receptive_fields = np.zeros((self.sp.getNumColumns(), self.sp.getNumInputs()))
 
-    def decode(self, cell_probs, update=False):
+    def decode(self, cell_probs, learn=False):
         assert cell_probs.size == self.sp.getNumColumns()
 
-        if update:
+        if learn:
             self._update_receptive_fields()
 
         if self.mode == 'mean':
