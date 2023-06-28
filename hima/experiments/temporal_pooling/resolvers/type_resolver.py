@@ -110,4 +110,14 @@ def _resolve_runner(type_tag: str):
     if type_tag == 'stp_experiment.synthetic_sequences':
         from hima.experiments.temporal_pooling.test_stp import StpExperiment
         return StpExperiment
+    if type_tag == 'stp_experiment.sp_attractor.mnist':
+        from hima.experiments.temporal_pooling.test_attractor_mnist import (
+            SpAttractorMnistExperiment
+        )
+        return SpAttractorMnistExperiment
+    if type_tag == 'stp_experiment.sp_attractor.rbits':
+        from hima.experiments.temporal_pooling.test_attractor_rbits import (
+            SpAttractorRandBitsExperiment
+        )
+        return SpAttractorRandBitsExperiment
 

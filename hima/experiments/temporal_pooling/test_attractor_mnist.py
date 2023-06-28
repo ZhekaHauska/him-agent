@@ -3,89 +3,110 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from pathlib import Path
 
 import numpy as np
-import pandas as pd
-import seaborn as sns
-import wandb
-from matplotlib import pyplot as plt
-from minisom import MiniSom
 
+from hima.common.config.base import TConfig
+from hima.common.config.global_config import GlobalConfig
+from hima.common.lazy_imports import lazy_import
+from hima.common.run.wandb import get_logger
 from hima.common.sds import Sds
+from hima.common.timer import timer, print_with_timestamp
+from hima.common.utils import isnone
 from hima.envs.mnist import MNISTEnv
-from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
+from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
+from hima.experiments.temporal_pooling.utils import resolve_random_seed
+
+wandb = lazy_import('wandb')
+plt = lazy_import('matplotlib.pyplot')
+sns = lazy_import('seaborn')
+MiniSom = lazy_import('minisom')
+pd = lazy_import('pandas')
+
+
+class IterationConfig:
+    n_episodes: int
+    max_steps: int
+    log_schedule: int
+
+    def __init__(self, n_episodes: int, max_steps: int, log_schedule: int, ):
+        self.n_episodes = n_episodes
+        self.max_steps = max_steps
+        self.log_schedule = log_schedule
+
+
+class TestingConfig:
+    attractor_steps: int
+    n_trajectories: int
+    learn_attractor_in_loop: bool
+    pairs_per_trajectory: int
+
+    def __init__(
+            self, attractor_steps: int, n_trajectories: int, learn_attractor_in_loop: bool,
+            pairs_per_trajectory: int,
+    ):
+        self.attractor_steps = attractor_steps
+        self.n_trajectories = n_trajectories
+        self.learn_attractor_in_loop = learn_attractor_in_loop
+        self.pairs_per_trajectory = pairs_per_trajectory
 
 
 class SpAttractorMnistExperiment:
-    def __init__(self, logger, conf):
-        self.seed = conf['run']['seed']
-        self.logger = logger
+    iterate: IterationConfig
+    testing: TestingConfig
+
+    def __init__(
+            self, config: TConfig, config_path: Path,
+            log: bool, seed: int,
+            iterate: TConfig, testing: TConfig,
+            encoder: TConfig, attractor: TConfig,
+            # data: TConfig,
+            # model: TConfig,
+            # track_streams: TConfig, stats_and_metrics: TConfig, diff_stats: TConfig,
+            # log_schedule: TConfig,
+            project: str = None,
+            wandb_init: TConfig = None,
+            **_
+    ):
+        self.init_time = timer()
+        self.print_with_timestamp('==> Init')
+
+        self.config = GlobalConfig(
+            config=config, config_path=config_path, type_resolver=StpLazyTypeResolver()
+        )
+        self.logger = self.config.resolve_object(
+            isnone(wandb_init, {}),
+            object_type_or_factory=get_logger,
+            config=config, log=log, project=project
+        )
+        self.seed = resolve_random_seed(seed)
 
         self.env = MNISTEnv(seed=self.seed)
 
         input_sds = Sds(shape=self.env.obs_shape, sparsity=1.0)
+        self.encoder = self.config.resolve_object(encoder, feedforward_sds=input_sds)
 
-        if conf.get('encoder') is not None:
-            conf['encoder']['seed'] = self.seed
-            conf['encoder']['feedforward_sds'] = input_sds
-            conf['encoder']['output_sds'] = Sds(conf['encoder']['output_sds'])
-            self.encoder = SpatialPooler(
-                **conf['encoder']
-            )
+        if self.encoder is not None:
+            input_sds = self.encoder.output_sds
+        self.attractor = self.config.resolve_object(attractor, feedforward_sds=input_sds)
 
-            conf['attractor']['adapt_to_ff_sparsity'] = False
-            attractor_sds = self.encoder.output_sds
-        else:
-            conf['attractor']['adapt_to_ff_sparsity'] = True
-            attractor_sds = input_sds
-            self.encoder = None
-
-        conf['attractor']['feedforward_sds'] = attractor_sds
-        conf['attractor']['output_sds'] = Sds(conf['attractor']['output_sds'])
-        conf['attractor']['seed'] = self.seed
-        self.attractor = SpatialPooler(
-            **conf['attractor']
+        self.iterate = self.config.resolve_object(
+            iterate, object_type_or_factory=IterationConfig, max_steps=self.env.size
         )
+        self.testing = self.config.resolve_object(testing, object_type_or_factory=TestingConfig)
 
-        if conf['run'].get('max_steps') is not None:
-            self.max_steps = conf['run']['max_steps']
-        else:
-            self.max_steps = self.env.size
-
-        self.n_episodes = conf['run']['n_episodes']
-        self.log_update_rate = conf['run'].get('update_rate')
-        self.n_trajectories = conf['run'].get('n_trajectories', 0)
-        self.attractor_steps = conf['run'].get('attractor_steps', 0)
-        self.learn_attractor = conf['run'].get('learn_attractor_in_loop', False)
-        self.pairs_per_trajectory = conf['run'].get('pairs_per_trajectory', 1)
-
-        self.som_iterations = conf['run'].get('som_iterations', 100)
-        self.som_learning_rate = conf['run'].get('som_learning_rate', 0.5)
-        self.som_sigma = conf['run'].get('som_sigma', 1.0)
-        self.som_size = conf['run'].get('som_size', 100)
-
-        if self.logger is not None:
-            self.logger.define_metric(
-                name='main_metrics/relative_similarity',
-                step_metric='iteration'
-            )
-            self.logger.define_metric(
-                name='convergence/io_hist',
-                step_metric='iteration'
-            )
-            self.logger.define_metric(
-                name='som/clusters',
-                step_metric='iteration'
-            )
-
-            for cls in range(10):
-                self.logger.define_metric(
-                    name=f'relative_similarity/class {cls}',
-                    step_metric='iteration'
-                )
+        # self.som_iterations = conf['run'].get('som_iterations', 100)
+        # self.som_learning_rate = conf['run'].get('som_learning_rate', 0.5)
+        # self.som_sigma = conf['run'].get('som_sigma', 1.0)
+        # self.som_size = conf['run'].get('som_size', 100)
 
     def run(self):
-        for i in range(self.n_episodes):
+        self.print_with_timestamp('==> Run')
+        self.define_metrics()
+
+        for episode in range(1, self.iterate.n_episodes+1):
+            self.print_with_timestamp(f'Episode {episode}', cond=(episode % 5) == 0)
             steps = 0
             att_entropy = []
             enc_entropy = []
@@ -104,25 +125,25 @@ class SpAttractorMnistExperiment:
                 att_entropy.append(self.attractor.output_entropy())
 
                 steps += 1
-                if steps >= self.max_steps:
+                if steps >= self.iterate.max_steps:
                     break
 
             if self.logger is not None:
                 self.logger.log(
                     {'main_metrics/attractor_entropy': np.array(att_entropy).mean()},
-                    step=i
+                    step=episode
                 )
                 if self.encoder is not None:
                     self.logger.log(
                         {'main_metrics/encoder_entropy': np.array(enc_entropy).mean()},
-                        step=i
+                        step=episode
                     )
 
-                if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
+                if (self.iterate.log_schedule is not None) and (episode % self.iterate.log_schedule == 0):
                     start_classes = list()
                     trajectories = list()
 
-                    for _ in range(self.n_trajectories):
+                    for _ in range(self.testing.n_trajectories):
                         trajectory = list()
 
                         image, cls = self.env.obs(return_class=True)
@@ -131,11 +152,13 @@ class SpAttractorMnistExperiment:
                         pattern = self.preprocess(image)
                         trajectory.append(pattern)
 
-                        for _ in range(self.attractor_steps):
+                        for _ in range(self.testing.attractor_steps):
                             if (self.encoder is not None) and (_ == 0):
                                 pattern = self.encoder.compute(pattern, learn=False)
                             else:
-                                pattern = self.attractor.compute(pattern, self.learn_attractor)
+                                pattern = self.attractor.compute(
+                                    pattern, self.testing.learn_attractor_in_loop
+                                )
 
                             trajectory.append(pattern)
 
@@ -143,18 +166,18 @@ class SpAttractorMnistExperiment:
                         start_classes.append(cls)
 
                     similarities = list()
-                    sim_matrices = np.zeros((self.attractor_steps+1, 10, 10))
+                    sim_matrices = np.zeros((self.testing.attractor_steps+1, 10, 10))
                     class_counts = np.zeros((10, 10))
 
                     # generate non-repetitive trajectory pairs
                     pair1 = np.repeat(
-                        np.arange(len(trajectories) - self.pairs_per_trajectory),
-                        self.pairs_per_trajectory
+                        np.arange(len(trajectories) - self.testing.pairs_per_trajectory),
+                        self.testing.pairs_per_trajectory
                     )
                     pair2 = (
                         np.tile(
-                            np.arange(self.pairs_per_trajectory) + 1,
-                            len(trajectories) - self.pairs_per_trajectory
+                            np.arange(self.testing.pairs_per_trajectory) + 1,
+                            len(trajectories) - self.testing.pairs_per_trajectory
                         ) + pair1
                     )
                     for p1, p2 in zip(pair1, pair2):
@@ -188,7 +211,7 @@ class SpAttractorMnistExperiment:
                                 sns.lineplot(rel_sim)
                             )
                         },
-                        step=i
+                        step=episode
                     )
                     plt.close('all')
 
@@ -198,28 +221,25 @@ class SpAttractorMnistExperiment:
                                 sns.heatmap(class_counts)
                             )
                         },
-                        step=i
+                        step=episode
                     )
                     plt.close('all')
 
                     fig, axs = plt.subplots(ncols=4, sharey='row', figsize=(16, 4))
                     axs[0].set_title('raw_sim')
                     axs[1].set_title('1-step')
-                    axs[2].set_title(f'{self.attractor_steps//2}-step')
-                    axs[3].set_title(f'{self.attractor_steps}-step')
+                    axs[2].set_title(f'{self.testing.attractor_steps//2}-step')
+                    axs[3].set_title(f'{self.testing.attractor_steps}-step')
                     sns.heatmap(sim_matrices[0], ax=axs[0], cmap='viridis')
                     sns.heatmap(sim_matrices[1], ax=axs[1], cmap='viridis')
-                    sns.heatmap(sim_matrices[self.attractor_steps//2], ax=axs[2], cmap='viridis')
+                    sns.heatmap(
+                        sim_matrices[self.testing.attractor_steps//2], ax=axs[2], cmap='viridis'
+                    )
                     sns.heatmap(sim_matrices[-1], ax=axs[3], cmap='viridis')
 
-                    self.logger.log(
-                        {
-                            'convergence/similarity_per_class': wandb.Image(
-                                fig
-                            )
-                        },
-                        step=i
-                    )
+                    self.logger.log({
+                        'convergence/similarity_per_class': wandb.Image(fig)
+                    }, step=episode)
                     plt.close('all')
 
         if self.logger is not None:
@@ -281,13 +301,10 @@ class SpAttractorMnistExperiment:
                     )
                 # plt.axis([0, som.get_weights().shape[0], 0, som.get_weights().shape[1]])
 
-                self.logger.log(
-                    {
-                        'som/clusters': wandb.Image(fig),
-                        'iteration': j
-                    },
-                    step=i
-                )
+                self.logger.log({
+                    'som/clusters': wandb.Image(fig),
+                    'iteration': j
+                }, step=episode)
                 plt.close('all')
 
                 # normalize activation map
@@ -305,7 +322,7 @@ class SpAttractorMnistExperiment:
                                 sns.heatmap(activation_map[:, :, cls], cmap='viridis')
                             )
                         },
-                        step=i
+                        step=episode
                     )
                     plt.close('all')
 
@@ -315,7 +332,7 @@ class SpAttractorMnistExperiment:
                             plt.imshow(color_map.astype('uint8'))
                         )
                     },
-                    step=i
+                    step=episode
                 )
                 plt.close('all')
 
@@ -330,7 +347,7 @@ class SpAttractorMnistExperiment:
                             plt.pcolormesh(x, y, hist.T)
                         )
                     },
-                    step=i
+                    step=episode
                 )
 
                 for cls in range(10):
@@ -338,10 +355,10 @@ class SpAttractorMnistExperiment:
                         {
                             f'relative_similarity/class {cls}': rel_sim[j, cls]
                         },
-                        step=i
+                        step=episode
                     )
 
-                i += 1
+                episode += 1
 
     def attract(self, steps, pattern, learn=False):
         trajectory = list()
@@ -363,3 +380,31 @@ class SpAttractorMnistExperiment:
         thresh = obs.mean()
         obs = np.flatnonzero(obs >= thresh)
         return obs
+
+    def print_with_timestamp(self, *args, cond: bool = True):
+        if not cond:
+            return
+        print_with_timestamp(self.init_time, *args)
+
+    def define_metrics(self):
+        if self.logger is None:
+            return
+
+        self.logger.define_metric(
+            name='main_metrics/relative_similarity',
+            step_metric='iteration'
+        )
+        self.logger.define_metric(
+            name='convergence/io_hist',
+            step_metric='iteration'
+        )
+        self.logger.define_metric(
+            name='som/clusters',
+            step_metric='iteration'
+        )
+
+        for cls in range(10):
+            self.logger.define_metric(
+                name=f'relative_similarity/class {cls}',
+                step_metric='iteration'
+            )

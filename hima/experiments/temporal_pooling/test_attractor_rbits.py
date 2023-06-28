@@ -14,7 +14,7 @@ from hima.envs.rbits import RandomBits
 from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
 
 
-class SpAttractorRightBitsExperiment:
+class SpAttractorRandBitsExperiment:
     def __init__(self, logger, conf):
         self.seed = conf['run']['seed']
         self.logger = logger

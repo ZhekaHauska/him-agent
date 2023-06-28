@@ -138,6 +138,36 @@ spatial_pooler:
     synPermInactiveDec: 0.01
     wrapAround: False
 
+  default_new:
+    _type_: sp.vectorized
+    seed: ???
+    # input
+    feedforward_sds: ???
+    # начальный размер рецептивного поля (в единицах среднего размера активного входа)
+    initial_rf_to_input_ratio: 10.0
+    # конечный размер рецептивного поля (-//-)
+    max_rf_to_input_ratio: 3.0
+    # верхняя абсолютная граница конечной разреженности
+    max_rf_sparsity: 0.1
+    # output
+    output_sds: ???
+    # learning
+    min_overlap_for_activation: 3
+    learning_rate: 0.01
+    # ослабление весов в единицах относительно learning_rate (поэтому обычно не нужно править)
+    global_inhibition_strength: 0.2
+    # newborn phase
+    # частота прунинга (в единицах размера всего выхода SP)
+    newborn_pruning_cycle: 2.0
+    # сколько прунингов делается перед взрослением
+    newborn_pruning_stages: 10
+    # аналогичен newborn_pruning_cycle, только определяет частоту операции prune-grow, которая на самом деле просто полное пересэмплирование рецептивного поля нейронов с очень низкой частотой активации. (тоже в единицах размера всего выхода SP)
+    prune_grow_cycle: 100.0
+    # нужно ли вести статистику активного размера входа (ставь True, если вход имеет непостоянный сильно варьирующийся размер или неизвестен — это важно, тк у нас размеры рецептивных полей завязаны на значение активного размера входа)
+    adapt_to_ff_sparsity: False
+    # 0 -> бустинг выключен, если больше -> включен. Работает только в новорожденной фазе
+    boosting_k: 0.5
+
 temporal_poolers:
   union_tp:
     _type_: UnionTp

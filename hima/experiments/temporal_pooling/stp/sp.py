@@ -65,8 +65,8 @@ class SpatialPooler:
             adapt_to_ff_sparsity: bool = True,
     ):
         self.rng = np.random.default_rng(seed)
-        self.feedforward_sds = feedforward_sds
-        self.output_sds = output_sds
+        self.feedforward_sds = Sds.make(feedforward_sds)
+        self.output_sds = Sds.make(output_sds)
 
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 

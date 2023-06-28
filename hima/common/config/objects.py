@@ -34,8 +34,11 @@ class ObjectResolver:
             object_type_or_factory: TTypeOrFactory = None,
             config_type: Type[dict | list] = dict,
             **substitution_registry
-    ) -> tuple[TConfig, TTypeOrFactory]:
-        if not is_resolved_value(_config) or _config is None:
+    ) -> tuple[TConfig | None, TTypeOrFactory]:
+        if _config is None:
+            return _config, object_type_or_factory
+
+        if not is_resolved_value(_config):
             raise ValueError(f'{_config}')
 
         if self.config_resolver is not None:
@@ -64,6 +67,9 @@ class ObjectResolver:
                 _config, object_type_or_factory=object_type_or_factory,
                 config_type=config_type, **substitution_registry
             )
+            if _config is None:
+                return None
+
             if config_type is list:
                 return object_type_or_factory(*_config)
             return object_type_or_factory(**_config)
