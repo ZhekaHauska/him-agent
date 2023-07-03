@@ -20,7 +20,7 @@ from hima.experiments.temporal_pooling.utils import resolve_random_seed, Schedul
 
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
-MiniSom = lazy_import('minisom')
+minisom = lazy_import('minisom')
 pd = lazy_import('pandas')
 
 
@@ -52,12 +52,17 @@ class TestingConfig:
 
 
 class SoMapConfig:
+    enabled: bool
     iterations: int
     learning_rate: float
     sigma: float
     size: int
 
-    def __init__(self, iterations: int, learning_rate: float, sigma: float, size: int):
+    def __init__(
+            self, enabled: bool, iterations: int,
+            learning_rate: float, sigma: float, size: int
+    ):
+        self.enabled = enabled
         self.iterations = iterations
         self.learning_rate = learning_rate
         self.sigma = sigma
@@ -148,7 +153,7 @@ class SpAttractorMnistExperiment:
                     episode=episode, attractor_entropy=att_entropy, encoder_entropy=enc_entropy
                 )
 
-        # self.log_final_results()
+        self.log_final_results()
 
     def log_progress(self, episode: int, attractor_entropy, encoder_entropy):
         if self.logger is None:
@@ -166,6 +171,10 @@ class SpAttractorMnistExperiment:
         similarities, relative_similarity, class_counts, sim_matrices = self.analyse_trajectories(
             trajectories=trajectories, targets=targets
         )
+
+        step_metrics = {}
+        for step in range(self.testing.attractor_steps):
+            step_metrics[f'{step=}'] = relative_similarity[step].mean()
 
         relative_similarity_df = pd.DataFrame(
             relative_similarity,
@@ -202,11 +211,19 @@ class SpAttractorMnistExperiment:
 
         self.logger.log(main_metrics | convergence_metrics, step=episode)
 
-    def log_final_results(self, episode, similarities, trajectories, relative_similarity, targets):
+    def log_final_results(self):
         if self.logger is None:
             return
 
         import matplotlib.pyplot as plt
+
+        episode = self.iterate.n_episodes
+
+        trajectories, targets = self.generate_trajectories()
+        similarities, relative_similarity, class_counts, sim_matrices = self.analyse_trajectories(
+            trajectories=trajectories, targets=targets
+        )
+
         similarities = np.array(similarities)
         in_sim = similarities[:, 0]
 
@@ -222,8 +239,32 @@ class SpAttractorMnistExperiment:
             [x[1:] for x in trajectories]
         )
 
-        relative_similarity = relative_similarity.to_numpy()
         for j in range(relative_similarity.shape[0]):
+            out_sim = similarities[:, j]
+            hist, x, y = np.histogram2d(in_sim, out_sim)
+            x, y = np.meshgrid(x, y)
+
+            self.logger.log(
+                {
+                    'main_metrics/relative_similarity': relative_similarity[j].mean(),
+                    'convergence/io_hist': wandb.Image(
+                        plt.pcolormesh(x, y, hist.T)
+                    )
+                },
+                step=episode
+            )
+
+            for cls in range(10):
+                self.logger.log(
+                    {
+                        f'relative_similarity/class {cls}': relative_similarity[j, cls]
+                    },
+                    step=episode
+                )
+
+            if not self.so_map.enabled:
+                continue
+
             if j > 0:
                 patterns = trajectories[:, j - 1]
                 pattern_size = self.encoder.output_sds.size
@@ -236,7 +277,7 @@ class SpAttractorMnistExperiment:
                 dense_patterns = dense_start_images
 
             dim = int(np.sqrt(self.so_map.size))
-            som = MiniSom(
+            som = minisom.MiniSom(
                 dim, dim,
                 pattern_size,
                 sigma=self.so_map.sigma,
@@ -299,28 +340,6 @@ class SpAttractorMnistExperiment:
                 step=episode
             )
             plt.close('all')
-
-            out_sim = similarities[:, j]
-            hist, x, y = np.histogram2d(in_sim, out_sim)
-            x, y = np.meshgrid(x, y)
-
-            self.logger.log(
-                {
-                    'main_metrics/relative_similarity': relative_similarity[j].mean(),
-                    'convergence/io_hist': wandb.Image(
-                        plt.pcolormesh(x, y, hist.T)
-                    )
-                },
-                step=episode
-            )
-
-            for cls in range(10):
-                self.logger.log(
-                    {
-                        f'relative_similarity/class {cls}': relative_similarity[j, cls]
-                    },
-                    step=episode
-                )
 
     def generate_trajectories(self):
         targets = []
