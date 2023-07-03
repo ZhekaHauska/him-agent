@@ -175,6 +175,7 @@ class SpAttractorMnistExperiment:
         step_metrics = {}
         for step in range(self.testing.attractor_steps):
             step_metrics[f'{step=}'] = relative_similarity[step].mean()
+        step_metrics = personalize_metrics(step_metrics, 'step')
 
         relative_similarity_df = pd.DataFrame(
             relative_similarity,
@@ -209,7 +210,9 @@ class SpAttractorMnistExperiment:
 
         convergence_metrics = personalize_metrics(convergence_metrics, 'convergence')
 
-        self.logger.log(main_metrics | convergence_metrics, step=episode)
+        self.logger.log(
+            main_metrics | convergence_metrics | step_metrics, step=episode
+        )
 
     def log_final_results(self):
         if self.logger is None:
