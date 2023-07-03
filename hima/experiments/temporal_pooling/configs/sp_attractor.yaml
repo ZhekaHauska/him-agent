@@ -9,18 +9,18 @@ iterate:
 testing:
   _base_: testing_setups.mnist
 
-encoder: ...
+encoder: sp.encoder
 attractor: sp.attractor
 env: envs.random_bits
 
 testing_setups:
   mnist:
-    attractor_steps: 20
+    attractor_steps: 10
     n_trajectories: 500
     learn_attractor_in_loop: False
     pairs_per_trajectory: 10
   rand_bits:
-    attractor_steps: 20
+    attractor_steps: 10
     n_trajectories: 500
     learn_attractor_in_loop: True
     pairs_per_trajectory: 1
@@ -37,7 +37,7 @@ sp:
     initial_rf_to_input_ratio: 8.0
     max_rf_to_input_ratio: 1.5
     # output
-    output_sds: [1000, 24]
+    output_sds: [500, 16]
     # learning
     learning_rate: 0.02
     global_inhibition_strength: 0.2
@@ -53,7 +53,7 @@ sp:
     initial_rf_to_input_ratio: 8.0
     max_rf_to_input_ratio: 1.5
     # output
-    output_sds: [1000, 24]
+    output_sds: [500, 16]
     # learning
     learning_rate: 0.02
     global_inhibition_strength: 0.2
@@ -66,11 +66,15 @@ iterate_setups:
   full:
     n_episodes: 1000
     max_steps: 100
-    log_schedule: 200
+    log_schedule: 100
+  mid:
+    n_episodes: 100
+    max_steps: 100
+    log_schedule: 10
   small:
     n_episodes: 10
     max_steps: 100
-    log_schedule: 200
+    log_schedule: 5
 
 so_map:
   iterations: 1000
