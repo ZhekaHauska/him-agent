@@ -9,7 +9,7 @@ inverse_temp_internal: 1.0
 cell_activation_threshold: 0.0001
 developmental_period: 3000
 
-enable_internal_connections: True
+enable_internal_connections: False
 enable_context_connections: True
 
 context_factors_conf:
