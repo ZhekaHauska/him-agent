@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 from hima.modules.htm.connections import Connections
 from hima.modules.belief.utils import softmax, normalize
 from hima.modules.belief.utils import EPS, INT_TYPE, UINT_DTYPE, REAL_DTYPE, REAL64_DTYPE
-from hima.modules.htm.spatial_pooler import SPEnsemble
 
 from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
@@ -248,7 +247,6 @@ class Layer:
             cells_per_column: int,
             context_factors_conf: dict = None,
             internal_factors_conf: dict = None,
-            spatial_pooler: SPEnsemble = None,
             n_context_vars: int = 0,
             n_context_states: int = 0,
             n_external_vars: int = 0,
@@ -301,14 +299,6 @@ class Layer:
         )
 
         self.input_sdr_size = n_obs_vars * n_obs_states
-        self.spatial_pooler = spatial_pooler
-        
-        if self.spatial_pooler is not None:
-            self.sp_input = SDR(self.input_sdr_size)
-            self.sp_output = SDR(self.spatial_pooler.getNumColumns())
-        else:
-            self.sp_input = None
-            self.sp_output = None
 
         self.inverse_temp_context = inverse_temp_context
         self.inverse_temp_internal = inverse_temp_internal
@@ -474,12 +464,6 @@ class Layer:
         """
             observation: pattern in sparse representation
         """
-        # encode observation
-        if self.spatial_pooler is not None:
-            self.sp_input.sparse = observation
-            self.spatial_pooler.compute(self.sp_input, learn, self.sp_output)
-            observation = self.sp_output.sparse
-
         # update messages
         cells = self._get_cells_for_observation(observation)
         obs_factor = np.zeros_like(self.internal_forward_messages)
