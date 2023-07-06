@@ -13,7 +13,7 @@ from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
-from hima.common.utils import isnone
+from hima.common.utils import isnone, safe_divide
 from hima.envs.mnist import MNISTEnv
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.utils import resolve_random_seed, Scheduler
@@ -426,7 +426,7 @@ class SpAttractorMnistExperiment:
 
     @staticmethod
     def similarity(x1, x2):
-        return np.count_nonzero(np.isin(x1, x2)) / x2.size
+        return safe_divide(np.count_nonzero(np.isin(x1, x2)), x2.size)
 
     @staticmethod
     def preprocess(obs):

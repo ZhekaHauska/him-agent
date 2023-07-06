@@ -1,0 +1,200 @@
+python run.py -c configs/text.yaml --log=False --project=stp.test_text --seed=1337 --model.pipeline="models.+SE" --iterate.elements=1000 --iterate.sequences=1 --iterate.epochs=10
+[0.000] ==> Init
+1384677 120
+SP vec init shape: (500, 80)
+pipeline:
+  * input.sdr -> SE.feedforward.sdr | ((500,), 500, 10, 0.0200)
+  * SE.compute
+  * SE.output.sdr -> TM.feedforward.sdr | ((500,), 500, 10, 0.0200)
+  * compute TM:
+      * TM.predict
+      * TM.set_predicted_cells
+      * TM.activate
+  * TM.correctly_predicted_cells.sdr -> output.sdr | ((6000,), 6000, 10, 0.0017)
+
+SE.output.sdr ['sdr']
+TM.correctly_predicted_cells.sdr ['sdr']
+[0.456] ==> Run
+Prune newborns: 0.1480 | 74 | 0.020 | 0.45
+Force neurogenesis: 0.685 | 0.5
+{'agg/anomaly': 0.6717000000000001}
+0.013465367667472158 0.04310593130264221
+[72.1  0.3  0.4  0.3  0.3  0.2  0.2  0.   0.1  0.   0.   0.   0.   0.
+  1.   0.   0.   0.   0.   0. ]
+[ 1.72] Epoch 0
+Prune newborns: 0.1340 | 67 | 0.020 | 0.40
+Force neurogenesis: 0.697 | 0.6
+{'agg/anomaly': 0.5864999999999991}
+0.014875687222070907 0.04678964629325731
+[65.2  0.3  0.3  0.3  0.3  0.1  0.2  0.1  0.1  0.   0.   0.   0.   0.
+  1.   0.   0.   0.   0.   0. ]
+[ 3.06] Epoch 1
+Prune newborns: 0.1200 | 60 | 0.020 | 0.35
+Force neurogenesis: 0.701 | 0.6
+{'agg/anomaly': 0.5352666666666646}
+0.016615824937905605 0.05005631302516159
+[58.2  0.3  0.3  0.3  0.3  0.2  0.2  0.1  0.1  0.   0.   0.   0.   0.
+  1.   0.   0.   0.   0.   0. ]
+[ 4.43] Epoch 2
+Prune newborns: 0.1080 | 54 | 0.020 | 0.30
+Force neurogenesis: 0.703 | 0.6
+{'agg/anomaly': 0.4997249999999972}
+0.018466536575207266 0.05340960358035409
+[52.2  0.2  0.3  0.3  0.3  0.2  0.2  0.1  0.   0.   0.   0.   0.   0.
+  1.   0.   0.   0.   0.   0. ]
+[ 5.81] Epoch 3
+Prune newborns: 0.0960 | 48 | 0.020 | 0.25
+Force neurogenesis: 0.704 | 0.6
+{'agg/anomaly': 0.46903999999999624}
+0.020779934718273472 0.057082485977335555
+[46.2  0.2  0.2  0.3  0.3  0.2  0.2  0.1  0.1  0.   0.1  0.   0.   0.
+  1.   0.   0.   0.   0.   0. ]
+[ 7.20] Epoch 4
+Prune newborns: 0.0820 | 41 | 0.020 | 0.20
+Force neurogenesis: 0.704 | 0.6
+{'agg/anomaly': 0.4449666666666627}
+0.024335370594460056 0.061938999004153006
+[39.3  0.2  0.2  0.3  0.3  0.2  0.2  0.1  0.   0.   0.1  0.   0.   0.
+  1.   0.   0.   0.   0.   0. ]
+[ 8.52] Epoch 5
+Prune newborns: 0.0680 | 34 | 0.020 | 0.15
+Force neurogenesis: 0.704 | 0.6
+{'agg/anomaly': 0.42398571428570975}
+0.029355780878645498 0.0684582257591294
+[32.3  0.2  0.2  0.3  0.3  0.2  0.1  0.1  0.1  0.   0.1  0.   0.   0.
+  1.   0.   0.   0.   0.   0. ]
+[ 9.89] Epoch 6
+Prune newborns: 0.0560 | 28 | 0.020 | 0.10
+Force neurogenesis: 0.704 | 0.7
+{'agg/anomaly': 0.40602499999999525}
+0.03565779068395803 0.07542502767114728
+[26.3  0.2  0.2  0.3  0.3  0.2  0.1  0.1  0.1  0.   0.1  0.   0.   0.
+  1.   0.   0.   0.   0.   0. ]
+[ 11.2] Epoch 7
+Prune newborns: 0.0440 | 22 | 0.020 | 0.05
+Force neurogenesis: 0.703 | 0.7
+{'agg/anomaly': 0.39019999999999544}
+0.04539818491951201 0.08530109139622198
+[20.4  0.2  0.2  0.3  0.3  0.2  0.1  0.1  0.1  0.1  0.1  0.   0.   0.
+  1.   0.   0.   0.   0.   0. ]
+[ 12.6] Epoch 8
+Prune newborns: 0.0300 | 15 | 0.020 | 0.00
+Become adult: 0.0300 | 15 | 0.010 | 0.00
+Force neurogenesis: 0.703 | 0.7
+{'agg/anomaly': 0.37594999999999534}
+0.06663882458229779 0.10285067994513408
+[5.3 8.3 0.1 0.3 0.3 0.2 0.1 0.  0.1 0.  0.1 0.  0.  0.  0.  0.  0.  0.
+ 1.  0. ]
+[ 14.0] Epoch 9
+[ 14.0] <==
+
+___
+python run.py -c configs/text.yaml --log=False --project=stp.test_text --seed=1337 --model.pipeline="models.+SE+AA" --iterate.elements=1000 --iterate.sequences=1 --iterate.epochs=10
+[0.000] ==> Init
+1384677 120
+SP vec init shape: (500, 80)
+pipeline:
+  * input.sdr -> SE.feedforward.sdr | ((500,), 500, 10, 0.0200)
+  * SE.compute
+  * TM.predict
+  * activate + predict by AA:
+      * TM.predicted_cells.sdr -> AA.feedforward.sdr | ((6000,), 6000, 10, 0.0017)
+      * AA.set_active_columns
+      * AA.predict
+      * AA.set_predicted_cells
+  * correct TM predicted cells:
+      * AA.predicted_cells.sdr -> TM.predicted_cells.sdr | ((6000,), 6000, 10, 0.0017)
+      * TM.set_predicted_cells
+  * learn TM:
+      * SE.output.sdr -> TM.feedforward.sdr | ((500,), 500, 10, 0.0200)
+      * TM.activate
+  * learn AA:
+      * TM.active_cells.sdr -> AA.feedforward.sdr | ((6000,), 6000, 10, 0.0017)
+      * AA.activate
+  * TM.correctly_predicted_cells.sdr -> output.sdr | ((6000,), 6000, 10, 0.0017)
+
+SE.output.sdr ['sdr']
+TM.correctly_predicted_cells.sdr ['sdr']
+[0.411] ==> Run
+Prune newborns: 0.1480 | 74 | 0.020 | 0.45
+Force neurogenesis: 0.697 | 0.5
+{'agg/anomaly': 0.4753000000000009}
+{'agg/anomaly': 0.5095034571707115}
+0.013465410952533643 0.040754224723186544
+[72.1  0.3  0.3  0.4  0.3  0.3  0.2  0.1  0.   0.   0.1  0.   0.   0.
+  0.   0.   0.   0.   0.   0. ]
+[ 6.67] Epoch 0
+Prune newborns: 0.1340 | 67 | 0.020 | 0.40
+Force neurogenesis: 0.706 | 0.6
+{'agg/anomaly': 0.3185500000000023}
+{'agg/anomaly': 0.35394116848778756}
+0.01487562657459971 0.044220581766437964
+[65.1  0.3  0.2  0.4  0.3  0.2  0.2  0.1  0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0. ]
+[ 13.8] Epoch 1
+Prune newborns: 0.1200 | 60 | 0.020 | 0.35
+Force neurogenesis: 0.709 | 0.6
+{'agg/anomaly': 0.244966666666669}
+{'agg/anomaly': 0.27808741243024004}
+0.016615489235412284 0.047316332579419224
+[58.1  0.3  0.2  0.4  0.3  0.2  0.2  0.1  0.   0.1  0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0. ]
+[ 21.1] Epoch 2
+Prune newborns: 0.1080 | 54 | 0.020 | 0.30
+Force neurogenesis: 0.710 | 0.6
+{'agg/anomaly': 0.1959250000000022}
+{'agg/anomaly': 0.2252194101514836}
+0.018465994688873964 0.05013578857439215
+[52.1  0.3  0.2  0.4  0.3  0.2  0.2  0.1  0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0. ]
+[ 28.2] Epoch 3
+Prune newborns: 0.0960 | 48 | 0.020 | 0.25
+Force neurogenesis: 0.711 | 0.6
+{'agg/anomaly': 0.16166000000000214}
+{'agg/anomaly': 0.18739106464853778}
+0.020779467240510077 0.053437335175682395
+[46.1  0.3  0.2  0.4  0.3  0.2  0.2  0.1  0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0. ]
+[ 35.3] Epoch 4
+Prune newborns: 0.0820 | 41 | 0.020 | 0.20
+Force neurogenesis: 0.711 | 0.6
+{'agg/anomaly': 0.1376833333333353}
+{'agg/anomaly': 0.16056512616558063}
+0.024334900075419226 0.058127548359149094
+[39.2  0.2  0.2  0.4  0.3  0.2  0.2  0.1  0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0. ]
+[ 42.5] Epoch 5
+[Prune newborns: 0.0680 | 34 | 0.020 | 0.15
+Force neurogenesis: 0.711 | 0.7
+{'agg/anomaly': 0.11975714285714467}
+{'agg/anomaly': 0.1401638568200574}
+0.02935515867595341 0.06432439822894116
+[32.3  0.2  0.2  0.3  0.3  0.2  0.2  0.1  0.1  0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0. ]
+[ 49.4] Epoch 6
+Prune newborns: 0.0560 | 28 | 0.020 | 0.10
+Force neurogenesis: 0.711 | 0.7
+{'agg/anomaly': 0.10615000000000163}
+{'agg/anomaly': 0.12459039082495957}
+0.03565697534293445 0.0710343789544073
+[26.3  0.2  0.2  0.4  0.3  0.2  0.2  0.1  0.1  0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0. ]
+[ 56.3] Epoch 7
+Prune newborns: 0.0440 | 22 | 0.020 | 0.05
+Force neurogenesis: 0.711 | 0.7
+{'agg/anomaly': 0.09541111111111261}
+{'agg/anomaly': 0.11227679479164655}
+0.04539706567795556 0.08041966182481482
+[20.3  0.2  0.1  0.3  0.3  0.2  0.2  0.1  0.1  0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0. ]
+[ 63.1] Epoch 8
+Prune newborns: 0.0300 | 15 | 0.020 | 0.00
+Become adult: 0.0300 | 15 | 0.010 | 0.00
+Force neurogenesis: 0.711 | 0.7
+{'agg/anomaly': 0.0866300000000014}
+{'agg/anomaly': 0.10217028144283759}
+0.0666383314997424 0.09732885560567739
+[5.2 8.3 0.1 0.3 0.3 0.2 0.1 0.1 0.1 0.1 0.  0.  0.  0.  0.  0.  0.  0.
+ 0.  0. ]
+[ 70.1] Epoch 9
+[ 70.1] <==

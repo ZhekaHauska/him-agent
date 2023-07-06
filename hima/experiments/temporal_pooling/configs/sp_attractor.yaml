@@ -9,9 +9,9 @@ iterate:
 testing:
   _base_: testing_setups.mnist
 
+env: envs.random_bits
 encoder: sp.encoder
 attractor: sp.attractor
-env: envs.random_bits
 
 testing_setups:
   mnist:
