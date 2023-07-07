@@ -28,3 +28,23 @@ def normalize(x, default_values=None):
     x[mask] = default_values[mask]
     norm[mask] = x[mask].sum(axis=-1)
     return x / norm.reshape((-1, 1))
+
+
+def sample_categorical_variables(probs, rng: np.random.Generator):
+    assert np.allclose(probs.sum(axis=-1), 1)
+
+    gammas = rng.uniform(size=probs.shape[0]).reshape((-1, 1))
+
+    dist = np.cumsum(probs, axis=-1)
+
+    ubounds = dist
+    lbounds = np.zeros_like(dist)
+    lbounds[:, 1:] = dist[:, :-1]
+
+    cond = (gammas >= lbounds) & (gammas < ubounds)
+
+    states = np.zeros_like(probs) + np.arange(probs.shape[1])
+
+    samples = states[cond]
+
+    return samples

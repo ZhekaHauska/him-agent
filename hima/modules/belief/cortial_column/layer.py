@@ -6,7 +6,7 @@
 import matplotlib.pyplot as plt
 
 from hima.modules.htm.connections import Connections
-from hima.modules.belief.utils import softmax, normalize
+from hima.modules.belief.utils import softmax, normalize, sample_categorical_variables
 from hima.modules.belief.utils import EPS, INT_TYPE, UINT_DTYPE, REAL_DTYPE, REAL64_DTYPE
 
 from htm.bindings.sdr import SDR
@@ -791,8 +791,9 @@ class Layer:
 
         n_vars, n_states = messages.shape
 
-        next_states = self._sample_categorical_variables(
-            messages
+        next_states = sample_categorical_variables(
+            messages,
+            self._rng
         )
         # transform states to cell ids
         next_cells = next_states + np.arange(
@@ -803,25 +804,6 @@ class Layer:
         next_cells += shift
 
         return next_cells.astype(UINT_DTYPE)
-
-    def _sample_categorical_variables(self, probs):
-        assert np.allclose(probs.sum(axis=-1), 1)
-
-        gammas = self._rng.uniform(size=probs.shape[0]).reshape((-1, 1))
-
-        dist = np.cumsum(probs, axis=-1)
-
-        ubounds = dist
-        lbounds = np.zeros_like(dist)
-        lbounds[:, 1:] = dist[:, :-1]
-
-        cond = (gammas >= lbounds) & (gammas < ubounds)
-
-        states = np.zeros_like(probs) + np.arange(probs.shape[1])
-
-        samples = states[cond]
-
-        return samples
 
     def _vars_for_cells(self, cells):
         internal_cells_mask = (
