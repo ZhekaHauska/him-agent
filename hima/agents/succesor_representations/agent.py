@@ -15,11 +15,13 @@ class BioHIMA:
             cortical_column: CorticalColumn,
             gamma: float = 0.99,
             observation_prior_lr: float = 1.0,
+            striatum_lr: float = 1.0,
             sr_steps: int = 5,
             inverse_temp: float = 1.0,
             seed: int = None
     ):
         self.observation_prior_lr = observation_prior_lr
+        self.striatum_lr = striatum_lr
         self.cortical_column = cortical_column
         self.gamma = gamma
         self.sr_steps = sr_steps
@@ -62,10 +64,15 @@ class BioHIMA:
             dense_action = np.zeros_like(action_values)
             dense_action[action] = 1
 
-            sr = self._generate_sr(
-                self.sr_steps,
+            self.cortical_column.layer.predict(
                 self.cortical_column.layer.context_messages,
                 dense_action
+            )
+
+            sr = self._generate_sr(
+                self.sr_steps,
+                self.cortical_column.layer.prediction_cells,
+                self.cortical_column.layer.prediction_columns,
             )
 
             action_values[action] = np.sum(
@@ -91,6 +98,24 @@ class BioHIMA:
         )
         self.observation_messages[self.cortical_column.output_sdr.sparse] = 1
 
+        # striatum TD learning
+        if learn:
+            predicted_sr = self._predict_sr(self.cortical_column.layer.prediction_cells)
+            generated_sr, last_step_prediction = self._generate_sr(
+                self.sr_steps,
+                self.cortical_column.layer.prediction_cells,
+                self.cortical_column.layer.prediction_columns,
+                return_last_prediction_step=True
+            )
+            delta_sr = generated_sr - predicted_sr
+            delta_h = (
+                    (self.gamma**(self.sr_steps + 1)) * last_step_prediction -
+                    self.cortical_column.layer.prediction_cells
+            )
+            delta_w = delta_h.reshape((-1, 1)) * delta_sr.reshape((1, -1))
+
+            self.striatum_weights += self.striatum_lr * delta_w
+
     def reinforce(self, reward):
         """
         Adapt prior distribution of observations according to external reward.
@@ -101,34 +126,43 @@ class BioHIMA:
             self.observation_prior.reshape((self.cortical_column.layer.n_obs_vars, -1))
         ).flatten()
 
-    def _generate_sr(self, n_steps, context_messages, external_messages, approximate_tail=True):
+    def _generate_sr(
+            self,
+            n_steps,
+            initial_messages,
+            initial_prediction,
+            approximate_tail=True,
+            return_last_prediction_step=False
+    ):
         """
-        Generate SR controlling only the first action.
-        Further policy is assumed to be uniform.
+        Policy is assumed to be uniform.
         """
+        # TODO add context backups to not disrupt the learning flow
         sr = np.zeros_like(self.observation_prior)
 
-        self.cortical_column.predict(
-            context_messages,
-            external_messages
-        )
+        predicted_observation = initial_prediction
+        context_messages = initial_messages
 
         i = -1
         for i in range(n_steps):
-            sr += (self.gamma**i) * self.cortical_column.predicted_observation
-
-            context_messages = self.cortical_column.layer.internal_forward_messages
+            sr += (self.gamma**i) * predicted_observation
 
             self.cortical_column.predict(
                 context_messages
             )
 
+            predicted_observation = self.cortical_column.layer.prediction_columns
+            context_messages = self.cortical_column.layer.internal_forward_messages
+
         if approximate_tail:
             sr += (self.gamma**(i+1)) * self._predict_sr(
-                self.cortical_column.layer.internal_forward_messages
+                context_messages
             )
 
-        return sr
+        if return_last_prediction_step:
+            return sr, context_messages
+        else:
+            return sr
 
     def _predict_sr(self, hidden_vars_dist):
         sr = np.dot(hidden_vars_dist, self.striatum_weights)
