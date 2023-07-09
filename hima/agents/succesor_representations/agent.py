@@ -58,6 +58,8 @@ class BioHIMA:
         """
         Evaluate and sample actions
         """
+        context_backup = self.cortical_column.layer.context_messages.copy()
+
         action_values = np.zeros(self.cortical_column.layer.external_input_size)
 
         for action in range(self.cortical_column.layer.external_input_size):
@@ -65,7 +67,7 @@ class BioHIMA:
             dense_action[action] = 1
 
             self.cortical_column.layer.predict(
-                self.cortical_column.layer.context_messages,
+                context_backup,
                 dense_action
             )
 
@@ -78,6 +80,8 @@ class BioHIMA:
             action_values[action] = np.sum(
                 sr * self.observation_prior
             )
+
+        self.cortical_column.layer.set_context_messages(context_backup)
 
         action_dist = softmax(action_values, beta=self.inverse_temp)
         action = sample_categorical_variables(action_dist.reshape((1, -1)), self._rng)
@@ -100,6 +104,9 @@ class BioHIMA:
 
         # striatum TD learning
         if learn:
+            context_backup = self.cortical_column.layer.context_messages.copy()
+            prediction_cells = self.cortical_column.layer.prediction_cells.copy()
+
             predicted_sr = self._predict_sr(self.cortical_column.layer.prediction_cells)
             generated_sr, last_step_prediction = self._generate_sr(
                 self.sr_steps,
@@ -107,14 +114,18 @@ class BioHIMA:
                 self.cortical_column.layer.prediction_columns,
                 return_last_prediction_step=True
             )
+            self.cortical_column.layer.set_context_messages(context_backup)
+
             delta_sr = generated_sr - predicted_sr
             delta_h = (
                     (self.gamma**(self.sr_steps + 1)) * last_step_prediction -
-                    self.cortical_column.layer.prediction_cells
+                    prediction_cells
             )
             delta_w = delta_h.reshape((-1, 1)) * delta_sr.reshape((1, -1))
 
             self.striatum_weights += self.striatum_lr * delta_w
+
+            self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
     def reinforce(self, reward):
         """
@@ -137,7 +148,6 @@ class BioHIMA:
         """
         Policy is assumed to be uniform.
         """
-        # TODO add context backups to not disrupt the learning flow
         sr = np.zeros_like(self.observation_prior)
 
         predicted_observation = initial_prediction

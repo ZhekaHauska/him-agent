@@ -28,7 +28,7 @@ class CorticalColumn:
         self.encoder = encoder
         self.decoder = decoder
 
-        self.predicted_observation = None
+        self.predicted_image = None
 
         self.input_sdr = SDR(self.encoder.getNumInputs())
         self.output_sdr = SDR(self.encoder.getNumColumns())
@@ -42,7 +42,7 @@ class CorticalColumn:
         # predict current local input step
         self.layer.predict()
 
-        self.predicted_observation = self.decoder.decode(
+        self.predicted_image = self.decoder.decode(
             self.layer.prediction_columns,
             learn=learn
         )
@@ -59,7 +59,7 @@ class CorticalColumn:
         self.layer.set_external_messages(external_messages)
         self.layer.predict()
 
-        self.predicted_observation = self.decoder.decode(
+        self.predicted_image = self.decoder.decode(
             self.layer.prediction_columns,
             learn=False
         )
