@@ -1,29 +1,19 @@
-_type_: stp_experiment.sp_attractor.mnist
+_type_: stp_experiment.sp_attractor
 project: stp.sp_attractor
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 
 seed: 42
-iterate:
-  _base_: iterate_setups.small
+train:
+  _base_: train_setups.small
+test:
+  _base_: test_setups.small
 
-testing:
-  _base_: testing_setups.mnist
+attraction:
+  n_steps: 3
+  learn_in_attraction: True
 
-env: envs.random_bits
 encoder: sp.encoder
 attractor: sp.attractor
-
-testing_setups:
-  mnist:
-    attractor_steps: 10
-    n_trajectories: 500
-    learn_attractor_in_loop: False
-    pairs_per_trajectory: 10
-  rand_bits:
-    attractor_steps: 10
-    n_trajectories: 500
-    learn_attractor_in_loop: True
-    pairs_per_trajectory: 1
 
 envs:
   random_bits:
@@ -62,26 +52,20 @@ sp:
     prune_grow_cycle: 100.0
     boosting_k: 0.5
 
-iterate_setups:
+train_setups:
   full:
-    n_episodes: 1000
-    max_steps: 100
-    log_schedule: 100
+    n_epochs: 20
+    n_steps: 1000
   mid:
-    n_episodes: 100
-    max_steps: 100
-    log_schedule: 10
+    n_epochs: 10
+    n_steps: 1000
   small:
-    n_episodes: 10
-    max_steps: 100
-    log_schedule: 5
+    n_epochs: 2
+    n_steps: 1000
 
-so_map:
-  enabled: false
-  iterations: 1000
-  learning_rate: 0.1
-  sigma: 1.0
-  size: 100
+test_setups:
+  small:
+    items_per_class: 20
 
 wandb_init:
   _base_: $_base.wandb_init

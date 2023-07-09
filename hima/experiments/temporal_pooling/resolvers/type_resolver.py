@@ -120,4 +120,9 @@ def _resolve_runner(type_tag: str):
             SpAttractorRandBitsExperiment
         )
         return SpAttractorRandBitsExperiment
+    if type_tag == 'stp_experiment.sp_attractor':
+        from hima.experiments.temporal_pooling.test_attractor import (
+            SpAttractorExperiment
+        )
+        return SpAttractorExperiment
 

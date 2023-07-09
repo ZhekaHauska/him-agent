@@ -11,10 +11,12 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
+from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, safe_divide
 from hima.envs.mnist import MNISTEnv
+from hima.experiments.temporal_pooling.data.mnist import MnistDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.utils import resolve_random_seed, Scheduler
 
@@ -24,66 +26,41 @@ minisom = lazy_import('minisom')
 pd = lazy_import('pandas')
 
 
-class IterationConfig:
-    n_episodes: int
-    max_steps: int
-    log_schedule: int
+class TrainConfig:
+    n_epochs: int
+    n_steps: int
 
-    def __init__(self, n_episodes: int, max_steps: int, log_schedule: int, ):
-        self.n_episodes = n_episodes
-        self.max_steps = max_steps
-        self.log_schedule = log_schedule
+    def __init__(self, n_epochs: int, n_steps: int):
+        self.n_epochs = n_epochs
+        self.n_steps = n_steps
 
 
-class TestingConfig:
-    attractor_steps: int
-    n_trajectories: int
-    learn_attractor_in_loop: bool
-    pairs_per_trajectory: int
+class TestConfig:
+    items_per_class: int
 
-    def __init__(
-            self, attractor_steps: int, n_trajectories: int, learn_attractor_in_loop: bool,
-            pairs_per_trajectory: int,
-    ):
-        self.attractor_steps = attractor_steps
-        self.n_trajectories = n_trajectories
-        self.learn_attractor_in_loop = learn_attractor_in_loop
-        self.pairs_per_trajectory = pairs_per_trajectory
+    def __init__(self, items_per_class: int):
+        self.items_per_class = items_per_class
 
 
-class SoMapConfig:
-    enabled: bool
-    iterations: int
-    learning_rate: float
-    sigma: float
-    size: int
+class AttractionConfig:
+    n_steps: int
+    learn_in_attraction: bool
 
-    def __init__(
-            self, enabled: bool, iterations: int,
-            learning_rate: float, sigma: float, size: int
-    ):
-        self.enabled = enabled
-        self.iterations = iterations
-        self.learning_rate = learning_rate
-        self.sigma = sigma
-        self.size = size
+    def __init__(self, n_steps: int, learn_in_attraction: bool):
+        self.n_steps = n_steps
+        self.learn_in_attraction = learn_in_attraction
 
 
-class SpAttractorMnistExperiment:
-    iterate: IterationConfig
-    testing: TestingConfig
-    so_map: SoMapConfig
+class SpAttractorExperiment:
+    training: TrainConfig
+    attraction: AttractionConfig
+    testing: TestConfig
 
     def __init__(
             self, config: TConfig, config_path: Path,
             log: bool, seed: int,
-            iterate: TConfig, testing: TConfig,
+            train: TConfig, test: TConfig, attraction: TConfig,
             encoder: TConfig, attractor: TConfig,
-            so_map: TConfig,
-            # data: TConfig,
-            # model: TConfig,
-            # track_streams: TConfig, stats_and_metrics: TConfig, diff_stats: TConfig,
-            # log_schedule: TConfig,
             project: str = None,
             wandb_init: TConfig = None,
             **_
@@ -100,60 +77,59 @@ class SpAttractorMnistExperiment:
             config=config, log=log, project=project
         )
         self.seed = resolve_random_seed(seed)
+        self.rng = np.random.default_rng(self.seed)
 
-        self.env = MNISTEnv(seed=self.seed)
+        self.data = MnistDataset()
 
-        input_sds = Sds(shape=self.env.obs_shape, sparsity=1.0)
+        input_sds = self.data.output_sds
         self.encoder = self.config.resolve_object(encoder, feedforward_sds=input_sds)
-
         if self.encoder is not None:
+            print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
             input_sds = self.encoder.output_sds
-        self.attractor = self.config.resolve_object(attractor, feedforward_sds=input_sds)
-        print(f'Input: {self.attractor.feedforward_sds} | Output: {self.attractor.output_sds}')
 
-        self.iterate = self.config.resolve_object(
-            iterate, object_type_or_factory=IterationConfig, max_steps=self.env.size
+        self.attractor = self.config.resolve_object(attractor, feedforward_sds=input_sds)
+        print(f'Attractor: {self.attractor.feedforward_sds} -> {self.attractor.output_sds}')
+
+        self.training = self.config.resolve_object(train, object_type_or_factory=TrainConfig)
+        self.attraction = self.config.resolve_object(
+            attraction, object_type_or_factory=AttractionConfig
         )
-        self.testing = self.config.resolve_object(testing, object_type_or_factory=TestingConfig)
-        self.so_map = self.config.resolve_object(so_map, object_type_or_factory=SoMapConfig)
+        self.testing = self.config.resolve_object(test, object_type_or_factory=TestConfig)
 
     def run(self):
         self.print_with_timestamp('==> Run')
-        self.define_metrics()
-        log_scheduler = Scheduler(
-            schedule=self.iterate.log_schedule, max_value=self.iterate.n_episodes,
-            always_report_first=True, always_report_last=True, zero_based=False
-        )
+        # self.define_metrics()
 
-        for episode in range(1, self.iterate.n_episodes+1):
-            self.print_with_timestamp(f'Episode {episode}', cond=(episode % 5) == 0)
-            steps = 0
-            att_entropy = []
-            enc_entropy = []
+        for epoch in range(1, self.training.n_epochs + 1):
+            self.print_with_timestamp(f'Epoch {epoch}')
+            self.train_epoch()
 
-            self.env.reset()
+        # self.log_final_results()
 
-            while True:
-                obs = self.preprocess(self.env.obs())
-                self.env.step()
+    def train_epoch(self):
+        sample_indices = self.rng.choice(self.data.n_images, size=self.training.n_steps)
+        for step in range(1, self.training.n_steps + 1):
+            sample_ind = sample_indices[step - 1]
 
-                if self.encoder is not None:
-                    obs = self.encoder.compute(obs, learn=True)
-                    enc_entropy.append(self.encoder.output_entropy())
+            sample = self.data.sdrs[sample_ind]
+            self.process_sample(sample, learn=True)
 
-                self.attractor.compute(obs, learn=True)
-                att_entropy.append(self.attractor.output_entropy())
+    def test_epoch(self):
+        ...
 
-                steps += 1
-                if steps >= self.iterate.max_steps:
-                    break
+    def process_sample(self, sample: SparseSdr, learn: bool) -> list[SparseSdr]:
+        sdrs = [sample]
+        if self.encoder is not None:
+            sdrs.append(
+                self.encoder.compute(sdrs[-1], learn=learn)
+            )
 
-            if log_scheduler.scheduled(episode):
-                self.log_progress(
-                    episode=episode, attractor_entropy=att_entropy, encoder_entropy=enc_entropy
-                )
-
-        self.log_final_results()
+        for attractor_steps in range(self.attraction.n_steps):
+            _learn = learn and (attractor_steps == 0 or self.attraction.learn_in_attraction)
+            sdrs.append(
+                self.attractor.compute(sdrs[-1], learn=_learn)
+            )
+        return sdrs
 
     def log_progress(self, episode: int, attractor_entropy, encoder_entropy):
         if self.logger is None:
@@ -173,7 +149,7 @@ class SpAttractorMnistExperiment:
         )
 
         step_metrics = {}
-        for step in range(self.testing.attractor_steps):
+        for step in range(self.testing.items_per_class):
             step_metrics[f'{step=}'] = relative_similarity[step].mean()
         step_metrics = personalize_metrics(step_metrics, 'step')
 
@@ -194,12 +170,12 @@ class SpAttractorMnistExperiment:
         fig, axs = plt.subplots(ncols=4, sharey='row', figsize=(16, 4))
         axs[0].set_title('raw_sim')
         axs[1].set_title('1-step')
-        axs[2].set_title(f'{self.testing.attractor_steps // 2}-step')
-        axs[3].set_title(f'{self.testing.attractor_steps}-step')
+        axs[2].set_title(f'{self.testing.items_per_class // 2}-step')
+        axs[3].set_title(f'{self.testing.items_per_class}-step')
         sns.heatmap(sim_matrices[0], ax=axs[0], cmap='viridis')
         sns.heatmap(sim_matrices[1], ax=axs[1], cmap='viridis')
         sns.heatmap(
-            sim_matrices[self.testing.attractor_steps // 2], ax=axs[2], cmap='viridis'
+            sim_matrices[self.testing.items_per_class // 2], ax=axs[2], cmap='viridis'
         )
         sns.heatmap(sim_matrices[-1], ax=axs[3], cmap='viridis')
 
@@ -220,7 +196,7 @@ class SpAttractorMnistExperiment:
 
         import matplotlib.pyplot as plt
 
-        episode = self.iterate.n_episodes
+        episode = self.training.n_epochs
 
         trajectories, targets = self.generate_trajectories()
         similarities, relative_similarity, class_counts, sim_matrices = self.analyse_trajectories(
@@ -357,7 +333,7 @@ class SpAttractorMnistExperiment:
             pattern = self.preprocess(image)
             trajectory.append(pattern)
 
-            for attr_step in range(self.testing.attractor_steps):
+            for attr_step in range(self.testing.items_per_class):
                 if self.encoder is not None and attr_step == 0:
                     pattern = self.encoder.compute(pattern, learn=False)
                 else:
@@ -373,7 +349,7 @@ class SpAttractorMnistExperiment:
 
     def analyse_trajectories(self, trajectories, targets):
         similarities = list()
-        sim_matrices = np.zeros((self.testing.attractor_steps + 1, 10, 10))
+        sim_matrices = np.zeros((self.testing.items_per_class + 1, 10, 10))
         class_counts = np.zeros((10, 10))
 
         # generate non-repetitive trajectory pairs
@@ -427,12 +403,6 @@ class SpAttractorMnistExperiment:
     @staticmethod
     def similarity(x1, x2):
         return safe_divide(np.count_nonzero(np.isin(x1, x2)), x2.size)
-
-    @staticmethod
-    def preprocess(obs):
-        thresh = obs.mean()
-        obs = np.flatnonzero(obs >= thresh)
-        return obs
 
     def print_with_timestamp(self, *args, cond: bool = True):
         if not cond:

@@ -26,10 +26,7 @@ class MNISTEnv:
     def obs(self, return_class=False):
         idx = self.order[self.time_step % self.size]
         if return_class:
-            return (
-                self.images[idx],
-                self.target[idx]
-            )
+            return self.images[idx], self.target[idx]
         else:
             return self.images[idx]
 
