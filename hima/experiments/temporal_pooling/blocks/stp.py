@@ -9,12 +9,11 @@ from typing import Any
 import numpy as np
 from htm.bindings.sdr import SDR
 
-from hima.common.config import (
-    extracted_type, resolve_init_params, resolve_absolute_quantity, extracted
-)
+from hima.common.config.values import resolve_init_params
+from hima.common.config.base import resolve_absolute_quantity, extracted
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.blocks.graph import Block
+from hima.experiments.temporal_pooling.graph.block import Block
 
 
 class SpatiotemporalPoolerBlock(Block):
@@ -33,15 +32,15 @@ class SpatiotemporalPoolerBlock(Block):
 
         stp_config, ff_sds, output_sds = extracted(stp_config, 'ff_sds', 'output_sds')
 
-        self.register_stream(self.FEEDFORWARD).resolve_sds(ff_sds)
-        self.register_stream(self.OUTPUT).resolve_sds(output_sds)
+        self.register_stream(self.FEEDFORWARD).try_resolve_sds(ff_sds)
+        self.register_stream(self.OUTPUT).try_resolve_sds(output_sds)
 
         self._stp_config = stp_config
 
-    def build(self, **kwargs):
+    def compile(self, **kwargs):
         stp_config = self._stp_config
-        ff_sds = self.streams[self.FEEDFORWARD].sds
-        output_sds = self.streams[self.OUTPUT].sds
+        ff_sds = self.stream_registry[self.FEEDFORWARD].sds
+        output_sds = self.stream_registry[self.OUTPUT].sds
 
         self.stp = resolve_stp(self._stp_config, feedforward_sds=ff_sds, output_sds=output_sds)
 
@@ -64,7 +63,7 @@ class SpatiotemporalPoolerBlock(Block):
         output_sdr: SDR = self.stp.compute(
             self._active_input, self._active_input, learn
         )
-        self.streams[self.OUTPUT].sdr = np.array(output_sdr.sparse, copy=True)
+        self.stream_registry[self.OUTPUT].sdr = np.array(output_sdr.sparse, copy=True)
 
 
 def resolve_stp(stp_config, feedforward_sds: Sds, output_sds: Sds):

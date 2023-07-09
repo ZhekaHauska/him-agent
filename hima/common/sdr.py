@@ -14,6 +14,7 @@ DenseSdr = np.ndarray
 
 def sparse_to_dense(indices: SparseSdr, total_size: int) -> DenseSdr:
     """Converts SDR from sparse representation to dense."""
+    # TODO: test int vs int8
     dense_vector = np.zeros(total_size, dtype=np.int8)
     dense_vector[indices] = 1
     return dense_vector

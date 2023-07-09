@@ -5,17 +5,19 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from typing import Any, Sequence
-
 import numpy as np
 from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
-from hima.common.sds import Sds
+from hima.common.sds import Sds, TSdsShortNotation
 from hima.common.utils import isnone
 
 INT_TYPE = "int64"
 UINT_DTYPE = "uint32"
+
+
+# TODO:
+#   1. Support caching for bucket encoder
 
 
 class IntBucketEncoder:
@@ -92,11 +94,11 @@ class IntRandomEncoder:
 
     output_sds: Sds
 
-    _encoding_map: np.array
+    encoding_map: np.array
 
     def __init__(
             self, n_values: int, seed: int,
-            sds: Sds | Sds.TShortNotation = None,
+            sds: Sds | TSdsShortNotation = None,
             space_compression: float = None,
             active_size: int = None
     ):
@@ -113,8 +115,8 @@ class IntRandomEncoder:
             sds_size = int(n_values * active_size * space_compression)
             sds = (sds_size, active_size)
 
-        self.output_sds = Sds.as_sds(sds)
-        self._encoding_map = self._make_encoding_map(
+        self.output_sds = Sds.make(sds)
+        self.encoding_map = self._make_encoding_map(
             n_values=n_values,
             total_bits=self.output_sds.size,
             n_active_bits=self.output_sds.active_size,
@@ -131,11 +133,14 @@ class IntRandomEncoder:
 
     @property
     def n_values(self) -> int:
-        return self._encoding_map.shape[0]
+        return self.encoding_map.shape[0]
 
-    def encode(self, x: int) -> SparseSdr:
-        """Encodes value x to sparse SDR format using random overlapping encoding."""
-        return self._encoding_map[x]
+    def encode(self, x: int | list[int] | np.ndarray) -> SparseSdr:
+        """
+        Encodes value x to sparse SDR format using random overlapping encoding.
+        It is vectorized, so an array-like x is accepted too.
+        """
+        return self.encoding_map[x]
 
     @staticmethod
     def _make_encoding_map(n_values, total_bits, n_active_bits, seed: int) -> np.ndarray:
@@ -249,7 +254,9 @@ class RangeDynamicEncoder:
         else:
             norm_speed = 0
 
-        diameter = int(round(self.min_diameter + norm_speed * (self.max_diameter - self.min_diameter)))
+        diameter = int(round(
+            self.min_diameter + norm_speed * (self.max_diameter - self.min_diameter)
+        ))
 
         norm_value = (value - self.min_value) / (self.max_value - self.min_value)
 

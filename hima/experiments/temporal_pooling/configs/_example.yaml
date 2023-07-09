@@ -1,0 +1,355 @@
+_type_: tp.layered
+project: tp_layered
+log: True    # wandb logging
+
+run_setup: full
+#policy_selection_rule: ordered
+temporal_pooler: ablation_utp
+seed: 42
+debug: False
+
+stats_and_metrics:
+  normalization: mean
+  prefix_similarity_discount: 1.
+  loss_on_mae: True
+  loss_layer_discount: 0.75
+  symmetrical_similarity: False
+
+# pipeline: ... means chaining prev.output -> cur.feedforward all blacks
+
+pipeline:
+  - gen.output -> sp1.feedforward
+  - ???.output -> sp2.feedforward
+
+  - pipe: gen.output -> sp1.feedforward
+    sds: ???
+
+  - block: sp2
+    pipes:
+      - pipe: ???.output -> feedforward
+        sds: ???
+      - pipe: ???.output -> context
+        sds: ???
+    in_alt:
+      - ???.output -> feedforward
+      - ???.output -> context
+
+blocks:
+  gen:
+    _type_family_: generator
+    _base_config_: synthetic_sequences
+    requires: ... # feedforward by default
+    exposes: ???  # induced from the pipeline
+    sequence_length: 10
+    n_values: 4
+  sp1:
+    _type_family_: spatial_pooler
+    _base_config_: wide
+  sp2:
+    _type_family_: spatial_pooler
+    _base_config_: wide
+
+generator:
+  synthetic_sequences:
+    _type_: synthetic_sequences
+    sequence_length: 40
+    n_values: 8
+    active_size: 10
+    value_encoder: random
+    sequence_similarity: 0.35
+    sequence_similarity_std: 0.35
+    seed: ???
+  synthetic_policies:
+    _type_: synthetic_policies
+    n_states: 40
+    n_actions: 8
+    active_size: 10
+    state_encoder: random
+    action_encoder: random
+    policy_similarity: 0.35
+    policy_similarity_std: 0.35
+    seed: ???
+
+run_setups:
+  simple:
+    n_sequences: 3
+    steps_per_sequence: 10
+    sequence_repeats: 3
+    epochs: 2
+    total_repeats: ...
+    sp_output_sds: [400, 10]
+    tp_output_sds: [400, 10]
+    log_repeat_schedule: 3
+    log_epoch_schedule: 2
+
+  full:
+    n_sequences: 10
+    steps_per_sequence: 30
+    sequence_repeats: 10
+    epochs: 10
+    total_repeats: ...
+    sp_output_sds: [500, 16]
+    tp_output_sds: [1000, 25]
+    log_repeat_schedule: 5
+    log_epoch_schedule: 2
+
+encoder:
+  bucket:
+    _type_: int_bucket
+    n_values: ???
+    bucket_size: ???
+  random:
+    _type_: int_random
+    n_values: ???
+    space_compression: .75
+    active_size: ???
+    sds: ...
+    seed: ???
+
+spatial_pooler:
+  wide:
+    _base_config_: default
+    potentialPct: 0.1
+    boostStrength: 0.5
+    dutyCyclePeriod: 5000
+    minPctOverlapDutyCycle: 0.0002
+
+  default:
+    ff_sds: ???
+    output_sds: ???
+
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.6
+    globalInhibition: True
+    # output
+    columnDimensions: ???
+    localAreaDensity: ???
+
+    boostStrength: 0.2
+    dutyCyclePeriod: 20000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 3
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    wrapAround: False
+
+  default_new:
+    _type_: sp.vectorized
+    seed: ???
+    # input
+    feedforward_sds: ???
+    # начальный размер рецептивного поля (в единицах среднего размера активного входа)
+    initial_rf_to_input_ratio: 10.0
+    # конечный размер рецептивного поля (-//-)
+    max_rf_to_input_ratio: 3.0
+    # верхняя абсолютная граница конечной разреженности
+    max_rf_sparsity: 0.1
+    # output
+    output_sds: ???
+    # learning
+    min_overlap_for_activation: 3
+    learning_rate: 0.01
+    # ослабление весов в единицах относительно learning_rate (поэтому обычно не нужно править)
+    global_inhibition_strength: 0.2
+    # newborn phase
+    # частота прунинга (в единицах размера всего выхода SP)
+    newborn_pruning_cycle: 2.0
+    # сколько прунингов делается перед взрослением
+    newborn_pruning_stages: 10
+    # аналогичен newborn_pruning_cycle, только определяет частоту операции prune-grow, которая на самом деле просто полное пересэмплирование рецептивного поля нейронов с очень низкой частотой активации. (тоже в единицах размера всего выхода SP)
+    prune_grow_cycle: 100.0
+    # нужно ли вести статистику активного размера входа (ставь True, если вход имеет непостоянный сильно варьирующийся размер или неизвестен — это важно, тк у нас размеры рецептивных полей завязаны на значение активного размера входа)
+    adapt_to_ff_sparsity: False
+    # 0 -> бустинг выключен, если больше -> включен. Работает только в новорожденной фазе
+    boosting_k: 0.5
+
+temporal_poolers:
+  union_tp:
+    _type_: UnionTp
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.5
+    globalInhibition: True
+    # intermediate
+    localAreaDensity: ???
+    # output
+    columnDimensions: ???
+    maxUnionActivity: ???
+
+    activeOverlapWeight: 1
+    predictedActiveOverlapWeight: 2
+    exciteFunctionType: Logistic
+    decayFunctionType: Exponential
+    decayTimeConst: 10.0
+    synPermPredActiveInc: 0.1
+    synPermPreviousPredActiveInc: 0.05
+    historyLength: 20
+    minHistory: 3
+    boostStrength: 1.0
+    dutyCyclePeriod: 40000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 1
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    wrapAround: False
+
+  ablation_utp:
+    _type_: AblationUtp
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.18
+    globalInhibition: True
+    # intermediate
+    localAreaDensity: ???
+    # output
+    columnDimensions: ???
+    maxUnionActivity: ???
+
+    activeOverlapWeight: 1
+    predictedActiveOverlapWeight: 2
+    exciteFunctionType: Logistic
+    decayFunctionType: Exponential
+    decayTimeConst: 15.0
+    historyLength: 6
+    minHistory: 3
+    boostStrength: 0.6
+    dutyCyclePeriod: 8000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 1
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    synPermPredActiveInc: 0.1
+    synPermPreviousPredActiveInc: 0.02
+    wrapAround: False
+    # ablation
+    first_boosting: True
+    second_boosting: True
+    untemporal_learning: True
+    union_learning: True
+    history_learning: True
+
+  custom_utp:
+    _type_: CustomUtp
+    seed: ???
+    # input
+    inputDimensions: ???
+    # intermediate
+    sparsity: 0.004
+    # output
+    columnDimensions: ???
+    union_sdr_sparsity: ???
+
+    potentialRadius: ???
+    initial_pooling: 0.5
+    pooling_decay: 0.1
+    permanence_inc: 0.1
+    permanence_dec: 0.01
+    active_weight: 0.5
+    predicted_weight: 2.0
+    receptive_field_sparsity: 0.5
+    activation_threshold: 0.6
+    history_length: 20
+    prev_perm_inc: 0.05
+
+  sandwich_tp:
+    _type_: SandwichTp
+    seed: ???
+    initial_pooling: 0.75
+    pooling_decay: 0.04
+
+    pooling_decay_r: 1.
+    only_upper: False
+    max_intermediate_used: ...
+
+    lower_sp_conf:
+      # input
+      inputDimensions: ???
+      potentialRadius: ???
+      potentialPct: 0.08
+      globalInhibition: True
+      # output
+      # check bigger
+      columnDimensions: ???
+      localAreaDensity: ???
+
+      boostStrength: 0.25
+      dutyCyclePeriod: 10000
+      minPctOverlapDutyCycle: 0.0002
+      numActiveColumnsPerInhArea: 0
+      stimulusThreshold: 1
+      synPermConnected: 0.5
+      synPermActiveInc: 0.1
+      synPermInactiveDec: 0.005
+      wrapAround: False
+    upper_sp_conf:
+      # input: lower output
+      inputDimensions: ???
+      potentialRadius: ???
+      potentialPct: 0.12
+      globalInhibition: True
+      # output
+      columnDimensions: ???
+      localAreaDensity: ???
+
+      boostStrength: 0.25
+      dutyCyclePeriod: 4000
+      minPctOverlapDutyCycle: 0.0002
+      numActiveColumnsPerInhArea: 0
+      stimulusThreshold: 1
+      synPermConnected: 0.5
+      synPermActiveInc: 0.05
+      synPermInactiveDec: 0.01
+      wrapAround: False
+
+
+temporal_memory:
+  ff_sds: ???
+  columns: ???
+  cells_per_column: 12
+  prune_zero_synapses: True
+  timeseries: False
+  anomaly_window: 1000
+  confidence_window: 1000
+  sm_ac: 0.99
+  seed: ???
+
+  bc_sds: ???
+  context_cells: ???
+  basal_context:
+    sample_size: ???
+    activation_threshold: 0.85
+    learning_threshold: 0.5
+    max_synapses_per_segment: 1.2
+    max_segments_per_cell: 32
+    initial_permanence: 0.46
+    connected_threshold: 0.5
+    permanence_increment: 0.1
+    permanence_decrement: 0.05
+    predicted_segment_decrement: 0.001
+
+  fb_sds: ???
+  feedback_cells: ???
+  apical_feedback:
+    sample_size: ???
+    activation_threshold: 0.85
+    learning_threshold: 0.6
+    max_synapses_per_segment: 1.2
+    max_segments_per_cell: 32
+    initial_permanence: 0.46
+    connected_threshold: 0.5
+    permanence_increment: 0.05
+    permanence_decrement: 0.02
+    predicted_segment_decrement: 0.001

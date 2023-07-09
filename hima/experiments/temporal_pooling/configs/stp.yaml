@@ -1,0 +1,296 @@
+_type_: stp_experiment.synthetic_sequences
+project: stp.test_text
+log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
+
+seed: 42
+iterate:
+  _base_: iterate_setups.small_10k
+
+iterate_setups:
+  small_10k:
+    epochs: 10
+    resample_frequency: 1
+    sequences: [10, 1]
+    elements: 100
+  default_100k:
+    epochs: 50
+    resample_frequency: 1
+    sequences: [10, 1]
+    elements: 200
+  default_5x20k:
+    epochs: 50
+    resample_frequency: 5
+    sequences: [10, 1]
+    elements: 200
+  large_400k:
+    epochs: 100
+    resample_frequency: 1
+    sequences: [10, 1]
+    elements: 400
+  large_5x80k:
+    epochs: 100
+    resample_frequency: 5
+    sequences: [10, 1]
+    elements: 400
+
+log_schedule:
+  epoch: 1
+  repeat: 5
+
+model:
+  global_config: ???
+  external:
+    - step
+    - step_finished
+    - sequence_id
+    - sequence_finished
+    - epoch
+    - epoch_finished
+    - tracking_enabled
+  pipeline:
+    - input.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - SE.output.sdr -> TM.feedforward.sdr
+    - compute TM:
+      - TM.predict()
+      - TM.set_predicted_cells()
+      - TM.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+#  track_smoothing:
+  track:
+    - name: input_all
+      tracker: trackers.sdr
+      on:
+        sequence_started: epoch
+        sdr_updated: input.sdr
+        sequence_finished: epoch_finished
+    - name: input_seq
+      tracker: trackers.sdr
+      on:
+        sequence_started: sequence_id
+        sdr_updated: input.sdr
+        sequence_finished: sequence_finished
+    - name: SE
+      tracker: trackers.sdr
+      on:
+        sequence_started: epoch
+        sdr_updated: SE.output.sdr
+        sequence_finished: epoch_finished
+    - name: TM
+      tracker: trackers.tm
+      on:
+        activate: TM.active_cells.sdr
+    - name: AA
+      tracker: trackers.tm
+      on:
+        activate: AA.active_cells.sdr
+
+track_streams:
+  input.sdr:
+    - cross.online.el
+  SA.output.sdr:
+    - cross.online.el
+  TM.correctly_predicted_cells.sdr:
+    - cross.online.el
+
+diff_stats:
+  online_el:
+    - input.sdr/epoch/sim_mx_on_el
+    - SE.output.sdr/epoch/sim_mx_on_el
+    - SA.output.sdr/epoch/sim_mx_on_el
+    - TM.correctly_predicted_cells.sdr/epoch/sim_mx_on_el
+
+data: datas.text_sequences
+
+datas:
+  synthetic_sequences:
+    _base_: $_base.dataset.synthetic_sequences.general
+    alphabet_size: 200
+    encoder:
+      _base_: $_base.encoder.random.fixed_sds
+      sds: [ 600, 18 ]
+  dvc_sequences:
+    _base_: $_base.dataset.dvc_sequences
+    sequential: True
+  text_sequences:
+    _base_: $_base.dataset.text_sequences
+    encoder:
+      _base_: $_base.encoder.random.fixed_sds
+      sds: [ 600, 18 ]
+    sequential: True
+
+
+models:
+  +SE_DVS+SE+SA+AA: $_base.models.+SE_DVS+SE+SA+AA
+  +SE_DVS+SE+AA: $_base.models.+SE_DVS+SE+AA
+  +SE_DVS+SE: $_base.models.+SE_DVS+SE
+  +SE+SA+AA: $_base.models.+SE+SA+AA
+  +SE+AA: $_base.models.+SE+AA
+  +AA: $_base.models.+AA
+  +SE: $_base.models.+SE
+  Baseline TM: $_base.models.Baseline TM
+
+SE:
+  sp:
+    _base_: $_base.spatial_pooler.default
+    initial_rf_to_input_ratio: 8.0
+    max_rf_to_input_ratio: 1.5
+    learning_rate: 0.001
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+  stp:
+    _base_: $_base.spatial_temporal_pooler.default
+    max_pooling_window: 4
+    reset_potential_on_activation: True
+    initial_rf_to_input_ratio: 8.0
+    max_rf_to_input_ratio: 1.5
+    learning_rate: 0.001
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+
+TM:
+  general_feedback_tm:
+    _base_: $_base.temporal_memory.general_feedback_tm
+    cells_per_column: 12
+    activation_threshold_basal: .9
+    learning_threshold_basal: .7
+    max_synapses_per_segment_basal: 2.1
+    max_segments_per_cell_basal: 16
+  tm:
+    _base_: $_base.temporal_memory.default
+    cells_per_column: 8
+    activation_threshold_basal: .9
+    learning_threshold_basal: .7
+    permanence_increment_basal: 0.1
+    permanence_decrement_basal: 0.012
+    predicted_segment_decrement_basal: 0.004
+    max_synapses_per_segment_basal: 2.1
+    max_segments_per_cell_basal: 16
+
+AA:
+  general_feedback_tm:
+    _base_: $_base.temporal_memory.general_feedback_tm
+    cells_per_column: 1
+    activation_threshold_basal: .8
+    learning_threshold_basal: .6
+    max_synapses_per_segment_basal: 4.4
+    max_segments_per_cell_basal: 32
+  tm:
+    _base_: $_base.temporal_memory.default
+    cells_per_column: 1
+    permanence_increment_basal: 0.1
+    permanence_decrement_basal: 0.012
+    predicted_segment_decrement_basal: 0.006
+    activation_threshold_basal: .8
+    learning_threshold_basal: .6
+    max_synapses_per_segment_basal: 4.2
+    max_segments_per_cell_basal: 32
+
+SA:
+  sp:
+    _base_: $_base.spatial_pooler.default
+    initial_rf_to_input_ratio: 4.0  #12?
+    max_rf_to_input_ratio: 2.0
+    learning_rate: 0.02
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 1.0
+    newborn_pruning_stages: 4
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+  stp:
+    _base_: $_base.spatial_temporal_pooler.default
+    initial_rf_to_input_ratio: 4.0  #12?
+    max_rf_to_input_ratio: 2.0
+    learning_rate: 0.02
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 1.0
+    newborn_pruning_stages: 4
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+
+SE_DVS:
+  sp:
+    _base_: $_base.spatial_pooler.default
+    initial_rf_to_input_ratio: 8.0
+    max_rf_to_input_ratio: 1.5
+    learning_rate: 0.001
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+  stp:
+    _base_: $_base.spatial_temporal_pooler.default
+    max_pooling_window: 4
+    reset_potential_on_activation: True
+    initial_rf_to_input_ratio: 8.0
+    max_rf_to_input_ratio: 1.5
+    learning_rate: 0.001
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 10.0
+    adapt_to_ff_sparsity: False
+
+blocks:
+  concat:
+    _type_: block.concatenator
+  SE:
+    _type_: block.sp
+    _base_: $_base.blocks.sp_like
+    output_sds: [600, 18]
+    sp:
+      _base_: SE.sp
+  SA:
+    _type_: block.sp
+    _base_: $_base.blocks.sp_like
+    sp:
+      _base_: SA.sp
+  TM:
+    _type_: block.tm
+    _base_: $_base.blocks.tm_like
+    tm:
+      _base_: TM.tm
+  AA:
+    _type_: block.tm
+    _base_: $_base.blocks.tm_like
+    tm:
+      _base_: AA.tm
+  SE_DVS:
+    _type_: block.sp
+    _base_: $_base.blocks.sp_like
+    output_sds: [1200, 0.04]
+    sp:
+      _base_: SE_DVS.sp
+      initial_rf_to_input_ratio: 4.0
+      max_rf_to_input_ratio: 2.0
+      adapt_to_ff_sparsity: True
+      learning_rate: 0.002
+      newborn_pruning_cycle: 1.0
+      boosting_k: 0.25
+
+stats_and_metrics:
+  mae_normalization: no
+  symmetrical_similarity: False
+  distribution_metrics: pmf
+  online_similarity_decay: 1.
+  pmf_decay: 1.
+  loss_normalization: False
+  loss_layer_discount: 0.75
+
+trackers:
+  sdr:
+    _type_: tracker.sdr
+    on: ???
+  tm:
+    _type_: tracker.tm
+    on: ???
+
+wandb_init:
+  _base_: $_base.wandb_init

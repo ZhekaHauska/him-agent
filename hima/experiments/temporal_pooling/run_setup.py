@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from hima.common.config import resolve_value
+from hima.common.config.values import resolve_value
 
 
 class RunSetup:

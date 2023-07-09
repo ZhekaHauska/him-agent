@@ -9,15 +9,10 @@ import numpy as np
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stats.tracker import Tracker, TMetrics
-
-SdrSequence = list[SparseSdr]
-SetSdrSequence = list[set[int]]
-SeqHistogram = np.ndarray
+from hima.experiments.temporal_pooling.stats.metrics import entropy, SetSdrSequence, TMetrics
 
 
-class SdrTracker(Tracker):
+class SdrTracker:
     sds: Sds
 
     # NB: ..._relative_rate means relative to the expected sds active size
@@ -41,26 +36,28 @@ class SdrTracker(Tracker):
 
     def __init__(self, sds: Sds):
         self.sds = sds
-        self._reset()
-
-    def _reset(self):
         self.sequence = []
         self.pmf_coverage_history = []
         self.aggregate_histogram = np.zeros(self.sds.size)
-
-    def aggregate_pmf(self) -> np.ndarray:
-        return safe_divide(
-            self.aggregate_histogram, len(self.sequence),
-            default=self.aggregate_histogram
-        )
-
-    def on_sequence_started(self, sequence_id: int):
         self._reset()
 
-    def on_step(self, sdr: SparseSdr):
+    def _reset(self):
+        self.sequence.clear()
+        self.pmf_coverage_history.clear()
+        self.aggregate_histogram[:] = 0.
+
+    def on_sequence_started(self, *_) -> TMetrics:
+        self._reset()
+        return {}
+
+    def on_sdr_updated(self, sdr: SparseSdr, reset: bool) -> TMetrics:
+        if reset:
+            self._reset()
+            return {}
+
         list_sdr = sdr
         self.sequence.append(set(sdr))
-        self.aggregate_histogram[list_sdr] += 1
+        self.aggregate_histogram[list_sdr] += 1.0
 
         # step metrics
         sdr: set = self.sequence[-1]
@@ -95,7 +92,6 @@ class SdrTracker(Tracker):
 
         self.pmf_coverage_history.append(self.pmf_coverage)
 
-    def step_metrics(self) -> TMetrics:
         return {
             'step/sparsity': self.sparsity,
             'step/relative_sparsity': self.relative_sparsity,
@@ -109,7 +105,20 @@ class SdrTracker(Tracker):
             'agg/entropy': self.aggregate_entropy,
         }
 
-    def aggregate_metrics(self) -> TMetrics:
+    def on_sequence_finished(self, _, reset: bool) -> TMetrics:
+        if reset:
+            return {}
         return {
             'epoch/mean_pmf_coverage': np.mean(self.pmf_coverage_history)
         }
+
+    def aggregate_pmf(self) -> np.ndarray:
+        return safe_divide(
+            self.aggregate_histogram, len(self.sequence),
+            default=self.aggregate_histogram
+        )
+
+
+def get_sdr_tracker(on: dict) -> SdrTracker:
+    tracked_stream = on['sdr_updated']
+    return SdrTracker(sds=tracked_stream.sds)

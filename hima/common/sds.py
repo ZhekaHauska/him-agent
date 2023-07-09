@@ -3,13 +3,25 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
 
-from typing import Union, Optional
+from typing import Union
 
 import numpy as np
 
-from hima.common.config import is_resolved_value
+TSdsShortNotation = Union[
+    # tuple[shape|size, active_size|sparsity]
+    tuple[
+        Union[tuple, int],
+        Union[int, float]
+    ],
 
+    # tuple[sparsity, active_size]
+    tuple[float, int]
+]
+
+
+# TODO: rework parsing and probably split building from the dataclass itself
 
 class Sds:
     """
@@ -19,7 +31,7 @@ class Sds:
     we want to specify only a sufficient subset of all params and just let the others be
     inducted.
 
-    Here's all supported notations:
+    Here's all supported notations (note that they all have distinguishable types):
         a) (100, 0.02) — the total size and sparsity
         b) (100, 10) — the total size and active SDR size
         c) ((20, 20), 0.02) — shape and sparsity
@@ -29,13 +41,6 @@ class Sds:
     The same goes for the keyword-only __init__ arguments — you only need to specify
     the sufficient subset of them.
     """
-    TShortNotation = Union[
-        # tuple[shape|size, active_size|sparsity]
-        tuple[Union[tuple, int], Union[int, float]],
-
-        # tuple[sparsity, active_size]
-        tuple[float, int]
-    ]
 
     shape: tuple[int, ...]
     size: int
@@ -44,7 +49,8 @@ class Sds:
 
     def __init__(
             self,
-            short_notation: Optional[TShortNotation] = None,
+            # short notation is the only positional argument — default way to define SDS via config
+            short_notation: TSdsShortNotation = None,
             *,
             shape: tuple[int, ...] = None,
             size: int = None,
@@ -55,9 +61,16 @@ class Sds:
             # ignore keyword-only params
             shape, size, sparsity, active_size = self.parse_short_notation(*short_notation)
 
-        self.shape, self.size, self.sparsity, self.active_size = self.resolve_all(
+        self.shape, self.size, self.sparsity, self.active_size = self.induce_all_components(
             shape=shape, size=size, sparsity=sparsity, active_size=active_size
         )
+
+    def __eq__(self, other):
+        assert isinstance(other, Sds)
+        return self.size == other.size and self.active_size == other.active_size
+
+    def __str__(self):
+        return f'({self.shape}, {self.size}, {self.active_size}, {self.sparsity:.4f})'
 
     @staticmethod
     def parse_short_notation(first, second):
@@ -96,48 +109,41 @@ class Sds:
 
         return shape, size, sparsity, active_size
 
-    def __str__(self):
-        return f'({self.shape}, {self.size}, {self.active_size}, {self.sparsity})'
-
     @staticmethod
-    def resolve_all(
+    def induce_all_components(
             shape: tuple[int, ...] = None,
             size: int = None,
             sparsity: float = None,
             active_size: int = None
     ):
-        if shape is not None or size is not None:
-            # shape and/or size is defined
-            # and at least sparsity or active size should be defined too
+        if shape is None and size is None:
+            # defined: sparsity & active size
+            #   resolve size and shape
+            size = round(active_size / sparsity)
+            shape = (size, )
+        else:
+            # defined: shape | size + sparsity | active size
+            #   1) resolve size; 2) resolve sparsity and active size
 
             if size is None:
                 size = np.prod(shape)
-            elif shape is None:
+            else:
                 shape = (size,)
 
-            # will raise error if both None
             if active_size is None:
                 active_size = int(size * sparsity)
-            elif sparsity is None:
+            else:
                 sparsity = active_size / size
-        else:
-            # shape and size both are NOT defined
-            # sparsity and active size both should be defined
-            size = round(active_size / sparsity)
-            shape = (size, )
 
         return shape, size, sparsity, active_size
 
     @staticmethod
-    def as_sds(sds: Union['Sds', TShortNotation]) -> 'Sds':
-        if not is_resolved_value(sds):
-            # allow keeping unresolved values as is, because there's nothing you can do with it RN
-            return sds
-
-        if sds is None:
-            # allow empty sds
-            print("WARNING: allow empty SDS?")
-            return Sds(size=0, sparsity=0., active_size=0)
+    def make(sds: Sds | TSdsShortNotation) -> Sds:
         if isinstance(sds, Sds):
             return sds
+
+        if isinstance(sds, dict):
+            # full key-value notation
+            return Sds(**sds)
+        # short notation
         return Sds(short_notation=sds)

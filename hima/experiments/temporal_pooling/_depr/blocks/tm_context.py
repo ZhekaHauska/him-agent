@@ -3,32 +3,14 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Any
 
 import numpy as np
 
-from hima.common.config import resolve_init_params, resolve_absolute_quantity, extracted
+from hima.common.config.values import resolve_init_params
+from hima.common.config.base import resolve_absolute_quantity, extracted
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling._depr.blocks.base_block_stats import BlockStats
 from hima.modules.htm.temporal_memory import DelayedFeedbackTM
-
-
-class TemporalMemoryBlockStats(BlockStats):
-    recall: float
-
-    def __init__(self, output_sds: Sds):
-        super(TemporalMemoryBlockStats, self).__init__(output_sds=output_sds)
-        self.recall = 0.
-
-    def update(self, active_cells: SparseSdr, correctly_predicted_cells: SparseSdr):
-        self.recall = safe_divide(correctly_predicted_cells.size, active_cells.size)
-
-    def step_metrics(self) -> dict[str, Any]:
-        return {
-            'recall': self.recall
-        }
 
 
 class ContextTemporalMemoryBlock:
@@ -43,8 +25,6 @@ class ContextTemporalMemoryBlock:
     tm: DelayedFeedbackTM
     tm_config: dict
 
-    stats: TemporalMemoryBlockStats
-
     _apical_feedback: SparseSdr
 
     def __init__(self, ff_sds: Sds, bc_sds: Sds, **partially_resolved_tm_config):
@@ -58,7 +38,6 @@ class ContextTemporalMemoryBlock:
             active_size=self.feedforward_sds.active_size
         )
         self.tm_config = partially_resolved_tm_config
-        self.stats = TemporalMemoryBlockStats(output_sds=self.output_sds)
 
     @property
     def tag(self) -> str:
@@ -81,9 +60,6 @@ class ContextTemporalMemoryBlock:
         self.tm.reset()
         self._apical_feedback = []
 
-    def reset_stats(self):
-        self.stats = TemporalMemoryBlockStats(output_sds=self.output_sds)
-
     def compute(
             self, feedforward_input: SparseSdr, basal_context: SparseSdr, learn: bool
     ) -> tuple[SparseSdr, SparseSdr]:
@@ -104,10 +80,6 @@ class ContextTemporalMemoryBlock:
         active_cells = np.array(tm.get_active_cells(), copy=True)
         correctly_predicted_cells = np.array(tm.get_correctly_predicted_cells(), copy=True)
 
-        self.stats.update(
-            active_cells=active_cells,
-            correctly_predicted_cells=correctly_predicted_cells
-        )
         return active_cells, correctly_predicted_cells
 
 
@@ -121,8 +93,8 @@ def resolve_tm(
     )
     tm_config, ff_sds, bc_sds, bc_config = extracted(tm_config, 'ff_sds', 'bc_sds', 'basal_context')
     # if FF/BC SDS were defined in config, they aren't Sds objects
-    ff_sds = Sds.as_sds(ff_sds)
-    bc_sds = Sds.as_sds(bc_sds)
+    ff_sds = Sds.make(ff_sds)
+    bc_sds = Sds.make(bc_sds)
 
     # resolve quantities based on FF and BC SDS settings
     tm_config = resolve_init_params(
@@ -148,7 +120,7 @@ def resolve_tm_apical_feedback(fb_sds: Sds, tm_block: ContextTemporalMemoryBlock
     )
     tm_config, fb_sds, fb_config = extracted(tm_config, 'fb_sds', 'apical_feedback')
     # if it was defined in config, it's not an Sds object
-    fb_sds = Sds.as_sds(fb_sds)
+    fb_sds = Sds.make(fb_sds)
 
     # resolve quantities based on FB SDS settings; implicitly asserts all other fields are resolved
     tm_config = resolve_init_params(tm_config, feedback_cells=fb_sds.size)

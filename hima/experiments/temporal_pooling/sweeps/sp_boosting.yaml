@@ -1,0 +1,50 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: stp.boosting
+method: grid
+parameters:
+  seed.:
+    values: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49] #, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+
+  # for hyperparameter search we don't need too much logging and too much learning
+  iterate..epochs:
+    value: 40
+  model.:
+    value: models.tm_enc
+
+  blocks..sp0.sp.initial_rf_to_input_ratio:
+    values:
+      - 5.0
+      - 8.0
+      - 10.0
+  blocks..sp0.sp.max_rf_to_input_ratio:
+    values:
+      - 0.8
+      - 1.0
+      - 1.25
+  blocks..sp0.sp.boosting_k:
+    values:
+      - 0.5
+      - 1.0
+      - 2.0
+  blocks..sp0.sp.global_inhibition_strength:
+    values:
+      - 0.1
+      - 0.2
+      - 0.4
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is relative to common for sweeps and configs root
+    #   <common root>
+    #   |- sweeps/
+    #       |- sweep_config.yaml
+    #   |- configs/
+    #       |- single_run_config.yaml
+  - --config
+  - ../configs/stp.yaml

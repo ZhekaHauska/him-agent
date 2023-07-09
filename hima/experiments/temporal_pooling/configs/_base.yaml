@@ -1,0 +1,318 @@
+dataset:
+  synthetic_sequences:
+    base:
+      _type_: ds.synthetic_sequences
+      global_config: ???
+      seed: ???
+      # sequences
+      n_sequences: ???
+      sequence_length: ???
+      sequence_similarity: ???
+      sequence_similarity_std: ???
+      # elements
+      alphabet_size: ???
+      encoder: ???
+
+    # TODO: high similarity
+    similar:
+      _base_: base
+      sequence_similarity: ???
+      sequence_similarity_std: ???
+
+    # mid similarity
+    general:
+      _base_: base
+      sequence_similarity: 0.2
+      sequence_similarity_std: 0.33
+
+    # TODO: low similarity
+    dissimilar:
+      _base_: base
+      sequence_similarity: ???
+      sequence_similarity_std: ???
+
+  dvc_sequences:
+    _type_: ds.dvc_sequences
+    filepath: ~/data/outdoors_walking/sdrs.pkl
+    n_sequences: ???
+    sequence_length: ???
+    seed: ???
+    sequential: ???
+
+  text_sequences:
+    _type_: ds.text_sequences
+    global_config: ???
+    seed: ???
+    filepath: ~/data/text/hima_all.txt
+    n_sequences: ???
+    sequence_length: ???
+    encoder: ???
+    sequential: ???
+
+encoder:
+  bucket:
+    _type_: encoder.int_bucket
+    n_values: ???
+    bucket_size: ???
+
+  random:
+    base:
+      _type_: encoder.int_random
+      n_values: ???
+      space_compression: ???
+      active_size: ???
+      sds: ???
+      seed: ???
+    flexible_sds:
+      _base_: base
+      active_size: ???
+      space_compression: ???
+      sds: ...
+    fixed_sds:
+      _base_: base
+      space_compression: ...
+      active_size: ...
+      sds: ???
+
+block:
+  # you can omit specifying this common base as _base_.
+  # it is added just for clarity that each block has these attributes
+  base:
+    id: ???
+    name: ???
+
+blocks:
+  sp_like:
+    output_sds: ???
+    sp: ???
+  tm_like:
+    active_cells_sds: ???
+    predicted_cells_sds: ???
+    tm: ???
+
+models:
+  +SE_DVS+SE+SA+AA:
+    - input.sdr -> SE_DVS.feedforward.sdr
+    - SE_DVS.compute()
+    - SE_DVS.output.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - TM.predict()
+    - single SA step:
+      - TM.winner_cells.sdr -> SA.feedforward.sdr
+      - SA.compute()
+    - activate + predict by AA:
+      - SA.output.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.union_predicted_cells()
+    - learn TM:
+      - SE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.winner_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE_DVS+SE+AA:
+    - input.sdr -> SE_DVS.feedforward.sdr
+    - SE_DVS.compute()
+    - SE_DVS.output.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - TM.predict()
+    - activate + predict by AA:
+      - TM.predicted_cells.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.set_predicted_cells()
+    - learn TM:
+      - SE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.active_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE_DVS+SE:
+    - input.sdr -> SE_DVS.feedforward.sdr
+    - SE_DVS.compute()
+    - SE_DVS.output.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - SE.output.sdr -> TM.feedforward.sdr
+    - compute TM:
+        - TM.predict()
+        - TM.set_predicted_cells()
+        - TM.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE+SE+AA:
+    - input.sdr -> SE'.feedforward.sdr
+    - SE'.compute()
+    - SE'.output.sdr -> STE.feedforward.sdr
+    - STE.compute()
+    - TM.predict()
+    - activate + predict by AA:
+      - TM.predicted_cells.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.set_predicted_cells()
+    - learn TM:
+      - STE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.active_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE+SA+AA:
+    - input.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - TM.predict()
+    - single SA step:
+      - TM.winner_cells.sdr -> SA.feedforward.sdr
+      - SA.compute()
+    - activate + predict by AA:
+      - SA.output.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.union_predicted_cells()
+    - learn TM:
+      - SE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.winner_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE+AA:
+    - input.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - TM.predict()
+    - activate + predict by AA:
+      - TM.predicted_cells.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.set_predicted_cells()
+    - learn TM:
+      - SE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.active_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +AA:
+    - TM.predict()
+    - activate + predict by AA:
+      - TM.predicted_cells.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.set_predicted_cells()
+    - learn TM:
+      - input.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.active_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE:
+    - input.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - SE.output.sdr -> TM.feedforward.sdr
+    - compute TM:
+      - TM.predict()
+      - TM.set_predicted_cells()
+      - TM.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  Baseline TM:
+    - input.sdr -> TM.feedforward.sdr
+    - compute TM:
+      - TM.predict()
+      - TM.set_predicted_cells()
+      - TM.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+
+
+spatial_pooler:
+  default:
+    _type_: sp.vectorized
+    seed: ???
+    # input
+    feedforward_sds: ???
+    initial_rf_to_input_ratio: 10.0
+    max_rf_to_input_ratio: 3.0
+    max_rf_sparsity: 0.1
+    # output
+    output_sds: ???
+    # learning
+    min_overlap_for_activation: 3
+    learning_rate: 0.01
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 100.0
+    adapt_to_ff_sparsity: False
+    boosting_k: 0.5
+
+
+spatial_temporal_pooler:
+  default:
+    _type_: stp.base
+    seed: ???
+    # input
+    feedforward_sds: ???
+    initial_rf_to_input_ratio: 10.0
+    max_rf_to_input_ratio: 3.0
+    max_rf_sparsity: 0.1
+    # output
+    output_sds: ???
+    # learning
+    max_pooling_window: 4
+    reset_potential_on_activation: True
+    min_overlap_for_activation: 3
+    learning_rate: 0.01
+    global_inhibition_strength: 0.2
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    prune_grow_cycle: 100.0
+    adapt_to_ff_sparsity: False
+    boosting_k: 0.5
+
+temporal_memory:
+  default:
+    _base_: general_feedback_tm
+    _type_: tm.base
+  general_feedback_tm:
+    _type_: tm.general_feedback
+    seed: ???
+    cells_per_column: ???
+    activation_threshold_basal: ???
+    learning_threshold_basal: ???
+    max_synapses_per_segment_basal: ???
+    max_segments_per_cell_basal: ???
+
+    # Reqs
+    columns: ???
+    context_cells: ???
+    feedback_cells: ???
+    activation_threshold_apical: 1
+    learning_threshold_apical: 1
+
+# additional params for wandb.init
+wandb_init:
+  log: ???
+  project: ???
+  config: ???
+  name: ...
+  group: ...

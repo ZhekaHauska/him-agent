@@ -90,11 +90,11 @@ run_setups:
     log_epoch_schedule: 2
 
   repeating_one:
-    n_sequences: 100
+    n_sequences: 10
     steps_per_sequence: 1
     sequence_repeats: 1
     item_repeats: 7
-    epochs: 40
+    epochs: 10
     total_repeats: ...
     log_repeat_schedule: 5
     log_epoch_schedule: 10

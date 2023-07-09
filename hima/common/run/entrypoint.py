@@ -3,83 +3,149 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
+
 import os
 from argparse import ArgumentParser
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Type
 
-from ruamel import yaml
+from hima.common.config.base import override_config, TConfig, read_config, TKeyPathValue
+from hima.common.config.global_config import GlobalConfig
+from hima.common.config.types import TTypeResolver
+from hima.common.run.argparse import parse_arg_list
+from hima.common.run.wandb import set_wandb_entity
 
-from hima.common.run.argparse import parse_arg
-from hima.common.config import (
-    extracted_type, TConfig, override_config
-)
-from hima.common.run.runner import Runner
 
-TExperimentRunnerRegistry = dict[str, Type[Runner]]
+# TODO:
+#   - pass log folder root with the default behavior: make temp folder with standard procedure
+#   - make experiment runner registry lazy import
+
+@dataclass
+class RunParams:
+    config: TConfig
+    config_path: Path
+    config_overrides: list[TKeyPathValue]
+
+    type_resolver: TTypeResolver
 
 
 def run_experiment(
-        run_command_parser: ArgumentParser,
-        experiment_runner_registry: TExperimentRunnerRegistry
+        *, arg_parser: ArgumentParser, experiment_runner_registry: TTypeResolver
 ) -> None:
-    args, unknown_args = run_command_parser.parse_known_args()
-
-    config = read_config(args.config_filepath)
-    config_overrides = list(map(parse_arg, unknown_args))
+    """
+    THE MAIN entry point for starting a program.
+        1) resolves run args
+        2) resolves whether it is a single run or a wandb sweep
+        3) reads config
+        4) sets any execution params
+        5) resolves who will run this experiment — a runner
+        6) passes execution handling to the runner.
+    """
+    args, unknown_args = arg_parser.parse_known_args()
 
     if args.wandb_entity:
-        # overwrite wandb entity for the run
-        os.environ['WANDB_ENTITY'] = args.wandb_entity
+        set_wandb_entity(args.wandb_entity)
 
-    # prevent math parallelization as it usually only slows things down for us
-    set_single_threaded_math()
+    if args.math_threads > 0:
+        # manually set math parallelization as it usually only slows things down for us
+        set_number_cpu_threads_for_math(
+            num_threads=args.math_threads, cpu_affinity=args.cpu_affinity,
+            with_torch=args.with_torch
+        )
+        start_core = int(args.cpu_affinity.split(':')[0][1:])
+
+    config_path = Path(args.config_filepath)
+    config = read_config(config_path)
+    config_overrides = parse_arg_list(unknown_args)
+
+    run_params = RunParams(
+        config=config, config_path=config_path,
+        config_overrides=config_overrides,
+        type_resolver=experiment_runner_registry
+    )
 
     if args.wandb_sweep:
-        from hima.common.run.sweep import Sweep
-        Sweep(
+        from hima.common.run.sweep import run_sweep
+        run_sweep(
             sweep_id=args.wandb_sweep_id,
-            config=config,
             n_agents=args.n_sweep_agents,
-            experiment_runner_registry=experiment_runner_registry,
-            shared_config_overrides=config_overrides,
-            run_arg_parser=run_command_parser,
-        ).run()
+            sweep_run_params=run_params,
+            run_arg_parser=arg_parser,
+            individual_cpu_cores=(start_core, args.ind_cpu_affinity)
+        )
     else:
-        override_config(config, config_overrides)
-        runner = resolve_experiment_runner(config, experiment_runner_registry)
+        # single run
+        run_single_run_experiment(run_params)
+
+
+def run_single_run_experiment(run_params: RunParams) -> None:
+    global_config = GlobalConfig(
+        config=run_params.config, config_path=run_params.config_path,
+        type_resolver=run_params.type_resolver
+    )
+    # `config` here is the single object shared between all holders, so we can safely override it
+    override_config(global_config.config, run_params.config_overrides)
+
+    # resolve config in case it references other config files [on the root level]
+    # NB: passing the copy to the resolver keeps it clean
+    resolved_config = global_config.config_resolver.resolve(
+        global_config.config.copy(), config_type=dict
+    )
+
+    # we make a copy of the resolved config to make runner args with the references to the config
+    # itself appended, while leaving it untouched (it also prevent us passing self-referencing
+    # config to wandb.init(), which is prohibited)
+    runner_args = resolved_config | dict(
+        config=resolved_config,
+        config_path=global_config.config_path,
+    )
+
+    # if runner is a callback function, run happens on resolve
+    # otherwise, we expect it to be an object with an explicit `run` method that should be called
+    runner = global_config.resolve_object(runner_args)
+    if runner is not None:
         runner.run()
 
 
-def set_single_threaded_math():
-    os.environ['OMP_NUM_THREADS'] = '1'
-    os.environ['MKL_NUM_THREADS'] = '1'
+def set_number_cpu_threads_for_math(
+        num_threads: int, cpu_affinity: str, with_torch: bool = False
+):
+    # Set cpu threads for math libraries
+    os.environ['OMP_NUM_THREADS'] = f'{num_threads}'
+    os.environ['OPENBLAS_NUM_THREADS'] = f'{num_threads}'
+    os.environ['MKL_NUM_THREADS'] = f'{num_threads}'
+    if with_torch:
+        import torch
+        torch.set_num_threads(num_threads)
+
+    # Math libraries also loves to set cpu affinity, restricting
+    # on which CPU cores your sub-processes can run... tell them explicitly to shut up
+    # Setting these variables doesn't affect the number of threads, btw
+    os.environ['OMP_PLACES'] = cpu_affinity
+    # duplicates OMP_PLACES
+    # os.environ['GOMP_CPU_AFFINITY'] = '{0-128}'
+    # dunno what does this mean
+    # os.environ['OPENBLAS_MAIN_FREE'] = '1'
 
 
-def get_run_command_arg_parser() -> ArgumentParser:
+def default_run_arg_parser() -> ArgumentParser:
+    """
+    Returns default run command parser.
+
+    Instead of creating a new one for your specific purposes, you can create a default one
+    and then extend it by adding new arguments.
+    """
     parser = ArgumentParser()
-    # todo: add examples
-    # todo: remove --sweep ?
     parser.add_argument('-c', '--config', dest='config_filepath', required=True)
     parser.add_argument('-e', '--entity', dest='wandb_entity', required=False, default=None)
     parser.add_argument('--sweep', dest='wandb_sweep', action='store_true', default=False)
     parser.add_argument('--sweep_id', dest='wandb_sweep_id', default=None)
     parser.add_argument('-n', '--n_sweep_agents', type=int, default=None)
+
+    parser.add_argument('--math_threads', dest='math_threads', type=int, default=1)
+    parser.add_argument('--with_torch', dest='with_torch', action='store_true', default=False)
+    parser.add_argument('--cpu_affinity', dest='cpu_affinity', default='{0:63}')
+    # set how many cores to fix after each process
+    parser.add_argument('--icpu_affinity', dest='ind_cpu_affinity', type=int, default=None)
     return parser
-
-
-def resolve_experiment_runner(
-        config: TConfig,
-        experiment_runner_registry: TExperimentRunnerRegistry
-) -> Runner:
-    config, experiment_type = extracted_type(config)
-    runner_cls = experiment_runner_registry.get(experiment_type, None)
-
-    assert runner_cls, f'Experiment runner type "{experiment_type}" is not supported'
-    return runner_cls(config, **config)
-
-
-def read_config(filepath: str) -> TConfig:
-    filepath = Path(filepath)
-    with filepath.open('r') as config_io:
-        return yaml.load(config_io, Loader=yaml.Loader)

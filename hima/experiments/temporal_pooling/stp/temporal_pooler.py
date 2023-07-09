@@ -34,7 +34,7 @@ class TemporalPooler:
             not_predicted_weight: float = .7,
     ):
         # apply configured output sparsity to the input size to get sds of an output
-        self.sds = Sds.as_sds([sds.size, sparsity])
+        self.sds = Sds.make([sds.size, sparsity])
         self.rng = np.random.default_rng(seed)
 
         # no reset:

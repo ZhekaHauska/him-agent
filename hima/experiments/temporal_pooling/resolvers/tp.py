@@ -4,8 +4,9 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.common.config import resolve_init_params, TConfig
-from hima.experiments.temporal_pooling.blocks.graph import Block
+from hima.common.config.base import TConfig
+from hima.common.config.values import resolve_init_params
+from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.blocks.tp import TemporalPoolerBlock
 from hima.experiments.temporal_pooling.resolvers.graph import BlockResolver
 

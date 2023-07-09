@@ -5,61 +5,45 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from typing import Any
 
-import numpy as np
-from htm.bindings.algorithms import SpatialPooler
-from htm.bindings.sdr import SDR
-
-from hima.common.config import resolve_init_params, extracted
-from hima.common.sdr import SparseSdr
-from hima.common.utils import timed
-from hima.experiments.temporal_pooling.blocks.graph import Block
+from hima.common.config.base import TConfig
+from hima.experiments.temporal_pooling.graph.block import Block
 
 
 class SpatialPoolerBlock(Block):
-    family = "spatial_pooler"
+    family = 'spatial_pooler'
 
-    FEEDFORWARD = 'feedforward'
-    OUTPUT = 'output'
-    supported_streams = {FEEDFORWARD, OUTPUT}
+    FEEDFORWARD = 'feedforward.sdr'
+    OUTPUT = 'output.sdr'
+    FEEDBACK = 'feedback.sdr'
+    supported_streams = {FEEDFORWARD, OUTPUT, FEEDBACK}
 
     sp: Any
-    _active_input: SDR
-    _active_output: SDR
 
-    def __init__(self, id: int, name: str, **sp_config):
-        super(SpatialPoolerBlock, self).__init__(id, name)
+    def __init__(self, sp: TConfig, **kwargs):
+        super().__init__(**kwargs)
+        self.sp = self.model.config.config_resolver.resolve(sp, config_type=dict)
 
-        sp_config, ff_sds, output_sds = extracted(sp_config, 'ff_sds', 'output_sds')
+    def fit_dimensions(self) -> bool:
+        output, feedback = self[self.OUTPUT], self[self.FEEDBACK]
+        if output.valid_sds and feedback is not None:
+            feedback.set_sds(output.sds)
+        return output.valid_sds
 
-        self.register_stream(self.FEEDFORWARD).resolve_sds(ff_sds)
-        self.register_stream(self.OUTPUT).resolve_sds(output_sds)
-
-        self._sp_config = sp_config
-        self.run_time = 0
-        self.n_computes = 0
-
-    def build(self):
-        sp_config = self._sp_config
-        ff_sds = self.streams[self.FEEDFORWARD].sds
-        output_sds = self.streams[self.OUTPUT].sds
-
-        sp_config = resolve_init_params(
-            sp_config,
-            inputDimensions=ff_sds.shape, potentialRadius=ff_sds.size,
-            columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
+    def compile(self):
+        self.sp = self.model.config.resolve_object(
+            self.sp,
+            feedforward_sds=self[self.FEEDFORWARD].sds,
+            output_sds=self[self.OUTPUT].sds
         )
-        self.sp = SpatialPooler(**sp_config)
 
-        self._active_input = SDR(ff_sds.size)
-        self._active_output = SDR(output_sds.size)
+    def compute(self, learn: bool = True):
+        ff_sdr = self[self.FEEDFORWARD].get()
+        output_sdr = self.sp.compute(ff_sdr, learn=learn)
+        self[self.OUTPUT].set(output_sdr)
 
-    def compute(self, data: dict[str, SparseSdr], **kwargs):
-        _, run_time = self._compute(**data, **kwargs)
-        self.run_time += run_time
-        self.n_computes += 1
+    def switch_polarity(self):
+        self.sp.polarity *= -1
 
-    @timed
-    def _compute(self, feedforward: SparseSdr, learn: bool = True):
-        self._active_input.sparse = feedforward.copy()
-        self.sp.compute(self._active_input, learn=learn, output=self._active_output)
-        self.streams[self.OUTPUT].sdr = np.array(self._active_output.sparse, copy=True)
+    def compute_feedback(self):
+        fb_sdr = self[self.FEEDBACK].get()
+        self.sp.process_feedback(fb_sdr)

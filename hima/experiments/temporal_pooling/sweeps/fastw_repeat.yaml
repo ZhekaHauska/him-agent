@@ -40,6 +40,11 @@ command:
   - ${program}
   - ${args}
 
-    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+    # REQUIRED. Config path convention is relative to common for sweeps and configs root
+    #   <common root>
+    #   |- sweeps/
+    #       |- sweep_config.yaml
+    #   |- configs/
+    #       |- single_run_config.yaml
   - --config
   - ./configs/fastw.yaml

@@ -13,7 +13,7 @@ from hima.envs.biogwlab.environment import Environment
 from hima.envs.env import unwrap
 
 from hima.common.run.runner import Runner
-from hima.common.config import TConfig
+from hima.common.config.base import TConfig
 
 from hima.agents.rnd.agent import RndAgent
 from hima.modules.td_lambda import TDLambda

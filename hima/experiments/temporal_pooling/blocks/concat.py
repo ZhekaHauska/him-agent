@@ -3,10 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from hima.common.config import is_resolved_value
-from hima.common.sdr import SparseSdr
 from hima.common.sdr_encoders import SdrConcatenator
-from hima.experiments.temporal_pooling.blocks.graph import Block, Stream
+from hima.experiments.temporal_pooling.graph.block import Block
 
 
 class ConcatenatorBlock(Block):
@@ -18,39 +16,32 @@ class ConcatenatorBlock(Block):
 
     sdr_concatenator: SdrConcatenator
 
-    def __init__(self, id: int, name: str):
-        super(ConcatenatorBlock, self).__init__(id, name)
-
-    def on_stream_sds_resolved(self, stream: Stream):
-        if is_resolved_value(self.streams[self.OUTPUT].sds):
-            return
-
-        if all(
-            is_resolved_value(self.streams[stream].sds)
-            for stream in self.streams
+    def align_dimensions(self) -> bool:
+        if not self.stream_registry[self.OUTPUT].valid and all(
+            self.stream_registry[stream].valid
+            for stream in self.stream_registry
             if stream.startswith(self._ff_pattern)
         ):
-            self._build()
+            ff_sizes = [
+                self.stream_registry[stream].sds
+                for stream in sorted(self.stream_registry.keys())
+                if stream.startswith(self._ff_pattern)
+            ]
+            self.sdr_concatenator = SdrConcatenator(ff_sizes)
+            self.stream_registry[self.OUTPUT].join_sds(self.sdr_concatenator.output_sds)
 
-    def _build(self):
-        ff_sizes = [
-            self.streams[stream].sds
-            for stream in sorted(self.streams.keys())
-            if stream.startswith(self._ff_pattern)
-        ]
-        self.sdr_concatenator = SdrConcatenator(ff_sizes)
-        self.streams[self.OUTPUT].resolve_sds(self.sdr_concatenator.output_sds)
+        return self.stream_registry[self.OUTPUT].valid
 
-    def build(self, **kwargs):
+    def compile(self, **kwargs):
         pass
 
-    def compute(self, data: dict[str, SparseSdr], **kwargs):
+    def compute(self):
         sdrs = [
-            data[stream]
-            for stream in sorted(data.keys())
+            self.stream_registry[stream].sdr
+            for stream in sorted(self.stream_registry.keys())
             if stream.startswith(self._ff_pattern)
         ]
-        self.streams[self.OUTPUT].sdr = self.sdr_concatenator.concatenate(*sdrs)
+        self.stream_registry[self.OUTPUT].sdr = self.sdr_concatenator.concatenate(*sdrs)
 
     @property
     def _ff_pattern(self) -> str:
