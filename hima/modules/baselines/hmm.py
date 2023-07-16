@@ -6,7 +6,8 @@
 import numpy as np
 from typing import Literal, Optional
 from hima.common.utils import softmax
-from hmmlearn.hmm import MultinomialHMM
+from hima.modules.belief.utils import normalize
+from hmmlearn.hmm import CategoricalHMM
 from copy import copy
 
 
@@ -87,11 +88,12 @@ class CHMMBasic:
         self.forward_messages = list()
 
         if self.learning_mode == 'bw_base':
-            self.model = MultinomialHMM(
+            self.model = CategoricalHMM(
+                n_features=self.n_columns,
                 n_components=self.n_states,
                 params='st',
                 init_params='',
-                random_state=self.seed,
+                random_state=self.seed
             )
 
             emission_probs = list()
@@ -300,3 +302,84 @@ class CHMMBasic:
             )
 
         self.active_state = next_state
+
+
+class HMM:
+    def __init__(
+            self,
+            n_columns: int,
+            cells_per_column: int,
+            learn_every: int,
+            seed: Optional[int] = None
+    ):
+        self.n_columns = n_columns
+        self.cells_per_column = cells_per_column
+        self.learn_every = learn_every
+        self.n_states = cells_per_column * n_columns
+        self.states = np.arange(self.n_states)
+        self.is_first = True
+        self.seed = seed
+
+        self._rng = np.random.default_rng(self.seed)
+
+        self.forward_message = None
+        self.episode = 0
+        self.observations = list()
+        self.obs_sequences = list()
+
+        self.model = CategoricalHMM(
+            n_features=self.n_columns,
+            n_components=self.n_states,
+            random_state=self.seed,
+        )
+
+        self.state_prior = np.ones(self.n_states)/self.n_states
+        self.transition_probs = normalize(np.ones((self.n_states, self.n_states)))
+        self.emission_probs = normalize(np.ones((self.n_states, self.n_columns)))
+
+    def observe(self, observation_state: int, learn: bool = True) -> None:
+        assert 0 <= observation_state < self.n_columns, "Invalid observation state."
+        assert self.forward_message is not None, "Run predict_columns() first."
+
+        if observation_state is not None:
+            self.forward_message *= self.emission_probs[:, observation_state]
+            norm = np.sum(self.forward_message)
+            if norm == 0:
+                self.forward_message = self.state_prior
+            else:
+                self.forward_message /= norm
+
+        if self.is_first and (len(self.observations) > 0):
+            self.obs_sequences.append(copy(self.observations))
+            self.observations.clear()
+            self.episode += 1
+
+            if learn and (self.episode % self.learn_every) == 0:
+                self._baum_welch_base_learning()
+
+            self.is_first = False
+
+        self.observations.append(observation_state)
+
+    def predict_columns(self):
+        if self.is_first:
+            self.forward_message = self.state_prior
+        else:
+            self.forward_message = np.dot(self.forward_message, self.transition_probs)
+
+        prediction = np.dot(self.forward_message, self.emission_probs)
+        return prediction
+
+    def reset(self):
+        self.forward_message = None
+        self.is_first = True
+
+    def _baum_welch_base_learning(self):
+        self.model.fit(
+            np.array([x for y in self.obs_sequences for x in y]).reshape((-1, 1)),
+            [len(x) for x in self.obs_sequences]
+        )
+
+        self.transition_probs = self.model.transmat_
+        self.state_prior = self.model.startprob_
+        self.emission_probs = self.model.emissionprob_

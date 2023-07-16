@@ -4,7 +4,7 @@ project_name: 'ijcai_test'
 run_tag: hmm
 
 n_episodes: 201
-update_rate: 50
+update_rate: 10
 max_steps: 15
 log_gif_fps: 5
 prediction_steps: 5
@@ -15,7 +15,7 @@ positions: [[0, -9], [0, 0], [-3, -5.3], [3, -5.3]]
 
 experiment: pinball
 sp_conf: 'configs/sp/hmm.yaml'
-hmm_conf: 'configs/hmm/default.yaml'
+hmm_conf: 'configs/hmm/hmm_bw.yaml'
 env_conf: 'configs/pinball/default.yaml'
 setup: 'fork'
 
