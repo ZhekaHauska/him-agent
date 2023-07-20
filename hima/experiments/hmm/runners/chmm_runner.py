@@ -425,9 +425,6 @@ class PinballTest:
         total_surprise_decoder = 0
 
         for i in range(self.n_episodes):
-            self.env.reset()
-            self.hmm.reset()
-
             surprises = []
             surprises_decoder = []
 
@@ -437,9 +434,6 @@ class PinballTest:
             n_step_surprise_hid = [list() for t in range(self.prediction_steps)]
 
             steps = 0
-
-            prev_im = self.preprocess(self.env.obs())
-            prev_diff = np.zeros_like(prev_im)
 
             if self.encoder is not None:
                 prev_latent = np.zeros(self.encoder.getColumnDimensions())
@@ -470,7 +464,14 @@ class PinballTest:
             self.env.reset(position)
             self.env.act(action)
 
+            self.hmm.reset()
+
+            self.env.step()
+            prev_im = self.preprocess(self.env.obs())
+            prev_diff = np.zeros_like(prev_im)
+
             while True:
+                self.env.step()
                 raw_im = self.preprocess(self.env.obs())
                 thresh = raw_im.mean()
                 diff = np.abs(raw_im - prev_im) >= thresh
@@ -497,7 +498,7 @@ class PinballTest:
                     total_surprise += surprise
 
                     if self.decoder is not None:
-                        decoded_probs = self.decoder.decode(column_probs, update=True)
+                        decoded_probs = self.decoder.decode(column_probs, learn=True)
 
                         surprise_decoder = self.get_surprise(decoded_probs, self.sp_input.sparse)
 
@@ -514,7 +515,7 @@ class PinballTest:
 
                         if self.decoder is not None:
                             hidden_prediction = column_probs.reshape(self.obs_shape)
-                            decoded_probs = self.decoder.decode(column_probs, update=True)
+                            decoded_probs = self.decoder.decode(column_probs, learn=True)
                             decoded_probs = decoded_probs.reshape(self.encoder.getInputDimensions())
                         else:
                             decoded_probs = column_probs.reshape(self.obs_shape)
@@ -738,6 +739,9 @@ def main(config_path):
             c = c[k]
         c[tokens[-1]] = value
 
+    if config['run']['seed'] is None:
+        config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
+
     if config['run']['log']:
         logger = wandb.init(
             project=config['run']['project_name'], entity=os.environ['WANDB_ENTITY'],
@@ -759,5 +763,5 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    default_config = 'configs/runner/hmm/mpg_single.yaml'
+    default_config = 'configs/runner/chmm/mpg_single.yaml'
     main(os.environ.get('RUN_CONF', default_config))
