@@ -5,7 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from hima.modules.baselines.hmm import HMM
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
-from hima.experiments.hmm.runners.utils import get_surprise
 from htm.bindings.sdr import SDR
 
 try:
@@ -66,7 +65,7 @@ class PinballTest:
 
         self.n_obs_states = self.obs_shape[0] * self.obs_shape[1]
 
-        conf['hmm']['n_columns'] = self.n_obs_states
+        conf['hmm']['n_obs_states'] = self.n_obs_states
 
         self.hmm = HMM(**conf['hmm'])
 
@@ -165,7 +164,7 @@ class PinballTest:
                 if steps > 0:
                     # metrics
                     # 1. surprise
-                    surprise = get_surprise(column_probs, obs_state, mode=self.surprise_mode)
+                    surprise = self.get_surprise(column_probs, obs_state)
 
                     surprises.append(surprise)
                     total_surprise += surprise
@@ -173,7 +172,7 @@ class PinballTest:
                     if self.decoder is not None:
                         decoded_probs = self.decoder.decode(column_probs, learn=True)
 
-                        surprise_decoder = get_surprise(
+                        surprise_decoder = self.get_surprise(
                             decoded_probs,
                             self.sp_input.sparse
                         )
@@ -247,11 +246,10 @@ class PinballTest:
                         for p_obs, p_hid, s in zip(
                                 current_predictions_obs, current_predictions_hid, pred_horizon
                         ):
-                            surp_obs = get_surprise(p_obs.flatten(), self.sp_input.sparse)
-                            surp_hid = get_surprise(
+                            surp_obs = self.get_surprise(p_obs.flatten(), self.sp_input.sparse)
+                            surp_hid = self.get_surprise(
                                 p_hid.flatten(),
-                                self.sp_output.sparse,
-                                mode=self.surprise_mode
+                                self.sp_output.sparse
                             )
                             n_step_surprise_obs[s].append(surp_obs)
                             n_step_surprise_hid[s].append(surp_hid)
@@ -345,11 +343,30 @@ class PinballTest:
             with open(f"logs/models/model_{name}.pkl", 'wb') as file:
                 pickle.dump(self.hmm, file)
 
-    def preprocess(self, image):
+    @staticmethod
+    def preprocess(image):
         gray_im = image.sum(axis=-1)
         gray_im /= gray_im.max()
 
         return gray_im
+
+    @staticmethod
+    def get_surprise(probs, obs):
+        is_coincide = np.isin(
+            np.arange(len(probs)), obs
+        )
+        surprise = - np.sum(
+            np.log(
+                np.clip(probs[is_coincide], 1e-7, 1)
+            )
+        )
+        surprise += - np.sum(
+            np.log(
+                np.clip(1 - probs[~is_coincide], 1e-7, 1)
+            )
+        )
+
+        return surprise
 
 
 def main(config_path):

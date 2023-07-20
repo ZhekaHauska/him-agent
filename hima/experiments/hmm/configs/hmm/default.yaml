@@ -1,2 +1,4 @@
-cells_per_column: 1
-learn_every: 49
+n_hidden_states: 1440
+learn_every: 25
+n_iter: 10
+tol: 0.01
