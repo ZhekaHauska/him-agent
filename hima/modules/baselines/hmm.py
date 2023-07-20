@@ -360,10 +360,13 @@ class HMM:
         self.observations.append(observation_state)
 
     def predict_columns(self):
-        if self.is_first:
+        if self.forward_message is None:
             self.forward_message = self.state_prior
         else:
             self.forward_message = np.dot(self.forward_message, self.transition_probs)
+
+        if np.isclose(self.forward_message.sum(), 0):
+            self.forward_message = normalize(self.forward_message.reshape((1, -1))).flatten()
 
         prediction = np.dot(self.forward_message, self.emission_probs)
         prediction = normalize(prediction.reshape((1, -1))).flatten()
