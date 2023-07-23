@@ -3,7 +3,10 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-
+"""
+    Helper script for running copies of the same command in several processes.
+    It's often used for starting wandb agents.
+"""
 
 if __name__ == '__main__':
     import subprocess
