@@ -1,4 +1,4 @@
-#  Copyright (c) 2022 Autonomous Non-Profit Organization "Artificial Intelligence Research
+#  Copyright (c) 2023 Autonomous Non-Profit Organization "Artificial Intelligence Research
 #  Institute" (AIRI); Moscow Institute of Physics and Technology (National Research University).
 #  All rights reserved.
 #
