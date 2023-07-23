@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import os
+
 import pandas as pd
 import panel as pn
 import imageio
@@ -79,5 +81,6 @@ class GifViewer:
 
 
 if __name__ == '__main__':
-    gv = GifViewer(directory='~/Загрузки', res=1000)
+    root_dir = os.environ.get('GIF_VIS_ROOT_DIR', '~/')
+    gv = GifViewer(directory=root_dir, res=1000)
     gv.app.show()
