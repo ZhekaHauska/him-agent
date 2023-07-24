@@ -75,11 +75,12 @@ class Sds:
     @staticmethod
     def parse_short_notation(first, second):
         shape, size, sparsity, active_size = None, None, None, None
+        tuple_type = (tuple, list)
 
-        if isinstance(first, tuple) or isinstance(first, int):
+        if isinstance(first, tuple_type) or isinstance(first, int):
             # (shape/size, sparsity/active_size)
 
-            if isinstance(first, tuple):
+            if isinstance(first, tuple_type):
                 # shape
                 shape = first
             else:
