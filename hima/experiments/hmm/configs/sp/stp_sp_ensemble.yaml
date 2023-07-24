@@ -1,0 +1,16 @@
+n_sp: 5
+# input
+initial_rf_to_input_ratio: 8.0
+max_rf_to_input_ratio: 1.5
+max_rf_sparsity: 0.1
+# output
+output_sds: [[6, 6], 1]
+# learning
+min_overlap_for_activation: 3
+learning_rate: 0.02
+global_inhibition_strength: 0.2
+newborn_pruning_cycle: 2.0
+prune_grow_cycle: 100.0
+newborn_pruning_stages: 10
+adapt_to_ff_sparsity: True
+boosting_k: 0.5
