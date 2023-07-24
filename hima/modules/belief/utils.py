@@ -45,6 +45,6 @@ def sample_categorical_variables(probs, rng: np.random.Generator):
 
     states = np.zeros_like(probs) + np.arange(probs.shape[1])
 
-    samples = states[cond]
+    samples = states[cond].astype(UINT_DTYPE)
 
     return samples
