@@ -34,7 +34,8 @@ class AnimalAITest:
         self.behavior = list(self.environment.behavior_specs.keys())[0]
         self.raw_obs_shape = self.environment.behavior_specs[self.behavior].observation_specs[
             0].shape[:2]
-        self.n_actions = self.environment.behavior_specs[self.behavior].action_spec.discrete_size
+        self.actions = AAIActions().allActions
+        self.n_actions = len(self.actions)
 
         # assembly agent
         encoder_conf = conf['encoder']
@@ -106,8 +107,8 @@ class AnimalAITest:
                 self.agent.observe((events, action), learn=True)
 
                 # convert to AAI action
-                action = AAIActions().allActions[action]
-                self.environment.set_actions(self.behavior, action)
+                action = self.actions[action]
+                self.environment.set_actions(self.behavior, action.action_tuple)
         else:
             self.environment.close()
 
