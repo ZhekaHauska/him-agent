@@ -3,17 +3,6 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from hima.modules.belief.cortial_column.layer import Layer, REAL_DTYPE, UINT_DTYPE
-from hima.modules.belief.cortial_column.input_layer import Encoder, Decoder
-from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
-from htm.bindings.sdr import SDR
-from hima.experiments.hmm.runners.utils import get_surprise
-
-try:
-    from pinball import Pinball
-except ModuleNotFoundError:
-    Pinball = None
-
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -26,6 +15,16 @@ import ast
 import pickle
 import imageio
 from copy import copy
+
+from hima.modules.belief.cortial_column.layer import Layer, REAL_DTYPE, UINT_DTYPE
+from hima.modules.belief.cortial_column.input_layer import Encoder, Decoder
+from htm.bindings.sdr import SDR
+from hima.experiments.hmm.runners.utils import get_surprise
+
+try:
+    from pinball import Pinball
+except ModuleNotFoundError:
+    Pinball = None
 
 
 class PinballTest:
@@ -52,6 +51,7 @@ class PinballTest:
         decoder_conf = conf.get('decoder', None)
 
         if self.encoder_type == 'one_sp':
+            from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
             assert sp_conf is not None
             sp_conf['seed'] = self.seed
             self.encoder = HtmSpatialPooler(
@@ -68,7 +68,8 @@ class PinballTest:
             self.n_obs_states = 1
 
             self.surprise_mode = 'bernoulli'
-        elif self.encoder_type == 'sp_ensemble':
+        elif self.encoder_type == 'htm_sp_ensemble':
+            from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
             assert sp_conf is not None
             sp_conf['seed'] = self.seed
             sp_conf['inputDimensions'] = list(self.raw_obs_shape)
@@ -93,6 +94,34 @@ class PinballTest:
 
             self.n_obs_vars = self.encoder.n_sp
             self.n_obs_states = self.encoder.sps[0].getNumColumns()
+
+            self.surprise_mode = 'categorical'
+        elif self.encoder_type == 'sp_ensemble':
+            from hima.experiments.temporal_pooling.stp.sp_ensemble import SpatialPoolerEnsemble
+            assert sp_conf is not None
+            sp_conf['seed'] = self.seed
+            sp_conf['feedforward_sds'] = [
+                int(np.prod(list(self.raw_obs_shape))),
+                0.1
+            ]
+            self.encoder = SpatialPoolerEnsemble(**sp_conf)
+            shape = self.encoder.getSingleColumnsDimensions()
+            self.obs_shape = (shape[0] * self.encoder.n_sp, shape[1])
+            self.sp_input = SDR(self.encoder.getNumInputs())
+            self.sp_output = SDR(self.encoder.getNumColumns())
+
+            if decoder_conf is not None:
+                decoder_conf['n_context_vars'] = self.encoder.n_sp
+                decoder_conf['n_context_states'] = shape[0]*shape[1]
+                decoder_conf['n_obs_vars'] = self.raw_obs_shape[0] * self.raw_obs_shape[1]
+                decoder_conf['n_obs_states'] = 2
+                self.decoder = Decoder(**decoder_conf)
+            else:
+                from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
+                self.decoder = SpatialPoolerDecoder(self.encoder)
+
+            self.n_obs_vars = self.encoder.n_sp
+            self.n_obs_states = self.encoder.getSingleNumColumns()
 
             self.surprise_mode = 'categorical'
         elif self.encoder_type == 'input_layer':
@@ -274,9 +303,7 @@ class PinballTest:
                 column_probs = self.hmm.prediction_columns
 
                 if self.decoder is not None:
-                    if type(self.decoder) is SPDecoder:
-                        decoded_probs = self.decoder.decode(column_probs, learn=True)
-                    else:
+                    if isinstance(self.decoder, Decoder):
                         dense_raw_obs = np.asarray(diff, dtype=REAL_DTYPE).flatten()
                         observation = np.arange(
                             0,
@@ -289,6 +316,8 @@ class PinballTest:
                         )
 
                         decoded_probs = decoded_probs[1::2]
+                    else:
+                        decoded_probs = self.decoder.decode(column_probs, learn=True)
 
                 if self.encoder is not None:
                     if self.encoder_type == 'input_layer':

@@ -1,9 +1,9 @@
-log: False
+log: True
 save_model: False
-project_name: 'layer_test'
+project_name: 'encoder_decoder'
 run_tag: null
 
-n_episodes: 11
+n_episodes: 1001
 update_rate: 50
 max_steps: 15
 log_gif_fps: 5
@@ -18,11 +18,11 @@ internal_dependence_1step: False
 #action_delay: 5  # frames to wait before acting
 #action_observable: True
 
-# input_layer | sp_ensemble | one_sp | null
+# input_layer | htm_sp_ensemble | sp_ensemble | one_sp | null
 encoder: sp_ensemble
 
 experiment: pinball
-sp_conf: 'configs/sp/ensemble.yaml'
+sp_conf: 'configs/sp/stp_sp_ensemble.yaml'
 hmm_conf: 'configs/layer/pinball.yaml'
 env_conf: 'configs/pinball/default.yaml'
 setup: 'fork_skewed'
