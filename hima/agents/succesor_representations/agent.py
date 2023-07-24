@@ -91,11 +91,11 @@ class BioHIMA:
         """
         Main learning routine
             observation: tuple (image, action)
-                image: sparse sdr
+                events: sparse sdr
                 action: sparse sdr
         """
-        image, action = observation
-        self.cortical_column.observe(image, action, learn=learn)
+        events, action = observation
+        self.cortical_column.observe(events, action, learn=learn)
 
         self.observation_messages = np.zeros_like(
             self.observation_messages
@@ -136,6 +136,9 @@ class BioHIMA:
         self.observation_prior = normalize(
             self.observation_prior.reshape((self.cortical_column.layer.n_obs_vars, -1))
         ).flatten()
+
+    def reset(self, initial_context_message):
+        self.cortical_column.reset(initial_context_message)
 
     def _generate_sr(
             self,
