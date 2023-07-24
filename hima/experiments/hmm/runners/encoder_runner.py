@@ -233,13 +233,13 @@ class PinballTest:
                 writer_raw = imageio.get_writer(
                     f'/tmp/{self.logger.name}_raw_ep{i}.gif',
                     mode='I',
-                    fps=self.log_fps
+                    duration=1000 / self.log_fps,
                 )
                 if self.encoder is not None:
                     writer_hidden = imageio.get_writer(
                         f'/tmp/{self.logger.name}_hidden_ep{i}.gif',
                         mode='I',
-                        fps=self.log_fps
+                        duration=1000 / self.log_fps,
                     )
                 else:
                     writer_hidden = None
