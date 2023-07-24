@@ -66,7 +66,7 @@ class BioHIMA:
             dense_action = np.zeros_like(action_values)
             dense_action[action] = 1
 
-            self.cortical_column.layer.predict(
+            self.cortical_column.predict(
                 context_backup,
                 dense_action
             )
