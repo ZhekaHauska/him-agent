@@ -1,0 +1,18 @@
+log: False
+save_model: False
+project_name: 'sr_test'
+run_tag: null
+
+n_episodes: 501
+update_rate: 50
+max_steps: 15
+log_gif_fps: 5
+
+env_conf: 'configs/animalai/default.yaml'
+agent_conf: 'configs/agent/default.yaml'
+layer_conf: 'configs/layer/animalai.yaml'
+encoder_conf: 'configs/encoder/sp_ensemble.yaml'
+
+setup: 'basic/1g.yml'
+
+seed: null
