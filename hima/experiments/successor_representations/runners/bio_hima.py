@@ -198,16 +198,16 @@ class AnimalAITest:
             self.environment.close()
 
     def preprocess(self, image):
-        gray_im = image.sum(axis=-1)
-        gray_im /= gray_im.max()
+        gray = np.dot(image, [299/1000, 587/1000, 114/1000])
 
-        thresh = gray_im.mean()
-        diff = np.abs(gray_im - self.prev_image) >= thresh
-        self.prev_image = gray_im.copy()
+        diff = np.abs(gray - self.prev_image)
 
-        raw_obs_state = np.flatnonzero(diff)
+        self.prev_image = gray.copy()
 
-        return raw_obs_state
+        thresh = diff.mean()
+        events = np.flatnonzero(diff > thresh)
+
+        return events
 
 
 def main(config_path):
