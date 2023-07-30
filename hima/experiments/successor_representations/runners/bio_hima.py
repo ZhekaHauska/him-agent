@@ -8,6 +8,8 @@ from animalai.envs.actions import AAIActions
 from hima.agents.succesor_representations.agent import BioHIMA
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
 from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
+from hima.experiments.hmm.runners.utils import get_surprise
+
 
 import wandb
 import numpy as np
@@ -15,10 +17,67 @@ import yaml
 import sys
 import os
 import ast
+import imageio
+
+
+class ScalarMetrics:
+    def __init__(self, metrics, logger):
+        self.logger = logger
+        self.metrics = {metric: [] for metric in metrics.keys()}
+        self.agg_func = {metric: func for metric, func in metrics.items()}
+
+    def update(self, metric_values):
+        for key, value in metric_values.items():
+            self.metrics[key].append(value)
+
+    def log(self, step):
+        average_metrics = {
+            key: self.agg_func[key](values)
+            for key, values in self.metrics.items()
+            if len(values) > 0
+        }
+
+        self.logger.log(
+            average_metrics,
+            step=step
+        )
+
+        self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+
+class GifMetric:
+    def __init__(self, name, logger, log_fps, log_dir='/tmp'):
+        self.name = name
+        self.logger = logger
+        self.log_fps = log_fps
+        self.log_dir = log_dir
+        self.images = []
+
+    def update(self, image):
+        self.images.append(image)
+
+    def log(self, step):
+        with imageio.get_writer(
+            os.path.join(self.log_dir, f'{self.logger.name}_{self.name}_{step}.gif'),
+            mode='I',
+            fps=self.log_fps
+        ) as writer:
+            for image in self.images:
+                writer.append_data(image)
+
+        self.logger.log(
+            {
+                self.name: wandb.Video(
+                    os.path.join(self.log_dir, f'{self.logger.name}_{self.name}_{step}.gif')
+                )
+            },
+            step=step
+        )
 
 
 class AnimalAITest:
     def __init__(self, logger, conf):
+        self.logger = logger
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
 
@@ -71,6 +130,7 @@ class AnimalAITest:
         )
 
         self.n_episodes = conf['run']['n_episodes']
+        self.max_steps = conf['run']['max_steps']
         self.prev_image = np.zeros(self.raw_obs_shape)
         self.initial_context = np.zeros_like(
             self.agent.cortical_column.layer.context_messages
@@ -81,18 +141,30 @@ class AnimalAITest:
                 ) * self.agent.cortical_column.layer.n_hidden_states
             ] = 1
 
+        self.scalar_metrics = ScalarMetrics(
+            {
+                'main_metrics/reward': np.sum,
+                'main_metrics/steps': np.mean,
+                'main_metrics/surprise': np.mean
+            },
+            self.logger
+        )
+
     def run(self):
         for i in range(self.n_episodes):
             self.environment.reset()
             # TODO do we need initial context? why not just prior?
             self.agent.reset(self.initial_context)
 
+            steps = 0
             running = True
             while running:
                 self.environment.step()
                 dec, term = self.environment.get_steps(self.behavior)
-                obs = self.environment.get_obs_dict(dec.obs)["camera"]
-                events = self.preprocess(obs)
+
+                if len(dec) > 0:
+                    obs = self.environment.get_obs_dict(dec.obs)["camera"]
+                    events = self.preprocess(obs)
 
                 reward = 0
                 if len(dec.reward) > 0:
@@ -103,12 +175,25 @@ class AnimalAITest:
 
                 self.agent.reinforce(reward)
 
-                action = self.agent.sample_action()
-                self.agent.observe((events, action), learn=True)
+                if running:
+                    action = self.agent.sample_action()
+                    self.agent.observe((events, action), learn=True)
 
-                # convert to AAI action
-                action = self.actions[action]
-                self.environment.set_actions(self.behavior, action.action_tuple)
+                    # convert to AAI action
+                    action = self.actions[action]
+                    self.environment.set_actions(self.behavior, action.action_tuple)
+
+                if self.logger is not None:
+                    self.scalar_metrics.update({'main_metrics/reward': reward})
+
+                steps += 1
+
+                if steps >= self.max_steps:
+                    running = False
+
+            if self.logger is not None:
+                self.scalar_metrics.update({'main_metrics/steps': steps})
+                self.scalar_metrics.log(i)
         else:
             self.environment.close()
 
