@@ -45,7 +45,6 @@ class SpatialTemporalPooler:
 
     # learning
     learning_rate: float
-    global_inhibition_strength: float
 
     # Newborn stage
     base_boosting_k: float
@@ -97,7 +96,6 @@ class SpatialTemporalPooler:
 
         self.min_overlap_for_activation = min_overlap_for_activation
         self.learning_rate = learning_rate
-        self.global_inhibition_strength = global_inhibition_strength
 
         rf_size = int(self.initial_rf_sparsity * self.ff_size)
         self.rf = sample_for_each_neuron(
