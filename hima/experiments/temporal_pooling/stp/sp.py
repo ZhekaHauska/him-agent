@@ -9,7 +9,7 @@ from numpy.random import Generator
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling._depr.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
     sample_for_each_neuron
@@ -32,7 +32,6 @@ class SpatialPooler:
 
     # learning
     learning_rate: float
-    global_inhibition_strength: float
 
     # connections
     newborn_pruning_cycle: float
@@ -57,8 +56,7 @@ class SpatialPooler:
             # newborn / mature
             initial_rf_to_input_ratio: float, max_rf_to_input_ratio: float, max_rf_sparsity: float,
             output_sds: Sds,
-            min_overlap_for_activation: float,
-            learning_rate: float, global_inhibition_strength: float,
+            min_overlap_for_activation: float, learning_rate: float,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
             prune_grow_cycle: float,
             boosting_k: float, seed: int,
@@ -79,8 +77,6 @@ class SpatialPooler:
 
         self.min_overlap_for_activation = min_overlap_for_activation
         self.learning_rate = learning_rate
-        self.global_inhibition_strength = global_inhibition_strength
-        self.polarity = 1
 
         rf_size = int(self.initial_rf_sparsity * self.ff_size)
         self.rf = sample_for_each_neuron(
@@ -98,9 +94,9 @@ class SpatialPooler:
         self.sparse_input = []
         self.dense_input = np.zeros(self.ff_size, dtype=int)
 
-        self.n_computes = 0
-        self.feedforward_trace = np.full(self.ff_size, 1e-5)
-        self.output_trace = np.full(self.output_size, 1e-5)
+        self.n_computes = 1
+        self.feedforward_trace = np.full(self.ff_size, self.feedforward_sds.sparsity)
+        self.output_trace = np.full(self.output_size, self.output_sds.sparsity)
         self.recognition_strength_trace = 0
 
         self.base_boosting_k = boosting_k
@@ -164,16 +160,26 @@ class SpatialPooler:
         w = self.weights[neurons]
         mask = match_input_mask
         matched = mask.sum(axis=1, keepdims=True)
-        matched = matched + (matched == 0.) * 1e-5
 
-        lr = modulation * self.polarity * self.learning_rate
-        inh = self.global_inhibition_strength
-        dw_inh = lr * inh * (1 - mask)
+        empty_hits = matched.flatten() == 0
+        if np.any(empty_hits):
+            non_empty_hits = np.logical_not(empty_hits)
+            w = w[non_empty_hits]
+            mask = mask[non_empty_hits]
+            matched = matched[non_empty_hits]
+
+        lr = modulation * self.learning_rate
+        dw_inh = lr * (1 - mask)
 
         dw_pool = dw_inh.sum(axis=1, keepdims=True)
         dw_exc = mask * dw_pool / matched
 
         self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
+        with np.printoptions(threshold=np.inf, precision=5, suppress=True):
+            _x = np.flatnonzero(np.isnan(self.weights))
+            assert not np.any(_x), f'{_x=} ' \
+                                   f'| {self.weights.flatten()[_x]} | {matched=} | {w=} | ' \
+                                   f'{dw_exc=} | {dw_inh=} | {self.weights[neurons]=}'
 
     def process_feedback(self, feedback_sdr: SparseSdr):
         # feedback SDR is the SP neurons that should be reinforced
@@ -204,9 +210,13 @@ class SpatialPooler:
         )
 
         self.rf = gather_rows(self.rf, keep_connections_i)
-        self.weights = self.normalize_weights(
+        w = self.normalize_weights(
             gather_rows(self.weights, keep_connections_i)
         )
+        _x = np.flatnonzero(np.isnan(w))
+        assert not np.any(_x), f'{_x=}'
+
+        self.weights = w
         print(f'Prune newborns: {self._state_str()}')
 
         if not self.is_newborn_phase:
@@ -232,6 +242,8 @@ class SpatialPooler:
                 p=synapse_sample_prob
             )
             self.weights[neuron] = 1 / self.rf_size
+            with np.printoptions(threshold=np.inf, precision=5, suppress=True):
+                assert not np.any(np.isnan(self.weights[neuron])), f'{self.weights[neuron]=}'
 
     def on_end_newborn_phase(self):
         self.learning_rate /= 2
@@ -249,8 +261,13 @@ class SpatialPooler:
         return dense_input[rf]
 
     def normalize_weights(self, weights):
+        normalizer = np.abs(weights).sum(axis=1, keepdims=True)
+
+        x = normalizer.flatten()
+        assert np.all(x > 1e-4), f'{weights[x <= 1e-4, :]}'
+
         return np.clip(
-            weights / np.abs(weights).sum(axis=1, keepdims=True),
+            weights / normalizer,
             self.w_min, 1
         )
 
