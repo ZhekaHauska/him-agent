@@ -20,22 +20,42 @@ class SpatialPoolerDecoder:
     def decode(self, cell_probs, learn=False):
         assert cell_probs.size == self.sp.getNumColumns()
 
-        if learn:
-            self._update_receptive_fields()
-
-        if self.mode == 'mean':
-            probs_for_bit = self.receptive_fields * cell_probs.reshape((-1, 1))
-            probs_for_bit = probs_for_bit.mean(axis=0)
-        elif self.mode == 'max':
-            probs_for_bit = self.receptive_fields * cell_probs.reshape((-1, 1))
-            probs_for_bit = probs_for_bit.max(axis=0)
-        elif self.mode == 'sum':
-            log_product = np.dot(self.receptive_fields.T, np.log(np.clip(1 - cell_probs, 1e-7, 1)))
-            probs_for_bit = 1 - np.exp(log_product)
+        is_ensemble = isinstance(self.sp, SpatialPoolerEnsemble)
+        if is_ensemble:
+            cell_probs = cell_probs.reshape(-1, self.sp.getSingleNumColumns())
+            input_probs = np.vstack([
+                self.decode_sp(self.sp.sps[sp_i], cell_probs[sp_i])
+                for sp_i in range(cell_probs.shape[0])
+            ])
+            input_probs = input_probs.mean(axis=0)
+            n_active_input = self.sp.sps[0].ff_avg_active_size
         else:
-            raise ValueError(f'There no such mode: "{self.mode}"!')
+            input_probs = self.decode_sp(self.sp, cell_probs)
+            n_active_input = self.sp.ff_avg_active_size
 
-        return probs_for_bit
+        # input_winners = np.sort(
+        #     np.argpartition(-input_probs, n_active_input)[:n_active_input]
+        # )
+        # input_winners = input_winners[input_probs[input_winners] > 0.001]
+
+        sum_probs = input_probs.sum()
+        if sum_probs > 0.00001:
+            input_probs = np.clip(input_probs / sum_probs, 0., 1.)
+
+        assert input_probs.max() <= 1.0, input_probs.max()
+        assert input_probs.min() >= 0., input_probs.min()
+
+        return input_probs
+
+    @staticmethod
+    def decode_sp(sp, cell_probs):
+        rf, w = sp.rf, sp.weights
+
+        input_probs = np.zeros(sp.ff_size)
+        prob_weights = w * np.expand_dims(cell_probs, -1)
+        # accumulate probabilistic weights onto input vector
+        np.add.at(input_probs, rf, prob_weights)
+        return input_probs
 
     def _update_receptive_fields(self):
         is_ensemble = isinstance(self.sp, SpatialPoolerEnsemble)
