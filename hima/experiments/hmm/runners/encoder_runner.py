@@ -16,6 +16,7 @@ import pickle
 import imageio
 from copy import copy
 
+from hima.common.utils import prepend_dict_keys
 from hima.modules.belief.cortial_column.layer import Layer, REAL_DTYPE, UINT_DTYPE
 from hima.modules.belief.cortial_column.input_layer import Encoder, Decoder
 from htm.bindings.sdr import SDR
@@ -52,12 +53,8 @@ class PinballTest:
 
         if self.encoder_type == 'one_sp':
             from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
-            assert sp_conf is not None
             sp_conf['seed'] = self.seed
-            self.encoder = HtmSpatialPooler(
-                self.raw_obs_shape,
-                **sp_conf
-            )
+            self.encoder = HtmSpatialPooler(self.raw_obs_shape, **sp_conf)
             self.obs_shape = self.encoder.getColumnDimensions()
             self.sp_input = SDR(self.encoder.getInputDimensions())
             self.sp_output = SDR(self.encoder.getColumnDimensions())
@@ -68,16 +65,12 @@ class PinballTest:
             self.n_obs_states = 1
 
             self.surprise_mode = 'bernoulli'
-        elif self.encoder_type == 'htm_sp_ensemble':
+        elif self.encoder_type == 'sp_ensemble':
             from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
-            assert sp_conf is not None
             sp_conf['seed'] = self.seed
             sp_conf['inputDimensions'] = list(self.raw_obs_shape)
             n_sp = sp_conf.pop('n_sp')
-            self.encoder = SPEnsemble(
-                n_sp,
-                **sp_conf
-            )
+            self.encoder = SPEnsemble(n_sp, **sp_conf)
             shape = self.encoder.sps[0].getColumnDimensions()
             self.obs_shape = (shape[0] * self.encoder.n_sp, shape[1])
             self.sp_input = SDR(self.encoder.getNumInputs())
@@ -96,14 +89,10 @@ class PinballTest:
             self.n_obs_states = self.encoder.sps[0].getNumColumns()
 
             self.surprise_mode = 'categorical'
-        elif self.encoder_type == 'sp_ensemble':
+        elif self.encoder_type == 'new_sp_ensemble':
             from hima.experiments.temporal_pooling.stp.sp_ensemble import SpatialPoolerEnsemble
-            assert sp_conf is not None
             sp_conf['seed'] = self.seed
-            sp_conf['feedforward_sds'] = [
-                int(np.prod(list(self.raw_obs_shape))),
-                0.1
-            ]
+            sp_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
             self.encoder = SpatialPoolerEnsemble(**sp_conf)
             shape = self.encoder.getSingleColumnsDimensions()
             self.obs_shape = (shape[0] * self.encoder.n_sp, shape[1])
@@ -174,6 +163,7 @@ class PinballTest:
             conf['hmm']['n_external_vars'] = 1
             conf['hmm']['n_external_states'] = len(self.actions)
 
+            self.idle_action = len(self.actions) - 1
             self.action = len(self.actions)
             self.is_action_observable = conf['run']['action_observable']
             self.action_delay = conf['run']['action_delay']
@@ -195,176 +185,181 @@ class PinballTest:
         self.log_fps = conf['run']['log_gif_fps']
         self.internal_dependence_1step = conf['run']['internal_dependence_1step']
 
-        self._rng = np.random.default_rng(self.seed)
-
+        self.rng = np.random.default_rng(self.seed)
         self.logger = logger
-
         if self.logger is not None:
-            self.logger.log(
-                {
-                    'setting': wandb.Image(
-                        plt.imshow(self.env.obs())
-                    )
-                },
-                step=0
-            )
+            self.logger.log({'setting': wandb.Image(self.env.obs())}, step=0)
+
+        # Stats
+        self.total_surprise = 0
+        self.total_surprise_decoder = 0
+
+    def log_scheduled(self, step):
+        return (self.logger is not None) and (step % self.log_update_rate == 0)
 
     def run(self):
-        total_surprise = 0
-        total_surprise_decoder = 0
+        for episode in range(self.n_episodes):
+            self.run_episode(episode)
+        self.dump_model()
 
-        for i in range(self.n_episodes):
-            surprises = []
-            surprises_decoder = []
-
-            obs_probs_stack = []
-            hidden_probs_stack = []
-            n_step_surprise_obs = [list() for _ in range(self.prediction_steps)]
-            n_step_surprise_hid = [list() for _ in range(self.prediction_steps)]
-
-            steps = 0
-
+    def get_gif_writers(self, episode):
+        writer_raw = None
+        writer_hidden = None
+        if self.log_scheduled(episode):
+            writer_raw = imageio.get_writer(
+                f'/tmp/{self.logger.name}_raw_ep{episode}.gif',
+                mode='I',
+                duration=1000 / self.log_fps,
+            )
             if self.encoder is not None:
-                prev_latent = np.zeros(self.obs_shape)
-            else:
-                prev_latent = None
-
-            if (self.logger is not None) and (i % self.log_update_rate == 0):
-                writer_raw = imageio.get_writer(
-                    f'/tmp/{self.logger.name}_raw_ep{i}.gif',
+                writer_hidden = imageio.get_writer(
+                    f'/tmp/{self.logger.name}_hidden_ep{episode}.gif',
                     mode='I',
                     duration=1000 / self.log_fps,
                 )
-                if self.encoder is not None:
-                    writer_hidden = imageio.get_writer(
-                        f'/tmp/{self.logger.name}_hidden_ep{i}.gif',
-                        mode='I',
-                        duration=1000 / self.log_fps,
-                    )
-                else:
-                    writer_hidden = None
-            else:
-                writer_raw = None
-                writer_hidden = None
+        return writer_raw, writer_hidden
 
-            init_i = self._rng.integers(0, len(self.start_actions), 1)
-            action = self.start_actions[init_i[0]]
-            position = self.start_positions[init_i[0]]
-            self.env.reset(position)
-            self.env.act(action)
+    def run_episode(self, episode):
+        surprises = []
+        surprises_decoder = []
 
-            self.hmm.reset()
+        obs_probs_stack = []
+        hidden_probs_stack = []
+        n_step_surprise_obs = [[] for _ in range(self.prediction_steps)]
+        n_step_surprise_hid = [[] for _ in range(self.prediction_steps)]
+        step = 0
 
+        writer_raw, writer_hidden = self.get_gif_writers(episode)
+
+        init_index = self.rng.choice(len(self.start_actions))
+        action = self.start_actions[init_index]
+        position = self.start_positions[init_index]
+        self.env.reset(position)
+        self.env.act(action)
+
+        self.hmm.reset()
+
+        self.env.step()
+        prev_im = self.preprocess(self.env.obs())
+        prev_diff = np.zeros_like(prev_im)
+
+        prev_latent = None
+        if self.encoder is not None:
+            prev_latent = np.zeros_like(prev_im)
+
+        initial_context = np.zeros_like(self.hmm.context_messages)
+        initial_context[
+            np.arange(self.hmm.n_hidden_vars) * self.hmm.n_hidden_states
+        ] = 1
+        self.hmm.set_context_messages(initial_context)
+
+        while True:
             self.env.step()
-            prev_im = self.preprocess(self.env.obs())
-            prev_diff = np.zeros_like(prev_im)
+            raw_im = self.preprocess(self.env.obs())
+            diff = np.abs(raw_im - prev_im) >= raw_im.mean()
+            prev_im = raw_im.copy()
 
-            initial_context = np.zeros_like(self.hmm.context_messages)
-            initial_context[
-                np.arange(self.hmm.n_hidden_vars) * self.hmm.n_hidden_states
-            ] = 1
-            self.hmm.set_context_messages(initial_context)
+            raw_obs_state = np.flatnonzero(diff)
 
-            while True:
-                self.env.step()
-                raw_im = self.preprocess(self.env.obs())
-                thresh = raw_im.mean()
-                diff = np.abs(raw_im - prev_im) >= thresh
-                prev_im = raw_im.copy()
-
-                raw_obs_state = np.flatnonzero(diff)
-
-                if self.actions is not None:
-                    if steps == self.action_delay:
-                        # choose between non-idle actions
-                        init_i = self._rng.integers(0, len(self.actions)-1, 1)
-                        self.action = init_i[0]
-                        self.env.act(self.actions[self.action])
-                    else:
-                        # choose idle action
-                        self.action = len(self.actions) - 1
-
-                    if self.is_action_observable:
-                        action = self.action
-                    else:
-                        action = len(self.actions) - 1
-
-                    action_probs = np.zeros(len(self.actions))
-                    action_probs[action] = 1
+            action_probs = None
+            if self.actions is not None:
+                if step == self.action_delay:
+                    # choose between non-idle actions
+                    self.action = self.rng.choice(len(self.actions) - 1)
+                    self.env.act(self.actions[self.action])
                 else:
-                    action_probs = None
+                    # choose idle action
+                    self.action = self.idle_action
 
-                self.hmm.set_external_messages(action_probs)
-                self.hmm.predict(
-                    include_internal_connections=(
-                            self.hmm.enable_internal_connections and self.internal_dependence_1step
-                    )
+                action = self.action if self.is_action_observable else self.idle_action
+                action_probs = one_hot(action, len(self.actions))
+
+            self.hmm.set_external_messages(action_probs)
+            self.hmm.predict(
+                include_internal_connections=(
+                    self.hmm.enable_internal_connections and self.internal_dependence_1step
                 )
-                column_probs = self.hmm.prediction_columns
+            )
+            column_probs = self.hmm.prediction_columns
+
+            if self.decoder is not None:
+                if isinstance(self.decoder, Decoder):
+                    dense_raw_obs = np.asarray(diff, dtype=REAL_DTYPE).flatten()
+                    observation = np.arange(
+                        0,
+                        self.decoder.n_obs_vars * self.decoder.n_obs_states,
+                        self.decoder.n_obs_states
+                    ) + dense_raw_obs
+
+                    decoded_probs = self.decoder.decode(
+                        column_probs, observation.astype(UINT_DTYPE)
+                    )
+                    decoded_probs = decoded_probs[1::2]
+                else:
+                    decoded_probs = self.decoder.decode(column_probs, learn=True)
+
+            obs_state = raw_obs_state
+            if self.encoder is not None:
+                if self.encoder_type == 'input_layer':
+                    dense_raw_obs = np.asarray(diff, dtype=REAL_DTYPE).flatten()
+                    observation = np.zeros(self.encoder.context_input_size)
+                    observation[1::2] = dense_raw_obs
+                    observation[::2] = 1 - observation[1::2]
+
+                    obs_state = self.encoder.encode(
+                        observation,
+                        # column_probs,
+                        # decoded_probs
+                    )
+                else:
+                    self.sp_input.sparse = raw_obs_state
+                    self.encoder.compute(self.sp_input, True, self.sp_output)
+                    obs_state = self.sp_output.sparse
+
+            self.hmm.observe(obs_state, learn=True)
+            self.hmm.set_context_messages(self.hmm.internal_forward_messages)
+
+            if step > 0:
+                # metrics
+                # 1. surprise
+                surprise = get_surprise(column_probs, obs_state, mode=self.surprise_mode)
+                surprises.append(surprise)
+                self.total_surprise += surprise
 
                 if self.decoder is not None:
-                    if isinstance(self.decoder, Decoder):
-                        dense_raw_obs = np.asarray(diff, dtype=REAL_DTYPE).flatten()
-                        observation = np.arange(
-                            0,
-                            self.decoder.n_obs_vars * self.decoder.n_obs_states,
-                            self.decoder.n_obs_states
-                        ) + dense_raw_obs
+                    surprise_decoder = get_surprise(decoded_probs, raw_obs_state)
+                    surprises_decoder.append(surprise_decoder)
+                    self.total_surprise_decoder += surprise_decoder
 
-                        decoded_probs = self.decoder.decode(
-                            column_probs, observation.astype(UINT_DTYPE)
-                        )
+                # 2. image
+                if (writer_raw is not None) and (episode % self.log_update_rate == 0):
+                    obs_probs = []
+                    hidden_probs = []
 
-                        decoded_probs = decoded_probs[1::2]
-                    else:
-                        decoded_probs = self.decoder.decode(column_probs, learn=True)
-
-                if self.encoder is not None:
-                    if self.encoder_type == 'input_layer':
-                        dense_raw_obs = np.asarray(diff, dtype=REAL_DTYPE).flatten()
-                        observation = np.zeros(self.encoder.context_input_size)
-                        observation[1::2] = dense_raw_obs
-                        observation[::2] = 1 - observation[1::2]
-
-                        obs_state = self.encoder.encode(
-                            observation,
-                            # column_probs,
-                            # decoded_probs
-                        )
-                    else:
-                        self.sp_input.sparse = raw_obs_state
-                        self.encoder.compute(self.sp_input, True, self.sp_output)
-                        obs_state = self.sp_output.sparse
-                else:
-                    obs_state = raw_obs_state
-
-                self.hmm.observe(
-                    obs_state,
-                    learn=True
-                )
-
-                self.hmm.set_context_messages(self.hmm.internal_forward_messages)
-
-                if steps > 0:
-                    # metrics
-                    # 1. surprise
-                    surprise = get_surprise(column_probs, obs_state, mode=self.surprise_mode)
-                    surprises.append(surprise)
-                    total_surprise += surprise
+                    if self.prediction_steps > 1:
+                        back_up_massages = self.hmm.context_messages.copy()
+                        self.hmm.set_context_messages(self.hmm.prediction_cells)
 
                     if self.decoder is not None:
-                        surprise_decoder = get_surprise(decoded_probs, raw_obs_state)
-                        surprises_decoder.append(surprise_decoder)
-                        total_surprise_decoder += surprise_decoder
+                        hidden_prediction = column_probs.reshape(self.obs_shape)
+                        decoded_probs = decoded_probs.reshape(self.raw_obs_shape)
+                    else:
+                        hidden_prediction = None
+                        decoded_probs = column_probs.reshape(self.obs_shape)
 
-                    # 2. image
-                    if (writer_raw is not None) and (i % self.log_update_rate == 0):
-                        obs_probs = []
-                        hidden_probs = []
+                    raw_predictions = [(decoded_probs * 255).astype(np.uint8)]
 
-                        if self.prediction_steps > 1:
-                            back_up_massages = self.hmm.context_messages.copy()
-                            self.hmm.set_context_messages(self.hmm.prediction_cells)
+                    if hidden_prediction is not None:
+                        hidden_predictions = [(hidden_prediction * 255).astype(np.uint8)]
+
+                    obs_probs.append(decoded_probs.copy())
+                    hidden_probs.append(hidden_prediction.copy())
+
+                    for j in range(self.prediction_steps - 1):
+                        self.hmm.predict(
+                            include_internal_connections=self.hmm.enable_internal_connections
+                        )
+                        column_probs = self.hmm.prediction_columns
 
                         if self.decoder is not None:
                             hidden_prediction = column_probs.reshape(self.obs_shape)
@@ -373,199 +368,136 @@ class PinballTest:
                             if type(self.decoder) is Decoder:
                                 decoded_probs = decoded_probs[1::2]
 
-                            decoded_probs = decoded_probs.reshape(self.raw_obs_shape)
+                            decoded_probs = decoded_probs.reshape(
+                                self.raw_obs_shape
+                            )
                         else:
                             decoded_probs = column_probs.reshape(self.obs_shape)
                             hidden_prediction = None
 
-                        raw_predictions = [(decoded_probs * 255).astype(np.uint8)]
-
-                        if hidden_prediction is not None:
-                            hidden_predictions = [(hidden_prediction * 255).astype(np.uint8)]
-                        else:
-                            hidden_predictions = None
-
                         obs_probs.append(decoded_probs.copy())
                         hidden_probs.append(hidden_prediction.copy())
 
-                        for j in range(self.prediction_steps - 1):
-                            self.hmm.predict(
-                                include_internal_connections=self.hmm.enable_internal_connections
-                            )
-                            column_probs = self.hmm.prediction_columns
-
-                            if self.decoder is not None:
-                                hidden_prediction = column_probs.reshape(self.obs_shape)
-                                decoded_probs = self.decoder.decode(column_probs, learn=False)
-
-                                if type(self.decoder) is Decoder:
-                                    decoded_probs = decoded_probs[1::2]
-
-                                decoded_probs = decoded_probs.reshape(
-                                    self.raw_obs_shape
-                                )
-                            else:
-                                decoded_probs = column_probs.reshape(self.obs_shape)
-                                hidden_prediction = None
-
-                            obs_probs.append(decoded_probs.copy())
-                            hidden_probs.append(hidden_prediction.copy())
-
-                            raw_predictions.append(
-                                (decoded_probs * 255).astype(np.uint8)
-                            )
-
-                            if hidden_predictions is not None:
-                                hidden_predictions.append(
-                                    (hidden_prediction * 255).astype(np.uint8)
-                                )
-
-                            self.hmm.set_context_messages(self.hmm.internal_forward_messages)
-
-                        if self.prediction_steps > 1:
-                            self.hmm.set_context_messages(back_up_massages)
-
-                        obs_probs_stack.append(copy(obs_probs))
-                        hidden_probs_stack.append(copy(hidden_probs))
-
-                        # remove empty lists
-                        obs_probs_stack = [x for x in obs_probs_stack if len(x) > 0]
-                        hidden_probs_stack = [x for x in hidden_probs_stack if len(x) > 0]
-
-                        pred_horizon = [self.prediction_steps - len(x) for x in obs_probs_stack]
-                        current_predictions_obs = [x.pop(0) for x in obs_probs_stack]
-                        current_predictions_hid = [x.pop(0) for x in hidden_probs_stack]
-
-                        for p_obs, p_hid, s in zip(
-                                current_predictions_obs, current_predictions_hid, pred_horizon
-                        ):
-                            surp_obs = get_surprise(
-                                p_obs.flatten(),
-                                raw_obs_state
-                            )
-                            surp_hid = get_surprise(
-                                p_hid.flatten(),
-                                obs_state,
-                                mode=self.surprise_mode
-                            )
-                            n_step_surprise_obs[s].append(surp_obs)
-                            n_step_surprise_hid[s].append(surp_hid)
-
-                        raw_im = [prev_diff.astype(np.uint8) * 255]
-                        raw_im.extend(raw_predictions)
-                        raw_im = np.hstack(raw_im)
-                        writer_raw.append_data(raw_im)
-
-                        if hidden_predictions is not None:
-                            hid_im = [prev_latent.astype(np.uint8) * 255]
-                            hid_im.extend(hidden_predictions)
-                            hid_im = np.hstack(hid_im)
-                            writer_hidden.append_data(hid_im)
-
-                steps += 1
-                prev_diff = diff.copy()
-
-                if self.encoder is not None:
-                    prev_latent = np.zeros(self.obs_shape).flatten()
-                    prev_latent[obs_state] = 1
-                    prev_latent = prev_latent.reshape(self.obs_shape)
-                else:
-                    prev_latent = None
-
-                if steps >= self.max_steps:
-                    if writer_raw is not None:
-                        writer_raw.close()
-
-                    if writer_hidden is not None:
-                        writer_hidden.close()
-
-                    break
-
-            if self.logger is not None:
-                self.logger.log(
-                    {
-                        'main_metrics/surprise': np.array(surprises).mean(),
-                        'main_metrics/total_surprise': total_surprise,
-                        'main_metrics/steps': steps
-                    }, step=i
-                )
-
-                if self.decoder is not None:
-                    self.logger.log(
-                        {
-                            'main_metrics/surprise_decoder': np.array(surprises_decoder).mean(),
-                            'main_metrics/total_surprise_decoder': total_surprise_decoder,
-                        }, step=i
-                    )
-
-                if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
-                    n_step_surprises_hid = {
-                        f'n_step_hidden/surprise_step_{s + 1}': np.mean(x) for s, x in
-                        enumerate(n_step_surprise_hid)
-                    }
-                    n_step_surprises_obs = {
-                        f'n_step_raw/surprise_step_{s + 1}': np.mean(x) for s, x in
-                        enumerate(n_step_surprise_obs)
-                    }
-
-                    self.logger.log(
-                        n_step_surprises_obs,
-                        step=i
-                    )
-
-                    self.logger.log(
-                        n_step_surprises_hid,
-                        step=i
-                    )
-
-                    self.logger.log(
-                        {
-                            'gifs/raw_prediction': wandb.Video(
-                                f'/tmp/{self.logger.name}_raw_ep{i}.gif'
-                            )
-                        },
-                        step=i
-                    )
-                    if writer_hidden is not None:
-                        self.logger.log(
-                            {
-                                'gifs/hidden_prediction': wandb.Video(
-                                    f'/tmp/{self.logger.name}_hidden_ep{i}.gif'
-                                )
-                            },
-                            step=i
+                        raw_predictions.append(
+                            (decoded_probs * 255).astype(np.uint8)
                         )
 
-                    # factors and segments
-                    self.hmm.draw_factor_graph(
-                        f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
-                    )
-
-                    self.logger.log(
-                        {
-                            'factors/graph': wandb.Image(
-                                f'/tmp/{self.logger.name}_factor_graph_ep{i}.png'
+                        if hidden_predictions is not None:
+                            hidden_predictions.append(
+                                (hidden_prediction * 255).astype(np.uint8)
                             )
-                        },
-                        step=i
+
+                        self.hmm.set_context_messages(self.hmm.internal_forward_messages)
+
+                    if self.prediction_steps > 1:
+                        self.hmm.set_context_messages(back_up_massages)
+
+                    obs_probs_stack.append(copy(obs_probs))
+                    hidden_probs_stack.append(copy(hidden_probs))
+
+                    # remove empty lists
+                    obs_probs_stack = [x for x in obs_probs_stack if len(x) > 0]
+                    hidden_probs_stack = [x for x in hidden_probs_stack if len(x) > 0]
+
+                    pred_horizon = [self.prediction_steps - len(x) for x in obs_probs_stack]
+                    current_predictions_obs = [x.pop(0) for x in obs_probs_stack]
+                    current_predictions_hid = [x.pop(0) for x in hidden_probs_stack]
+
+                    for p_obs, p_hid, s in zip(
+                            current_predictions_obs, current_predictions_hid, pred_horizon
+                    ):
+                        surp_obs = get_surprise(
+                            p_obs.flatten(),
+                            raw_obs_state
+                        )
+                        surp_hid = get_surprise(
+                            p_hid.flatten(),
+                            obs_state,
+                            mode=self.surprise_mode
+                        )
+                        n_step_surprise_obs[s].append(surp_obs)
+                        n_step_surprise_hid[s].append(surp_hid)
+
+                    raw_im = [(prev_diff * 255).astype(np.uint8)]
+                    raw_im.extend(raw_predictions)
+                    raw_im = np.hstack(raw_im)
+                    writer_raw.append_data(raw_im)
+
+                    if hidden_predictions is not None:
+                        hid_im = [(prev_latent * 255).astype(np.uint8)]
+                        hid_im.extend(hidden_predictions)
+                        hid_im = np.hstack(hid_im)
+                        writer_hidden.append_data(hid_im)
+
+            step += 1
+            prev_diff = diff.copy()
+
+            if self.encoder is not None:
+                prev_latent = np.zeros(np.prod(self.obs_shape))
+                prev_latent[obs_state] = 1
+                prev_latent = prev_latent.reshape(self.obs_shape)
+            else:
+                prev_latent = None
+
+            if step >= self.max_steps:
+                if writer_raw is not None:
+                    writer_raw.close()
+
+                if writer_hidden is not None:
+                    writer_hidden.close()
+
+                break
+
+        # AFTER EPISODE IS DONE
+        if self.logger is not None:
+            log_metrics = {}
+
+            # main metrics
+            main_metrics = dict(
+                steps=step,
+                surprise=np.mean(surprises),
+                total_surprise=self.total_surprise,
+            )
+            if self.decoder is not None:
+                main_metrics |= dict(
+                    surprise_decoder=np.mean(surprises_decoder),
+                    total_surprise_decoder=self.total_surprise_decoder,
+                )
+            log_metrics |= prepend_dict_keys(main_metrics, 'main_metrics')
+
+            if self.log_scheduled(episode):
+                for s, x in enumerate(n_step_surprise_hid):
+                    log_metrics[f'n_step_hidden/surprise_step_{s + 1}'] = np.mean(x)
+                for s, x in enumerate(n_step_surprise_obs):
+                    log_metrics[f'n_step_raw/surprise_step_{s + 1}'] = np.mean(x)
+
+                # noinspection PyDictCreation
+                gifs = {}
+                gifs['raw_prediction'] = wandb.Video(
+                    f'/tmp/{self.logger.name}_raw_ep{episode}.gif'
+                )
+                if writer_hidden is not None:
+                    gifs['hidden_prediction'] = wandb.Video(
+                        f'/tmp/{self.logger.name}_hidden_ep{episode}.gif'
                     )
 
-                    for factors, type_ in zip(
-                            (self.hmm.context_factors, self.hmm.internal_factors),
-                            ('context', 'internal')
-                    ):
-                        if factors is not None:
-                            self.log_factors(factors, type_, i)
+                log_metrics |= prepend_dict_keys(gifs, 'gifs')
 
-        if self.logger is not None and self.save_model:
-            name = self.logger.name
+                # factors and segments
+                self.hmm.draw_factor_graph(
+                    f'/tmp/{self.logger.name}_factor_graph_ep{episode}.png'
+                )
+                log_metrics['factors/graph'] = wandb.Image(
+                    f'/tmp/{self.logger.name}_factor_graph_ep{episode}.png'
+                )
+                for factors, f_type in zip(
+                        (self.hmm.context_factors, self.hmm.internal_factors),
+                        ('context', 'internal')
+                ):
+                    if factors is not None:
+                        log_metrics |= self.log_factors(factors, f_type, episode)
 
-            path = Path('logs')
-            if not path.exists():
-                path.mkdir()
-
-            with open(f"logs/models/model_{name}.pkl", 'wb') as file:
-                pickle.dump(self.hmm, file)
+            self.logger.log(log_metrics, step=episode)
 
     @staticmethod
     def preprocess(image):
@@ -574,125 +506,69 @@ class PinballTest:
 
         return gray_im
 
-    def log_factors(self, factors, type_, step):
-        self.logger.log(
-            {
-                f'connections/n_{type_}_segments': factors.connections.numSegments(),
-                f'connections/n_{type_}_factors': factors.factor_connections.numSegments()
-            }, step=step
-        )
+    def log_factors(self, factors, f_type, step):
+        metrics = {
+            f'connections/n_{f_type}_segments': factors.connections.numSegments(),
+            f'connections/n_{f_type}_factors': factors.factor_connections.numSegments()
+        }
 
         n_segments = np.zeros(self.hmm.internal_cells)
         sum_factor_value = np.zeros(self.hmm.internal_cells)
         for cell in range(self.hmm.internal_cells):
             segments = factors.connections.segmentsForCell(cell)
 
+            value = 0
             if len(segments) > 0:
                 value = np.exp(factors.log_factor_values_per_segment[segments]).sum()
-            else:
-                value = 0
 
             n_segments[cell] = len(segments)
             sum_factor_value[cell] = value
 
         n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
-
         sum_factor_value = sum_factor_value.reshape((-1, self.hmm.cells_per_column)).T
 
-        self.logger.log(
-            {
-                f'{type_}_factors/n_segments': wandb.Image(
-                    sns.heatmap(
-                        n_segments
-                    )
-                )
-            },
-            step=step
-        )
+        # noinspection PyDictCreation
+        factor_metrics = {}
+        factor_metrics['n_segments'] = wandb.Image(sns.heatmap(n_segments))
         plt.close('all')
-        self.logger.log(
-            {
-                f'{type_}_factors/sum_factor_value': wandb.Image(
-                    sns.heatmap(
-                        sum_factor_value
-                    )
-                )
-            },
-            step=step
-        )
+        factor_metrics['sum_factor_value'] = wandb.Image(sns.heatmap(sum_factor_value))
         plt.close('all')
-
-        self.logger.log(
-            {
-                f'{type_}_factors/var_score': wandb.Image(
-                    sns.scatterplot(
-                        factors.var_score
-                    )
-                )
-            },
-            step=step
-        )
+        factor_metrics['var_score'] = wandb.Image(sns.scatterplot(factors.var_score))
         plt.close('all')
 
         if len(factors.segments_in_use) > 0:
-            self.logger.log(
-                {
-                    f'{type_}_factors/_segment_activity': wandb.Image(
-                        sns.histplot(
-                            factors.segment_activity[
-                                factors.segments_in_use
-                            ]
-                        )
-                    ),
-                },
-                step=step
-            )
+            segment_activity = factors.segment_activity[factors.segments_in_use]
+            segment_log_values = factors.log_factor_values_per_segment[factors.segments_in_use]
+
+            factor_metrics['segment_activity'] = wandb.Image(sns.histplot(segment_activity))
+            plt.close('all')
+            factor_metrics['segment_log_values'] = wandb.Image(sns.histplot(segment_log_values))
+            plt.close('all')
+            factor_metrics['segment_score'] = wandb.Image(sns.histplot(
+                np.exp(segment_log_values) * segment_activity
+            ))
             plt.close('all')
 
-            self.logger.log(
-                {
-                    f'{type_}_factors/segment_log_values': wandb.Image(
-                        sns.histplot(
-                            factors.log_factor_values_per_segment[
-                                factors.segments_in_use
-                            ]
-                        )
-                    )
-                },
-                step=step
-            )
-            plt.close('all')
+        metrics |= prepend_dict_keys(factor_metrics, f'{f_type}_factors')
+        return metrics
 
-            self.logger.log(
-                {
-                    f'{type_}_factors/segment_score': wandb.Image(
-                        sns.histplot(
-                            np.exp(
-                                factors.log_factor_values_per_segment[
-                                    factors.segments_in_use
-                                ]
-                            ) * factors.segment_activity[
-                                factors.segments_in_use
-                            ]
-                        )
-                    )
-                },
-                step=step
-            )
-            plt.close('all')
+    def dump_model(self):
+        if self.logger is None or not self.save_model:
+            return
 
-            # if len(factors.factor_score) > 0:
-            #     self.logger.log(
-            #         {
-            #             f'{type_}_factors/score': wandb.Image(
-            #                 sns.histplot(
-            #                     factors.factor_score
-            #                 )
-            #             ),
-            #         },
-            #         step=step
-            #     )
-            #     plt.close('all')
+        path = Path('logs')
+        if not path.exists():
+            path.mkdir()
+
+        name = self.logger.name
+        with open(f"logs/models/model_{name}.pkl", 'wb') as file:
+            pickle.dump(self.hmm, file)
+
+
+def one_hot(i, size):
+    arr = np.zeros(size)
+    arr[i] = 1.
+    return arr
 
 
 def main(config_path):
