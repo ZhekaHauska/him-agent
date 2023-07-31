@@ -120,3 +120,10 @@ def safe_divide(x, y, default=0.):
     if y == 0:
         return default
     return x / y
+
+
+def prepend_dict_keys(d: dict[str, Any], prefix, separator='/'):
+    return {
+        f'{prefix}{separator}{k}': d[k]
+        for k in d
+    }
