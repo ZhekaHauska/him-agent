@@ -82,8 +82,8 @@ class SpatialTemporalPooler:
             reset_potential_on_activation: bool = True,
     ):
         self.rng = np.random.default_rng(seed)
-        self.feedforward_sds = feedforward_sds
-        self.output_sds = output_sds
+        self.feedforward_sds = Sds.make(feedforward_sds)
+        self.output_sds = Sds.make(output_sds)
 
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
@@ -111,12 +111,12 @@ class SpatialTemporalPooler:
 
         self.sparse_input = []
         # +1 for always-inactive element that is used to additionally turn off parts of neuron's RF
-        # — this way
+        # — as it's never appear in real input, connections to it are useless
         self.dense_input = np.zeros(self.ff_size + 1)
 
-        self.n_computes = 0
-        self.feedforward_trace = np.full(self.ff_size, 1e-5)
-        self.output_histogram = np.full(self.output_size, 1e-5)
+        self.n_computes = 1
+        self.feedforward_trace = np.full(self.ff_size, self.feedforward_sds.sparsity)
+        self.output_histogram = np.full(self.output_size, self.output_sds.sparsity)
         self.avg_recognition_ratio = 0.
         self.avg_normalized_winner_potential = 0.
 
@@ -144,7 +144,6 @@ class SpatialTemporalPooler:
 
     def compute(self, input_sdr: SparseSdr, learn: bool = False) -> SparseSdr:
         """Compute the output SDR."""
-        # TODO: rename to feedforward
         output_sdr, run_time = self._compute(input_sdr, learn)
         self.run_time += run_time
         return output_sdr
@@ -230,6 +229,7 @@ class SpatialTemporalPooler:
 
         # inhibition is proportional to the synapse's weight and to the inverted its contribution
         # to the neuron's final potential [and therefore the neuron's winning].
+        # TODO: check if it works normally for R in [0, .5]
         dw_inh = lr * (1.0 - R) * w
 
         # synapse inhibition contributes [an individual] part of the synapse's weight to the shared

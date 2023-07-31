@@ -14,7 +14,7 @@ from hima.common.run.wandb import get_logger
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
-from hima.common.utils import isnone, safe_divide
+from hima.common.utils import isnone, safe_divide, prepend_dict_keys
 from hima.envs.mnist import MNISTEnv
 from hima.experiments.temporal_pooling.data.mnist import MnistDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
@@ -434,7 +434,4 @@ class SpAttractorExperiment:
 
 
 def personalize_metrics(metrics: dict, prefix: str):
-    return {
-        f'{prefix}/{k}': metrics[k]
-        for k in metrics
-    }
+    return prepend_dict_keys(metrics, prefix, separator='/')

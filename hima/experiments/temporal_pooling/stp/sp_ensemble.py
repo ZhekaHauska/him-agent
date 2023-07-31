@@ -12,25 +12,15 @@ from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
 class SpatialPoolerEnsemble:
     sps: list[SpatialPooler]
 
-    def __init__(
-            self,
-            n_sp,
-            **kwargs
-    ):
+    def __init__(self, n_sp, **kwargs):
         self.n_sp = n_sp
         self.seed = kwargs.pop('seed')
         self._rng = np.random.default_rng(self.seed)
 
-        self.sps = []
-
-        seeds = self._rng.integers(np.iinfo(np.int32).max, size=self.n_sp)
-        for i in range(self.n_sp):
-            self.sps.append(
-                SpatialPooler(
-                    **kwargs,
-                    seed=seeds[i]
-                )
-            )
+        self.sps = [
+            SpatialPooler(**kwargs, seed=self._rng.integers(1_000_000))
+            for _ in range(self.n_sp)
+        ]
 
     def compute(self, input_sdr: SDR, learn: bool, output_sdr: SDR):
         input_sdr = input_sdr.sparse.copy()
@@ -51,7 +41,7 @@ class SpatialPoolerEnsemble:
         return self.getSingleNumColumns() * self.n_sp
 
     def getNumInputs(self):
-        return self.sps[0].feedforward_sds.size
+        return self.sps[0].ff_size
 
     def getColumnDimensions(self):
         return [sp.output_sds.shape for sp in self.sps]

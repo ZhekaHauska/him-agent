@@ -85,10 +85,8 @@ class SpatialPooler:
         )
         print(f'SP vec init shape: {self.rf.shape}')
 
-        w0 = 1 / rf_size
-        self.w_min = 0.
         self.weights = self.normalize_weights(
-            self.rng.normal(w0, 0.02, size=self.rf.shape)
+            self.rng.normal(loc=1.0, scale=0.02, size=self.rf.shape)
         )
 
         self.sparse_input = []
@@ -105,12 +103,10 @@ class SpatialPooler:
         self.newborn_pruning_stage = 0
         self.prune_grow_cycle = prune_grow_cycle
 
-        self.no_feedback_count = 0
         self.run_time = 0
 
     def compute(self, input_sdr: SparseSdr, learn: bool = False) -> SparseSdr:
         """Compute the output SDR."""
-        # TODO: rename to feedforward
         output_sdr, run_time = self._compute(input_sdr, learn)
         self.run_time += run_time
         return output_sdr
@@ -118,7 +114,6 @@ class SpatialPooler:
     @timed
     def _compute(self, input_sdr: SparseSdr, learn: bool) -> SparseSdr:
         self.n_computes += 1
-        self.no_feedback_count += 1
         self.feedforward_trace[input_sdr] += 1
 
         if self.is_newborn_phase:
@@ -158,6 +153,7 @@ class SpatialPooler:
             return
 
         w = self.weights[neurons]
+        lr = modulation * self.learning_rate
         mask = match_input_mask
         matched = mask.sum(axis=1, keepdims=True)
 
@@ -168,26 +164,16 @@ class SpatialPooler:
             mask = mask[non_empty_hits]
             matched = matched[non_empty_hits]
 
-        lr = modulation * self.learning_rate
-        dw_inh = lr * (1 - mask)
-
+        dw_inh = lr * (1 - mask) * w
         dw_pool = dw_inh.sum(axis=1, keepdims=True)
         dw_exc = mask * dw_pool / matched
 
         self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
-        with np.printoptions(threshold=np.inf, precision=5, suppress=True):
-            _x = np.flatnonzero(np.isnan(self.weights))
-            assert not np.any(_x), f'{_x=} ' \
-                                   f'| {self.weights.flatten()[_x]} | {matched=} | {w=} | ' \
-                                   f'{dw_exc=} | {dw_inh=} | {self.weights[neurons]=}'
 
     def process_feedback(self, feedback_sdr: SparseSdr):
         # feedback SDR is the SP neurons that should be reinforced
-        feedback_strength = self.no_feedback_count
         fb_match_mask, _ = self.match_input(self.dense_input, neurons=feedback_sdr)
-
-        self.learn(feedback_sdr, fb_match_mask, modulation=feedback_strength)
-        self.no_feedback_count = 0
+        self.learn(feedback_sdr, fb_match_mask)
 
     def shrink_receptive_field(self):
         self.newborn_pruning_stage += 1
@@ -210,13 +196,9 @@ class SpatialPooler:
         )
 
         self.rf = gather_rows(self.rf, keep_connections_i)
-        w = self.normalize_weights(
+        self.weights = self.normalize_weights(
             gather_rows(self.weights, keep_connections_i)
         )
-        _x = np.flatnonzero(np.isnan(w))
-        assert not np.any(_x), f'{_x=}'
-
-        self.weights = w
         print(f'Prune newborns: {self._state_str()}')
 
         if not self.is_newborn_phase:
@@ -227,6 +209,8 @@ class SpatialPooler:
 
     def prune_grow_synapses(self):
         print(f'Force neurogenesis: {self.output_entropy():.3f} | {self.recognition_strength:.1f}')
+        # FIXME: rework prune/grow
+        return
         # prune-grow operation combined results to resample of a part of
         # the most inactive or just randomly selected synapses;
         # new synapses are distributed according to the feedforward distribution
@@ -242,8 +226,6 @@ class SpatialPooler:
                 p=synapse_sample_prob
             )
             self.weights[neuron] = 1 / self.rf_size
-            with np.printoptions(threshold=np.inf, precision=5, suppress=True):
-                assert not np.any(np.isnan(self.weights[neuron])), f'{self.weights[neuron]=}'
 
     def on_end_newborn_phase(self):
         self.learning_rate /= 2
@@ -260,16 +242,10 @@ class SpatialPooler:
         rf = self.rf if neurons is None else self.rf[neurons]
         return dense_input[rf]
 
-    def normalize_weights(self, weights):
+    @staticmethod
+    def normalize_weights(weights):
         normalizer = np.abs(weights).sum(axis=1, keepdims=True)
-
-        x = normalizer.flatten()
-        assert np.all(x > 1e-4), f'{weights[x <= 1e-4, :]}'
-
-        return np.clip(
-            weights / normalizer,
-            self.w_min, 1
-        )
+        return np.clip(weights / normalizer, 0., 1)
 
     def get_active_rf(self, weights):
         w_thr = 1 / self.rf_size
