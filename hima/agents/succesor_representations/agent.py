@@ -7,6 +7,7 @@ import numpy as np
 
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import normalize, softmax, sample_categorical_variables
+from hima.experiments.hmm.runners.utils import get_surprise
 
 
 class BioHIMA:
@@ -50,6 +51,8 @@ class BioHIMA:
                 )
             )
         )
+
+        self.surprise = 0
 
         self.seed = seed
         self._rng = np.random.default_rng(seed)
@@ -97,6 +100,15 @@ class BioHIMA:
         events, action = observation
         self.cortical_column.observe(events, action, learn=learn)
 
+        if len(self.cortical_column.output_sdr.sparse) > 0:
+            self.surprise = get_surprise(
+                self.cortical_column.layer.prediction_columns,
+                self.cortical_column.output_sdr.sparse,
+                mode='categorical'
+            )
+        else:
+            self.surprise = 0
+
         self.observation_messages = np.zeros_like(
             self.observation_messages
         )
@@ -107,7 +119,7 @@ class BioHIMA:
             context_backup = self.cortical_column.layer.context_messages.copy()
             prediction_cells = self.cortical_column.layer.prediction_cells.copy()
 
-            predicted_sr = self._predict_sr(self.cortical_column.layer.prediction_cells)
+            predicted_sr = self.predict_sr(self.cortical_column.layer.prediction_cells)
             generated_sr, last_step_prediction = self._generate_sr(
                 self.sr_steps,
                 self.cortical_column.layer.prediction_cells,
@@ -168,7 +180,7 @@ class BioHIMA:
             context_messages = self.cortical_column.layer.internal_forward_messages
 
         if approximate_tail:
-            sr += (self.gamma**(i+1)) * self._predict_sr(
+            sr += (self.gamma**(i+1)) * self.predict_sr(
                 context_messages
             )
 
@@ -177,7 +189,7 @@ class BioHIMA:
         else:
             return sr
 
-    def _predict_sr(self, hidden_vars_dist):
+    def predict_sr(self, hidden_vars_dist):
         sr = np.dot(hidden_vars_dist, self.striatum_weights)
         sr /= self.cortical_column.layer.n_hidden_vars
         sr = (1 - self.gamma) * sr.reshape((self.cortical_column.layer.n_obs_vars, -1))
