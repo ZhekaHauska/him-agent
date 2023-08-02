@@ -139,6 +139,8 @@ class BioHIMA:
 
             self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
+            return predicted_sr, generated_sr
+
     def reinforce(self, reward):
         """
         Adapt prior distribution of observations according to external reward.
