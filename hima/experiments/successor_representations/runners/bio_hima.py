@@ -8,7 +8,7 @@ from animalai.envs.actions import AAIActions
 from hima.agents.succesor_representations.agent import BioHIMA
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
 from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
-from hima.experiments.hmm.runners.utils import get_surprise
+from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
 
 
 import wandb
@@ -17,62 +17,6 @@ import yaml
 import sys
 import os
 import ast
-import imageio
-
-
-class ScalarMetrics:
-    def __init__(self, metrics, logger):
-        self.logger = logger
-        self.metrics = {metric: [] for metric in metrics.keys()}
-        self.agg_func = {metric: func for metric, func in metrics.items()}
-
-    def update(self, metric_values):
-        for key, value in metric_values.items():
-            self.metrics[key].append(value)
-
-    def log(self, step):
-        average_metrics = {
-            key: self.agg_func[key](values)
-            for key, values in self.metrics.items()
-            if len(values) > 0
-        }
-
-        self.logger.log(
-            average_metrics,
-            step=step
-        )
-
-        self.metrics = {metric: [] for metric in self.metrics.keys()}
-
-
-class GifMetric:
-    def __init__(self, name, logger, log_fps, log_dir='/tmp'):
-        self.name = name
-        self.logger = logger
-        self.log_fps = log_fps
-        self.log_dir = log_dir
-        self.images = []
-
-    def update(self, image):
-        self.images.append(image)
-
-    def log(self, step):
-        with imageio.get_writer(
-            os.path.join(self.log_dir, f'{self.logger.name}_{self.name}_{step}.gif'),
-            mode='I',
-            fps=self.log_fps
-        ) as writer:
-            for image in self.images:
-                writer.append_data(image)
-
-        self.logger.log(
-            {
-                self.name: wandb.Video(
-                    os.path.join(self.log_dir, f'{self.logger.name}_{self.name}_{step}.gif')
-                )
-            },
-            step=step
-        )
 
 
 class AnimalAITest:
@@ -131,6 +75,8 @@ class AnimalAITest:
 
         self.n_episodes = conf['run']['n_episodes']
         self.max_steps = conf['run']['max_steps']
+        self.update_rate = conf['run']['update_rate']
+
         self.prev_image = np.zeros(self.raw_obs_shape)
         self.initial_context = np.zeros_like(
             self.agent.cortical_column.layer.context_messages
@@ -141,6 +87,7 @@ class AnimalAITest:
                 ) * self.agent.cortical_column.layer.n_hidden_states
             ] = 1
 
+        # define metrics
         self.scalar_metrics = ScalarMetrics(
             {
                 'main_metrics/reward': np.sum,
@@ -148,6 +95,23 @@ class AnimalAITest:
                 'main_metrics/surprise': np.mean
             },
             self.logger
+        )
+
+        self.heatmap_metrics = HeatmapMetrics(
+            {
+                'heatmaps/prior': np.mean,
+                'heatmaps/striatum_weights': np.mean
+            },
+            self.logger
+        )
+
+        self.image_metrics = ImageMetrics(
+            [
+                'images/behavior',
+                'images/sr'
+            ],
+            self.logger,
+            log_fps=conf['run']['log_gif_fps']
         )
 
     def run(self):
@@ -173,7 +137,7 @@ class AnimalAITest:
                     reward += term.reward
                     running = False
 
-                self.agent.reinforce(reward)
+                self.agent.reinforce(np.clip(reward, 0, None))
 
                 if running:
                     action = self.agent.sample_action()
@@ -184,16 +148,51 @@ class AnimalAITest:
                     self.environment.set_actions(self.behavior, action.action_tuple)
 
                 if self.logger is not None:
-                    self.scalar_metrics.update({'main_metrics/reward': reward})
+                    self.scalar_metrics.update({
+                        'main_metrics/reward': reward,
+                        'main_metrics/surprise': self.agent.surprise
+                    })
 
                 steps += 1
 
                 if steps >= self.max_steps:
                     running = False
 
+                if (i % self.update_rate) == 0:
+                    raw_beh = (self.prev_image * 255).astype('uint8')
+
+                    proc_beh = np.zeros(self.raw_obs_shape).flatten()
+                    proc_beh[events] = 1
+                    proc_beh = (proc_beh.reshape(self.raw_obs_shape) * 255).astype('uint8')
+
+                    sr = (self.agent.cortical_column.decoder.decode(
+                                self.agent.predict_sr(
+                                    self.agent.cortical_column.layer.prediction_cells
+                                )
+                            ).reshape(self.raw_obs_shape) * 255).astype('uint8')
+
+                    self.image_metrics.update(
+                        {
+                            'images/behavior': np.hstack([raw_beh, proc_beh, sr])
+                        }
+                    )
+
             if self.logger is not None:
                 self.scalar_metrics.update({'main_metrics/steps': steps})
                 self.scalar_metrics.log(i)
+
+                if (i % self.update_rate) == 0:
+                    prior_probs = self.agent.cortical_column.decoder.decode(
+                        self.agent.observation_prior
+                    ).reshape(self.raw_obs_shape)
+                    self.heatmap_metrics.update(
+                        {
+                            'heatmaps/prior': prior_probs,
+                            'heatmaps/striatum_weights': self.agent.striatum_weights
+                        }
+                    )
+                    self.heatmap_metrics.log(i)
+                    self.image_metrics.log(i)
         else:
             self.environment.close()
 
