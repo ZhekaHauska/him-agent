@@ -3,13 +3,15 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import io
+
 from animalai.envs.environment import AnimalAIEnvironment
 from animalai.envs.actions import AAIActions
 from hima.agents.succesor_representations.agent import BioHIMA
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
 from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
 from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
-
+from PIL import Image
 
 import wandb
 import numpy as np
@@ -82,33 +84,36 @@ class AnimalAITest:
             self.agent.cortical_column.layer.context_messages
         )
         self.initial_context[
-                np.arange(
-                    self.agent.cortical_column.layer.n_hidden_vars
-                ) * self.agent.cortical_column.layer.n_hidden_states
-            ] = 1
+            np.arange(
+                self.agent.cortical_column.layer.n_hidden_vars
+            ) * self.agent.cortical_column.layer.n_hidden_states
+        ] = 1
 
         # define metrics
         self.scalar_metrics = ScalarMetrics(
             {
                 'main_metrics/reward': np.sum,
                 'main_metrics/steps': np.mean,
-                'main_metrics/surprise': np.mean
+                'layer/surprise_hidden': np.mean,
+                'layer/n_segments': np.mean,
+                'layer/n_factors': np.mean
             },
             self.logger
         )
 
         self.heatmap_metrics = HeatmapMetrics(
             {
-                'heatmaps/prior': np.mean,
-                'heatmaps/striatum_weights': np.mean
+                'agent/prior': np.mean,
+                'agent/striatum_weights': np.mean
             },
             self.logger
         )
 
         self.image_metrics = ImageMetrics(
             [
-                'images/behavior',
-                'images/sr'
+                'agent/behavior',
+                'agent/sr',
+                'layer/factor_graph'
             ],
             self.logger,
             log_fps=conf['run']['log_gif_fps']
@@ -148,10 +153,16 @@ class AnimalAITest:
                     self.environment.set_actions(self.behavior, action.action_tuple)
 
                 if self.logger is not None:
-                    self.scalar_metrics.update({
-                        'main_metrics/reward': reward,
-                        'main_metrics/surprise': self.agent.surprise
-                    })
+                    self.scalar_metrics.update(
+                        {
+                            'main_metrics/reward': reward,
+                            'layer/surprise_hidden': self.agent.surprise,
+                            'layer/n_segments': self.agent.cortical_column.layer.
+                            context_factors.connections.numSegments(),
+                            'layer/n_factors': self.agent.cortical_column.layer.
+                            context_factors.factor_connections.numSegments()
+                        }
+                    )
 
                 steps += 1
 
@@ -166,14 +177,14 @@ class AnimalAITest:
                     proc_beh = (proc_beh.reshape(self.raw_obs_shape) * 255).astype('uint8')
 
                     sr = (self.agent.cortical_column.decoder.decode(
-                                self.agent.predict_sr(
-                                    self.agent.cortical_column.layer.prediction_cells
-                                )
-                            ).reshape(self.raw_obs_shape) * 255).astype('uint8')
+                        self.agent.predict_sr(
+                            self.agent.cortical_column.layer.prediction_cells
+                        )
+                    ).reshape(self.raw_obs_shape) * 255).astype('uint8')
 
                     self.image_metrics.update(
                         {
-                            'images/behavior': np.hstack([raw_beh, proc_beh, sr])
+                            'agent/behavior': np.hstack([raw_beh, proc_beh, sr])
                         }
                     )
 
@@ -187,17 +198,27 @@ class AnimalAITest:
                     ).reshape(self.raw_obs_shape)
                     self.heatmap_metrics.update(
                         {
-                            'heatmaps/prior': prior_probs,
-                            'heatmaps/striatum_weights': self.agent.striatum_weights
+                            'agent/prior': prior_probs,
+                            'agent/striatum_weights': self.agent.striatum_weights
                         }
                     )
                     self.heatmap_metrics.log(i)
+
+                    self.image_metrics.update(
+                        {
+                            'layer/factor_graph': Image.open(
+                                io.BytesIO(
+                                    self.agent.cortical_column.layer.draw_factor_graph()
+                                )
+                            )
+                        }
+                    )
                     self.image_metrics.log(i)
         else:
             self.environment.close()
 
     def preprocess(self, image):
-        gray = np.dot(image, [299/1000, 587/1000, 114/1000])
+        gray = np.dot(image, [299 / 1000, 587 / 1000, 114 / 1000])
 
         diff = np.abs(gray - self.prev_image)
 
