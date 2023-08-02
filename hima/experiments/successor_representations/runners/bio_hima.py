@@ -113,7 +113,8 @@ class AnimalAITest:
             [
                 'agent/behavior',
                 'agent/sr',
-                'layer/factor_graph'
+                'layer/factor_graph',
+                'layer/predictions'
             ],
             self.logger,
             log_fps=conf['run']['log_gif_fps']
@@ -144,9 +145,11 @@ class AnimalAITest:
 
                 self.agent.reinforce(np.clip(reward, 0, None))
 
+                pred_sr = None
+                gen_sr = None
                 if running:
                     action = self.agent.sample_action()
-                    self.agent.observe((events, action), learn=True)
+                    pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
 
                     # convert to AAI action
                     action = self.actions[action]
@@ -176,15 +179,30 @@ class AnimalAITest:
                     proc_beh[events] = 1
                     proc_beh = (proc_beh.reshape(self.raw_obs_shape) * 255).astype('uint8')
 
-                    sr = (self.agent.cortical_column.decoder.decode(
-                        self.agent.predict_sr(
-                            self.agent.cortical_column.layer.prediction_cells
-                        )
-                    ).reshape(self.raw_obs_shape) * 255).astype('uint8')
+                    pred_beh = (self.agent.cortical_column.predicted_image.reshape(
+                        self.raw_obs_shape
+                    ) * 255).astype('uint8')
+
+                    if pred_sr is not None:
+                        pred_sr = (
+                                self.agent.cortical_column.decoder.decode(pred_sr)
+                                .reshape(self.raw_obs_shape) * 255
+                        ).astype('uint8')
+                    else:
+                        pred_sr = np.zeros(self.raw_obs_shape).astype('uint8')
+
+                    if gen_sr is not None:
+                        gen_sr = (
+                                self.agent.cortical_column.decoder.decode(gen_sr)
+                                .reshape(self.raw_obs_shape) * 255
+                        ).astype('uint8')
+                    else:
+                        gen_sr = np.zeros(self.raw_obs_shape).astype('uint8')
 
                     self.image_metrics.update(
                         {
-                            'agent/behavior': np.hstack([raw_beh, proc_beh, sr])
+                            'agent/behavior': np.hstack(
+                                [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr])
                         }
                     )
 
