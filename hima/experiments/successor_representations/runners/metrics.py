@@ -108,8 +108,10 @@ class ImageMetrics:
                 self.logger.log(
                     {
                         metric: wandb.Image(
-                            plt.imshow(values[0])
+                            values[0]
                         )
                     },
                     step=step
                 )
+
+        self.metrics = {metric: [] for metric in self.metrics.keys()}
