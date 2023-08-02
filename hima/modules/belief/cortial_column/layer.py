@@ -240,6 +240,9 @@ class Layer:
     """
         This class represents a layer of the neocortex model.
     """
+    context_factors: Factors
+    internal_factors: Factors
+
     def __init__(
             self,
             n_obs_vars: int,
@@ -1007,7 +1010,7 @@ class Layer:
             )
         return fig
 
-    def draw_factor_graph(self, path, show_messages=False):
+    def draw_factor_graph(self, path=None, show_messages=False):
         g = pgv.AGraph(strict=False, directed=False)
 
         for factors, type_ in zip(
@@ -1064,4 +1067,4 @@ class Layer:
                             g.add_edge(f'f{fid}{type_}', f'e{var_prev}', color=line_color)
 
         g.layout(prog='dot')
-        g.draw(path)
+        return g.draw(path, format='png')
