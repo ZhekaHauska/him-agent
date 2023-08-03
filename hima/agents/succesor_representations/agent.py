@@ -154,8 +154,8 @@ class BioHIMA:
             self.observation_prior.reshape((self.cortical_column.layer.n_obs_vars, -1))
         ).flatten()
 
-    def reset(self, initial_context_message):
-        self.cortical_column.reset(initial_context_message)
+    def reset(self, initial_context_message, initial_external_message):
+        self.cortical_column.reset(initial_context_message, initial_external_message)
 
     def _generate_sr(
             self,

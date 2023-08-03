@@ -122,9 +122,13 @@ class AnimalAITest:
 
     def run(self):
         for i in range(self.n_episodes):
+            steps = 0
+            running = True
+            action = None
+
+            self.prev_image = self._rng.random(self.raw_obs_shape)
             self.environment.reset()
-            # TODO do we need initial context? why not just prior?
-            self.agent.reset(self.initial_context)
+            self.agent.reset(self.initial_context, action)
 
             steps = 0
             running = True
