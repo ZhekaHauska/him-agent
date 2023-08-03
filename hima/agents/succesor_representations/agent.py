@@ -100,6 +100,7 @@ class BioHIMA:
                 action: sparse sdr
         """
         events, action = observation
+        # predict current events using observed action
         self.cortical_column.observe(events, action, learn=learn)
 
         if len(self.cortical_column.output_sdr.sparse) > 0:
@@ -121,11 +122,11 @@ class BioHIMA:
             context_backup = self.cortical_column.layer.context_messages.copy()
             prediction_cells = self.cortical_column.layer.prediction_cells.copy()
 
-            predicted_sr = self.predict_sr(self.cortical_column.layer.prediction_cells)
+            predicted_sr = self.predict_sr(self.cortical_column.layer.internal_forward_messages)
             generated_sr, last_step_prediction = self._generate_sr(
                 self.sr_steps,
-                self.cortical_column.layer.prediction_cells,
-                self.cortical_column.layer.prediction_columns,
+                self.cortical_column.layer.internal_forward_messages,
+                self.observation_messages,
                 return_last_prediction_step=True
             )
             self.cortical_column.layer.set_context_messages(context_backup)
