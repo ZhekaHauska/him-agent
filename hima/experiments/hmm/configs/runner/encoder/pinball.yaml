@@ -1,9 +1,9 @@
-log: True
+log: False
 save_model: False
 project_name: 'encoder_decoder'
 run_tag: null
 
-n_episodes: 1001
+n_episodes: 501
 update_rate: 50
 max_steps: 15
 log_gif_fps: 5
@@ -18,8 +18,8 @@ internal_dependence_1step: False
 #action_delay: 5  # frames to wait before acting
 #action_observable: True
 
-# input_layer | htm_sp_ensemble | sp_ensemble | one_sp | null
-encoder: sp_ensemble
+# input_layer | sp_ensemble | new_sp_ensemble | one_sp | null
+encoder: new_sp_ensemble
 
 experiment: pinball
 sp_conf: 'configs/sp/stp_sp_ensemble.yaml'
