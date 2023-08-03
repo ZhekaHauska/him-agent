@@ -377,62 +377,6 @@ class PinballTest:
         if state_img_predictions is not None:
             writer_hidden.append_data(np.hstack([to_img(prev_state)] + state_img_predictions))
 
-    def predict_images_old(
-            self, state_prediction, obs_prediction, episode_stats,
-            obs_sdr, state_sdr, prev_obs, prev_state, writer_raw, writer_hidden,
-    ):
-        obs_predictions = []
-        hidden_probs = []
-
-        if self.prediction_steps > 1:
-            context_backup = self.hmm.context_messages.copy()
-            self.hmm.set_context_messages(self.hmm.prediction_cells)
-
-        if self.with_input_encoding:
-            obs_prediction = obs_prediction.reshape(self.obs_shape)
-            state_prediction = state_prediction.reshape(self.state_shape)
-        else:
-            obs_prediction = state_prediction.reshape(self.state_shape)
-            state_prediction = None
-
-        obs_img_predictions = [to_img(obs_prediction)]
-        if state_prediction is not None:
-            state_img_predictions = [to_img(state_prediction)]
-
-        obs_predictions.append(obs_prediction.copy())
-        hidden_probs.append(state_prediction.copy())
-
-        for j in range(self.prediction_steps - 1):
-            state_prediction = self.predict_state()
-
-            if self.with_input_encoding:
-                obs_prediction = self.decoder.decode(state_prediction, learn=False)
-                obs_prediction = obs_prediction.reshape(self.obs_shape)
-                state_prediction = state_prediction.reshape(self.state_shape)
-            else:
-                obs_prediction = state_prediction.reshape(self.obs_shape)
-                state_prediction = None
-
-            obs_predictions.append(obs_prediction.copy())
-            hidden_probs.append(state_prediction.copy())
-
-            obs_img_predictions.append(to_img(obs_prediction))
-            if state_img_predictions is not None:
-                state_img_predictions.append(to_img(state_prediction))
-
-            self.hmm.set_context_messages(self.hmm.internal_forward_messages)
-
-        if self.prediction_steps > 1:
-            self.hmm.set_context_messages(context_backup)
-
-        self.make_smth_with_predictions(
-            episode_stats, obs_predictions, hidden_probs, obs_sdr, state_sdr
-        )
-
-        writer_raw.append_data(np.hstack([to_img(prev_obs)] + obs_img_predictions))
-        if state_img_predictions is not None:
-            writer_hidden.append_data(np.hstack([to_img(prev_state)] + state_img_predictions))
-
     def make_smth_with_predictions(
             self, episode_stats, obs_predictions, hidden_probs, obs_sdr, state_sdr
     ):
