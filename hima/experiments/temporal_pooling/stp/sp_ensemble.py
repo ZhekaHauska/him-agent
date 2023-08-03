@@ -43,8 +43,9 @@ class SpatialPoolerEnsemble:
     def getNumInputs(self):
         return self.sps[0].ff_size
 
-    def getColumnDimensions(self):
-        return [sp.output_sds.shape for sp in self.sps]
+    def getColumnsDimensions(self):
+        shape = self.getSingleColumnsDimensions()
+        return [shape[0] * self.n_sp, shape[1]]
 
     def getInputDimensions(self):
         return self.sps[0].feedforward_sds.shape

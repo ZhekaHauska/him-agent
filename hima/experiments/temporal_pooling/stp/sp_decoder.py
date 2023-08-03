@@ -28,21 +28,20 @@ class SpatialPoolerDecoder:
                 self.backpropagate_output_probs(self.sp.sps[sp_i], output_probs[sp_i], input_probs)
 
             n_active_input = self.sp.sps[0].ff_avg_active_size
+            n_sp = self.sp.n_sp
         else:
             input_probs = np.zeros(self.sp.ff_size)
             self.backpropagate_output_probs(self.sp, output_probs, input_probs)
             n_active_input = self.sp.ff_avg_active_size
+            n_sp = 1
 
         # input_winners = np.sort(
         #     np.argpartition(-input_probs, n_active_input)[:n_active_input]
         # )
         # input_winners = input_winners[input_probs[input_winners] > 0.001]
 
-        sum_probs = input_probs.sum()
-        assert math.isclose(sum_probs, output_probs.sum(), abs_tol=1e-3)
-        if sum_probs > 0.00001:
-            input_probs = np.clip(input_probs / sum_probs, 0., 1.)
-        assert input_probs.min(initial=.0) >= 0., input_probs.min(initial=.0)
+        input_probs = np.clip(input_probs / n_sp, 0., 1.)
+        # input_probs = np.clip(input_probs, 0., 1.)
 
         return input_probs
 

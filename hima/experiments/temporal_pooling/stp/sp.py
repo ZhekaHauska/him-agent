@@ -36,6 +36,7 @@ class SpatialPooler:
     # connections
     newborn_pruning_cycle: float
     newborn_pruning_stages: int
+    newborn_pruning_mode: str
     newborn_pruning_stage: int
     prune_grow_cycle: float
 
@@ -61,6 +62,7 @@ class SpatialPooler:
             prune_grow_cycle: float,
             boosting_k: float, seed: int,
             adapt_to_ff_sparsity: bool = True,
+            newborn_pruning_mode: str = 'powerlaw'
     ):
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = Sds.make(feedforward_sds)
@@ -70,7 +72,7 @@ class SpatialPooler:
 
         self.initial_rf_sparsity = min(
             initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
-            0.65
+            0.75
         )
         self.max_rf_to_input_ratio = max_rf_to_input_ratio
         self.max_rf_sparsity = max_rf_sparsity
@@ -86,7 +88,7 @@ class SpatialPooler:
         print(f'SP vec init shape: {self.rf.shape}')
 
         self.weights = self.normalize_weights(
-            self.rng.normal(loc=1.0, scale=0.02, size=self.rf.shape)
+            self.rng.normal(loc=1.0, scale=0.01, size=self.rf.shape)
         )
 
         self.sparse_input = []
@@ -100,6 +102,7 @@ class SpatialPooler:
         self.base_boosting_k = boosting_k
         self.newborn_pruning_cycle = newborn_pruning_cycle
         self.newborn_pruning_stages = newborn_pruning_stages
+        self.newborn_pruning_mode = newborn_pruning_mode
         self.newborn_pruning_stage = 0
         self.prune_grow_cycle = prune_grow_cycle
 
@@ -167,6 +170,7 @@ class SpatialPooler:
         dw_inh = lr * (1 - mask) * w
         dw_pool = dw_inh.sum(axis=1, keepdims=True)
         dw_exc = mask * dw_pool / matched
+        # dw_exc = lr * mask * w
 
         self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
 
@@ -178,7 +182,12 @@ class SpatialPooler:
     def shrink_receptive_field(self):
         self.newborn_pruning_stage += 1
 
-        new_sparsity = self.current_rf_sparsity()
+        if self.newborn_pruning_mode == 'linear':
+            new_sparsity = self.current_rf_sparsity_linear()
+        elif self.newborn_pruning_mode == 'powerlaw':
+            new_sparsity = self.current_rf_sparsity_powerlaw()
+        else:
+            raise ValueError(f'Pruning mode {self.newborn_pruning_mode} is not supported')
         if new_sparsity > self.rf_sparsity:
             # if feedforward sparsity is tracked, then it may change and lead to RF increase
             # ==> leave RF as is
@@ -251,7 +260,7 @@ class SpatialPooler:
         w_thr = 1 / self.rf_size
         return weights >= w_thr
 
-    def current_rf_sparsity(self):
+    def current_rf_sparsity_linear(self):
         ff_sparsity = (
             self.ff_avg_sparsity if self.adapt_to_ff_sparsity else self.feedforward_sds.sparsity
         )
@@ -263,6 +272,20 @@ class SpatialPooler:
         newborn_phase_progress = self.newborn_pruning_stage / self.newborn_pruning_stages
         initial, final = self.initial_rf_sparsity, final_rf_sparsity
         return initial + newborn_phase_progress * (final - initial)
+
+    def current_rf_sparsity_powerlaw(self):
+        ff_sparsity = (
+            self.ff_avg_sparsity if self.adapt_to_ff_sparsity else self.feedforward_sds.sparsity
+        )
+        final_rf_sparsity = min(
+            self.max_rf_sparsity,
+            self.max_rf_to_input_ratio * ff_sparsity
+        )
+
+        steps_left = self.newborn_pruning_stages - self.newborn_pruning_stage + 1
+        current_rf_sparsity = self.rf_sparsity
+        rf_decay = np.power(final_rf_sparsity / current_rf_sparsity, 1 / steps_left)
+        return current_rf_sparsity * rf_decay
 
     @property
     def ff_size(self):
