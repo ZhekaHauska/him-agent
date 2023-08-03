@@ -11,6 +11,7 @@ from hima.agents.succesor_representations.agent import BioHIMA
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
 from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
 from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
+from hima.modules.belief.utils import UINT_DTYPE
 from PIL import Image
 
 import wandb
@@ -79,7 +80,7 @@ class AnimalAITest:
         self.max_steps = conf['run']['max_steps']
         self.update_rate = conf['run']['update_rate']
 
-        self.prev_image = np.zeros(self.raw_obs_shape)
+        self.prev_image = self._rng.random(self.raw_obs_shape)
         self.initial_context = np.zeros_like(
             self.agent.cortical_column.layer.context_messages
         )
@@ -130,35 +131,32 @@ class AnimalAITest:
             self.environment.reset()
             self.agent.reset(self.initial_context, action)
 
-            steps = 0
-            running = True
             while running:
                 self.environment.step()
                 dec, term = self.environment.get_steps(self.behavior)
 
+                reward = 0
                 if len(dec) > 0:
                     obs = self.environment.get_obs_dict(dec.obs)["camera"]
-                    events = self.preprocess(obs)
+                    reward += dec.reward
 
-                reward = 0
-                if len(dec.reward) > 0:
-                    reward = dec.reward
-                if len(term.reward) > 0:
+                if len(term):
+                    obs = self.environment.get_obs_dict(term.obs)["camera"]
                     reward += term.reward
                     running = False
 
-                self.agent.reinforce(np.clip(reward, 0, None))
+                events = self.preprocess(obs)
 
-                pred_sr = None
-                gen_sr = None
+                pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
+                self.agent.reinforce(reward)
+
                 if running:
                     action = self.agent.sample_action()
-                    pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
-
                     # convert to AAI action
-                    action = self.actions[action]
-                    self.environment.set_actions(self.behavior, action.action_tuple)
+                    aai_action = self.actions[action]
+                    self.environment.set_actions(self.behavior, aai_action.action_tuple)
 
+                # >>> logging
                 if self.logger is not None:
                     self.scalar_metrics.update(
                         {
@@ -171,45 +169,47 @@ class AnimalAITest:
                         }
                     )
 
+                    if (i % self.update_rate) == 0:
+                        raw_beh = (self.prev_image * 255).astype('uint8')
+
+                        proc_beh = np.zeros(self.raw_obs_shape).flatten()
+                        proc_beh[events] = 1
+                        proc_beh = (proc_beh.reshape(self.raw_obs_shape) * 255).astype('uint8')
+
+                        pred_beh = (self.agent.cortical_column.predicted_image.reshape(
+                            self.raw_obs_shape
+                        ) * 255).astype('uint8')
+
+                        if pred_sr is not None:
+                            pred_sr = (
+                                    self.agent.cortical_column.decoder.decode(pred_sr)
+                                    .reshape(self.raw_obs_shape) * 255
+                            ).astype('uint8')
+                        else:
+                            pred_sr = np.zeros(self.raw_obs_shape).astype('uint8')
+
+                        if gen_sr is not None:
+                            gen_sr = (
+                                    self.agent.cortical_column.decoder.decode(gen_sr)
+                                    .reshape(self.raw_obs_shape) * 255
+                            ).astype('uint8')
+                        else:
+                            gen_sr = np.zeros(self.raw_obs_shape).astype('uint8')
+
+                        self.image_metrics.update(
+                            {
+                                'agent/behavior': np.hstack(
+                                    [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr])
+                            }
+                        )
+                # <<< logging
+
                 steps += 1
 
                 if steps >= self.max_steps:
                     running = False
 
-                if (i % self.update_rate) == 0:
-                    raw_beh = (self.prev_image * 255).astype('uint8')
-
-                    proc_beh = np.zeros(self.raw_obs_shape).flatten()
-                    proc_beh[events] = 1
-                    proc_beh = (proc_beh.reshape(self.raw_obs_shape) * 255).astype('uint8')
-
-                    pred_beh = (self.agent.cortical_column.predicted_image.reshape(
-                        self.raw_obs_shape
-                    ) * 255).astype('uint8')
-
-                    if pred_sr is not None:
-                        pred_sr = (
-                                self.agent.cortical_column.decoder.decode(pred_sr)
-                                .reshape(self.raw_obs_shape) * 255
-                        ).astype('uint8')
-                    else:
-                        pred_sr = np.zeros(self.raw_obs_shape).astype('uint8')
-
-                    if gen_sr is not None:
-                        gen_sr = (
-                                self.agent.cortical_column.decoder.decode(gen_sr)
-                                .reshape(self.raw_obs_shape) * 255
-                        ).astype('uint8')
-                    else:
-                        gen_sr = np.zeros(self.raw_obs_shape).astype('uint8')
-
-                    self.image_metrics.update(
-                        {
-                            'agent/behavior': np.hstack(
-                                [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr])
-                        }
-                    )
-
+            # >>> logging
             if self.logger is not None:
                 self.scalar_metrics.update({'main_metrics/steps': steps})
                 self.scalar_metrics.log(i)
@@ -236,6 +236,7 @@ class AnimalAITest:
                         }
                     )
                     self.image_metrics.log(i)
+            # <<< logging
         else:
             self.environment.close()
 
