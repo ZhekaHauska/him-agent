@@ -62,6 +62,7 @@ class BioHIMA:
         Evaluate and sample actions
         """
         context_backup = self.cortical_column.layer.context_messages.copy()
+        external_backup = self.cortical_column.layer.external_messages.copy()
 
         action_values = np.zeros(self.cortical_column.layer.external_input_size)
 
@@ -85,6 +86,7 @@ class BioHIMA:
             )
 
         self.cortical_column.layer.set_context_messages(context_backup)
+        self.cortical_column.layer.set_external_messages(external_backup)
 
         action_dist = softmax(action_values, beta=self.inverse_temp)
         action = sample_categorical_variables(action_dist.reshape((1, -1)), self._rng)
