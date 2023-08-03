@@ -125,4 +125,9 @@ def _resolve_runner(type_tag: str):
             SpAttractorExperiment
         )
         return SpAttractorExperiment
+    if type_tag == 'stp_experiment.sp_encoder':
+        from hima.experiments.temporal_pooling.test_encoder_mnist import (
+            SpEncoderExperiment
+        )
+        return SpEncoderExperiment
 

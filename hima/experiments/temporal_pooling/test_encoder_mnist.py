@@ -50,7 +50,7 @@ class AttractionConfig:
         self.learn_in_attraction = learn_in_attraction
 
 
-class SpEncoderDecoderExperiment:
+class SpEncoderExperiment:
     training: TrainConfig
     attraction: AttractionConfig
     testing: TestConfig
