@@ -3,24 +3,26 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-import numpy as np
-import matplotlib.pyplot as plt
+
+import ast
+import os
+import pickle
+import sys
+from copy import copy
 from pathlib import Path
+
+import imageio
+import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 import wandb
 import yaml
-import os
-import sys
-import ast
-import pickle
-import imageio
-from copy import copy
-
-from hima.common.utils import prepend_dict_keys
-from hima.modules.belief.cortial_column.layer import Layer, REAL_DTYPE, UINT_DTYPE
-from hima.modules.belief.cortial_column.input_layer import Encoder, Decoder
 from htm.bindings.sdr import SDR
-from hima.experiments.hmm.runners.utils import get_surprise
+
+from hima.common.sdr import sparse_to_dense
+from hima.common.utils import prepend_dict_keys
+from hima.experiments.hmm.runners.utils import get_surprise_2
+from hima.modules.belief.cortial_column.layer import Layer
 
 try:
     from pinball import Pinball
@@ -29,23 +31,27 @@ except ModuleNotFoundError:
 
 
 class TotalStats:
-    surprise: float
-    surprise_decoder: float
+    state_surprise: float
+    obs_surprise: float
 
     def __init__(self):
-        self.surprise = 0.
-        self.surprise_decoder = 0.
+        self.state_surprise = 0.
+        self.obs_surprise = 0.
 
 
 class EpisodeStats:
     def __init__(self, n_prediction_steps):
-        self.surprises = []
-        self.surprises_decoder = []
+        self.state_surprise = []
+        self.obs_surprise = []
 
         self.obs_probs_stack = []
         self.hidden_probs_stack = []
         self.n_step_surprise_obs = [[] for _ in range(n_prediction_steps)]
         self.n_step_surprise_hid = [[] for _ in range(n_prediction_steps)]
+
+
+def to_img(a):
+    return (a * 255).astype(np.uint8)
 
 
 class PinballTest:
@@ -64,7 +70,8 @@ class PinballTest:
         self.env = Pinball(**conf['env'])
 
         obs = self.env.obs()
-        self.raw_obs_shape = (obs.shape[0], obs.shape[1])
+        # all dims except color channels
+        self.obs_shape = obs.shape[:2]
 
         self.encoder_type = conf['run']['encoder']
         sp_conf = conf.get('sp', None)
@@ -74,79 +81,65 @@ class PinballTest:
         if self.encoder_type == 'one_sp':
             from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
             sp_conf['seed'] = self.seed
-            self.encoder = HtmSpatialPooler(self.raw_obs_shape, **sp_conf)
-            self.obs_shape = self.encoder.getColumnDimensions()
-            self.sp_input = SDR(self.encoder.getInputDimensions())
-            self.sp_output = SDR(self.encoder.getColumnDimensions())
-
+            sp_conf['inputDimensions'] = list(self.obs_shape)
+            self.encoder = HtmSpatialPooler(**sp_conf)
             self.decoder = SPDecoder(self.encoder)
 
-            self.n_obs_vars = self.obs_shape[0] * self.obs_shape[1]
-            self.n_obs_states = 1
+            self.state_shape = self.encoder.getColumnDimensions()
+            self.sp_input = SDR(self.obs_shape)
+            self.sp_output = SDR(self.state_shape)
 
+            self.n_hmm_obs_vars = self.state_shape[0] * self.state_shape[1]
+            self.n_hmm_obs_states = 1
             self.surprise_mode = 'bernoulli'
+
         elif self.encoder_type == 'sp_ensemble':
             from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
             sp_conf['seed'] = self.seed
-            sp_conf['inputDimensions'] = list(self.raw_obs_shape)
-            n_sp = sp_conf.pop('n_sp')
-            self.encoder = SPEnsemble(n_sp, **sp_conf)
+            sp_conf['inputDimensions'] = list(self.obs_shape)
+            self.encoder = SPEnsemble(**sp_conf)
+            self.decoder = SPDecoder(self.encoder)
+
             shape = self.encoder.sps[0].getColumnDimensions()
-            self.obs_shape = (shape[0] * self.encoder.n_sp, shape[1])
+            self.state_shape = (shape[0] * self.encoder.n_sp, shape[1])
             self.sp_input = SDR(self.encoder.getNumInputs())
             self.sp_output = SDR(self.encoder.getNumColumns())
 
-            if decoder_conf is not None:
-                decoder_conf['n_context_vars'] = n_sp
-                decoder_conf['n_context_states'] = shape[0]*shape[1]
-                decoder_conf['n_obs_vars'] = self.raw_obs_shape[0] * self.raw_obs_shape[1]
-                decoder_conf['n_obs_states'] = 2
-                self.decoder = Decoder(**decoder_conf)
-            else:
-                self.decoder = SPDecoder(self.encoder)
-
-            self.n_obs_vars = self.encoder.n_sp
-            self.n_obs_states = self.encoder.sps[0].getNumColumns()
-
+            self.n_hmm_obs_vars = self.encoder.n_sp
+            self.n_hmm_obs_states = self.encoder.sps[0].getNumColumns()
             self.surprise_mode = 'categorical'
+
         elif self.encoder_type == 'new_sp_ensemble':
             from hima.experiments.temporal_pooling.stp.sp_ensemble import SpatialPoolerEnsemble
+            from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
             sp_conf['seed'] = self.seed
-            sp_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
+            sp_conf['feedforward_sds'] = [self.obs_shape, 0.1]
             self.encoder = SpatialPoolerEnsemble(**sp_conf)
-            shape = self.encoder.getSingleColumnsDimensions()
-            self.obs_shape = (shape[0] * self.encoder.n_sp, shape[1])
+            self.decoder = SpatialPoolerDecoder(self.encoder)
+
+            self.state_shape = self.encoder.getColumnsDimensions()
             self.sp_input = SDR(self.encoder.getNumInputs())
             self.sp_output = SDR(self.encoder.getNumColumns())
 
-            if decoder_conf is not None:
-                decoder_conf['n_context_vars'] = self.encoder.n_sp
-                decoder_conf['n_context_states'] = shape[0]*shape[1]
-                decoder_conf['n_obs_vars'] = self.raw_obs_shape[0] * self.raw_obs_shape[1]
-                decoder_conf['n_obs_states'] = 2
-                self.decoder = Decoder(**decoder_conf)
-            else:
-                from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
-                self.decoder = SpatialPoolerDecoder(self.encoder)
-
-            self.n_obs_vars = self.encoder.n_sp
-            self.n_obs_states = self.encoder.getSingleNumColumns()
-
+            self.n_hmm_obs_vars = self.encoder.n_sp
+            self.n_hmm_obs_states = self.encoder.getSingleNumColumns()
             self.surprise_mode = 'categorical'
+
         elif self.encoder_type == 'input_layer':
+            from hima.modules.belief.cortial_column.input_layer import Encoder, Decoder
             assert input_layer_conf is not None
             encoder_conf = input_layer_conf.get('encoder')
             decoder_conf = input_layer_conf.get('decoder')
             encoder_conf['seed'] = self.seed
             decoder_conf['seed'] = self.seed
 
-            encoder_conf['n_context_vars'] = self.raw_obs_shape[0] * self.raw_obs_shape[1]
+            encoder_conf['n_context_vars'] = self.obs_shape[0] * self.obs_shape[1]
             encoder_conf['n_context_states'] = 2
 
             self.encoder = Encoder(**encoder_conf)
-            self.n_obs_vars = self.encoder.n_hidden_vars
-            self.n_obs_states = self.encoder.n_hidden_states
-            self.obs_shape = (self.n_obs_vars, self.n_obs_states)
+            self.n_hmm_obs_vars = self.encoder.n_hidden_vars
+            self.n_hmm_obs_states = self.encoder.n_hidden_states
+            self.state_shape = (self.n_hmm_obs_vars, self.n_hmm_obs_states)
 
             decoder_conf['n_context_vars'] = self.encoder.n_hidden_vars
             decoder_conf['n_context_states'] = self.encoder.n_hidden_states
@@ -158,22 +151,22 @@ class PinballTest:
             self.surprise_mode = 'categorical'
             self.sp_input = None
             self.sp_output = None
+
         else:
             self.encoder = None
             self.sp_input = None
             self.sp_output = None
             self.decoder = None
 
-            self.n_obs_vars = self.raw_obs_shape[0] * self.raw_obs_shape[1]
-            self.n_obs_states = 1
-            self.obs_shape = self.raw_obs_shape
-
+            self.n_hmm_obs_vars = self.obs_shape[0] * self.obs_shape[1]
+            self.n_hmm_obs_states = 1
+            self.state_shape = self.obs_shape
             self.surprise_mode = 'bernoulli'
 
-        conf['hmm']['n_obs_states'] = self.n_obs_states
-        conf['hmm']['n_obs_vars'] = self.n_obs_vars
-        conf['hmm']['n_context_states'] = self.n_obs_states * conf['hmm']['cells_per_column']
-        conf['hmm']['n_context_vars'] = self.n_obs_vars
+        conf['hmm']['n_obs_vars'] = self.n_hmm_obs_vars
+        conf['hmm']['n_obs_states'] = self.n_hmm_obs_states
+        conf['hmm']['n_context_states'] = self.n_hmm_obs_states * conf['hmm']['cells_per_column']
+        conf['hmm']['n_context_vars'] = self.n_hmm_obs_vars
 
         if 'actions' in conf['run']:
             self.actions = conf['run']['actions']
@@ -212,6 +205,9 @@ class PinballTest:
 
         self.total_stats = TotalStats()
 
+        assert (self.encoder is None) == (self.decoder is None)
+        self.with_input_encoding = self.encoder is not None
+
     def run(self):
         for episode in range(self.n_episodes):
             self.run_episode(episode)
@@ -230,11 +226,8 @@ class PinballTest:
         self.hmm.reset()
 
         prev_raw_img = raw_img = self.step_observe()
-        prev_obs = obs = np.zeros_like(raw_img)
-
-        prev_latent = None
-        if self.encoder is not None:
-            prev_latent = np.zeros_like(raw_img)
+        prev_obs = obs = np.zeros(self.obs_shape)
+        prev_state = np.zeros(self.state_shape) if self.with_input_encoding else None
 
         initial_context = np.zeros_like(self.hmm.context_messages)
         initial_context[
@@ -249,52 +242,45 @@ class PinballTest:
             obs_sdr = np.flatnonzero(obs)
 
             self.act(step)
+            state_prediction = self.predict_state()
 
-            self.hmm.predict(include_internal_connections=self.include_internal_connections)
-            column_probs = self.hmm.prediction_columns
-
-            if self.encoder is not None:
+            if self.with_input_encoding:
                 self.sp_input.sparse = obs_sdr
                 self.encoder.compute(self.sp_input, True, self.sp_output)
                 state_sdr = self.sp_output.sparse
-                decoded_probs = self.decoder.decode(column_probs, learn=True)
+                obs_prediction = self.decoder.decode(state_prediction, learn=True)
             else:
                 state_sdr = obs_sdr
-                decoded_probs = None
+                obs_prediction = None
 
             self.hmm.observe(state_sdr, learn=True)
             self.hmm.set_context_messages(self.hmm.internal_forward_messages)
 
-            if step > 0:
-                # metrics
-                # 1. surprise
-                surprise = get_surprise(column_probs, state_sdr, mode=self.surprise_mode)
-                episode_stats.surprises.append(surprise)
-                self.total_stats.surprise += surprise
+            # metrics
+            # 1. surprise
+            state_surprise = get_surprise_2(state_prediction, state_sdr, mode=self.surprise_mode)
+            episode_stats.state_surprise.append(state_surprise)
+            self.total_stats.state_surprise += state_surprise
 
-                if self.decoder is not None:
-                    surprise_decoder = get_surprise(decoded_probs, obs_sdr)
-                    episode_stats.surprises_decoder.append(surprise_decoder)
-                    self.total_stats.surprise_decoder += surprise_decoder
+            if self.with_input_encoding:
+                obs_surprise = get_surprise_2(obs_prediction, obs_sdr)
+                episode_stats.obs_surprise.append(obs_surprise)
+                self.total_stats.obs_surprise += obs_surprise
 
-                # 2. image
-                if (writer_raw is not None) and (episode % self.log_update_rate == 0):
-                    self.predict_images(
-                        column_probs=column_probs, decoded_probs=decoded_probs,
-                        episode_stats=episode_stats, obs_sdr=obs_sdr, state_sdr=state_sdr,
-                        prev_obs=prev_obs, writer_raw=writer_raw, writer_hidden=writer_hidden,
-                        prev_latent=prev_latent
-                    )
+            # 2. image
+            if writer_raw is not None:
+                self.predict_images(
+                    state_prediction=state_prediction, obs_prediction=obs_prediction,
+                    episode_stats=episode_stats, obs_sdr=obs_sdr, state_sdr=state_sdr,
+                    prev_obs=prev_obs, prev_state=prev_state,
+                    writer_raw=writer_raw, writer_hidden=writer_hidden,
+                )
 
             prev_obs = obs.copy()
             prev_raw_img = raw_img.copy()
 
-            if self.encoder is not None:
-                prev_latent = np.zeros(np.prod(self.obs_shape))
-                prev_latent[state_sdr] = 1
-                prev_latent = prev_latent.reshape(self.obs_shape)
-            else:
-                prev_latent = None
+            if self.with_input_encoding:
+                prev_state = sparse_to_dense(state_sdr, self.state_shape).reshape(self.state_shape)
 
         # AFTER EPISODE IS DONE
         if writer_raw is not None:
@@ -305,17 +291,17 @@ class PinballTest:
         if self.logger is None:
             return
 
+        # LOG METRICS
         log_metrics = {}
 
-        # main metrics
         main_metrics = dict(
-            surprise=np.mean(episode_stats.surprises),
-            total_surprise=self.total_stats.surprise,
+            surprise=np.mean(episode_stats.state_surprise),
+            total_surprise=self.total_stats.state_surprise,
         )
         if self.decoder is not None:
             main_metrics |= dict(
-                surprise_decoder=np.mean(episode_stats.surprises_decoder),
-                total_surprise_decoder=self.total_stats.surprise_decoder,
+                surprise_decoder=np.mean(episode_stats.obs_surprise),
+                total_surprise_decoder=self.total_stats.obs_surprise,
             )
         log_metrics |= prepend_dict_keys(main_metrics, 'main_metrics')
 
@@ -348,69 +334,109 @@ class PinballTest:
         self.logger.log(log_metrics, step=episode)
 
     def predict_images(
-            self, column_probs, decoded_probs, episode_stats,
-            obs_sdr, state_sdr, prev_obs, writer_raw, writer_hidden, prev_latent
+            self, state_prediction, obs_prediction, episode_stats,
+            obs_sdr, state_sdr, prev_obs, prev_state, writer_raw, writer_hidden,
     ):
-        obs_probs = []
-        hidden_probs = []
-
         if self.prediction_steps > 1:
-            back_up_massages = self.hmm.context_messages.copy()
+            context_backup = self.hmm.context_messages.copy()
             self.hmm.set_context_messages(self.hmm.prediction_cells)
 
-        if self.decoder is not None:
-            hidden_prediction = column_probs.reshape(self.obs_shape)
-            decoded_probs = decoded_probs.reshape(self.raw_obs_shape)
-        else:
-            hidden_prediction = None
-            decoded_probs = column_probs.reshape(self.obs_shape)
+        obs_predictions, obs_img_predictions = [], []
+        state_predictions, state_img_predictions = [], []
 
-        raw_predictions = [(decoded_probs * 255).astype(np.uint8)]
+        for j in range(self.prediction_steps):
+            if j > 0:
+                state_prediction = self.predict_state()
 
-        if hidden_prediction is not None:
-            hidden_predictions = [(hidden_prediction * 255).astype(np.uint8)]
-
-        obs_probs.append(decoded_probs.copy())
-        hidden_probs.append(hidden_prediction.copy())
-
-        for j in range(self.prediction_steps - 1):
-            self.hmm.predict(
-                include_internal_connections=self.hmm.enable_internal_connections
-            )
-            column_probs = self.hmm.prediction_columns
-
-            if self.decoder is not None:
-                hidden_prediction = column_probs.reshape(self.obs_shape)
-                decoded_probs = self.decoder.decode(column_probs, learn=False)
-
-                if type(self.decoder) is Decoder:
-                    decoded_probs = decoded_probs[1::2]
-
-                decoded_probs = decoded_probs.reshape(
-                    self.raw_obs_shape
-                )
+            if self.with_input_encoding:
+                if j > 0:
+                    obs_prediction = self.decoder.decode(state_prediction, learn=False)
+                obs_prediction = obs_prediction.reshape(self.obs_shape)
+                state_prediction = state_prediction.reshape(self.state_shape)
             else:
-                decoded_probs = column_probs.reshape(self.obs_shape)
-                hidden_prediction = None
+                obs_prediction = state_prediction.reshape(self.obs_shape)
+                state_prediction = None
 
-            obs_probs.append(decoded_probs.copy())
-            hidden_probs.append(hidden_prediction.copy())
+            obs_predictions.append(obs_prediction)
+            state_predictions.append(state_prediction)
 
-            raw_predictions.append(
-                (decoded_probs * 255).astype(np.uint8)
-            )
-
-            if hidden_predictions is not None:
-                hidden_predictions.append(
-                    (hidden_prediction * 255).astype(np.uint8)
-                )
+            obs_img_predictions.append(to_img(obs_prediction))
+            if state_img_predictions is not None:
+                state_img_predictions.append(to_img(state_prediction))
 
             self.hmm.set_context_messages(self.hmm.internal_forward_messages)
 
         if self.prediction_steps > 1:
-            self.hmm.set_context_messages(back_up_massages)
+            self.hmm.set_context_messages(context_backup)
 
-        episode_stats.obs_probs_stack.append(copy(obs_probs))
+        self.make_smth_with_predictions(
+            episode_stats, obs_predictions, state_predictions, obs_sdr, state_sdr
+        )
+
+        writer_raw.append_data(np.hstack([to_img(prev_obs)] + obs_img_predictions))
+        if state_img_predictions is not None:
+            writer_hidden.append_data(np.hstack([to_img(prev_state)] + state_img_predictions))
+
+    def predict_images_old(
+            self, state_prediction, obs_prediction, episode_stats,
+            obs_sdr, state_sdr, prev_obs, prev_state, writer_raw, writer_hidden,
+    ):
+        obs_predictions = []
+        hidden_probs = []
+
+        if self.prediction_steps > 1:
+            context_backup = self.hmm.context_messages.copy()
+            self.hmm.set_context_messages(self.hmm.prediction_cells)
+
+        if self.with_input_encoding:
+            obs_prediction = obs_prediction.reshape(self.obs_shape)
+            state_prediction = state_prediction.reshape(self.state_shape)
+        else:
+            obs_prediction = state_prediction.reshape(self.state_shape)
+            state_prediction = None
+
+        obs_img_predictions = [to_img(obs_prediction)]
+        if state_prediction is not None:
+            state_img_predictions = [to_img(state_prediction)]
+
+        obs_predictions.append(obs_prediction.copy())
+        hidden_probs.append(state_prediction.copy())
+
+        for j in range(self.prediction_steps - 1):
+            state_prediction = self.predict_state()
+
+            if self.with_input_encoding:
+                obs_prediction = self.decoder.decode(state_prediction, learn=False)
+                obs_prediction = obs_prediction.reshape(self.obs_shape)
+                state_prediction = state_prediction.reshape(self.state_shape)
+            else:
+                obs_prediction = state_prediction.reshape(self.obs_shape)
+                state_prediction = None
+
+            obs_predictions.append(obs_prediction.copy())
+            hidden_probs.append(state_prediction.copy())
+
+            obs_img_predictions.append(to_img(obs_prediction))
+            if state_img_predictions is not None:
+                state_img_predictions.append(to_img(state_prediction))
+
+            self.hmm.set_context_messages(self.hmm.internal_forward_messages)
+
+        if self.prediction_steps > 1:
+            self.hmm.set_context_messages(context_backup)
+
+        self.make_smth_with_predictions(
+            episode_stats, obs_predictions, hidden_probs, obs_sdr, state_sdr
+        )
+
+        writer_raw.append_data(np.hstack([to_img(prev_obs)] + obs_img_predictions))
+        if state_img_predictions is not None:
+            writer_hidden.append_data(np.hstack([to_img(prev_state)] + state_img_predictions))
+
+    def make_smth_with_predictions(
+            self, episode_stats, obs_predictions, hidden_probs, obs_sdr, state_sdr
+    ):
+        episode_stats.obs_probs_stack.append(copy(obs_predictions))
         episode_stats.hidden_probs_stack.append(copy(hidden_probs))
 
         # remove empty lists
@@ -428,21 +454,10 @@ class PinballTest:
         for p_obs, p_hid, s in zip(
                 current_predictions_obs, current_predictions_hid, pred_horizon
         ):
-            surp_obs = get_surprise(p_obs.flatten(), obs_sdr)
-            surp_hid = get_surprise(p_hid.flatten(), state_sdr, mode=self.surprise_mode)
+            surp_obs = get_surprise_2(p_obs.flatten(), obs_sdr)
+            surp_hid = get_surprise_2(p_hid.flatten(), state_sdr, mode=self.surprise_mode)
             episode_stats.n_step_surprise_obs[s].append(surp_obs)
             episode_stats.n_step_surprise_hid[s].append(surp_hid)
-
-        _raw_img = [(prev_obs * 255).astype(np.uint8)]
-        _raw_img.extend(raw_predictions)
-        _raw_img = np.hstack(_raw_img)
-        writer_raw.append_data(_raw_img)
-
-        if hidden_predictions is not None:
-            hid_im = [(prev_latent * 255).astype(np.uint8)]
-            hid_im.extend(hidden_predictions)
-            hid_im = np.hstack(hid_im)
-            writer_hidden.append_data(hid_im)
 
     def step_observe(self):
         self.env.step()
@@ -464,13 +479,16 @@ class PinballTest:
                 self.action = self.idle_action
 
             action = self.action if self.is_action_observable else self.idle_action
-            action_probs = one_hot(action, len(self.actions))
+            action_probs = to_dense(action, len(self.actions))
 
         self.hmm.set_external_messages(action_probs)
 
-    @property
-    def include_internal_connections(self):
-        return self.hmm.enable_internal_connections and self.internal_dependence_1step
+    def predict_state(self):
+        include_internal_connections = (
+                self.hmm.enable_internal_connections and self.internal_dependence_1step
+        )
+        self.hmm.predict(include_internal_connections=include_internal_connections)
+        return self.hmm.prediction_columns.copy()
 
     def log_scheduled(self, step):
         return (self.logger is not None) and (step % self.log_update_rate == 0)
@@ -484,7 +502,7 @@ class PinballTest:
                 mode='I',
                 duration=1000 / self.log_fps,
             )
-            if self.encoder is not None:
+            if self.with_input_encoding:
                 writer_hidden = imageio.get_writer(
                     f'/tmp/{self.logger.name}_hidden_ep{episode}.gif',
                     mode='I',
@@ -551,8 +569,8 @@ class PinballTest:
             pickle.dump(self.hmm, file)
 
 
-def one_hot(i, size):
-    arr = np.zeros(size)
+def to_dense(i, size):
+    arr = np.zeros(size).flatten()
     arr[i] = 1.
     return arr
 

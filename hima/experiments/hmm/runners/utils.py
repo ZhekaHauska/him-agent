@@ -49,3 +49,36 @@ def get_surprise(probs, obs, mode='bernoulli', normalize=True):
         raise ValueError(f'There is no such mode "{mode}"')
 
     return surprise
+
+
+def get_surprise_2(probs, obs, mode='bernoulli', normalize=True):
+    """
+    Calculate the surprise -log(p(o)), where o is observation
+
+    'probs': distribution parameters
+    'obs': indexes of variables in state 1
+    'mode': bernoulli | categorical
+        bernoulli
+            'probs' are parameters of Bernoulli distributed vector
+        categorical
+            'probs' are parameters of Categorical distributed vector
+    'normalize': bool
+    """
+    def clip(p):
+        return np.clip(p, 1e-7, 1.)
+
+    surprise = -np.sum(np.log(clip(probs[obs])))
+    if mode == 'bernoulli':
+        not_in_obs_mask = np.ones_like(probs, dtype=bool)
+        not_in_obs_mask[obs] = False
+
+        surprise += -np.sum(np.log(clip(1. - probs[not_in_obs_mask])))
+        if normalize:
+            surprise /= len(probs)
+    elif mode == 'categorical':
+        if normalize:
+            surprise /= len(obs)
+    else:
+        raise ValueError(f'There is no such mode "{mode}"')
+
+    return surprise
