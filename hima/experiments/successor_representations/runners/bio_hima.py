@@ -11,7 +11,6 @@ from hima.agents.succesor_representations.agent import BioHIMA
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
 from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
 from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
-from hima.modules.belief.utils import UINT_DTYPE
 from PIL import Image
 
 import wandb
@@ -80,7 +79,8 @@ class AnimalAITest:
         self.max_steps = conf['run']['max_steps']
         self.update_rate = conf['run']['update_rate']
 
-        self.prev_image = self._rng.random(self.raw_obs_shape)
+        self.initial_previous_image = self._rng.random(self.raw_obs_shape)
+        self.prev_image = self.initial_previous_image
         self.initial_context = np.zeros_like(
             self.agent.cortical_column.layer.context_messages
         )
@@ -127,7 +127,7 @@ class AnimalAITest:
             running = True
             action = None
 
-            self.prev_image = self._rng.random(self.raw_obs_shape)
+            self.prev_image = self.initial_previous_image
             self.environment.reset()
             self.agent.reset(self.initial_context, action)
 
