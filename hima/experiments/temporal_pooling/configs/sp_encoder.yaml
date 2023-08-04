@@ -8,12 +8,8 @@ train:
 test:
   _base_: test_setups.small
 
-attraction:
-  n_steps: 3
-  learn_in_attraction: True
-
 encoder: sp.encoder
-attractor: sp.attractor
+decoder_noise: 0.02
 
 envs:
   random_bits:
@@ -30,15 +26,17 @@ sp:
     output_sds: [500, 16]
     # learning
     learning_rate: 0.02
-    global_inhibition_strength: 0.2
     newborn_pruning_cycle: 2.0
-    prune_grow_cycle: 100.0
     newborn_pruning_stages: 10
+    newborn_pruning_mode: linear
+    prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: True
     boosting_k: 0.5
 
-  attractor:
+  ensemble:
+    _type: sp.ensemble
     _base_: $_base.spatial_pooler.default
+    n_sp: 5
     # input
     initial_rf_to_input_ratio: 8.0
     max_rf_to_input_ratio: 1.5
@@ -49,7 +47,9 @@ sp:
     global_inhibition_strength: 0.2
     newborn_pruning_cycle: 2.0
     newborn_pruning_stages: 10
+    newborn_pruning_mode: linear
     prune_grow_cycle: 100.0
+    adapt_to_ff_sparsity: True
     boosting_k: 0.5
 
 train_setups:

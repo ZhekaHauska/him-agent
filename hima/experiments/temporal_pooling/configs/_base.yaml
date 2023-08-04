@@ -258,9 +258,9 @@ spatial_pooler:
     # learning
     min_overlap_for_activation: 3
     learning_rate: 0.01
-    global_inhibition_strength: 0.2
     newborn_pruning_cycle: 2.0
     newborn_pruning_stages: 10
+    newborn_pruning_mode: linear
     prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: False
     boosting_k: 0.5
