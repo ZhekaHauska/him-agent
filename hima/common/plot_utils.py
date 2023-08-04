@@ -100,13 +100,13 @@ def _plot_grid_image(
     ax.set_yticks(np.arange(h + 1) - .5, minor=True)
     ax.grid(which="minor", color='grey', linestyle='-', linewidth=.5)
 
-    threshold = .03 if data.dtype == np.float else 2
+    threshold = .03 if data.dtype == float else 2
     im = ax.imshow(
         data,
         norm=mpl.colors.SymLogNorm(linthresh=threshold, base=10)
     )
     if with_value_text and h * w <= 200:
-        valfmt = '{x:.1f}' if data.dtype == np.float else '{x}'
+        valfmt = '{x:.1f}' if data.dtype == float else '{x}'
         annotate_heatmap(im, data=data, valfmt=valfmt)
 
 
