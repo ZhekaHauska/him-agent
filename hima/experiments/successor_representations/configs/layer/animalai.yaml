@@ -1,6 +1,6 @@
 cells_per_column: 10
 
-external_vars_boost: 0  # set it non-zero to shift probability of choosing external var for factor
+external_vars_boost: 10  # set it non-zero to shift probability of choosing external var for factor
 unused_vars_boost: 0
 
 inverse_temp_context: 1.0
@@ -21,7 +21,7 @@ context_factors_conf:
   var_score_lr: 0.001
   initial_log_factor_value: 0
   initial_synapse_value: 1
-  max_segments: 5000
+  max_segments: 50000
   fraction_of_segments_to_prune: 0.0
   max_segments_per_cell: 255
 

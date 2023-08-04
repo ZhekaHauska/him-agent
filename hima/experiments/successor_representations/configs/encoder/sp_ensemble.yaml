@@ -1,8 +1,8 @@
 n_sp: 5
 columnDimensions: [ 12, 12 ]
-potentialPct: 1.0
+potentialPct: 0.8
 globalInhibition: True
-potentialRadius: 6
+potentialRadius: 8
 localAreaDensity: 0
 numActiveColumnsPerInhArea: 1
 stimulusThreshold: 1
