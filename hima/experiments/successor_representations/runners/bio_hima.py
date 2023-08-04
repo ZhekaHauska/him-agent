@@ -39,7 +39,12 @@ class AnimalAITest:
         self.behavior = list(self.environment.behavior_specs.keys())[0]
         self.raw_obs_shape = self.environment.behavior_specs[self.behavior].observation_specs[
             0].shape[:2]
-        self.actions = AAIActions().allActions
+        self.actions = [
+            AAIActions().LEFT,
+            AAIActions().FORWARDS,
+            AAIActions().RIGHT,
+            AAIActions().BACKWARDS
+        ]
         self.n_actions = len(self.actions)
 
         # assembly agent
