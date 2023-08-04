@@ -18,8 +18,6 @@ class SpatialPoolerDecoder:
         self.sp = sp
 
     def decode(self, output_probs, learn=False):
-        assert output_probs.size == self.sp.getNumColumns()
-
         is_ensemble = isinstance(self.sp, SpatialPoolerEnsemble)
         if is_ensemble:
             output_probs = output_probs.reshape(self.sp.n_sp, self.sp.getSingleNumColumns())
@@ -51,18 +49,3 @@ class SpatialPoolerDecoder:
         prob_weights = w * np.expand_dims(output_probs, 1)
         # accumulate probabilistic weights onto input vector
         np.add.at(input_probs, rf, prob_weights)
-
-    def _update_receptive_fields(self):
-        is_ensemble = isinstance(self.sp, SpatialPoolerEnsemble)
-
-        for cell in range(self.sp.getNumColumns()):
-            field = np.zeros(self.sp.getNumInputs())
-            if is_ensemble:
-                sp_id, cell_id = divmod(cell, self.sp.getSingleNumColumns())
-                field[
-                    self.sp.sps[sp_id].rf[cell_id]
-                ] = 1
-            else:
-                field[self.sp.rf[cell]] = 1
-
-            self.receptive_fields[cell] = field

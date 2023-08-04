@@ -11,13 +11,14 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
-from hima.common.sdr import SparseSdr
+from hima.common.sdr import SparseSdr, sparse_to_dense
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, safe_divide, prepend_dict_keys
 from hima.envs.mnist import MNISTEnv
 from hima.experiments.temporal_pooling.data.mnist import MnistDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
+from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
 from hima.experiments.temporal_pooling.utils import resolve_random_seed, Scheduler
 
 wandb = lazy_import('wandb')
@@ -32,6 +33,15 @@ class TrainConfig:
     def __init__(self, n_epochs: int, n_steps: int):
         self.n_epochs = n_epochs
         self.n_steps = n_steps
+
+
+class EpochStats:
+    states: list[SparseSdr]
+    decode_errors: list[float]
+
+    def __init__(self):
+        self.states = []
+        self.decode_errors = []
 
 
 class TestConfig:
@@ -55,11 +65,16 @@ class SpEncoderExperiment:
     attraction: AttractionConfig
     testing: TestConfig
 
+    input_sds: Sds
+    output_sds: Sds
+
+    stats: EpochStats
+
     def __init__(
             self, config: TConfig, config_path: Path,
             log: bool, seed: int,
-            train: TConfig, test: TConfig, attraction: TConfig,
-            encoder: TConfig, attractor: TConfig,
+            train: TConfig, test: TConfig,
+            encoder: TConfig, decoder_noise: float,
             project: str = None,
             wandb_init: TConfig = None,
             **_
@@ -80,20 +95,17 @@ class SpEncoderExperiment:
 
         self.data = MnistDataset()
 
-        input_sds = self.data.output_sds
-        self.encoder = self.config.resolve_object(encoder, feedforward_sds=input_sds)
-        if self.encoder is not None:
-            print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
-            input_sds = self.encoder.output_sds
+        self.input_sds = self.data.output_sds
+        self.encoder = self.config.resolve_object(encoder, feedforward_sds=self.input_sds)
+        self.decoder = SpatialPoolerDecoder(self.encoder)
+        self.decoder_noise = decoder_noise
 
-        self.attractor = self.config.resolve_object(attractor, feedforward_sds=input_sds)
-        print(f'Attractor: {self.attractor.feedforward_sds} -> {self.attractor.output_sds}')
+        print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
+        self.output_sds = self.encoder.output_sds
 
         self.training = self.config.resolve_object(train, object_type_or_factory=TrainConfig)
-        self.attraction = self.config.resolve_object(
-            attraction, object_type_or_factory=AttractionConfig
-        )
         self.testing = self.config.resolve_object(test, object_type_or_factory=TestConfig)
+        self.stats = None
 
     def run(self):
         self.print_with_timestamp('==> Run')
@@ -102,91 +114,76 @@ class SpEncoderExperiment:
         for epoch in range(1, self.training.n_epochs + 1):
             self.print_with_timestamp(f'Epoch {epoch}')
             self.train_epoch()
+            self.log_progress(epoch)
 
         # self.log_final_results()
 
     def train_epoch(self):
         sample_indices = self.rng.choice(self.data.n_images, size=self.training.n_steps)
+
+        self.stats = EpochStats()
         for step in range(1, self.training.n_steps + 1):
             sample_ind = sample_indices[step - 1]
-
-            sample = self.data.sdrs[sample_ind]
-            self.process_sample(sample, learn=True)
+            self.process_sample(sample_ind, learn=True)
 
     def test_epoch(self):
         ...
 
-    def process_sample(self, sample: SparseSdr, learn: bool) -> list[SparseSdr]:
-        sdrs = [sample]
-        if self.encoder is not None:
-            sdrs.append(
-                self.encoder.compute(sdrs[-1], learn=learn)
-            )
+    def noisy(self, x):
+        noisy = x + np.abs(self.rng.normal(scale=self.decoder_noise, size=x.shape))
+        s = noisy.sum()
+        return safe_divide(noisy, s)
 
-        for attractor_steps in range(self.attraction.n_steps):
-            _learn = learn and (attractor_steps == 0 or self.attraction.learn_in_attraction)
-            sdrs.append(
-                self.attractor.compute(sdrs[-1], learn=_learn)
-            )
-        return sdrs
+    def process_sample(self, obs_ind: int, learn: bool):
+        obs = self.data.sdrs[obs_ind]
+        dense_obs = self.data.dense_sdrs[obs_ind]
 
-    def log_progress(self, episode: int, attractor_entropy, encoder_entropy):
+        state = self.encoder.compute(obs, learn=learn)
+        dense_state = sparse_to_dense(state, self.output_sds.size, dtype=float)
+
+        state_probs = self.noisy(dense_state)
+
+        decoded_obs = self.decoder.decode(state_probs)
+        error = np.abs(dense_obs - decoded_obs).mean()
+
+        # self.stats.states.append(state)
+        self.stats.decode_errors.append(error)
+
+    def log_progress(self, epoch: int):
         if self.logger is None:
             return
 
-        import matplotlib.pyplot as plt
+        obs_ind = self.rng.choice(self.data.n_images)
+        obs = self.data.sdrs[obs_ind]
+        dense_obs = self.data.dense_sdrs[obs_ind].astype(float).reshape(self.data.image_shape)
 
-        main_metrics = dict(attractor_entropy=np.array(attractor_entropy).mean())
-        if self.encoder is not None:
-            main_metrics |= dict(encoder_entropy=np.array(encoder_entropy).mean())
+        state = self.encoder.compute(obs, learn=False)
+        dense_state = sparse_to_dense(state, self.output_sds.size, dtype=float)
 
+        state_probs = self.noisy(dense_state)
+
+        decoded_obs = self.decoder.decode(state_probs).reshape(self.data.image_shape)
+        error = np.abs(dense_obs - decoded_obs).mean()
+
+        from hima.common.plot_utils import plot_grid_images
+        plot_grid_images(
+            images=[dense_obs, decoded_obs],
+            titles=['Orig', 'Decoded'],
+            show=True,
+            with_value_text_flags=[True, True],
+            cols_per_row=2
+        )
+
+        main_metrics = dict(
+            mae=np.array(self.stats.decode_errors).mean(),
+            entropy=self.encoder.output_entropy()
+        )
         main_metrics = personalize_metrics(main_metrics, 'main')
 
-        trajectories, targets = self.generate_trajectories()
-        similarities, relative_similarity, class_counts, sim_matrices = self.analyse_trajectories(
-            trajectories=trajectories, targets=targets
-        )
-
-        step_metrics = {}
-        for step in range(self.testing.items_per_class):
-            step_metrics[f'{step=}'] = relative_similarity[step].mean()
-        step_metrics = personalize_metrics(step_metrics, 'step')
-
-        relative_similarity_df = pd.DataFrame(
-            relative_similarity,
-            columns=np.arange(relative_similarity.shape[1])
-        )
-        convergence_metrics = dict(
-            relative_similarity=wandb.Image(sns.lineplot(data=relative_similarity_df))
-        )
-        plt.close('all')
-
-        convergence_metrics |= dict(
-            class_pair_counts=wandb.Image(sns.heatmap(class_counts))
-        )
-        plt.close('all')
-
-        fig, axs = plt.subplots(ncols=4, sharey='row', figsize=(16, 4))
-        axs[0].set_title('raw_sim')
-        axs[1].set_title('1-step')
-        axs[2].set_title(f'{self.testing.items_per_class // 2}-step')
-        axs[3].set_title(f'{self.testing.items_per_class}-step')
-        sns.heatmap(sim_matrices[0], ax=axs[0], cmap='viridis')
-        sns.heatmap(sim_matrices[1], ax=axs[1], cmap='viridis')
-        sns.heatmap(
-            sim_matrices[self.testing.items_per_class // 2], ax=axs[2], cmap='viridis'
-        )
-        sns.heatmap(sim_matrices[-1], ax=axs[3], cmap='viridis')
-
-        convergence_metrics |= dict(
-            similarity_per_class=wandb.Image(fig)
-        )
-        plt.close('all')
-
-        convergence_metrics = personalize_metrics(convergence_metrics, 'convergence')
-
+        print(main_metrics)
         self.logger.log(
-            main_metrics | convergence_metrics | step_metrics, step=episode
+            main_metrics,
+            step=epoch
         )
 
     def log_final_results(self):
