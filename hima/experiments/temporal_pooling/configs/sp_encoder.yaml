@@ -19,32 +19,21 @@ envs:
 
 sp:
   encoder:
-    _base_: $_base.spatial_pooler.default
-    # input
-    initial_rf_to_input_ratio: 8.0
-    max_rf_to_input_ratio: 0.25
-    max_rf_sparsity: 0.6
-    # output
-    output_sds: [500, 16]
-    # learning
-    learning_rate: 0.02
-    newborn_pruning_cycle: 2.0
-    newborn_pruning_stages: 10
-    newborn_pruning_mode: powerlaw
-    prune_grow_cycle: 100.0
-    adapt_to_ff_sparsity: True
-    boosting_k: 0.5
+    _base_: _common_base
+    max_rf_to_input_ratio: 0.3
+    output_sds: [500, 5]
 
   ensemble:
     _type_: sp.ensemble
-    _base_: $_base.spatial_pooler.default
+    _base_: _common_base
     n_sp: 5
+    output_sds: [100, 1]
+
+  _common_base:
+    _base_: $_base.spatial_pooler.default
     # input
     initial_rf_to_input_ratio: 8.0
-    max_rf_to_input_ratio: 1.25
     max_rf_sparsity: 0.6
-    # output
-    output_sds: [100, 3]
     # learning
     learning_rate: 0.02
     newborn_pruning_cycle: 2.0
@@ -52,7 +41,7 @@ sp:
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: True
-    boosting_k: 0.5
+    boosting_k: 1.0
 
 train_setups:
   full:
