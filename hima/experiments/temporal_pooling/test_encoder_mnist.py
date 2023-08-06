@@ -201,8 +201,8 @@ class SpEncoderExperiment:
             entropy=self.encoder.output_entropy(),
         )
         main_metrics = personalize_metrics(main_metrics, 'main')
-
         print(main_metrics)
+
         if isinstance(self.log, bool):
             images = dict(
                 sample_prediction=wandb.Image(sample_prediction)

@@ -203,8 +203,8 @@ class SpEncoderPinballExperiment:
             entropy=self.encoder.output_entropy(),
         )
         main_metrics = personalize_metrics(main_metrics, 'main')
-
         print(main_metrics)
+
         if isinstance(self.log, bool):
             images = dict(
                 sample_prediction=wandb.Image(sample_prediction)
@@ -212,7 +212,6 @@ class SpEncoderPinballExperiment:
             personalize_metrics(images, 'img')
             main_metrics |= images
 
-        print(main_metrics)
         self.logger.log(
             main_metrics,
             step=epoch
