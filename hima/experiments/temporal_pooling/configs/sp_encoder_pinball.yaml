@@ -1,0 +1,67 @@
+_type_: stp_experiment.sp_encoder_pinball
+project: stp.sp_encoder
+log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
+
+seed: 42
+train:
+  _base_: train_setups.small
+test:
+  _base_: test_setups.small
+
+data:
+  path: /Users/kuderov/data/pinball/pinball.npy
+
+encoder: sp.encoder
+decoder_noise: 0.00
+plot_sample: False
+
+envs:
+  random_bits:
+    sds: [64, 0.375]
+    similarity_range: [0, 1]
+
+sp:
+  encoder:
+    _base_: _common_base
+    max_rf_to_input_ratio: 1.5
+    output_sds: [1000, 5]
+
+  ensemble:
+    _type_: sp.ensemble
+    _base_: _common_base
+    n_sp: 5
+    max_rf_to_input_ratio: 0.3
+    output_sds: [100, 1]
+
+  _common_base:
+    _base_: $_base.spatial_pooler.default
+    # input
+    initial_rf_to_input_ratio: 10.0
+    max_rf_sparsity: 0.6
+    # learning
+    learning_rate: 0.02
+    newborn_pruning_cycle: 2.0
+    newborn_pruning_stages: 10
+    newborn_pruning_mode: powerlaw
+    prune_grow_cycle: 100.0
+    adapt_to_ff_sparsity: True
+    boosting_k: 1.0
+
+train_setups:
+  full:
+    n_epochs: 20
+    n_steps: 1000
+  mid:
+    n_epochs: 10
+    n_steps: 1000
+  small:
+    n_epochs: 2
+    n_steps: 1000
+
+test_setups:
+  small:
+    items_per_class: 20
+
+wandb_init:
+  _base_: $_base.wandb_init
+

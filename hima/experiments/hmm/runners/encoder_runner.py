@@ -207,11 +207,16 @@ class PinballTest:
 
         assert (self.encoder is None) == (self.decoder is None)
         self.with_input_encoding = self.encoder is not None
+        self.all_observations = []
 
     def run(self):
         for episode in range(self.n_episodes):
             self.run_episode(episode)
         self.dump_model()
+
+        # pinball_root_path = Path('/Users/kuderov/data/pinball/')
+        # pinball_root_path.mkdir(parents=True, exist_ok=True)
+        # np.save(pinball_root_path / 'pinball', np.array(self.all_observations))
 
     def run_episode(self, episode):
         episode_stats = EpisodeStats(n_prediction_steps=self.prediction_steps)
@@ -239,6 +244,7 @@ class PinballTest:
             raw_img = self.step_observe()
             # noinspection PyTypeChecker
             obs: np.ndarray = np.abs(raw_img - prev_raw_img) >= raw_img.mean()
+            # self.all_observations.append(obs)
             obs_sdr = np.flatnonzero(obs)
 
             self.act(step)

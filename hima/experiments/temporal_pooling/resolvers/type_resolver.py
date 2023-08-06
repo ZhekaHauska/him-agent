@@ -133,4 +133,9 @@ def _resolve_runner(type_tag: str):
             SpEncoderExperiment
         )
         return SpEncoderExperiment
+    if type_tag == 'stp_experiment.sp_encoder_pinball':
+        from hima.experiments.temporal_pooling.test_encoder_pinball import (
+            SpEncoderPinballExperiment
+        )
+        return SpEncoderPinballExperiment
 
