@@ -127,6 +127,7 @@ class Sds:
             #   1) resolve size; 2) resolve sparsity and active size
 
             if size is None:
+                shape = tuple(shape)
                 size = np.prod(shape)
             else:
                 shape = (size,)

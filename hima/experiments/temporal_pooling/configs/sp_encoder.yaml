@@ -9,7 +9,8 @@ test:
   _base_: test_setups.small
 
 encoder: sp.encoder
-decoder_noise: 0.02
+decoder_noise: 0.00
+plot_sample: False
 
 envs:
   random_bits:
@@ -21,33 +22,34 @@ sp:
     _base_: $_base.spatial_pooler.default
     # input
     initial_rf_to_input_ratio: 8.0
-    max_rf_to_input_ratio: 1.5
+    max_rf_to_input_ratio: 0.25
+    max_rf_sparsity: 0.6
     # output
     output_sds: [500, 16]
     # learning
     learning_rate: 0.02
     newborn_pruning_cycle: 2.0
     newborn_pruning_stages: 10
-    newborn_pruning_mode: linear
+    newborn_pruning_mode: powerlaw
     prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: True
     boosting_k: 0.5
 
   ensemble:
-    _type: sp.ensemble
+    _type_: sp.ensemble
     _base_: $_base.spatial_pooler.default
     n_sp: 5
     # input
     initial_rf_to_input_ratio: 8.0
-    max_rf_to_input_ratio: 1.5
+    max_rf_to_input_ratio: 1.25
+    max_rf_sparsity: 0.6
     # output
-    output_sds: [500, 16]
+    output_sds: [100, 3]
     # learning
     learning_rate: 0.02
-    global_inhibition_strength: 0.2
     newborn_pruning_cycle: 2.0
     newborn_pruning_stages: 10
-    newborn_pruning_mode: linear
+    newborn_pruning_mode: powerlaw
     prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: True
     boosting_k: 0.5

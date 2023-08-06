@@ -30,14 +30,19 @@ class SpatialPoolerEnsemble:
         ensemble_shape = (shape[0] * self.n_sp,) + shape[1:]
         self.output_sds = Sds.make((ensemble_shape, self.single_output_sds.sparsity))
 
-    def compute(self, input_sdr: SDR, learn: bool, output_sdr: SDR):
-        input_sdr = input_sdr.sparse.copy()
-        index_shift = self.getSingleNumColumns()
+    def compute(self, input_sdr: SDR, learn: bool, output_sdr: SDR = None):
+        if isinstance(input_sdr, SDR):
+            input_sdr = input_sdr.sparse.copy()
 
-        output_sdr.sparse = np.concatenate([
+        index_shift = self.single_output_sds.size
+        result = np.concatenate([
             sp.compute(input_sdr, learn=learn) + i * index_shift
             for i, sp in enumerate(self.sps)
         ])
+
+        if output_sdr is not None:
+            output_sdr.sparse = result
+        return result
 
     def getSingleNumColumns(self):
         return self.single_output_sds.size

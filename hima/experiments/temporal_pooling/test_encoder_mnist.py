@@ -77,6 +77,7 @@ class SpEncoderExperiment:
             encoder: TConfig, decoder_noise: float,
             project: str = None,
             wandb_init: TConfig = None,
+            plot_sample: bool = False,
             **_
     ):
         self.init_time = timer()
@@ -106,6 +107,8 @@ class SpEncoderExperiment:
         self.training = self.config.resolve_object(train, object_type_or_factory=TrainConfig)
         self.testing = self.config.resolve_object(test, object_type_or_factory=TestConfig)
         self.stats = None
+
+        self.plot_sample = plot_sample
 
     def run(self):
         self.print_with_timestamp('==> Run')
@@ -149,10 +152,7 @@ class SpEncoderExperiment:
         # self.stats.states.append(state)
         self.stats.decode_errors.append(error)
 
-    def log_progress(self, epoch: int):
-        if self.logger is None:
-            return
-
+    def plot_sample_diff(self):
         obs_ind = self.rng.choice(self.data.n_images)
         obs = self.data.sdrs[obs_ind]
         dense_obs = self.data.dense_sdrs[obs_ind].astype(float).reshape(self.data.image_shape)
@@ -165,14 +165,24 @@ class SpEncoderExperiment:
         decoded_obs = self.decoder.decode(state_probs).reshape(self.data.image_shape)
         error = np.abs(dense_obs - decoded_obs).mean()
 
+        w = self.encoder.weights[state[0]].reshape(-1, 1)
+        w = np.repeat(w, 10, axis=1)
+
         from hima.common.plot_utils import plot_grid_images
         plot_grid_images(
-            images=[dense_obs, decoded_obs],
-            titles=['Orig', 'Decoded'],
+            images=[dense_obs, decoded_obs, w],
+            titles=['Orig', 'Decoded', '[0].w'],
             show=True,
-            with_value_text_flags=[True, True],
-            cols_per_row=2
+            with_value_text_flags=[True, True, True],
+            cols_per_row=3
         )
+
+    def log_progress(self, epoch: int):
+        if self.logger is None:
+            return
+
+        if self.plot_sample:
+            self.plot_sample_diff()
 
         main_metrics = dict(
             mae=np.array(self.stats.decode_errors).mean(),
