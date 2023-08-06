@@ -1,5 +1,5 @@
 _type_: stp_experiment.sp_encoder_pinball
-project: stp.sp_encoder
+project: stp.sp_encoder_pinball
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 
 seed: 42
@@ -23,13 +23,13 @@ envs:
 sp:
   encoder:
     _base_: _common_base
-    max_rf_to_input_ratio: 1.5
-    output_sds: [1000, 5]
+    max_rf_to_input_ratio: 0.3
+    output_sds: [1000, 10]
 
   ensemble:
     _type_: sp.ensemble
     _base_: _common_base
-    n_sp: 5
+    n_sp: 10
     max_rf_to_input_ratio: 0.3
     output_sds: [100, 1]
 

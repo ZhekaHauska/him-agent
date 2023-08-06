@@ -62,5 +62,9 @@ class SpatialPoolerEnsemble:
     def getNumInputs(self):
         return self.feedforward_sds.size
 
+    @property
+    def ff_avg_active_size(self):
+        return self.sps[0].ff_avg_active_size
+
     def output_entropy(self):
         return np.mean([sp.output_entropy() for sp in self.sps])

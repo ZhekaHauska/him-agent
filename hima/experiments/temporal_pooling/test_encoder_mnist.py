@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import math
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +17,7 @@ from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, safe_divide, prepend_dict_keys
 from hima.envs.mnist import MNISTEnv
+from hima.experiments.hmm.runners.utils import get_surprise_2, get_surprise
 from hima.experiments.temporal_pooling.data.mnist import MnistDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
@@ -38,10 +40,12 @@ class TrainConfig:
 class EpochStats:
     states: list[SparseSdr]
     decode_errors: list[float]
+    decode_surprise: list[float]
 
     def __init__(self):
         self.states = []
         self.decode_errors = []
+        self.decode_surprise = []
 
 
 class TestConfig:
@@ -86,6 +90,7 @@ class SpEncoderExperiment:
         self.config = GlobalConfig(
             config=config, config_path=config_path, type_resolver=StpLazyTypeResolver()
         )
+        self.log = log
         self.logger = self.config.resolve_object(
             isnone(wandb_init, {}),
             object_type_or_factory=get_logger,
@@ -148,9 +153,11 @@ class SpEncoderExperiment:
 
         decoded_obs = self.decoder.decode(state_probs)
         error = np.abs(dense_obs - decoded_obs).mean()
+        surprise = get_surprise_2(decoded_obs, obs)
 
         # self.stats.states.append(state)
         self.stats.decode_errors.append(error)
+        self.stats.decode_surprise.append(surprise)
 
     def plot_sample_diff(self):
         obs_ind = self.rng.choice(self.data.n_images)
@@ -165,32 +172,44 @@ class SpEncoderExperiment:
         decoded_obs = self.decoder.decode(state_probs).reshape(self.data.image_shape)
         error = np.abs(dense_obs - decoded_obs).mean()
 
-        w = self.encoder.weights[state[0]].reshape(-1, 1)
-        w = np.repeat(w, 10, axis=1)
+        if self.plot_sample:
+            w = self.encoder.weights[state[0]].reshape(-1, 1)
+            w = np.repeat(w, 10, axis=1)
 
-        from hima.common.plot_utils import plot_grid_images
-        plot_grid_images(
-            images=[dense_obs, decoded_obs, w],
-            titles=['Orig', 'Decoded', '[0].w'],
-            show=True,
-            with_value_text_flags=[True, True, True],
-            cols_per_row=3
-        )
+            from hima.common.plot_utils import plot_grid_images
+            plot_grid_images(
+                images=[dense_obs, decoded_obs, w],
+                titles=['Orig', 'Decoded', '[0].w'],
+                show=True,
+                with_value_text_flags=[True, True, True],
+                cols_per_row=3
+            )
+        return np.hstack([dense_obs, decoded_obs])
 
     def log_progress(self, epoch: int):
         if self.logger is None:
             return
 
-        if self.plot_sample:
-            self.plot_sample_diff()
+        sample_prediction = self.plot_sample_diff()
 
+        avg_sparsity = self.encoder.ff_avg_active_size / self.encoder.feedforward_sds.size
+        mae = np.array(self.stats.decode_errors).mean()
         main_metrics = dict(
-            mae=np.array(self.stats.decode_errors).mean(),
-            entropy=self.encoder.output_entropy()
+            mae=mae,
+            nmae=mae / avg_sparsity,
+            surprise=np.array(self.stats.decode_surprise).mean(),
+            entropy=self.encoder.output_entropy(),
         )
         main_metrics = personalize_metrics(main_metrics, 'main')
 
         print(main_metrics)
+        if isinstance(self.log, bool):
+            images = dict(
+                sample_prediction=wandb.Image(sample_prediction)
+            )
+            personalize_metrics(images, 'img')
+            main_metrics |= images
+
         self.logger.log(
             main_metrics,
             step=epoch
