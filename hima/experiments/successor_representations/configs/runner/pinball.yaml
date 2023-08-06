@@ -5,15 +5,17 @@ run_tag: null
 
 n_episodes: 501
 update_rate: 10
-max_steps: 10
+max_steps: 15
 log_gif_fps: 5
+start_position: [0, 0]
+actions: [[0, 3], [0.5, 3], [-0.5, 3]]
 
-env_conf: 'configs/animalai/default.yaml'
+env_conf: 'configs/pinball/default.yaml'
 agent_conf: 'configs/agent/default.yaml'
 layer_conf: 'configs/layer/default.yaml'
 encoder_conf: 'configs/encoder/sp_ensemble.yaml'
 
-experiment: animalai
-setup: 'competition/01-01-01.yaml'
+experiment: pinball
+setup: fork_skewed
 
 seed: null
