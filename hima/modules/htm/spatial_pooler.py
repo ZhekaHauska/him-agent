@@ -1083,6 +1083,9 @@ class SPDecoder:
 
         return probs_for_bit
 
+    def learn(self, *args):
+        ...
+
     def _update_receptive_fields(self):
         is_ensemble = type(self.sp) is SPEnsemble
 

@@ -8,27 +8,28 @@ from htm.bindings.sdr import SDR
 
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
+from hima.experiments.temporal_pooling.stp.sp_grouped import SpatialPoolerGrouped
 
 
 class SpatialPoolerEnsemble:
     sps: list[SpatialPooler]
 
-    def __init__(self, n_sp, seed, **kwargs):
-        self.n_sp = n_sp
+    def __init__(self, output_sds, seed, **kwargs):
+        output_sds = Sds.make(output_sds)
+        n_groups, single_sds = to_single_sds(output_sds)
+
+        self.n_sp = n_groups
         self.seed = seed
         self.rng = np.random.default_rng(self.seed)
 
         self.sps = [
-            SpatialPooler(**kwargs, seed=self.rng.integers(1_000_000))
+            SpatialPooler(output_sds=single_sds, seed=self.rng.integers(1_000_000), **kwargs)
             for _ in range(self.n_sp)
         ]
 
         self.feedforward_sds = self.sps[0].feedforward_sds
         self.single_output_sds = self.sps[0].output_sds
-
-        shape = self.single_output_sds.shape
-        ensemble_shape = (shape[0] * self.n_sp,) + shape[1:]
-        self.output_sds = Sds.make((ensemble_shape, self.single_output_sds.sparsity))
+        self.output_sds = output_sds
 
     def compute(self, input_sdr: SDR, learn: bool, output_sdr: SDR = None):
         if isinstance(input_sdr, SDR):
@@ -68,3 +69,57 @@ class SpatialPoolerEnsemble:
 
     def output_entropy(self):
         return np.mean([sp.output_entropy() for sp in self.sps])
+
+
+class SpatialPoolerGroupedWrapper(SpatialPoolerGrouped):
+
+    def __init__(self, seed, **kwargs):
+        super().__init__(seed=seed, **kwargs)
+        _, self.single_output_sds = to_single_sds(self.output_sds)
+
+    def compute(self, input_sdr: SDR, learn: bool, output_sdr: SDR = None):
+        if isinstance(input_sdr, SDR):
+            input_sdr = input_sdr.sparse.copy()
+
+        result = super().compute(input_sdr, learn=learn)
+
+        if output_sdr is not None:
+            output_sdr.sparse = result
+        return result
+
+    def getSingleNumColumns(self):
+        return self.single_output_sds.size
+
+    def getSingleColumnsDimensions(self):
+        return self.single_output_sds.shape
+
+    def getColumnsDimensions(self):
+        return self.output_sds.shape
+
+    def getNumColumns(self):
+        return self.output_sds.size
+
+    def getInputDimensions(self):
+        return self.feedforward_sds.shape
+
+    def getNumInputs(self):
+        return self.feedforward_sds.size
+
+
+def to_single_sds(group_sds) -> tuple[int, Sds]:
+    group_sds = Sds.make(group_sds)
+    n_groups = group_sds.active_size
+
+    shape = group_sds.shape
+    single_shape = (shape[0] // n_groups,) + shape[1:]
+    single_sds = Sds.make((single_shape, group_sds.sparsity))
+
+    return n_groups, single_sds
+
+
+def to_group_sds(n_groups, single_sds) -> Sds:
+    shape = single_sds.shape
+    group_shape = (shape[0] * n_groups,) + shape[1:]
+    group_sds = Sds.make((group_shape, single_sds.sparsity))
+
+    return group_sds

@@ -5,8 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 from hima.common.utils import safe_divide
@@ -31,11 +29,6 @@ class SpatialPoolerDecoder:
             input_probs = np.zeros(self.sp.ff_size)
             self.backpropagate_output_probs(self.sp, output_probs, input_probs)
             n_active_input = self.sp.ff_avg_active_size
-
-        # input_winners = np.sort(
-        #     np.argpartition(-input_probs, n_active_input)[:n_active_input]
-        # )
-        # input_winners = input_winners[input_probs[input_winners] > 0.001]
 
         input_probs = np.clip(safe_divide(input_probs, output_probs.sum()), 0., 1.)
         return input_probs

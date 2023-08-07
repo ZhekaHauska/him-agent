@@ -74,6 +74,7 @@ class PinballTest:
         self.obs_shape = obs.shape[:2]
 
         self.encoder_type = conf['run']['encoder']
+        self.decoder_type = conf['run'].get('decoder', None)
         sp_conf = conf.get('sp', None)
         input_layer_conf = conf.get('input_layer', None)
         decoder_conf = conf.get('decoder', None)
@@ -115,13 +116,30 @@ class PinballTest:
             sp_conf['seed'] = self.seed
             sp_conf['feedforward_sds'] = [self.obs_shape, 0.1]
             self.encoder = SpatialPoolerEnsemble(**sp_conf)
-            self.decoder = SpatialPoolerDecoder(self.encoder)
+            self.decoder = make_decoder(self.encoder, self.decoder_type)
 
             self.state_shape = self.encoder.getColumnsDimensions()
             self.sp_input = SDR(self.encoder.getNumInputs())
             self.sp_output = SDR(self.encoder.getNumColumns())
 
             self.n_hmm_obs_vars = self.encoder.n_sp
+            self.n_hmm_obs_states = self.encoder.getSingleNumColumns()
+            self.surprise_mode = 'categorical'
+
+        elif self.encoder_type == 'new_sp_grouped':
+            from hima.experiments.temporal_pooling.stp.sp_ensemble import (
+                SpatialPoolerGroupedWrapper
+            )
+            sp_conf['seed'] = self.seed
+            sp_conf['feedforward_sds'] = [self.obs_shape, 0.1]
+            self.encoder = SpatialPoolerGroupedWrapper(**sp_conf)
+            self.decoder = make_decoder(self.encoder, self.decoder_type)
+
+            self.state_shape = self.encoder.getColumnsDimensions()
+            self.sp_input = SDR(self.encoder.getNumInputs())
+            self.sp_output = SDR(self.encoder.getNumColumns())
+
+            self.n_hmm_obs_vars = self.encoder.n_groups
             self.n_hmm_obs_states = self.encoder.getSingleNumColumns()
             self.surprise_mode = 'categorical'
 
@@ -254,6 +272,8 @@ class PinballTest:
                 self.sp_input.sparse = obs_sdr
                 self.encoder.compute(self.sp_input, True, self.sp_output)
                 state_sdr = self.sp_output.sparse
+
+                self.decoder.learn(state_prediction, obs.flatten())
                 obs_prediction = self.decoder.decode(state_prediction, learn=True)
             else:
                 state_sdr = obs_sdr
@@ -523,6 +543,22 @@ def to_dense(i, size):
     arr = np.zeros(size).flatten()
     arr[i] = 1.
     return arr
+
+
+def make_decoder(encoder, decoder):
+    if decoder == 'naive':
+        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
+        return SpatialPoolerDecoder(encoder)
+    elif decoder == 'learned':
+        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerLearnedDecoder
+        return SpatialPoolerLearnedDecoder(encoder, hidden_dims=(64, 64))
+    elif decoder == 'learned_input':
+        from hima.experiments.temporal_pooling.stp.sp_decoder import (
+            SpatialPoolerLearnedOverNaiveDecoder
+        )
+        return SpatialPoolerLearnedOverNaiveDecoder(encoder)
+    else:
+        raise ValueError(f'Decoder {decoder} is not supported')
 
 
 def main(config_path):
