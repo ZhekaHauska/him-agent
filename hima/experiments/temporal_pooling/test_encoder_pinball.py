@@ -137,9 +137,10 @@ class SpEncoderPinballExperiment:
         ...
 
     def noisy(self, x):
+        s_old = x.sum()
         noisy = x + np.abs(self.rng.normal(scale=self.decoder_noise, size=x.shape))
         s = noisy.sum()
-        return safe_divide(noisy, s)
+        return safe_divide(s_old * noisy, s)
 
     def process_sample(self, obs_ind: int, learn: bool):
         obs = self.data.sdrs[obs_ind]

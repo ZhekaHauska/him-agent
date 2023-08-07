@@ -52,19 +52,16 @@ class SpatialPoolerLearnedDecoder:
             self.sp.feedforward_sds.size,
             self.sp.output_sds.size
         )
-        self.weights = self.rng.normal(0., 0.1, size=shape)
-        self.biases = np.zeros(shape[0])
-        self.scale = 10.
-        self.lr = .5
-        self.power_t = 0.15
+        self.weights = self.rng.normal(0., 0.01, size=shape)
+        self.lr = .4
+        self.power_t = 0.05
 
         self.n_updates = 0
         self.total_updates_required = 100_000
-        self.stage_size = 5_000
+        self.stage_size = 4_000
 
     def decode(self, output_probs, learn=False, correct_obs=None):
-        logits = self.weights @ output_probs + self.biases
-        input_probs = sigmoid(self.scale * logits)
+        input_probs = self.weights @ output_probs
 
         if learn and correct_obs is not None:
             self.learn(
@@ -90,12 +87,11 @@ class SpatialPoolerLearnedDecoder:
             decoded_obs = self.decode(output_probs, learn=False)
 
         err = correct_obs - decoded_obs
-        sigmoid_derivative = decoded_obs * (1 - decoded_obs)
+        # sigmoid_derivative = decoded_obs * (1 - decoded_obs) * self.scale
         lr = self.lr / self.n_updates ** self.power_t
 
-        logits_derivative = lr * err * sigmoid_derivative * self.scale
+        logits_derivative = lr * err
         self.weights += np.outer(logits_derivative, output_probs)
-        self.biases += logits_derivative
 
 
 class SpatialPoolerLearnedDecoderOld:
