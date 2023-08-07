@@ -1063,7 +1063,7 @@ class SPDecoder:
         self.mode = mode
         self.receptive_fields = np.zeros((self.sp.getNumColumns(), self.sp.getNumInputs()))
 
-    def decode(self, cell_probs, learn=False):
+    def decode(self, cell_probs, learn=False, *args):
         assert cell_probs.size == self.sp.getNumColumns()
 
         if learn:

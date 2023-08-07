@@ -273,8 +273,9 @@ class PinballTest:
                 self.encoder.compute(self.sp_input, True, self.sp_output)
                 state_sdr = self.sp_output.sparse
 
-                self.decoder.learn(state_prediction, obs.flatten())
-                obs_prediction = self.decoder.decode(state_prediction, learn=True)
+                obs_prediction = self.decoder.decode(
+                    state_prediction, learn=True, correct_obs=obs.flatten()
+                )
             else:
                 state_sdr = obs_sdr
                 obs_prediction = None

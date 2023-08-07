@@ -149,9 +149,7 @@ class SpEncoderExperiment:
 
         state_probs = self.noisy(dense_state)
 
-        if learn:
-            self.decoder.learn(state_probs, dense_obs)
-        decoded_obs = self.decoder.decode(state_probs)
+        decoded_obs = self.decoder.decode(state_probs, learn=learn, correct_obs=dense_obs)
         error = np.abs(dense_obs - decoded_obs).mean()
         surprise = get_surprise_2(decoded_obs, obs)
 

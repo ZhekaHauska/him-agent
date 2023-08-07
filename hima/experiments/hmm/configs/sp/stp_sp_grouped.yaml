@@ -1,5 +1,5 @@
 # input
-initial_max_rf_sparsity: 0.6
+initial_max_rf_sparsity: 0.4
 initial_rf_to_input_ratio: 8.0
 max_rf_to_input_ratio: 2.0
 max_rf_sparsity: 0.4

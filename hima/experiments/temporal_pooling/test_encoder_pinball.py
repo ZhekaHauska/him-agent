@@ -150,9 +150,7 @@ class SpEncoderPinballExperiment:
 
         state_probs = self.noisy(dense_state)
 
-        if learn:
-            self.decoder.learn(state_probs, dense_obs)
-        decoded_obs = self.decoder.decode(state_probs)
+        decoded_obs = self.decoder.decode(state_probs, learn=learn, correct_obs=dense_obs)
         error = np.abs(dense_obs - decoded_obs).mean()
         surprise = get_surprise_2(decoded_obs, obs)
 
@@ -469,7 +467,7 @@ def make_decoder(encoder, decoder):
         return SpatialPoolerDecoder(encoder)
     elif decoder == 'learned':
         from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerLearnedDecoder
-        return SpatialPoolerLearnedDecoder(encoder, hidden_dims=(64, 64))
+        return SpatialPoolerLearnedDecoder(encoder, hidden_dims=tuple())
     elif decoder == 'learned_input':
         from hima.experiments.temporal_pooling.stp.sp_decoder import (
             SpatialPoolerLearnedOverNaiveDecoder

@@ -90,7 +90,7 @@ class SpatialPooler:
         print(f'SP vec init shape: {self.rf.shape}')
 
         self.weights = self.normalize_weights(
-            self.rng.normal(loc=1.0, scale=0.001, size=self.rf.shape)
+            self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
         )
 
         self.sparse_input = []
