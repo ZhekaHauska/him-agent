@@ -9,6 +9,7 @@ test:
   _base_: test_setups.small
 
 encoder: sp.encoder
+decoder: naive
 decoder_noise: 0.00
 plot_sample: False
 
@@ -27,6 +28,7 @@ sp:
     _type_: sp.ensemble
     _base_: _common_base
     n_sp: 5
+    max_rf_to_input_ratio: 0.3
     output_sds: [100, 1]
 
   _common_base:

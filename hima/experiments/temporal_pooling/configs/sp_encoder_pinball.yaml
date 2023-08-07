@@ -12,6 +12,7 @@ data:
   path: /Users/kuderov/data/pinball/pinball.npy
 
 encoder: sp.encoder
+decoder: naive
 decoder_noise: 0.00
 plot_sample: False
 

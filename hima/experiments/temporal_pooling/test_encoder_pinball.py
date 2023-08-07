@@ -15,13 +15,10 @@ from hima.common.sdr import SparseSdr, sparse_to_dense
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, safe_divide, prepend_dict_keys
-from hima.envs.mnist import MNISTEnv
 from hima.experiments.hmm.runners.utils import get_surprise_2
-from hima.experiments.temporal_pooling.data.mnist import MnistDataset
 from hima.experiments.temporal_pooling.data.pinball import PinballDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
-from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
-from hima.experiments.temporal_pooling.utils import resolve_random_seed, Scheduler
+from hima.experiments.temporal_pooling.utils import resolve_random_seed
 
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
@@ -79,7 +76,7 @@ class SpEncoderPinballExperiment:
             log: bool, seed: int,
             train: TConfig, test: TConfig,
             data: TConfig,
-            encoder: TConfig, decoder_noise: float,
+            encoder: TConfig, decoder: str, decoder_noise: float,
             project: str = None,
             wandb_init: TConfig = None,
             plot_sample: bool = False,
@@ -105,7 +102,7 @@ class SpEncoderPinballExperiment:
 
         self.input_sds = self.data.output_sds
         self.encoder = self.config.resolve_object(encoder, feedforward_sds=self.input_sds)
-        self.decoder = SpatialPoolerDecoder(self.encoder)
+        self.decoder = make_decoder(self.encoder, decoder)
         self.decoder_noise = decoder_noise
 
         print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
@@ -153,6 +150,8 @@ class SpEncoderPinballExperiment:
 
         state_probs = self.noisy(dense_state)
 
+        if learn:
+            self.decoder.learn(state_probs, dense_obs)
         decoded_obs = self.decoder.decode(state_probs)
         error = np.abs(dense_obs - decoded_obs).mean()
         surprise = get_surprise_2(decoded_obs, obs)
@@ -462,3 +461,19 @@ class SpEncoderPinballExperiment:
 
 def personalize_metrics(metrics: dict, prefix: str):
     return prepend_dict_keys(metrics, prefix, separator='/')
+
+
+def make_decoder(encoder, decoder):
+    if decoder == 'naive':
+        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
+        return SpatialPoolerDecoder(encoder)
+    elif decoder == 'learned':
+        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerLearnedDecoder
+        return SpatialPoolerLearnedDecoder(encoder, hidden_dims=(64, 64))
+    elif decoder == 'learned_input':
+        from hima.experiments.temporal_pooling.stp.sp_decoder import (
+            SpatialPoolerLearnedOverNaiveDecoder
+        )
+        return SpatialPoolerLearnedOverNaiveDecoder(encoder)
+    else:
+        raise ValueError(f'Decoder {decoder} is not supported')
