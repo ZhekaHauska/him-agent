@@ -71,6 +71,9 @@ def _resolve_spatial_pooler(type_tag: str):
     if type_tag == 'sp.ensemble':
         from hima.experiments.temporal_pooling.stp.sp_ensemble import SpatialPoolerEnsemble
         return SpatialPoolerEnsemble
+    if type_tag == 'sp.grouped':
+        from hima.experiments.temporal_pooling.stp.sp_grouped import SpatialPoolerGrouped
+        return SpatialPoolerGrouped
 
 
 def _resolve_spatial_temporal_pooler(type_tag: str):
