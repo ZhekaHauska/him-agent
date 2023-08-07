@@ -250,6 +250,7 @@ spatial_pooler:
     seed: ???
     # input
     feedforward_sds: ???
+    initial_max_rf_sparsity: 0.6
     initial_rf_to_input_ratio: 10.0
     max_rf_to_input_ratio: 3.0
     max_rf_sparsity: 0.1
@@ -258,10 +259,10 @@ spatial_pooler:
     # learning
     min_overlap_for_activation: 3
     learning_rate: 0.01
-    newborn_pruning_cycle: 2.0
-    newborn_pruning_stages: 10
+    newborn_pruning_cycle: 4.0
+    newborn_pruning_stages: 20
     newborn_pruning_mode: linear
-    prune_grow_cycle: 100.0
+    prune_grow_cycle: 200.0
     adapt_to_ff_sparsity: False
     boosting_k: 0.5
 

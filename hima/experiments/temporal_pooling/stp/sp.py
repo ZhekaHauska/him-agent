@@ -56,7 +56,8 @@ class SpatialPooler:
             self, *,
             feedforward_sds: Sds,
             # newborn / mature
-            initial_rf_to_input_ratio: float, max_rf_to_input_ratio: float, max_rf_sparsity: float,
+            initial_max_rf_sparsity: float, initial_rf_to_input_ratio: float,
+            max_rf_to_input_ratio: float, max_rf_sparsity: float,
             output_sds: Sds,
             min_overlap_for_activation: float, learning_rate: float,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
@@ -73,7 +74,7 @@ class SpatialPooler:
 
         self.initial_rf_sparsity = min(
             initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
-            0.75
+            initial_max_rf_sparsity
         )
         self.max_rf_to_input_ratio = max_rf_to_input_ratio
         self.max_rf_sparsity = max_rf_sparsity
@@ -89,7 +90,7 @@ class SpatialPooler:
         print(f'SP vec init shape: {self.rf.shape}')
 
         self.weights = self.normalize_weights(
-            self.rng.normal(loc=1.0, scale=0.01, size=self.rf.shape)
+            self.rng.normal(loc=1.0, scale=0.001, size=self.rf.shape)
         )
 
         self.sparse_input = []
@@ -121,10 +122,10 @@ class SpatialPooler:
         self.feedforward_trace[input_sdr] += 1
 
         if self.is_newborn_phase:
-            if self.n_computes % int(self.newborn_pruning_cycle * self.output_size) == 0:
+            if self.n_computes % int(self.newborn_pruning_cycle / self.output_sds.sparsity) == 0:
                 self.shrink_receptive_field()
         else:
-            if self.n_computes % int(self.prune_grow_cycle * self.output_size) == 0:
+            if self.n_computes % int(self.prune_grow_cycle / self.output_sds.sparsity) == 0:
                 self.prune_grow_synapses()
 
         self.update_input(input_sdr)

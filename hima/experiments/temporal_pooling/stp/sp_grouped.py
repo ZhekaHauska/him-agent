@@ -57,7 +57,8 @@ class SpatialPoolerGrouped(SpatialPooler):
             self, *,
             feedforward_sds: Sds,
             # newborn / mature
-            initial_rf_to_input_ratio: float, max_rf_to_input_ratio: float, max_rf_sparsity: float,
+            initial_max_rf_sparsity: float, initial_rf_to_input_ratio: float,
+            max_rf_to_input_ratio: float, max_rf_sparsity: float,
             output_sds: Sds,
             min_overlap_for_activation: float, learning_rate: float,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
@@ -67,7 +68,9 @@ class SpatialPoolerGrouped(SpatialPooler):
             newborn_pruning_mode: str = 'powerlaw'
     ):
         super().__init__(
-            feedforward_sds=feedforward_sds, initial_rf_to_input_ratio=initial_rf_to_input_ratio,
+            feedforward_sds=feedforward_sds,
+            initial_max_rf_sparsity=initial_max_rf_sparsity,
+            initial_rf_to_input_ratio=initial_rf_to_input_ratio,
             max_rf_to_input_ratio=max_rf_to_input_ratio, max_rf_sparsity=max_rf_sparsity,
             output_sds=output_sds, min_overlap_for_activation=min_overlap_for_activation,
             learning_rate=learning_rate, newborn_pruning_cycle=newborn_pruning_cycle,
