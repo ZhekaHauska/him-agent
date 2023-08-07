@@ -27,6 +27,12 @@ sp:
     max_rf_to_input_ratio: 0.3
     output_sds: [1000, 10]
 
+  grouped:
+    _type_: sp.grouped
+    _base_: _common_base
+    max_rf_to_input_ratio: 0.3
+    output_sds: [1000, 10]
+
   ensemble:
     _type_: sp.ensemble
     _base_: _common_base
