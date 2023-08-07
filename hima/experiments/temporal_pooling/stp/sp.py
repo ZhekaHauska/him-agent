@@ -53,7 +53,8 @@ class SpatialPooler:
     output_trace: np.ndarray
 
     def __init__(
-            self, feedforward_sds: Sds,
+            self, *,
+            feedforward_sds: Sds,
             # newborn / mature
             initial_rf_to_input_ratio: float, max_rf_to_input_ratio: float, max_rf_sparsity: float,
             output_sds: Sds,
@@ -137,10 +138,7 @@ class SpatialPooler:
             # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
             overlaps = overlaps * boosting_alpha ** np.sign(overlaps)
 
-        n_winners = self.output_sds.active_size
-        winners = np.sort(
-            np.argpartition(-overlaps, n_winners)[:n_winners]
-        )
+        winners = self.compute_winners(overlaps)
         winners = winners[overlaps[winners] > 0]
         n_winners = winners.shape[0]
 
@@ -151,6 +149,12 @@ class SpatialPooler:
         if learn:
             self.learn(winners, match_mask[winners])
         return winners
+
+    def compute_winners(self, overlaps):
+        n_winners = self.output_sds.active_size
+        return np.sort(
+            np.argpartition(overlaps, -n_winners)[-n_winners:]
+        )
 
     def learn(self, neurons: np.ndarray, match_input_mask: np.ndarray, modulation: float = 1.0):
         if len(neurons) == 0:
