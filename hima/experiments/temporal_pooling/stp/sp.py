@@ -8,7 +8,7 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed
+from hima.common.utils import timed, safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
@@ -142,10 +142,11 @@ class SpatialPooler:
             np.argpartition(-overlaps, n_winners)[:n_winners]
         )
         winners = winners[overlaps[winners] > 0]
+        n_winners = winners.shape[0]
 
         # update winners activation stats
         self.output_trace[winners] += 1
-        self.recognition_strength_trace += overlaps[winners].sum() / n_winners
+        self.recognition_strength_trace += safe_divide(overlaps[winners].sum(), n_winners)
 
         if learn:
             self.learn(winners, match_mask[winners])

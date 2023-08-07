@@ -8,7 +8,7 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed
+from hima.common.utils import timed, safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
@@ -67,6 +67,8 @@ class SpatialPoolerGrouped:
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.output_sds = Sds.make(output_sds)
+        assert self.output_size % self.n_groups == 0, f'Non-divisible groups {self.output_sds}'
+        self.group_size = self.output_sds.size // self.n_groups
 
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
@@ -142,10 +144,11 @@ class SpatialPoolerGrouped:
             np.argpartition(-overlaps, n_winners)[:n_winners]
         )
         winners = winners[overlaps[winners] > 0]
+        n_winners = winners.shape[0]
 
         # update winners activation stats
         self.output_trace[winners] += 1
-        self.recognition_strength_trace += overlaps[winners].sum() / n_winners
+        self.recognition_strength_trace += safe_divide(overlaps[winners].sum(), n_winners)
 
         if learn:
             self.learn(winners, match_mask[winners])
