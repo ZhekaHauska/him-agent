@@ -163,31 +163,13 @@ class SpatialPooler:
         if len(neurons) == 0:
             return
 
-        n_matched = rf_match_input_mask.sum(axis=1, keepdims=True)
-
-        # filter out neurons that don't match input
-        empty_hit_neurons = n_matched.flatten() == 0
-        if np.any(empty_hit_neurons):
-            non_empty_hit_neurons = np.logical_not(empty_hit_neurons)
-
-            neurons = neurons[non_empty_hit_neurons],
-            rf_match_input_mask = rf_match_input_mask[non_empty_hit_neurons]
-            n_matched = n_matched[non_empty_hit_neurons]
-
         w = self.weights[neurons]
-        lr = modulation * self.learning_rate
+        n_matched = rf_match_input_mask.sum(axis=1, keepdims=True)
+        lr = modulation * self.learning_rate * (n_matched / self.rf_size)**0.6
 
-        mask = rf_match_input_mask
+        dw_matched = rf_match_input_mask * lr
 
-        dw_inh = lr * (1 - mask) * w
-        # n_non_matched = self.rf_size - n_matched
-        # np.divide(dw_inh, n_non_matched, out=dw_inh, where=n_non_matched > 0)
-
-        dw_pool = dw_inh.sum(axis=1, keepdims=True)
-        dw_exc = mask * dw_pool / n_matched
-        # dw_exc = lr * mask * w
-
-        self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
+        self.weights[neurons] = self.normalize_weights(w + dw_matched)
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         # feedback SDR is the SP neurons that should be reinforced or punished
@@ -209,7 +191,8 @@ class SpatialPooler:
             return
 
         # probabilities to keep connection
-        keep_prob = np.power(np.abs(self.weights), 2.0) + 0.01
+        threshold = 1. / self.rf_size
+        keep_prob = np.power(np.abs(self.weights) / threshold + 0.1, 1.5)
         keep_prob /= keep_prob.sum(axis=1, keepdims=True)
 
         # sample what connections to keep for each neuron independently
