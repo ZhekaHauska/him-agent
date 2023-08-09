@@ -103,10 +103,12 @@ class SpatialPooler:
 
         self.base_boosting_k = boosting_k
         self.newborn_pruning_cycle = newborn_pruning_cycle
+        self.newborn_pruning_schedule = int(self.newborn_pruning_cycle / self.output_sds.sparsity)
         self.newborn_pruning_stages = newborn_pruning_stages
         self.newborn_pruning_mode = newborn_pruning_mode
         self.newborn_pruning_stage = 0
         self.prune_grow_cycle = prune_grow_cycle
+        self.prune_grow_schedule = int(self.prune_grow_cycle / self.output_sds.sparsity)
 
         self.run_time = 0
 
@@ -122,16 +124,16 @@ class SpatialPooler:
         self.feedforward_trace[input_sdr] += 1
 
         if self.is_newborn_phase:
-            if self.n_computes % int(self.newborn_pruning_cycle / self.output_sds.sparsity) == 0:
+            if self.n_computes % self.newborn_pruning_schedule == 0:
                 self.shrink_receptive_field()
         else:
-            if self.n_computes % int(self.prune_grow_cycle / self.output_sds.sparsity) == 0:
+            if self.n_computes % self.prune_grow_schedule == 0:
                 self.prune_grow_synapses()
 
         self.update_input(input_sdr)
 
-        match_mask = self.match_input(self.dense_input)
-        overlaps = (match_mask * self.weights).sum(axis=1)
+        rf_match_mask = self.match_input(self.dense_input)
+        overlaps = (rf_match_mask * self.weights).sum(axis=1)
 
         if self.is_newborn_phase:
             # boosting
@@ -148,7 +150,7 @@ class SpatialPooler:
         self.recognition_strength_trace += safe_divide(overlaps[winners].sum(), n_winners)
 
         if learn:
-            self.learn(winners, match_mask[winners])
+            self.learn(winners, rf_match_mask[winners])
         return winners
 
     def compute_winners(self, overlaps):
@@ -157,33 +159,40 @@ class SpatialPooler:
             np.argpartition(overlaps, -n_winners)[-n_winners:]
         )
 
-    def learn(self, neurons: np.ndarray, match_input_mask: np.ndarray, modulation: float = 1.0):
+    def learn(self, neurons: np.ndarray, rf_match_input_mask: np.ndarray, modulation: float = 1.0):
         if len(neurons) == 0:
             return
 
+        n_matched = rf_match_input_mask.sum(axis=1, keepdims=True)
+
+        # filter out neurons that don't match input
+        empty_hit_neurons = n_matched.flatten() == 0
+        if np.any(empty_hit_neurons):
+            non_empty_hit_neurons = np.logical_not(empty_hit_neurons)
+
+            neurons = neurons[non_empty_hit_neurons],
+            rf_match_input_mask = rf_match_input_mask[non_empty_hit_neurons]
+            n_matched = n_matched[non_empty_hit_neurons]
+
         w = self.weights[neurons]
         lr = modulation * self.learning_rate
-        mask = match_input_mask
-        matched = mask.sum(axis=1, keepdims=True)
 
-        empty_hits = matched.flatten() == 0
-        if np.any(empty_hits):
-            non_empty_hits = np.logical_not(empty_hits)
-            w = w[non_empty_hits]
-            mask = mask[non_empty_hits]
-            matched = matched[non_empty_hits]
+        mask = rf_match_input_mask
 
         dw_inh = lr * (1 - mask) * w
+        # n_non_matched = self.rf_size - n_matched
+        # np.divide(dw_inh, n_non_matched, out=dw_inh, where=n_non_matched > 0)
+
         dw_pool = dw_inh.sum(axis=1, keepdims=True)
-        dw_exc = mask * dw_pool / matched
+        dw_exc = mask * dw_pool / n_matched
         # dw_exc = lr * mask * w
 
         self.weights[neurons] = self.normalize_weights(w + dw_exc - dw_inh)
 
-    def process_feedback(self, feedback_sdr: SparseSdr):
-        # feedback SDR is the SP neurons that should be reinforced
-        fb_match_mask, _ = self.match_input(self.dense_input, neurons=feedback_sdr)
-        self.learn(feedback_sdr, fb_match_mask)
+    def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
+        # feedback SDR is the SP neurons that should be reinforced or punished
+        fb_match_mask = self.match_input(self.dense_input, neurons=feedback_sdr)
+        self.learn(feedback_sdr, fb_match_mask, modulation=modulation)
 
     def shrink_receptive_field(self):
         self.newborn_pruning_stage += 1
@@ -306,7 +315,7 @@ class SpatialPooler:
         return self.ff_avg_active_size / self.ff_size
 
     @property
-    def rf_size(self):
+    def rf_size(self) -> int:
         return self.rf.shape[1]
 
     @property
