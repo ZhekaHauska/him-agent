@@ -18,6 +18,7 @@ class BioHIMA:
             observation_prior_lr: float = 1.0,
             striatum_lr: float = 1.0,
             sr_steps: int = 5,
+            approximate_tail: bool = True,
             inverse_temp: float = 1.0,
             seed: int = None
     ):
@@ -26,6 +27,7 @@ class BioHIMA:
         self.cortical_column = cortical_column
         self.gamma = gamma
         self.sr_steps = sr_steps
+        self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
 
         self.observation_prior = normalize(
@@ -121,20 +123,17 @@ class BioHIMA:
         if learn:
             prediction_cells = self.cortical_column.layer.prediction_cells.copy()
 
-            predicted_sr = self.predict_sr(self.cortical_column.layer.internal_forward_messages)
+            predicted_sr = self.predict_sr(prediction_cells)
             generated_sr, last_step_prediction = self._generate_sr(
                 self.sr_steps,
-                self.cortical_column.layer.internal_forward_messages,
+                prediction_cells,
                 self.observation_messages,
+                approximate_tail=self.approximate_tail,
                 return_last_prediction_step=True
             )
 
             delta_sr = generated_sr - predicted_sr
-            delta_h = (
-                    (self.gamma**(self.sr_steps + 1)) * last_step_prediction -
-                    prediction_cells
-            )
-            delta_w = delta_h.reshape((-1, 1)) * delta_sr.reshape((1, -1))
+            delta_w = prediction_cells.reshape((-1, 1)) * delta_sr.reshape((1, -1))
 
             self.striatum_weights += self.striatum_lr * delta_w
 
@@ -202,8 +201,4 @@ class BioHIMA:
     def predict_sr(self, hidden_vars_dist):
         sr = np.dot(hidden_vars_dist, self.striatum_weights)
         sr /= self.cortical_column.layer.n_hidden_vars
-        sr = (1 - self.gamma) * sr.reshape((self.cortical_column.layer.n_obs_vars, -1))
-        sr = normalize(sr).flatten()
-        sr /= (1 - self.gamma)
-
         return sr
