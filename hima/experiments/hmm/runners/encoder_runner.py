@@ -224,7 +224,6 @@ class PinballTest:
         self.total_stats = TotalStats()
 
         assert (self.encoder is None) == (self.decoder is None)
-        self.with_input_encoding = self.encoder is not None
         self.all_observations = []
 
     def run(self):
@@ -250,7 +249,7 @@ class PinballTest:
 
         prev_raw_img = raw_img = self.step_observe()
         prev_obs = obs = np.zeros(self.obs_shape)
-        prev_state = np.zeros(self.state_shape) if self.with_input_encoding else None
+        prev_state = np.zeros(self.state_shape)
 
         initial_context = np.zeros_like(self.hmm.context_messages)
         initial_context[
@@ -268,17 +267,13 @@ class PinballTest:
             self.act(step)
             state_prediction = self.predict_state()
 
-            if self.with_input_encoding:
-                self.sp_input.sparse = obs_sdr
-                self.encoder.compute(self.sp_input, True, self.sp_output)
-                state_sdr = self.sp_output.sparse
+            self.sp_input.sparse = obs_sdr
+            self.encoder.compute(self.sp_input, True, self.sp_output)
+            state_sdr = self.sp_output.sparse
 
-                obs_prediction = self.decoder.decode(
-                    state_prediction, learn=True, correct_obs=obs.flatten()
-                )
-            else:
-                state_sdr = obs_sdr
-                obs_prediction = None
+            obs_prediction = self.decoder.decode(
+                state_prediction, learn=True, correct_obs=obs.flatten()
+            )
 
             self.hmm.observe(state_sdr, learn=True)
             self.hmm.set_context_messages(self.hmm.internal_forward_messages)
@@ -289,10 +284,9 @@ class PinballTest:
             episode_stats.state_surprise.append(state_surprise)
             self.total_stats.state_surprise += state_surprise
 
-            if self.with_input_encoding:
-                obs_surprise = get_surprise_2(obs_prediction, obs_sdr)
-                episode_stats.obs_surprise.append(obs_surprise)
-                self.total_stats.obs_surprise += obs_surprise
+            obs_surprise = get_surprise_2(obs_prediction, obs_sdr)
+            episode_stats.obs_surprise.append(obs_surprise)
+            self.total_stats.obs_surprise += obs_surprise
 
             # 2. image
             if writer_raw is not None:
@@ -306,8 +300,7 @@ class PinballTest:
             prev_obs = obs.copy()
             prev_raw_img = raw_img.copy()
 
-            if self.with_input_encoding:
-                prev_state = sparse_to_dense(state_sdr, self.state_shape).reshape(self.state_shape)
+            prev_state = sparse_to_dense(state_sdr, self.state_shape).reshape(self.state_shape)
 
         # AFTER EPISODE IS DONE
         if writer_raw is not None:
@@ -374,15 +367,10 @@ class PinballTest:
         for j in range(self.prediction_steps):
             if j > 0:
                 state_prediction = self.predict_state()
+                obs_prediction = self.decoder.decode(state_prediction, learn=False)
 
-            if self.with_input_encoding:
-                if j > 0:
-                    obs_prediction = self.decoder.decode(state_prediction, learn=False)
-                obs_prediction = obs_prediction.reshape(self.obs_shape)
-                state_prediction = state_prediction.reshape(self.state_shape)
-            else:
-                obs_prediction = state_prediction.reshape(self.obs_shape)
-                state_prediction = None
+            obs_prediction = obs_prediction.reshape(self.obs_shape)
+            state_prediction = state_prediction.reshape(self.state_shape)
 
             obs_predictions.append(obs_prediction)
             state_predictions.append(state_prediction)
@@ -473,12 +461,11 @@ class PinballTest:
                 mode='I',
                 duration=1000 / self.log_fps,
             )
-            if self.with_input_encoding:
-                writer_hidden = imageio.get_writer(
-                    f'/tmp/{self.logger.name}_hidden_ep{episode}.gif',
-                    mode='I',
-                    duration=1000 / self.log_fps,
-                )
+            writer_hidden = imageio.get_writer(
+                f'/tmp/{self.logger.name}_hidden_ep{episode}.gif',
+                mode='I',
+                duration=1000 / self.log_fps,
+            )
         return writer_raw, writer_hidden
 
     def log_factors(self, factors, f_type, step):

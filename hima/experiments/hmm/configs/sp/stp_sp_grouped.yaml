@@ -6,7 +6,6 @@ max_rf_sparsity: 0.4
 # output
 output_sds: [[50, 10], 5]
 # learning
-min_overlap_for_activation: 1
 learning_rate: 0.02
 cross_group_inhibition_scale: 0.01
 newborn_pruning_cycle: 3.0
