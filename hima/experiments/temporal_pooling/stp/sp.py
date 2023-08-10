@@ -28,7 +28,6 @@ class SpatialPooler:
 
     # output
     output_sds: Sds
-    min_overlap_for_activation: float
 
     # learning
     learning_rate: float
@@ -48,7 +47,6 @@ class SpatialPooler:
     # vectorized fields
     rf: np.ndarray
     weights: np.ndarray
-    threshold = 0.3
     base_boosting_k: float
     output_trace: np.ndarray
 
@@ -59,7 +57,7 @@ class SpatialPooler:
             initial_max_rf_sparsity: float, initial_rf_to_input_ratio: float,
             max_rf_to_input_ratio: float, max_rf_sparsity: float,
             output_sds: Sds,
-            min_overlap_for_activation: float, learning_rate: float,
+            learning_rate: float,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
             prune_grow_cycle: float,
             boosting_k: float, seed: int,
@@ -79,7 +77,6 @@ class SpatialPooler:
         self.max_rf_to_input_ratio = max_rf_to_input_ratio
         self.max_rf_sparsity = max_rf_sparsity
 
-        self.min_overlap_for_activation = min_overlap_for_activation
         self.learning_rate = learning_rate
 
         rf_size = int(self.initial_rf_sparsity * self.ff_size)
@@ -135,29 +132,35 @@ class SpatialPooler:
         rf_match_mask = self.match_input(self.dense_input)
         overlaps = (rf_match_mask * self.weights).sum(axis=1)
 
-        if self.is_newborn_phase:
+        # move most to the compute winners
+        winners = self.compute_winners(
+            overlaps=overlaps, rf_match_mask=rf_match_mask, learn=learn
+        )
+
+        if winners.shape[0] > 0:
+            # update winners activation stats
+            self.output_trace[winners] += 1
+            self.recognition_strength_trace += overlaps[winners].mean()
+
+        return winners
+
+    def compute_winners(self, overlaps, rf_match_mask, learn):
+        if self.is_newborn_phase and self.boosting_k > 0.:
             # boosting
             boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
             # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
             overlaps = overlaps * boosting_alpha ** np.sign(overlaps)
 
-        winners = self.compute_winners(overlaps)
+        n_winners = self.output_sds.active_size
+        winners = np.sort(
+            np.argpartition(overlaps, -n_winners)[-n_winners:]
+        )
         winners = winners[overlaps[winners] > 0]
-        n_winners = winners.shape[0]
-
-        # update winners activation stats
-        self.output_trace[winners] += 1
-        self.recognition_strength_trace += safe_divide(overlaps[winners].sum(), n_winners)
 
         if learn:
             self.learn(winners, rf_match_mask[winners])
-        return winners
 
-    def compute_winners(self, overlaps):
-        n_winners = self.output_sds.active_size
-        return np.sort(
-            np.argpartition(overlaps, -n_winners)[-n_winners:]
-        )
+        return winners
 
     def learn(self, neurons: np.ndarray, rf_match_input_mask: np.ndarray, modulation: float = 1.0):
         if len(neurons) == 0:

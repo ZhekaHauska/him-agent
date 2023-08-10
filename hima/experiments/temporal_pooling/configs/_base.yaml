@@ -257,7 +257,6 @@ spatial_pooler:
     # output
     output_sds: ???
     # learning
-    min_overlap_for_activation: 3
     learning_rate: 0.01
     newborn_pruning_cycle: 4.0
     newborn_pruning_stages: 20

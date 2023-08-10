@@ -28,6 +28,7 @@ sp:
   grouped:
     _type_: sp.grouped
     _base_: _common_base
+    cross_group_inhibition_scale: 0.01
 
   ensemble:
     _type_: sp.ensemble
@@ -38,7 +39,7 @@ sp:
     # input
     initial_max_rf_sparsity: 0.6
     initial_rf_to_input_ratio: 20.0
-    max_rf_to_input_ratio: 2.0
+    max_rf_to_input_ratio: 0.4
     max_rf_sparsity: 0.4
     # output
     output_sds: [500, 5]
