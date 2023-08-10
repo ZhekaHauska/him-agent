@@ -21,27 +21,27 @@ envs:
 sp:
   encoder:
     _base_: _common_base
-    max_rf_to_input_ratio: 0.3
     output_sds: [500, 5]
+    target_rf_to_input_ratio: 0.3
 
   grouped:
     _type_: sp.grouped
     _base_: _common_base
-    max_rf_to_input_ratio: 0.3
     output_sds: [500, 5]
+    target_rf_to_input_ratio: 0.3
 
   ensemble:
     _type_: sp.ensemble
     _base_: _common_base
     n_sp: 5
-    max_rf_to_input_ratio: 0.3
     output_sds: [100, 1]
+    target_rf_to_input_ratio: 0.3
 
   _common_base:
     _base_: $_base.spatial_pooler.default
     # input
+    target_max_rf_sparsity: 0.4
     initial_rf_to_input_ratio: 8.0
-    max_rf_sparsity: 0.4
     # learning
     learning_rate: 0.02
     newborn_pruning_cycle: 10.0

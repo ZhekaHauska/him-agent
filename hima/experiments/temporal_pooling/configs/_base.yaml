@@ -251,9 +251,9 @@ spatial_pooler:
     # input
     feedforward_sds: ???
     initial_max_rf_sparsity: 0.6
+    target_max_rf_sparsity: 0.25
     initial_rf_to_input_ratio: 10.0
-    max_rf_to_input_ratio: 3.0
-    max_rf_sparsity: 0.1
+    target_rf_to_input_ratio: 3.0
     # output
     output_sds: ???
     # learning

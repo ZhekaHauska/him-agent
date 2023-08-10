@@ -20,8 +20,8 @@ class SpatialPoolerGrouped(SpatialPooler):
             self, *,
             feedforward_sds: Sds,
             # newborn / mature
-            initial_max_rf_sparsity: float, initial_rf_to_input_ratio: float,
-            max_rf_to_input_ratio: float, max_rf_sparsity: float,
+            initial_max_rf_sparsity: float, target_max_rf_sparsity: float,
+            initial_rf_to_input_ratio: float, target_rf_to_input_ratio: float,
             output_sds: Sds,
             learning_rate: float,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
@@ -32,12 +32,11 @@ class SpatialPoolerGrouped(SpatialPooler):
             cross_group_inhibition_scale: float = 0.1
     ):
         super().__init__(
-            feedforward_sds=feedforward_sds,
-            initial_max_rf_sparsity=initial_max_rf_sparsity,
+            feedforward_sds=feedforward_sds, initial_max_rf_sparsity=initial_max_rf_sparsity,
+            target_max_rf_sparsity=target_max_rf_sparsity,
             initial_rf_to_input_ratio=initial_rf_to_input_ratio,
-            max_rf_to_input_ratio=max_rf_to_input_ratio, max_rf_sparsity=max_rf_sparsity,
-            output_sds=output_sds, learning_rate=learning_rate,
-            newborn_pruning_cycle=newborn_pruning_cycle,
+            target_rf_to_input_ratio=target_rf_to_input_ratio, output_sds=output_sds,
+            learning_rate=learning_rate, newborn_pruning_cycle=newborn_pruning_cycle,
             newborn_pruning_stages=newborn_pruning_stages, prune_grow_cycle=prune_grow_cycle,
             boosting_k=boosting_k, seed=seed, adapt_to_ff_sparsity=adapt_to_ff_sparsity,
             newborn_pruning_mode=newborn_pruning_mode

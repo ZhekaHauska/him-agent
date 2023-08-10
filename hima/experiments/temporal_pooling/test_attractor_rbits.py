@@ -31,9 +31,7 @@ class SpAttractorRandBitsExperiment:
             conf['encoder']['seed'] = self.seed
             conf['encoder']['feedforward_sds'] = input_sds
             conf['encoder']['output_sds'] = Sds(conf['encoder']['output_sds'])
-            self.encoder = SpatialPooler(
-                **conf['encoder']
-            )
+            self.encoder = SpatialPooler(**conf['encoder'])
 
             conf['attractor']['adapt_to_ff_sparsity'] = False
             attractor_sds = self.encoder.output_sds
@@ -45,9 +43,7 @@ class SpAttractorRandBitsExperiment:
         conf['attractor']['feedforward_sds'] = attractor_sds
         conf['attractor']['output_sds'] = Sds(conf['attractor']['output_sds'])
         conf['attractor']['seed'] = self.seed
-        self.attractor = SpatialPooler(
-            **conf['attractor']
-        )
+        self.attractor = SpatialPooler(**conf['attractor'])
 
         self.max_steps = conf['run']['max_steps']
         self.n_episodes = conf['run']['n_episodes']

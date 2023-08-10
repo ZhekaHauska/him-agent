@@ -23,8 +23,8 @@ class SpatialPooler:
     feedforward_sds: Sds
 
     initial_rf_sparsity: float
-    max_rf_sparsity: float
-    max_rf_to_input_ratio: float
+    target_max_rf_sparsity: float
+    target_rf_to_input_ratio: float
 
     # output
     output_sds: Sds
@@ -54,8 +54,8 @@ class SpatialPooler:
             self, *,
             feedforward_sds: Sds,
             # newborn / mature
-            initial_max_rf_sparsity: float, initial_rf_to_input_ratio: float,
-            max_rf_to_input_ratio: float, max_rf_sparsity: float,
+            initial_max_rf_sparsity: float, target_max_rf_sparsity: float,
+            initial_rf_to_input_ratio: float, target_rf_to_input_ratio: float,
             output_sds: Sds,
             learning_rate: float,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
@@ -74,8 +74,8 @@ class SpatialPooler:
             initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
             initial_max_rf_sparsity
         )
-        self.max_rf_to_input_ratio = max_rf_to_input_ratio
-        self.max_rf_sparsity = max_rf_sparsity
+        self.target_rf_to_input_ratio = target_rf_to_input_ratio
+        self.target_max_rf_sparsity = target_max_rf_sparsity
 
         self.learning_rate = learning_rate
 
@@ -167,8 +167,10 @@ class SpatialPooler:
             return
 
         w = self.weights[neurons]
-        n_matched = rf_match_input_mask.sum(axis=1, keepdims=True)
-        lr = modulation * self.learning_rate * (n_matched / self.rf_size)**0.6
+        n_matched = rf_match_input_mask.sum(axis=1, keepdims=True) + .1
+        rf_correction_power = 0.4
+        rf_correction = (.4 * self.rf_size / n_matched) ** rf_correction_power
+        lr = modulation * self.learning_rate * rf_correction / n_matched
 
         dw_matched = rf_match_input_mask * lr
 
@@ -194,7 +196,7 @@ class SpatialPooler:
             return
 
         # probabilities to keep connection
-        threshold = 1. / self.rf_size
+        threshold = .5 / self.rf_size
         keep_prob = np.power(np.abs(self.weights) / threshold + 0.1, 1.5)
         keep_prob /= keep_prob.sum(axis=1, keepdims=True)
 
@@ -238,7 +240,7 @@ class SpatialPooler:
             self.weights[neuron] = 1 / self.rf_size
 
     def on_end_newborn_phase(self):
-        self.learning_rate /= 2
+        # self.learning_rate /= 2
         print(f'Become adult: {self._state_str()}')
 
     def update_input(self, sdr: SparseSdr):
@@ -261,31 +263,28 @@ class SpatialPooler:
         w_thr = 1 / self.rf_size
         return weights >= w_thr
 
-    def current_rf_sparsity_linear(self):
+    def get_target_rf_sparsity(self):
         ff_sparsity = (
             self.ff_avg_sparsity if self.adapt_to_ff_sparsity else self.feedforward_sds.sparsity
         )
-        final_rf_sparsity = min(
-            self.max_rf_sparsity,
-            self.max_rf_to_input_ratio * ff_sparsity
+        return min(
+            self.target_rf_to_input_ratio * ff_sparsity,
+            self.target_max_rf_sparsity,
         )
+
+    def current_rf_sparsity_linear(self):
+        target_rf_sparsity = self.get_target_rf_sparsity()
 
         newborn_phase_progress = self.newborn_pruning_stage / self.newborn_pruning_stages
-        initial, final = self.initial_rf_sparsity, final_rf_sparsity
-        return initial + newborn_phase_progress * (final - initial)
+        initial, target = self.initial_rf_sparsity, target_rf_sparsity
+        return initial + newborn_phase_progress * (target - initial)
 
     def current_rf_sparsity_powerlaw(self):
-        ff_sparsity = (
-            self.ff_avg_sparsity if self.adapt_to_ff_sparsity else self.feedforward_sds.sparsity
-        )
-        final_rf_sparsity = min(
-            self.max_rf_sparsity,
-            self.max_rf_to_input_ratio * ff_sparsity
-        )
+        target_rf_sparsity = self.get_target_rf_sparsity()
 
         steps_left = self.newborn_pruning_stages - self.newborn_pruning_stage + 1
         current_rf_sparsity = self.rf_sparsity
-        rf_decay = np.power(final_rf_sparsity / current_rf_sparsity, 1 / steps_left)
+        rf_decay = np.power(target_rf_sparsity / current_rf_sparsity, 1 / steps_left)
         return current_rf_sparsity * rf_decay
 
     @property

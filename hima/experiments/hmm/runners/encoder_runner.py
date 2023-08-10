@@ -42,7 +42,10 @@ class TotalStats:
 class EpisodeStats:
     def __init__(self, n_prediction_steps):
         self.state_surprise = []
+        self.state_mae = []
+
         self.obs_surprise = []
+        self.obs_mae = []
 
         self.obs_probs_stack = []
         self.hidden_probs_stack = []
@@ -275,6 +278,17 @@ class PinballTest:
                 state_prediction, learn=True, correct_obs=obs.flatten()
             )
 
+            # Feedback Encoder
+            in_avg_sparsity = self.encoder.ff_avg_active_size / self.encoder.feedforward_sds.size
+            obs_mae = np.abs(obs_prediction - obs.flatten()).mean() / in_avg_sparsity
+            episode_stats.obs_mae.append(obs_mae)
+
+            out_avg_sparsity = self.encoder.output_sds.sparsity
+            _state_prediction_error = state_prediction.flatten().copy()
+            _state_prediction_error[state_sdr] -= 1.0
+            state_mae = np.abs(_state_prediction_error).mean() / out_avg_sparsity
+            episode_stats.state_mae.append(state_mae)
+
             self.hmm.observe(state_sdr, learn=True)
             self.hmm.set_context_messages(self.hmm.internal_forward_messages)
 
@@ -316,13 +330,12 @@ class PinballTest:
 
         main_metrics = dict(
             surprise=np.mean(episode_stats.state_surprise),
+            surprise_decoder=np.mean(episode_stats.obs_surprise),
+            obs_mae=np.mean(episode_stats.obs_mae),
+            state_mae=np.mean(episode_stats.state_mae),
             total_surprise=self.total_stats.state_surprise,
+            total_surprise_decoder=self.total_stats.obs_surprise,
         )
-        if self.decoder is not None:
-            main_metrics |= dict(
-                surprise_decoder=np.mean(episode_stats.obs_surprise),
-                total_surprise_decoder=self.total_stats.obs_surprise,
-            )
         log_metrics |= prepend_dict_keys(main_metrics, 'main_metrics')
 
         if self.log_scheduled(episode):

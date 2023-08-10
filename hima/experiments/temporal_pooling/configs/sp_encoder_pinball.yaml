@@ -38,9 +38,9 @@ sp:
     _base_: $_base.spatial_pooler.default
     # input
     initial_max_rf_sparsity: 0.6
+    target_max_rf_sparsity: 0.1
     initial_rf_to_input_ratio: 20.0
-    max_rf_to_input_ratio: 0.4
-    max_rf_sparsity: 0.4
+    target_rf_to_input_ratio: 0.4
     # output
     output_sds: [500, 5]
     # learning
