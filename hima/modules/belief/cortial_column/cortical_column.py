@@ -29,12 +29,20 @@ class CorticalColumn:
         self.decoder = decoder
 
         self.predicted_image = None
+        self.last_state_snapshot = None
 
         self.input_sdr = SDR(self.encoder.getNumInputs())
         self.output_sdr = SDR(self.encoder.getNumColumns())
 
     def observe(self, local_input, external_input, learn=True):
         # predict current local input step
+        if external_input is not None:
+            external_messages = np.zeros(self.layer.external_input_size)
+            external_messages[external_input] = 1
+        else:
+            external_messages = None
+
+        self.layer.set_external_messages(external_messages)
         self.layer.predict()
 
         self.predicted_image = self.decoder.decode(
@@ -48,14 +56,6 @@ class CorticalColumn:
         self.layer.observe(self.output_sdr.sparse, learn=learn)
 
         self.layer.set_context_messages(self.layer.internal_forward_messages)
-
-        if external_input is not None:
-            external_messages = np.zeros(self.layer.external_input_size)
-            external_messages[external_input] = 1
-        else:
-            external_messages = None
-
-        self.layer.set_external_messages(external_messages)
 
     def predict(self, context_messages, external_messages=None):
         self.layer.set_context_messages(context_messages)
@@ -71,3 +71,11 @@ class CorticalColumn:
         self.layer.reset()
         self.layer.set_context_messages(context_messages)
         self.layer.set_external_messages(external_messages)
+
+    def make_state_snapshot(self):
+        self.layer.make_state_snapshot()
+        self.last_state_snapshot = self.predicted_image.copy()
+
+    def restore_last_snapshot(self):
+        self.layer.restore_last_snapshot()
+        self.predicted_image = self.last_state_snapshot.copy()

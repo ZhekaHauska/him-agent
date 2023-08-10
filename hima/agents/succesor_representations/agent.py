@@ -61,8 +61,7 @@ class BioHIMA:
         """
         Evaluate and sample actions
         """
-        context_backup = self.cortical_column.layer.context_messages.copy()
-        external_backup = self.cortical_column.layer.external_messages.copy()
+        self.cortical_column.make_state_snapshot()
 
         action_values = np.zeros(self.cortical_column.layer.external_input_size)
 
@@ -71,7 +70,7 @@ class BioHIMA:
             dense_action[action] = 1
 
             self.cortical_column.predict(
-                context_backup,
+                self.cortical_column.layer.context_messages,
                 dense_action
             )
 
@@ -79,17 +78,18 @@ class BioHIMA:
                 self.sr_steps,
                 self.cortical_column.layer.prediction_cells,
                 self.cortical_column.layer.prediction_columns,
+                save_state=False
             )
+
+            self.cortical_column.restore_last_snapshot()
 
             action_values[action] = np.sum(
                 sr * self.observation_prior
             )
 
-        self.cortical_column.layer.set_context_messages(context_backup)
-        self.cortical_column.layer.set_external_messages(external_backup)
-
         action_dist = softmax(action_values, beta=self.inverse_temp)
         action = sample_categorical_variables(action_dist.reshape((1, -1)), self._rng)
+
         return action[0]
 
     def observe(self, observation, learn=True):
@@ -119,7 +119,6 @@ class BioHIMA:
 
         # striatum TD learning
         if learn:
-            context_backup = self.cortical_column.layer.context_messages.copy()
             prediction_cells = self.cortical_column.layer.prediction_cells.copy()
 
             predicted_sr = self.predict_sr(self.cortical_column.layer.internal_forward_messages)
@@ -129,7 +128,6 @@ class BioHIMA:
                 self.observation_messages,
                 return_last_prediction_step=True
             )
-            self.cortical_column.layer.set_context_messages(context_backup)
 
             delta_sr = generated_sr - predicted_sr
             delta_h = (
@@ -163,11 +161,15 @@ class BioHIMA:
             initial_messages,
             initial_prediction,
             approximate_tail=True,
-            return_last_prediction_step=False
+            return_last_prediction_step=False,
+            save_state=True
     ):
         """
         Policy is assumed to be uniform.
         """
+        if save_state:
+            self.cortical_column.make_state_snapshot()
+
         sr = np.zeros_like(self.observation_prior)
 
         predicted_observation = initial_prediction
@@ -181,13 +183,16 @@ class BioHIMA:
                 context_messages
             )
 
-            predicted_observation = self.cortical_column.layer.prediction_columns
-            context_messages = self.cortical_column.layer.internal_forward_messages
+            predicted_observation = self.cortical_column.layer.prediction_columns.copy()
+            context_messages = self.cortical_column.layer.internal_forward_messages.copy()
 
         if approximate_tail:
             sr += (self.gamma**(i+1)) * self.predict_sr(
                 context_messages
             )
+
+        if save_state:
+            self.cortical_column.restore_last_snapshot()
 
         if return_last_prediction_step:
             return sr, context_messages

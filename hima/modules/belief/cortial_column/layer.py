@@ -315,6 +315,9 @@ class Layer:
         self.external_active_cells = SDR(self.external_input_size)
         self.context_active_cells = SDR(self.context_input_size)
 
+        # layer state
+        self.last_state_snapshot = None
+
         self.internal_forward_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
@@ -388,6 +391,25 @@ class Layer:
             self.context_messages = normalize(
                 np.zeros(self.context_input_size).reshape((self.n_context_vars, -1))
             ).flatten()
+
+    def make_state_snapshot(self):
+        self.last_state_snapshot = (
+            self.internal_forward_messages.copy(),
+            self.external_messages.copy(),
+            self.context_messages.copy(),
+            self.prediction_cells.copy(),
+            self.prediction_columns.copy()
+        )
+
+    def restore_last_snapshot(self):
+        if self.last_state_snapshot is not None:
+            (
+                self.internal_forward_messages,
+                self.external_messages,
+                self.context_messages,
+                self.prediction_cells,
+                self.prediction_columns
+            ) = [x.copy() for x in self.last_state_snapshot]
 
     def reset(self):
         self.internal_forward_messages = np.zeros(
