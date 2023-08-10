@@ -13,7 +13,7 @@ data:
 
 encoder: sp.encoder
 decoder: naive
-decoder_noise: 0.00
+decoder_noise: 0.00004
 plot_sample: False
 
 envs:

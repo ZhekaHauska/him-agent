@@ -10,7 +10,7 @@ test:
 
 encoder: sp.encoder
 decoder: naive
-decoder_noise: 0.00
+decoder_noise: 0.00008
 plot_sample: False
 
 envs:

@@ -2,16 +2,17 @@
 
 - [Installation](#installation)
   - [Install requirements](#install-requirements)
-    - [[Optional] Step 1. Install conda](#optional-step-1-install-conda)
+    - [\[Optional\] Step 1. Install conda](#optional-step-1-install-conda)
     - [Step 2. Install Git LFS](#step-2-install-git-lfs)
       - [Comment: working with data files](#comment-working-with-data-files)
     - [Steps 3. Install requirements to dedicated python environment](#steps-3-install-requirements-to-dedicated-python-environment)
       - [Option 1: use conda and pip](#option-1-use-conda-and-pip)
       - [Option 2: use pip only](#option-2-use-pip-only)
     - [Step 3. Install `htm.core`](#step-3-install-htmcore)
-    - [[Optional] Step 4. Install PyRep](#optional-step-4-install-pyrep)
-    - [[Optional] Step 5. Install AnimalAI 3](#optional-step-5-install-animalai-3)
+    - [\[Optional\] Step 4. Install PyRep](#optional-step-4-install-pyrep)
+    - [\[Optional\] Step 5. Install AnimalAI 3](#optional-step-5-install-animalai-3)
     - [Step 6. Install `hima` package](#step-6-install-hima-package)
+    - [\[Optional\] Step 7. Install Pinball](#optional-step-7-install-pinball)
     - [Project structure](#project-structure)
 
 ## Install requirements
@@ -76,9 +77,9 @@ In this section we provide you with two options: a) install requirements using b
 Create new conda environment with all requirements that can be installed with conda; then install what's left with pip:
 
 ```bash
-conda create --name hima python=3.9 numpy matplotlib jupyterlab ruamel.yaml tqdm wandb mock imageio seaborn
+conda create --name hima python=3.9 numpy matplotlib jupyterlab ruamel.yaml tqdm wandb mock imageio seaborn pygraphviz colormap prettytable pytest
 conda activate hima
-pip install hexy prettytable pytest>=4.6.5
+pip install hexy
 ```
 
 #### Option 2: use pip only
