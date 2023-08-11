@@ -1,9 +1,10 @@
 log: True
 save_model: False
-project_name: 'lstm_test'
+project_name: 'rwkv_test'
 run_tag: lstm
 
-n_episodes: 3000
+#n_episodes: 3000
+n_episodes: 200
 update_rate: 2999
 smf_dist: 0.005
 max_steps: 50
