@@ -8,7 +8,7 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed, safe_divide
+from hima.common.utils import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
@@ -100,6 +100,7 @@ class SpatialPooler:
         self.recognition_strength_trace = 0
 
         self.base_boosting_k = boosting_k
+        self.boosting_k = self.base_boosting_k
         self.newborn_pruning_cycle = newborn_pruning_cycle
         self.newborn_pruning_schedule = int(self.newborn_pruning_cycle / self.output_sds.sparsity)
         self.newborn_pruning_stages = newborn_pruning_stages
@@ -218,6 +219,9 @@ class SpatialPooler:
         self.learning_rate = self.newborn_linear_progress(
             initial=self.initial_learning_rate, target=0.2 * self.initial_learning_rate
         )
+        self.boosting_k = self.newborn_linear_progress(
+            initial=self.base_boosting_k, target=0.
+        )
         print(f'Prune newborns: {self._state_str()}')
 
         if not self.is_newborn_phase:
@@ -248,6 +252,7 @@ class SpatialPooler:
 
     def on_end_newborn_phase(self):
         # self.learning_rate /= 2
+        self.boosting_k = 0.
         print(f'Become adult: {self._state_str()}')
 
     def update_input(self, sdr: SparseSdr):
@@ -337,13 +342,6 @@ class SpatialPooler:
     @property
     def rf_match_trace(self):
         return self.feedforward_trace[self.rf]
-
-    @property
-    def boosting_k(self):
-        if not self.is_newborn_phase:
-            return 0.
-        newborn_phase_progress = self.newborn_pruning_stage / self.newborn_pruning_stages
-        return self.base_boosting_k * (1 - newborn_phase_progress)
 
     def output_entropy(self):
         return entropy(self.output_rate, sds=self.output_sds)

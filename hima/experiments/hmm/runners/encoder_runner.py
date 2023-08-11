@@ -278,7 +278,7 @@ class PinballTest:
                 state_prediction, learn=True, correct_obs=obs.flatten()
             )
 
-            # Feedback Encoder
+            # metrics for encoder/decoder
             in_avg_sparsity = self.encoder.ff_avg_active_size / self.encoder.feedforward_sds.size
             obs_mae = np.abs(obs_prediction - obs.flatten()).mean() / in_avg_sparsity
             episode_stats.obs_mae.append(obs_mae)
@@ -288,6 +288,11 @@ class PinballTest:
             _state_prediction_error[state_sdr] -= 1.0
             state_mae = np.abs(_state_prediction_error).mean() / out_avg_sparsity
             episode_stats.state_mae.append(state_mae)
+
+            # Feedback Encoder
+            feedback_sdr = np.flatnonzero(np.abs(_state_prediction_error) > .4)
+            modulation = 0.01 * np.expand_dims(_state_prediction_error[feedback_sdr], -1)
+            self.encoder.process_feedback(feedback_sdr, modulation)
 
             self.hmm.observe(state_sdr, learn=True)
             self.hmm.set_context_messages(self.hmm.internal_forward_messages)
@@ -487,44 +492,45 @@ class PinballTest:
             f'connections/n_{f_type}_factors': factors.factor_connections.numSegments()
         }
 
-        n_segments = np.zeros(self.hmm.internal_cells)
-        sum_factor_value = np.zeros(self.hmm.internal_cells)
-        for cell in range(self.hmm.internal_cells):
-            segments = factors.connections.segmentsForCell(cell)
-
-            value = 0
-            if len(segments) > 0:
-                value = np.exp(factors.log_factor_values_per_segment[segments]).sum()
-
-            n_segments[cell] = len(segments)
-            sum_factor_value[cell] = value
-
-        n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
-        sum_factor_value = sum_factor_value.reshape((-1, self.hmm.cells_per_column)).T
+        # n_segments = np.zeros(self.hmm.internal_cells)
+        # sum_factor_value = np.zeros(self.hmm.internal_cells)
+        # for cell in range(self.hmm.internal_cells):
+        #     segments = factors.connections.segmentsForCell(cell)
+        #
+        #     value = 0
+        #     if len(segments) > 0:
+        #         value = np.exp(factors.log_factor_values_per_segment[segments]).sum()
+        #
+        #     n_segments[cell] = len(segments)
+        #     sum_factor_value[cell] = value
+        #
+        # n_segments = n_segments.reshape((-1, self.hmm.cells_per_column)).T
+        # sum_factor_value = sum_factor_value.reshape((-1, self.hmm.cells_per_column)).T
 
         # noinspection PyDictCreation
         factor_metrics = {}
-        factor_metrics['n_segments'] = wandb.Image(sns.heatmap(n_segments))
-        plt.close('all')
-        factor_metrics['sum_factor_value'] = wandb.Image(sns.heatmap(sum_factor_value))
-        plt.close('all')
-        factor_metrics['var_score'] = wandb.Image(sns.scatterplot(factors.var_score))
-        plt.close('all')
+        # factor_metrics['n_segments'] = wandb.Image(sns.heatmap(n_segments))
+        # plt.close('all')
+        # factor_metrics['sum_factor_value'] = wandb.Image(sns.heatmap(sum_factor_value))
+        # plt.close('all')
+        # factor_metrics['var_score'] = wandb.Image(sns.scatterplot(factors.var_score))
+        # plt.close('all')
+        #
+        # if len(factors.segments_in_use) > 0:
+        #     segment_activity = factors.segment_activity[factors.segments_in_use]
+        #     segment_log_values = factors.log_factor_values_per_segment[factors.segments_in_use]
+        #
+        #     factor_metrics['segment_activity'] = wandb.Image(sns.histplot(segment_activity))
+        #     plt.close('all')
+        #     factor_metrics['segment_log_values'] = wandb.Image(sns.histplot(segment_log_values))
+        #     plt.close('all')
+        #     factor_metrics['segment_score'] = wandb.Image(sns.histplot(
+        #         np.exp(segment_log_values) * segment_activity
+        #     ))
+        #     plt.close('all')
 
-        if len(factors.segments_in_use) > 0:
-            segment_activity = factors.segment_activity[factors.segments_in_use]
-            segment_log_values = factors.log_factor_values_per_segment[factors.segments_in_use]
-
-            factor_metrics['segment_activity'] = wandb.Image(sns.histplot(segment_activity))
-            plt.close('all')
-            factor_metrics['segment_log_values'] = wandb.Image(sns.histplot(segment_log_values))
-            plt.close('all')
-            factor_metrics['segment_score'] = wandb.Image(sns.histplot(
-                np.exp(segment_log_values) * segment_activity
-            ))
-            plt.close('all')
-
-        metrics |= prepend_dict_keys(factor_metrics, f'{f_type}_factors')
+        if len(factor_metrics) > 0:
+            metrics |= prepend_dict_keys(factor_metrics, f'{f_type}_factors')
         return metrics
 
     def dump_model(self):
@@ -532,8 +538,7 @@ class PinballTest:
             return
 
         path = Path('logs')
-        if not path.exists():
-            path.mkdir()
+        path.mkdir(parents=True, exist_ok=True)
 
         name = self.logger.name
         with open(f"logs/models/model_{name}.pkl", 'wb') as file:
