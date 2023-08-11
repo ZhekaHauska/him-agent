@@ -2,14 +2,14 @@
 initial_max_rf_sparsity: 0.6
 target_max_rf_sparsity: 0.1
 initial_rf_to_input_ratio: 10.0
-target_rf_to_input_ratio: 0.4
+target_rf_to_input_ratio: 0.35
 # output
-output_sds: [[60, 12], 5]
+output_sds: [[60, 12], 6]
 #output_sds: [[50, 10], 5]
 # learning
-learning_rate: 0.002
+learning_rate: 0.03
 cross_group_inhibition_scale: 0.01
-newborn_pruning_cycle: 3.0
+newborn_pruning_cycle: 2.5
 newborn_pruning_stages: 20
 newborn_pruning_mode: powerlaw
 prune_grow_cycle: 200.0

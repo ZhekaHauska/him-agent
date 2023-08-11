@@ -77,6 +77,7 @@ class SpatialPooler:
         self.target_rf_to_input_ratio = target_rf_to_input_ratio
         self.target_max_rf_sparsity = target_max_rf_sparsity
 
+        self.initial_learning_rate = learning_rate
         self.learning_rate = learning_rate
 
         rf_size = int(self.initial_rf_sparsity * self.ff_size)
@@ -168,9 +169,7 @@ class SpatialPooler:
 
         w = self.weights[neurons]
         n_matched = rf_match_input_mask.sum(axis=1, keepdims=True) + .1
-        rf_correction_power = 0.4
-        rf_correction = (.4 * self.rf_size / n_matched) ** rf_correction_power
-        lr = modulation * self.learning_rate * rf_correction / n_matched
+        lr = modulation * self.learning_rate / n_matched
 
         dw_matched = rf_match_input_mask * lr
 
@@ -185,11 +184,16 @@ class SpatialPooler:
         self.newborn_pruning_stage += 1
 
         if self.newborn_pruning_mode == 'linear':
-            new_sparsity = self.current_rf_sparsity_linear()
+            new_sparsity = self.newborn_linear_progress(
+                initial=self.initial_rf_sparsity, target=self.get_target_rf_sparsity()
+            )
         elif self.newborn_pruning_mode == 'powerlaw':
-            new_sparsity = self.current_rf_sparsity_powerlaw()
+            new_sparsity = self.newborn_powerlaw_progress(
+                current=self.rf_sparsity, target=self.get_target_rf_sparsity()
+            )
         else:
             raise ValueError(f'Pruning mode {self.newborn_pruning_mode} is not supported')
+
         if new_sparsity > self.rf_sparsity:
             # if feedforward sparsity is tracked, then it may change and lead to RF increase
             # ==> leave RF as is
@@ -197,7 +201,7 @@ class SpatialPooler:
 
         # probabilities to keep connection
         threshold = .5 / self.rf_size
-        keep_prob = np.power(np.abs(self.weights) / threshold + 0.1, 1.5)
+        keep_prob = np.power(np.abs(self.weights) / threshold + 0.1, 2.0)
         keep_prob /= keep_prob.sum(axis=1, keepdims=True)
 
         # sample what connections to keep for each neuron independently
@@ -210,6 +214,9 @@ class SpatialPooler:
         self.rf = gather_rows(self.rf, keep_connections_i)
         self.weights = self.normalize_weights(
             gather_rows(self.weights, keep_connections_i)
+        )
+        self.learning_rate = self.newborn_linear_progress(
+            initial=self.initial_learning_rate, target=0.2 * self.initial_learning_rate
         )
         print(f'Prune newborns: {self._state_str()}')
 
@@ -272,20 +279,15 @@ class SpatialPooler:
             self.target_max_rf_sparsity,
         )
 
-    def current_rf_sparsity_linear(self):
-        target_rf_sparsity = self.get_target_rf_sparsity()
-
+    def newborn_linear_progress(self, initial, target):
         newborn_phase_progress = self.newborn_pruning_stage / self.newborn_pruning_stages
-        initial, target = self.initial_rf_sparsity, target_rf_sparsity
         return initial + newborn_phase_progress * (target - initial)
 
-    def current_rf_sparsity_powerlaw(self):
-        target_rf_sparsity = self.get_target_rf_sparsity()
-
+    def newborn_powerlaw_progress(self, current, target):
         steps_left = self.newborn_pruning_stages - self.newborn_pruning_stage + 1
-        current_rf_sparsity = self.rf_sparsity
-        rf_decay = np.power(target_rf_sparsity / current_rf_sparsity, 1 / steps_left)
-        return current_rf_sparsity * rf_decay
+        current = self.rf_sparsity
+        decay = np.power(target / current, 1 / steps_left)
+        return current * decay
 
     @property
     def ff_size(self):

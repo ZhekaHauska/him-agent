@@ -53,7 +53,7 @@ class SpatialPoolerLearnedDecoder:
             self.sp.output_sds.size
         )
         self.weights = self.rng.normal(0., 0.01, size=shape)
-        self.lr = .4
+        self.lr = .25
         self.power_t = 0.05
 
         self.n_updates = 0
