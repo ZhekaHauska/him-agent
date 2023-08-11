@@ -335,7 +335,8 @@ class PinballTest:
                 'main_metrics/steps': np.mean,
                 'layer/surprise_hidden': np.mean,
                 'layer/n_segments': np.mean,
-                'layer/n_factors': np.mean
+                'layer/n_factors': np.mean,
+                'agent/td_error': np.mean
             },
             self.logger
         )
@@ -375,12 +376,13 @@ class PinballTest:
                 running = not is_terminal
 
                 events = self.preprocess(obs)
-
+                # observe events_t and action_{t-1}
                 pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
                 self.agent.reinforce(reward)
 
                 if running:
                     if steps == 0:
+                        # action = self._rng.integers(self.n_actions)
                         action = self.agent.sample_action()
                         # convert to AAI action
                         pinball_action = self.actions[action]
@@ -395,7 +397,8 @@ class PinballTest:
                             'layer/n_segments': self.agent.cortical_column.layer.
                             context_factors.connections.numSegments(),
                             'layer/n_factors': self.agent.cortical_column.layer.
-                            context_factors.factor_connections.numSegments()
+                            context_factors.factor_connections.numSegments(),
+                            'agent/td_error': self.agent.td_error
                         }
                     )
 

@@ -55,6 +55,7 @@ class BioHIMA:
         )
 
         self.surprise = 0
+        self.td_error = 0
 
         self.seed = seed
         self._rng = np.random.default_rng(seed)
@@ -138,6 +139,8 @@ class BioHIMA:
             self.striatum_weights += self.striatum_lr * delta_w
 
             self.striatum_weights = np.clip(self.striatum_weights, 0, None)
+
+            self.td_error = np.sum(np.power(delta_sr, 2))
 
             return predicted_sr, generated_sr
 
