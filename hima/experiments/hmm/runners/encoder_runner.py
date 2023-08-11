@@ -4,21 +4,18 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-import ast
 import os
 import pickle
 import sys
 from copy import copy
 from pathlib import Path
 
-import imageio
-import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
-import wandb
-import yaml
 from htm.bindings.sdr import SDR
 
+from hima.common.config.base import override_config, read_config
+from hima.common.lazy_imports import lazy_import
+from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import prepend_dict_keys
 from hima.experiments.hmm.runners.utils import get_surprise_2
@@ -28,6 +25,10 @@ try:
     from pinball import Pinball
 except ModuleNotFoundError:
     Pinball = None
+
+
+wandb = lazy_import('wandb')
+imageio = lazy_import('imageio')
 
 
 class TotalStats:
@@ -573,59 +574,30 @@ def main(config_path):
 
     config = dict()
 
-    with open(config_path, 'r') as file:
-        config['run'] = yaml.load(file, Loader=yaml.Loader)
-
-    with open(config['run']['hmm_conf'], 'r') as file:
-        config['hmm'] = yaml.load(file, Loader=yaml.Loader)
-
-    with open(config['run']['env_conf'], 'r') as file:
-        config['env'] = yaml.load(file, Loader=yaml.Loader)
+    config['run'] = read_config(config_path)
+    config['hmm'] = read_config(config['run']['hmm_conf'])
+    config['env'] = read_config(config['run']['env_conf'])
 
     sp_conf = config['run'].get('sp_conf', None)
     if sp_conf is not None:
-        with open(sp_conf, 'r') as file:
-            config['sp'] = yaml.load(file, Loader=yaml.Loader)
+        config['sp'] = read_config(sp_conf)
 
     input_layer_conf = config['run'].get('input_layer_conf', None)
     if input_layer_conf is not None:
-        with open(input_layer_conf, 'r') as file:
-            config['input_layer'] = yaml.load(file, Loader=yaml.Loader)
+        config['input_layer'] = read_config(input_layer_conf)
 
     decoder_conf = config['run'].get('decoder_conf', None)
     if decoder_conf is not None:
-        with open(decoder_conf, 'r') as file:
-            config['decoder'] = yaml.load(file, Loader=yaml.Loader)
+        config['decoder'] = read_config(decoder_conf)
 
-    for arg in sys.argv[2:]:
-        key, value = arg.split('=')
-
-        try:
-            value = ast.literal_eval(value)
-        except ValueError:
-            ...
-
-        key = key.lstrip('-')
-        if key.endswith('.'):
-            # a trick that allow distinguishing sweep params from config params
-            # by adding a suffix `.` to sweep param - now we should ignore it
-            key = key[:-1]
-        tokens = key.split('.')
-        c = config
-        for k in tokens[:-1]:
-            if not k:
-                # a trick that allow distinguishing sweep params from config params
-                # by inserting additional dots `.` to sweep param - we just ignore it
-                continue
-            if 0 in c:
-                k = int(k)
-            c = c[k]
-        c[tokens[-1]] = value
+    overrides = parse_arg_list(sys.argv[2:])
+    override_config(config, overrides)
 
     if config['run']['seed'] is None:
         config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
 
     if config['run']['log']:
+        import wandb
         logger = wandb.init(
             project=config['run']['project_name'], entity=os.environ.get('WANDB_ENTITY', None),
             config=config
