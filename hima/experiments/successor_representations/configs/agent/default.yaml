@@ -1,5 +1,6 @@
 gamma: 0.99
 observation_prior_lr: 0.1
-striatum_lr: 0.01
+striatum_lr: 0.05
 sr_steps: 5
+approximate_tail: True
 inverse_temp: 1.0
