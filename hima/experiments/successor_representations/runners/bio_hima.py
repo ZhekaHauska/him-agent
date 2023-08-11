@@ -103,7 +103,8 @@ class AnimalAITest:
                 'main_metrics/steps': np.mean,
                 'layer/surprise_hidden': np.mean,
                 'layer/n_segments': np.mean,
-                'layer/n_factors': np.mean
+                'layer/n_factors': np.mean,
+                'agent/td_error': np.mean
             },
             self.logger
         )
@@ -171,7 +172,8 @@ class AnimalAITest:
                             'layer/n_segments': self.agent.cortical_column.layer.
                             context_factors.connections.numSegments(),
                             'layer/n_factors': self.agent.cortical_column.layer.
-                            context_factors.factor_connections.numSegments()
+                            context_factors.factor_connections.numSegments(),
+                            'agent/td_error': self.agent.td_error
                         }
                     )
 
