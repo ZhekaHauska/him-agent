@@ -84,6 +84,7 @@ class AnimalAITest:
         self.n_episodes = conf['run']['n_episodes']
         self.max_steps = conf['run']['max_steps']
         self.update_rate = conf['run']['update_rate']
+        self.reset_context_period = conf['run'].get('reset_context_period', 0)
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -139,6 +140,12 @@ class AnimalAITest:
             self.agent.reset(self.initial_context, action)
 
             while running:
+                if (self.reset_context_period > 0) and (steps > 0):
+                    if (steps % self.reset_context_period) == 0:
+                        self.agent.cortical_column.layer.set_context_messages(
+                            self.initial_context
+                        )
+
                 self.environment.step()
                 dec, term = self.environment.get_steps(self.behavior)
 
