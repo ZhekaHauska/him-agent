@@ -85,6 +85,7 @@ class AnimalAITest:
         self.max_steps = conf['run']['max_steps']
         self.update_rate = conf['run']['update_rate']
         self.reset_context_period = conf['run'].get('reset_context_period', 0)
+        self.action_inertia = conf['run'].get('action_inertia', 1)
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -165,7 +166,8 @@ class AnimalAITest:
                 self.agent.reinforce(reward)
 
                 if running:
-                    action = self.agent.sample_action()
+                    if (action is None) or ((steps % self.action_inertia) == 0):
+                        action = self.agent.sample_action()
                     # convert to AAI action
                     aai_action = self.actions[action]
                     self.environment.set_actions(self.behavior, aai_action.action_tuple)

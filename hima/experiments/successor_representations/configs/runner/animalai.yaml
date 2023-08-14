@@ -7,6 +7,7 @@ n_episodes: 501
 update_rate: 10
 max_steps: 50
 reset_context_period: 10
+action_inertia: 3
 log_gif_fps: 5
 
 env_conf: 'configs/animalai/default.yaml'
