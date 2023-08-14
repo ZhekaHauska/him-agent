@@ -145,7 +145,12 @@ class AnimalAITest:
         )
 
     def run(self):
+        episode_print_schedule = 50
+
         for i in range(self.n_episodes):
+            if i % episode_print_schedule == 0:
+                print(f'Episode {i}')
+
             steps = 0
             running = True
             action = None
