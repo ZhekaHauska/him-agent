@@ -14,4 +14,4 @@ newborn_pruning_stages: 20
 newborn_pruning_mode: powerlaw
 prune_grow_cycle: 200.0
 adapt_to_ff_sparsity: True
-boosting_k: 1.0
+boosting_k: 0.75
