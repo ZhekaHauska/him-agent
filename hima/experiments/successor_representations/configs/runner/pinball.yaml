@@ -19,6 +19,7 @@ env_conf: 'configs/pinball/default.yaml'
 agent_conf: 'configs/agent/pinball.yaml'
 layer_conf: 'configs/layer/pinball.yaml'
 encoder_conf: 'configs/encoder/sp_grouped.yaml'
+decoder_conf: 'configs/decoder/pinball.yaml'
 
 experiment: pinball
 setup: fork_skewed

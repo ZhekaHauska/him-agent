@@ -147,7 +147,7 @@ class SpatialPooler:
         return winners
 
     def compute_winners(self, overlaps, rf_match_mask, learn):
-        if self.is_newborn_phase and self.boosting_k > 0.:
+        if self.is_newborn_phase and self.boosting_k > 1e-2:
             # boosting
             boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
             # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
