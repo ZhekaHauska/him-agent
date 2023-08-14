@@ -13,7 +13,7 @@ log_gif_fps: 5
 env_conf: 'configs/animalai/default.yaml'
 agent_conf: 'configs/agent/animalai.yaml'
 layer_conf: 'configs/layer/default.yaml'
-encoder_conf: 'configs/encoder/sp_ensemble.yaml'
+encoder_conf: 'configs/encoder/sp_ensemble_animalai.yaml'
 
 experiment: animalai
 setup: 'competition/01-01-01.yaml'

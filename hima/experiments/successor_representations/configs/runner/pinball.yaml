@@ -13,7 +13,7 @@ actions: [[0, 3], [0.5, 3], [-0.5, 3]]
 env_conf: 'configs/pinball/default.yaml'
 agent_conf: 'configs/agent/pinball.yaml'
 layer_conf: 'configs/layer/default.yaml'
-encoder_conf: 'configs/encoder/sp_ensemble.yaml'
+encoder_conf: 'configs/encoder/sp_ensemble_pinball.yaml'
 
 experiment: pinball
 setup: fork_skewed
