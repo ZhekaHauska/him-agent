@@ -47,7 +47,8 @@ class CorticalColumn:
 
         self.predicted_image = self.decoder.decode(
             self.layer.prediction_columns,
-            learn=learn
+            learn=learn,
+            correct_obs=external_messages
         )
 
         self.input_sdr.sparse = local_input
