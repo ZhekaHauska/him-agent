@@ -10,6 +10,11 @@ reset_context_period: 15
 action_inertia: 5
 log_gif_fps: 5
 
+# sp_ensemble | sp_grouped
+encoder: sp_grouped
+# makes sense only for grouped: naive | learned
+decoder: naive
+
 env_conf: 'configs/animalai/default.yaml'
 agent_conf: 'configs/agent/animalai.yaml'
 layer_conf: 'configs/layer/animalai.yaml'

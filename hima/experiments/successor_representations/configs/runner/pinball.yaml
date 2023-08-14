@@ -10,6 +10,11 @@ log_gif_fps: 5
 start_position: [0, 0]
 actions: [[0, 3], [0.5, 3], [-0.5, 3]]
 
+# sp_ensemble | sp_grouped
+encoder: sp_ensemble
+# makes sense only for grouped: naive | learned
+decoder: naive
+
 env_conf: 'configs/pinball/default.yaml'
 agent_conf: 'configs/agent/pinball.yaml'
 layer_conf: 'configs/layer/pinball.yaml'

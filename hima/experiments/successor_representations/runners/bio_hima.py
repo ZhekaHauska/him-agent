@@ -3,28 +3,28 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from animalai.envs.environment import AnimalAIEnvironment
-from mlagents_envs.exception import UnityWorkerInUseException
-from animalai.envs.actions import AAIActions
-from pinball import Pinball
+import io
+import os
+import sys
+
+import numpy as np
+from PIL import Image
 
 from hima.agents.succesor_representations.agent import BioHIMA
+from hima.common.config.base import read_config, override_config
+from hima.common.lazy_imports import lazy_import
+from hima.common.run.argparse import parse_arg_list
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
-from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
-from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
 
-from PIL import Image
-import wandb
-import numpy as np
-import yaml
-import sys
-import os
-import ast
-import io
+wandb = lazy_import('wandb')
 
 
 class AnimalAITest:
     def __init__(self, logger, conf, max_workers=10):
+        from animalai.envs.actions import AAIActions
+        from animalai.envs.environment import AnimalAIEnvironment
+        from mlagents_envs.exception import UnityWorkerInUseException
+
         self.logger = logger
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
@@ -62,22 +62,48 @@ class AnimalAITest:
         ]
         self.n_actions = len(self.actions)
 
-        # assembly agent
-        encoder_conf = conf['encoder']
-        encoder_conf['seed'] = self.seed
-        encoder_conf['inputDimensions'] = list(self.raw_obs_shape)
-
-        encoder = SPEnsemble(**encoder_conf)
-
-        decoder = SPDecoder(encoder)
-
+        encoder_type = conf['run']['encoder']
         layer_conf = conf['layer']
-        layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
-        layer_conf['n_obs_vars'] = encoder.n_sp
-        layer_conf['n_context_states'] = (
-                encoder.sps[0].getNumColumns() * layer_conf['cells_per_column']
-        )
-        layer_conf['n_context_vars'] = encoder.n_sp
+
+        if encoder_type == 'sp_ensemble':
+            from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
+
+            # assembly agent
+            encoder_conf = conf['encoder']
+            encoder_conf['seed'] = self.seed
+            encoder_conf['inputDimensions'] = list(self.raw_obs_shape)
+
+            encoder = SPEnsemble(**encoder_conf)
+            decoder = SPDecoder(encoder)
+
+            layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
+            layer_conf['n_obs_vars'] = encoder.n_sp
+            layer_conf['n_context_states'] = (
+                    encoder.sps[0].getNumColumns() * layer_conf['cells_per_column']
+            )
+            layer_conf['n_context_vars'] = encoder.n_sp
+        elif encoder_type == 'sp_grouped':
+            from hima.experiments.temporal_pooling.stp.sp_ensemble import (
+                SpatialPoolerGroupedWrapper
+            )
+            # assembly agent
+            encoder_conf = conf['encoder']
+            encoder_conf['seed'] = self.seed
+            encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
+            decoder_type = conf['run'].get('decoder', None)
+
+            encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
+            decoder = make_decoder(encoder, decoder_type)
+
+            layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
+            layer_conf['n_obs_vars'] = encoder.n_groups
+            layer_conf['n_context_states'] = (
+                    encoder.getSingleNumColumns() * layer_conf['cells_per_column']
+            )
+            layer_conf['n_context_vars'] = encoder.n_groups
+        else:
+            raise ValueError(f'Encoder type {encoder_type} is not supported')
+
         layer_conf['n_external_vars'] = 1
         layer_conf['n_external_states'] = self.n_actions
         layer_conf['seed'] = self.seed
@@ -112,37 +138,39 @@ class AnimalAITest:
             ) * self.agent.cortical_column.layer.n_hidden_states
         ] = 1
 
-        # define metrics
-        self.scalar_metrics = ScalarMetrics(
-            {
-                'main_metrics/reward': np.sum,
-                'main_metrics/steps': np.mean,
-                'layer/surprise_hidden': np.mean,
-                'layer/n_segments': np.mean,
-                'layer/n_factors': np.mean,
-                'agent/td_error': np.mean
-            },
-            self.logger
-        )
+        if self.logger is not None:
+            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
+            # define metrics
+            self.scalar_metrics = ScalarMetrics(
+                {
+                    'main_metrics/reward': np.sum,
+                    'main_metrics/steps': np.mean,
+                    'layer/surprise_hidden': np.mean,
+                    'layer/n_segments': np.mean,
+                    'layer/n_factors': np.mean,
+                    'agent/td_error': np.mean
+                },
+                self.logger
+            )
 
-        self.heatmap_metrics = HeatmapMetrics(
-            {
-                'agent/prior': np.mean,
-                'agent/striatum_weights': np.mean
-            },
-            self.logger
-        )
+            self.heatmap_metrics = HeatmapMetrics(
+                {
+                    'agent/prior': np.mean,
+                    'agent/striatum_weights': np.mean
+                },
+                self.logger
+            )
 
-        self.image_metrics = ImageMetrics(
-            [
-                'agent/behavior',
-                'agent/sr',
-                'layer/factor_graph',
-                'layer/predictions'
-            ],
-            self.logger,
-            log_fps=conf['run']['log_gif_fps']
-        )
+            self.image_metrics = ImageMetrics(
+                [
+                    'agent/behavior',
+                    'agent/sr',
+                    'layer/factor_graph',
+                    'layer/predictions'
+                ],
+                self.logger,
+                log_fps=conf['run']['log_gif_fps']
+            )
 
     def run(self):
         episode_print_schedule = 50
@@ -291,6 +319,8 @@ class AnimalAITest:
 
 class PinballTest:
     def __init__(self, logger, conf):
+        from pinball import Pinball
+
         self.logger = logger
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
@@ -310,22 +340,48 @@ class PinballTest:
         self.actions = conf['run']['actions']
         self.n_actions = len(self.actions)
 
-        # assembly agent
-        encoder_conf = conf['encoder']
-        encoder_conf['seed'] = self.seed
-        encoder_conf['inputDimensions'] = list(self.raw_obs_shape)
-
-        encoder = SPEnsemble(**encoder_conf)
-
-        decoder = SPDecoder(encoder)
-
+        encoder_type = conf['run']['encoder']
         layer_conf = conf['layer']
-        layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
-        layer_conf['n_obs_vars'] = encoder.n_sp
-        layer_conf['n_context_states'] = (
-                encoder.sps[0].getNumColumns() * layer_conf['cells_per_column']
-        )
-        layer_conf['n_context_vars'] = encoder.n_sp
+
+        if encoder_type == 'sp_ensemble':
+            from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
+
+            # assembly agent
+            encoder_conf = conf['encoder']
+            encoder_conf['seed'] = self.seed
+            encoder_conf['inputDimensions'] = list(self.raw_obs_shape)
+
+            encoder = SPEnsemble(**encoder_conf)
+            decoder = SPDecoder(encoder)
+
+            layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
+            layer_conf['n_obs_vars'] = encoder.n_sp
+            layer_conf['n_context_states'] = (
+                    encoder.sps[0].getNumColumns() * layer_conf['cells_per_column']
+            )
+            layer_conf['n_context_vars'] = encoder.n_sp
+        elif encoder_type == 'sp_grouped':
+            from hima.experiments.temporal_pooling.stp.sp_ensemble import (
+                SpatialPoolerGroupedWrapper
+            )
+            # assembly agent
+            encoder_conf = conf['encoder']
+            encoder_conf['seed'] = self.seed
+            encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
+            decoder_type = conf['run'].get('decoder', None)
+
+            encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
+            decoder = make_decoder(encoder, decoder_type)
+
+            layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
+            layer_conf['n_obs_vars'] = encoder.n_groups
+            layer_conf['n_context_states'] = (
+                    encoder.getSingleNumColumns() * layer_conf['cells_per_column']
+            )
+            layer_conf['n_context_vars'] = encoder.n_groups
+        else:
+            raise ValueError(f'Encoder type {encoder_type} is not supported')
+
         layer_conf['n_external_vars'] = 1
         layer_conf['n_external_states'] = self.n_actions
         layer_conf['seed'] = self.seed
@@ -358,37 +414,39 @@ class PinballTest:
             ) * self.agent.cortical_column.layer.n_hidden_states
         ] = 1
 
-        # define metrics
-        self.scalar_metrics = ScalarMetrics(
-            {
-                'main_metrics/reward': np.sum,
-                'main_metrics/steps': np.mean,
-                'layer/surprise_hidden': np.mean,
-                'layer/n_segments': np.mean,
-                'layer/n_factors': np.mean,
-                'agent/td_error': np.mean
-            },
-            self.logger
-        )
+        if self.logger is not None:
+            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
+            # define metrics
+            self.scalar_metrics = ScalarMetrics(
+                {
+                    'main_metrics/reward': np.sum,
+                    'main_metrics/steps': np.mean,
+                    'layer/surprise_hidden': np.mean,
+                    'layer/n_segments': np.mean,
+                    'layer/n_factors': np.mean,
+                    'agent/td_error': np.mean
+                },
+                self.logger
+            )
 
-        self.heatmap_metrics = HeatmapMetrics(
-            {
-                'agent/prior': np.mean,
-                'agent/striatum_weights': np.mean
-            },
-            self.logger
-        )
+            self.heatmap_metrics = HeatmapMetrics(
+                {
+                    'agent/prior': np.mean,
+                    'agent/striatum_weights': np.mean
+                },
+                self.logger
+            )
 
-        self.image_metrics = ImageMetrics(
-            [
-                'agent/behavior',
-                'agent/sr',
-                'layer/factor_graph',
-                'layer/predictions'
-            ],
-            self.logger,
-            log_fps=conf['run']['log_gif_fps']
-        )
+            self.image_metrics = ImageMetrics(
+                [
+                    'agent/behavior',
+                    'agent/sr',
+                    'layer/factor_graph',
+                    'layer/predictions'
+                ],
+                self.logger,
+                log_fps=conf['run']['log_gif_fps']
+            )
 
     def run(self):
         for i in range(self.n_episodes):
@@ -515,53 +573,42 @@ class PinballTest:
         return events
 
 
+def make_decoder(encoder, decoder):
+    if decoder == 'naive':
+        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
+        return SpatialPoolerDecoder(encoder)
+    elif decoder == 'learned':
+        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerLearnedDecoder
+        return SpatialPoolerLearnedDecoder(encoder, hidden_dims=(64, 64))
+    elif decoder == 'learned_input':
+        from hima.experiments.temporal_pooling.stp.sp_decoder import (
+            SpatialPoolerLearnedOverNaiveDecoder
+        )
+        return SpatialPoolerLearnedOverNaiveDecoder(encoder)
+    else:
+        raise ValueError(f'Decoder {decoder} is not supported')
+
+
 def main(config_path):
     if len(sys.argv) > 1:
         config_path = sys.argv[1]
 
     config = dict()
 
-    with open(config_path, 'r') as file:
-        config['run'] = yaml.load(file, Loader=yaml.Loader)
+    config['run'] = read_config(config_path)
+    config['env'] = read_config(config['run']['env_conf'])
+    config['agent'] = read_config(config['run']['agent_conf'])
+    config['layer'] = read_config(config['run']['layer_conf'])
+    config['encoder'] = read_config(config['run']['encoder_conf'])
 
-    with open(config['run']['env_conf'], 'r') as file:
-        config['env'] = yaml.load(file, Loader=yaml.Loader)
-    with open(config['run']['agent_conf'], 'r') as file:
-        config['agent'] = yaml.load(file, Loader=yaml.Loader)
-    with open(config['run']['layer_conf'], 'r') as file:
-        config['layer'] = yaml.load(file, Loader=yaml.Loader)
-    with open(config['run']['encoder_conf'], 'r') as file:
-        config['encoder'] = yaml.load(file, Loader=yaml.Loader)
-
-    for arg in sys.argv[2:]:
-        key, value = arg.split('=')
-
-        try:
-            value = ast.literal_eval(value)
-        except ValueError:
-            ...
-
-        key = key.lstrip('-')
-        if key.endswith('.'):
-            # a trick that allow distinguishing sweep params from config params
-            # by adding a suffix `.` to sweep param - now we should ignore it
-            key = key[:-1]
-        tokens = key.split('.')
-        c = config
-        for k in tokens[:-1]:
-            if not k:
-                # a trick that allow distinguishing sweep params from config params
-                # by inserting additional dots `.` to sweep param - we just ignore it
-                continue
-            if 0 in c:
-                k = int(k)
-            c = c[k]
-        c[tokens[-1]] = value
+    overrides = parse_arg_list(sys.argv[2:])
+    override_config(config, overrides)
 
     if config['run']['seed'] is None:
         config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
 
     if config['run']['log']:
+        import wandb
         logger = wandb.init(
             project=config['run']['project_name'], entity=os.environ.get('WANDB_ENTITY', None),
             config=config
