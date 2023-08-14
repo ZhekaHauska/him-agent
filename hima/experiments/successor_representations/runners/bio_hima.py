@@ -465,7 +465,9 @@ class PinballTest:
 
                 events = self.preprocess(obs)
                 # observe events_t and action_{t-1}
-                pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
+                pred_sr, gen_sr = self.agent.observe(
+                    (events, action), learn=True, raw_observation=self.prev_image
+                )
                 self.agent.reinforce(reward)
 
                 if running:

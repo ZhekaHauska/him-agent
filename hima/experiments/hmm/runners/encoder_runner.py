@@ -99,7 +99,7 @@ class PinballTest:
             self.surprise_mode = 'bernoulli'
 
         elif self.encoder_type == 'sp_ensemble':
-            from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
+            from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
             sp_conf['seed'] = self.seed
             sp_conf['inputDimensions'] = list(self.obs_shape)
             self.encoder = SPEnsemble(**sp_conf)
@@ -275,9 +275,7 @@ class PinballTest:
             self.encoder.compute(self.sp_input, True, self.sp_output)
             state_sdr = self.sp_output.sparse
 
-            obs_prediction = self.decoder.decode(
-                state_prediction, learn=True, correct_obs=obs.flatten()
-            )
+            obs_prediction = self.decoder.decode(state_prediction, learn=True, correct_obs=obs)
 
             # metrics for encoder/decoder
             in_avg_sparsity = self.encoder.ff_avg_active_size / self.encoder.feedforward_sds.size

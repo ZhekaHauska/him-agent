@@ -95,7 +95,7 @@ class BioHIMA:
 
         return action[0]
 
-    def observe(self, observation, learn=True):
+    def observe(self, observation, learn=True, raw_observation=None):
         """
         Main learning routine
             observation: tuple (image, action)
@@ -104,7 +104,7 @@ class BioHIMA:
         """
         events, action = observation
         # predict current events using observed action
-        self.cortical_column.observe(events, action, learn=learn)
+        self.cortical_column.observe(events, action, learn=learn, raw_observation=raw_observation)
 
         if len(self.cortical_column.output_sdr.sparse) > 0:
             self.surprise = get_surprise(
