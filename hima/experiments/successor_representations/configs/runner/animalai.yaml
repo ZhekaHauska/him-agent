@@ -11,7 +11,7 @@ action_inertia: 3
 log_gif_fps: 5
 
 env_conf: 'configs/animalai/default.yaml'
-agent_conf: 'configs/agent/default.yaml'
+agent_conf: 'configs/agent/animalai.yaml'
 layer_conf: 'configs/layer/default.yaml'
 encoder_conf: 'configs/encoder/sp_ensemble.yaml'
 
