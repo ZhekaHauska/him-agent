@@ -1,4 +1,5 @@
-n_sp: 5
+n_sp: 6
+n_areas: 3
 columnDimensions: [ 12, 12 ]
 potentialPct: 0.8
 globalInhibition: True

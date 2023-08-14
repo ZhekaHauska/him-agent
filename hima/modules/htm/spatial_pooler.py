@@ -1013,10 +1013,19 @@ class SPEnsemble:
     def __init__(
             self,
             n_sp,
+            n_areas=1,
             **kwargs
     ):
         self.n_sp = n_sp
+        self.n_areas = n_areas
+
         self.seed = kwargs.pop('seed')
+        self.input_shape = kwargs.pop('inputDimensions')
+        self.input_size = self.input_shape[0] * self.input_shape[1]
+
+        self.sp_size = (self.input_shape[0] * self.input_shape[1]) // self.n_areas
+        self.sp_shape = [self.sp_size // self.input_shape[1], self.input_shape[1]]
+
         self._rng = np.random.default_rng(self.seed)
 
         self.sps = []
@@ -1025,6 +1034,7 @@ class SPEnsemble:
         for i in range(self.n_sp):
             self.sps.append(
                 HtmSpatialPooler(
+                    inputDimensions=self.sp_shape,
                     **kwargs,
                     seed=seeds[i]
                 )
@@ -1032,13 +1042,20 @@ class SPEnsemble:
 
     def compute(self, input_sdr: SDR, learn: bool, output_sdr: SDR):
         outputs = []
+        tmp_input_sdr = SDR(self.sp_size)
         tmp_output_sdr = SDR(self.sps[0].getNumColumns())
 
+        shift = 0
         for i, sp in enumerate(self.sps):
-            sp.compute(input_sdr, learn, tmp_output_sdr)
+            tmp_input_sdr.dense = input_sdr.dense[shift: shift + self.sp_size]
+            sp.compute(tmp_input_sdr, learn, tmp_output_sdr)
             outputs.append(
                 tmp_output_sdr.sparse + i * self.sps[0].getNumColumns()
             )
+
+            shift += self.sp_size
+            if shift >= self.input_size:
+                shift = 0
 
         output_sdr.sparse = np.concatenate(
             outputs
@@ -1048,13 +1065,13 @@ class SPEnsemble:
         return self.sps[0].getNumColumns() * self.n_sp
 
     def getNumInputs(self):
-        return self.sps[0].getNumInputs()
+        return self.input_size
 
     def getColumnDimensions(self):
         return [sp.getColumnDimensions() for sp in self.sps]
 
     def getInputDimensions(self):
-        return self.sps[0].getInputDimensions()
+        return self.input_shape
 
 
 class SPDecoder:
@@ -1094,9 +1111,14 @@ class SPDecoder:
             if is_ensemble:
                 sp_id = cell // self.sp.sps[0].getNumColumns()
                 cell_id = cell % self.sp.sps[0].getNumColumns()
-                field[
-                    self.sp.sps[sp_id].connections.connectedPresynapticCellsForSegment(cell_id)
-                ] = 1
+                indexes = (
+                    ((sp_id % self.sp.n_areas) * self.sp.sp_size) % field.size +
+                    np.array(
+                        self.sp.sps[sp_id].connections.connectedPresynapticCellsForSegment(cell_id),
+                        dtype=UINT_DTYPE
+                    )
+                )
+                field[indexes] = 1
             else:
                 field[self.sp.connections.connectedPresynapticCellsForSegment(cell)] = 1
 
