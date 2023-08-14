@@ -82,34 +82,24 @@ class ImageMetrics:
     def log(self, step):
         for metric, values in self.metrics.items():
             if len(values) > 1:
-                with imageio.get_writer(
-                    os.path.join(
-                        self.log_dir,
-                        f'{self.logger.name}_{metric.split("/")[-1]}_{step}.gif'
-                    ),
-                    mode='I',
-                    fps=self.log_fps
-                ) as writer:
+                gif_path = os.path.join(
+                    self.log_dir,
+                    f'{self.logger.name}_{metric.split("/")[-1]}_{step}.gif'
+                )
+                with imageio.get_writer(gif_path, mode='I', duration=1000/self.log_fps) as writer:
                     for image in values:
                         writer.append_data(image)
 
                 self.logger.log(
                     {
-                        metric: wandb.Video(
-                            os.path.join(
-                                self.log_dir,
-                                f'{self.logger.name}_{metric.split("/")[-1]}_{step}.gif'
-                            )
-                        )
+                        metric: wandb.Video(gif_path)
                     },
                     step=step
                 )
             elif len(values) > 0:
                 self.logger.log(
                     {
-                        metric: wandb.Image(
-                            values[0]
-                        )
+                        metric: wandb.Image(values[0])
                     },
                     step=step
                 )
