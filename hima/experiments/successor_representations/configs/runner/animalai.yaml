@@ -19,6 +19,7 @@ env_conf: 'configs/animalai/default.yaml'
 agent_conf: 'configs/agent/animalai.yaml'
 layer_conf: 'configs/layer/animalai.yaml'
 encoder_conf: 'configs/encoder/sp_grouped_aai.yaml'
+decoder_conf: 'configs/decoder/animalai.yaml'
 
 experiment: animalai
 setup: 'competition/01-01-01.yaml'

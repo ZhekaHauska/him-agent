@@ -1,0 +1,5 @@
+weights_scale: 0.01
+learning_rate: 0.25
+power_t: 0.05
+total_updates_required: 100_000
+epoch_size: 4_000

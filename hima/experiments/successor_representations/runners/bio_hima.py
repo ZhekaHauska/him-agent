@@ -62,14 +62,14 @@ class AnimalAITest:
         ]
         self.n_actions = len(self.actions)
 
+        # assembly agent
         encoder_type = conf['run']['encoder']
+        encoder_conf = conf['encoder']
         layer_conf = conf['layer']
 
         if encoder_type == 'sp_ensemble':
             from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
 
-            # assembly agent
-            encoder_conf = conf['encoder']
             encoder_conf['seed'] = self.seed
             encoder_conf['inputDimensions'] = list(self.raw_obs_shape)
 
@@ -86,14 +86,14 @@ class AnimalAITest:
             from hima.experiments.temporal_pooling.stp.sp_ensemble import (
                 SpatialPoolerGroupedWrapper
             )
-            # assembly agent
-            encoder_conf = conf['encoder']
             encoder_conf['seed'] = self.seed
             encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
+
             decoder_type = conf['run'].get('decoder', None)
+            decoder_conf = conf['decoder']
 
             encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
-            decoder = make_decoder(encoder, decoder_type)
+            decoder = make_decoder(encoder, decoder_type, decoder_conf)
 
             layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
             layer_conf['n_obs_vars'] = encoder.n_groups
@@ -340,14 +340,14 @@ class PinballTest:
         self.actions = conf['run']['actions']
         self.n_actions = len(self.actions)
 
+        # assembly agent
         encoder_type = conf['run']['encoder']
+        encoder_conf = conf['encoder']
         layer_conf = conf['layer']
 
         if encoder_type == 'sp_ensemble':
             from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
 
-            # assembly agent
-            encoder_conf = conf['encoder']
             encoder_conf['seed'] = self.seed
             encoder_conf['inputDimensions'] = list(self.raw_obs_shape)
 
@@ -364,14 +364,13 @@ class PinballTest:
             from hima.experiments.temporal_pooling.stp.sp_ensemble import (
                 SpatialPoolerGroupedWrapper
             )
-            # assembly agent
-            encoder_conf = conf['encoder']
             encoder_conf['seed'] = self.seed
             encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
             decoder_type = conf['run'].get('decoder', None)
 
+            decoder_conf = conf['decoder']
             encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
-            decoder = make_decoder(encoder, decoder_type)
+            decoder = make_decoder(encoder, decoder_type, decoder_conf)
 
             layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
             layer_conf['n_obs_vars'] = encoder.n_groups
@@ -470,9 +469,7 @@ class PinballTest:
 
                 events = self.preprocess(obs)
                 # observe events_t and action_{t-1}
-                pred_sr, gen_sr = self.agent.observe(
-                    (events, action), learn=True, raw_observation=self.prev_image
-                )
+                pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
                 self.agent.reinforce(reward)
 
                 if running:
@@ -580,18 +577,13 @@ class PinballTest:
         return events
 
 
-def make_decoder(encoder, decoder):
+def make_decoder(encoder, decoder, decoder_conf):
     if decoder == 'naive':
         from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
         return SpatialPoolerDecoder(encoder)
     elif decoder == 'learned':
         from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerLearnedDecoder
-        return SpatialPoolerLearnedDecoder(encoder, hidden_dims=(64, 64))
-    elif decoder == 'learned_input':
-        from hima.experiments.temporal_pooling.stp.sp_decoder import (
-            SpatialPoolerLearnedOverNaiveDecoder
-        )
-        return SpatialPoolerLearnedOverNaiveDecoder(encoder)
+        return SpatialPoolerLearnedDecoder(encoder, **decoder_conf)
     else:
         raise ValueError(f'Decoder {decoder} is not supported')
 
@@ -607,6 +599,9 @@ def main(config_path):
     config['agent'] = read_config(config['run']['agent_conf'])
     config['layer'] = read_config(config['run']['layer_conf'])
     config['encoder'] = read_config(config['run']['encoder_conf'])
+
+    if 'decoder_conf' in config['run']:
+        config['decoder'] = read_config(config['run']['decoder_conf'])
 
     overrides = parse_arg_list(sys.argv[2:])
     override_config(config, overrides)
