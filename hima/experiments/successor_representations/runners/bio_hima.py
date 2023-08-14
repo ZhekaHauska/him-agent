@@ -173,7 +173,7 @@ class AnimalAITest:
             )
 
     def run(self):
-        episode_print_schedule = 50
+        episode_print_schedule = 25
 
         for i in range(self.n_episodes):
             if i % episode_print_schedule == 0:
@@ -209,9 +209,7 @@ class AnimalAITest:
 
                 events = self.preprocess(obs)
 
-                pred_sr, gen_sr = self.agent.observe(
-                    (events, action), learn=True, raw_observation=self.prev_image
-                )
+                pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
                 self.agent.reinforce(reward)
 
                 if running:

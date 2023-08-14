@@ -18,7 +18,7 @@ decoder: naive
 env_conf: 'configs/animalai/default.yaml'
 agent_conf: 'configs/agent/animalai.yaml'
 layer_conf: 'configs/layer/animalai.yaml'
-encoder_conf: 'configs/encoder/sp_grouped.yaml'
+encoder_conf: 'configs/encoder/sp_grouped_aai.yaml'
 
 experiment: animalai
 setup: 'competition/01-01-01.yaml'

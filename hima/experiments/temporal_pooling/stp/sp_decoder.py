@@ -73,6 +73,7 @@ class SpatialPoolerLearnedDecoder:
                 decoded_obs=input_probs
             )
 
+        input_probs = np.clip(input_probs, 0., 1.)
         return input_probs
 
     def learn(self, output_probs, correct_obs, decoded_obs=None):
