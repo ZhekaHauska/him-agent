@@ -4,6 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from animalai.envs.environment import AnimalAIEnvironment
+from mlagents_envs.exception import UnityWorkerInUseException
 from animalai.envs.actions import AAIActions
 from pinball import Pinball
 
@@ -23,7 +24,7 @@ import io
 
 
 class AnimalAITest:
-    def __init__(self, logger, conf):
+    def __init__(self, logger, conf, max_workers=10):
         self.logger = logger
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
@@ -35,7 +36,20 @@ class AnimalAITest:
             'configs',
             f"{conf['run']['setup']}"
         )
-        self.environment = AnimalAIEnvironment(**conf['env'])
+
+        worker_id = 0
+        while worker_id < max_workers:
+            try:
+                self.environment = AnimalAIEnvironment(
+                    worker_id=worker_id,
+                    **conf['env']
+                )
+                break
+            except UnityWorkerInUseException:
+                worker_id += 1
+        else:
+            raise Exception('Too many workers.')
+
         # get agent proxi in unity
         self.behavior = list(self.environment.behavior_specs.keys())[0]
         self.raw_obs_shape = self.environment.behavior_specs[self.behavior].observation_specs[
