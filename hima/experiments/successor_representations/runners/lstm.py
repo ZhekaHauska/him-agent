@@ -20,10 +20,9 @@ wandb = lazy_import('wandb')
 
 
 class AnimalAITest:
-    def __init__(self, logger, conf, max_workers=10):
+    def __init__(self, logger, conf):
         from animalai.envs.actions import AAIActions
         from animalai.envs.environment import AnimalAIEnvironment
-        from mlagents_envs.exception import UnityWorkerInUseException
 
         self.logger = logger
         self.seed = conf['run'].get('seed')
@@ -36,20 +35,7 @@ class AnimalAITest:
             'configs',
             f"{conf['run']['setup']}"
         )
-
-        worker_id = 0
-        while worker_id < max_workers:
-            try:
-                self.environment = AnimalAIEnvironment(
-                    worker_id=worker_id,
-                    **conf['env']
-                )
-                break
-            except UnityWorkerInUseException:
-                worker_id += 1
-        else:
-            raise Exception('Too many workers.')
-
+        self.environment = AnimalAIEnvironment(**conf['env'])
         # get agent proxi in unity
         self.behavior = list(self.environment.behavior_specs.keys())[0]
         self.raw_obs_shape = self.environment.behavior_specs[self.behavior].observation_specs[
@@ -125,7 +111,6 @@ class AnimalAITest:
         self.max_steps = conf['run']['max_steps']
         self.update_rate = conf['run']['update_rate']
         self.reset_context_period = conf['run'].get('reset_context_period', 0)
-        self.action_inertia = conf['run'].get('action_inertia', 1)
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -215,8 +200,7 @@ class AnimalAITest:
                 self.agent.reinforce(reward)
 
                 if running:
-                    if (action is None) or ((steps % self.action_inertia) == 0):
-                        action = self.agent.sample_action()
+                    action = self.agent.sample_action()
                     # convert to AAI action
                     aai_action = self.actions[action]
                     self.environment.set_actions(self.behavior, aai_action.action_tuple)
@@ -478,11 +462,12 @@ class PinballTest:
                 self.agent.reinforce(reward)
 
                 if running:
-                    # action = self._rng.integers(self.n_actions)
-                    action = self.agent.sample_action()
-                    # convert to AAI action
-                    pinball_action = self.actions[action]
-                    self.environment.act(pinball_action)
+                    if steps == 0:
+                        # action = self._rng.integers(self.n_actions)
+                        action = self.agent.sample_action()
+                        # convert to AAI action
+                        pinball_action = self.actions[action]
+                        self.environment.act(pinball_action)
 
                 # >>> logging
                 if self.logger is not None:
