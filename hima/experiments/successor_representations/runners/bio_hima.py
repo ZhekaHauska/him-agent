@@ -406,12 +406,11 @@ class PinballTest:
                 self.agent.reinforce(reward)
 
                 if running:
-                    if steps == 0:
-                        # action = self._rng.integers(self.n_actions)
-                        action = self.agent.sample_action()
-                        # convert to AAI action
-                        pinball_action = self.actions[action]
-                        self.environment.act(pinball_action)
+                    # action = self._rng.integers(self.n_actions)
+                    action = self.agent.sample_action()
+                    # convert to AAI action
+                    pinball_action = self.actions[action]
+                    self.environment.act(pinball_action)
 
                 # >>> logging
                 if self.logger is not None:
