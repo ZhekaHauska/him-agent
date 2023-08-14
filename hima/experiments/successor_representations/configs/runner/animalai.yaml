@@ -6,13 +6,13 @@ run_tag: null
 n_episodes: 501
 update_rate: 10
 max_steps: 50
-reset_context_period: 10
-action_inertia: 3
+reset_context_period: 15
+action_inertia: 5
 log_gif_fps: 5
 
 env_conf: 'configs/animalai/default.yaml'
 agent_conf: 'configs/agent/animalai.yaml'
-layer_conf: 'configs/layer/default.yaml'
+layer_conf: 'configs/layer/animalai.yaml'
 encoder_conf: 'configs/encoder/sp_ensemble_animalai.yaml'
 
 experiment: animalai

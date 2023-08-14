@@ -1,6 +1,6 @@
 log: True
 save_model: False
-project_name: 'sr_test'
+project_name: 'sr_pinball_free_test'
 run_tag: null
 
 n_episodes: 501
@@ -12,7 +12,7 @@ actions: [[0, 3], [0.5, 3], [-0.5, 3]]
 
 env_conf: 'configs/pinball/default.yaml'
 agent_conf: 'configs/agent/pinball.yaml'
-layer_conf: 'configs/layer/default.yaml'
+layer_conf: 'configs/layer/pinball.yaml'
 encoder_conf: 'configs/encoder/sp_ensemble_pinball.yaml'
 
 experiment: pinball
