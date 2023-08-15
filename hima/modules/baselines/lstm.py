@@ -16,18 +16,22 @@ from hima.modules.belief.utils import normalize
 torch.autograd.set_detect_anomaly(True)
 
 
+THiddenState = tuple[torch.Tensor, torch.Tensor]
+
+
 class LstmLayer:
     # layer state
     last_state_snapshot: tuple | None
-    # observation
-    context_messages: np.ndarray
+    # hidden state for making prediction: hidden size
+    context_messages: THiddenState
     # actions
     external_messages: np.ndarray
-    # hidden
-    internal_forward_messages: np.ndarray
+    internal_forward_messages: torch
 
-    prediction: torch.Tensor | None
+    prediction_obs: torch.Tensor | None
+    # predicted state: message[0]
     prediction_cells: np.ndarray | None
+    # predicted observation
     prediction_columns: np.ndarray | None
 
     loss: torch.Tensor | None
@@ -51,10 +55,6 @@ class LstmLayer:
         self.n_obs_states = n_obs_states
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
-        # context === observation
-        self.n_context_vars = self.n_obs_vars
-        self.n_context_states = self.n_obs_states
-
         # actions_dim: 1
         self.n_external_vars = n_external_vars
         # n_actions
@@ -63,10 +63,14 @@ class LstmLayer:
         self.n_hidden_vars = n_hidden_vars
         self.n_hidden_states = n_hidden_states
 
+        # context === observation
+        self.n_context_vars = self.n_hidden_vars
+        self.n_context_states = self.n_hidden_states
+
         self.input_size = self.n_obs_vars * self.n_obs_states
         self.hidden_size = self.n_hidden_vars * self.n_hidden_states
         self.internal_cells = self.hidden_size
-        self.context_input_size = self.input_size
+        self.context_input_size = self.hidden_size
         self.external_input_size = self.n_external_vars * self.n_external_states
 
         self.lr = lr
@@ -90,20 +94,15 @@ class LstmLayer:
     def _reinit_messages_and_states(self):
         # layer state
         self.last_state_snapshot = None
-        self.context_messages = np.zeros(self.context_input_size)
+        self.lstm.message = self.lstm.get_init_message()
+        self.context_messages = self.lstm.get_init_message()
         self.external_messages = np.zeros(self.external_input_size)
-        self.internal_forward_messages = np.zeros(self.hidden_size)
 
-        self.prediction = None
+        self.prediction_obs = None
         self.prediction_cells = None
         self.prediction_columns = None
 
         self.loss = None
-        # FIXME: LSTM message
-        self.lstm.message = (
-            torch.zeros(self.hidden_size, device=self.device),
-            torch.zeros(self.hidden_size, device=self.device),
-        )
 
     def reset(self):
         self.optimizer.zero_grad()
@@ -119,91 +118,65 @@ class LstmLayer:
 
         if learn:
             if self.loss is None:
-                self.loss = self.loss_function(self.prediction, dense_obs)
-            else:
-                self.loss += self.loss_function(self.prediction, dense_obs)
+                self.loss = 0
+            self.loss += self.loss_function(self.prediction_obs, dense_obs)
 
-            self.prediction = self.lstm(dense_obs)
-        else:
-            with torch.no_grad():
-                self.prediction = self.lstm(dense_obs)
+        with torch.set_grad_enabled(learn):
+            self.lstm.transition_to_next_state(dense_obs)
 
-    def predict(self):
-        print(self.context_messages.shape, self.external_messages.shape)
-        dense_obs = np.hstack([self.context_messages, self.external_messages])
-        dense_obs = torch.from_numpy(dense_obs).float().to(self.device)
-        with torch.no_grad():
-            self.prediction = self.lstm(dense_obs)
+    def predict(self, learn: bool = False):
+        action_probs = None
+        if self.external_input_size != 0:
+            action_probs = torch.from_numpy(self.external_messages).float().to(self.device)
+            action_probs = torch.unsqueeze(action_probs, 1)
 
-        self.internal_forward_messages = self.prediction.cpu().numpy()
-        self.prediction_cells = self.internal_forward_messages.copy()
-        self.prediction_columns = self.prediction_cells
+        with torch.set_grad_enabled(learn):
+            context = self.lstm.get_action_dependent_context(action_probs)
+            self.prediction_obs = self.lstm.decode_obs(context)
 
-    def n_step_prediction(self, initial_dist, steps, mc_iterations=100):
-        n_step_dist = np.zeros((steps, self.n_obs_states))
-        initial_message = (self.lstm.message[0].clone(), self.lstm.message[1].clone())
-
-        for i in range(mc_iterations):
-            dist_curr_step = initial_dist
-            for step in range(steps):
-                # sample observation from prediction density
-                gamma = self.rng.random(size=self.n_obs_states)
-                obs = np.flatnonzero(gamma < dist_curr_step)
-                dense_obs = np.zeros(self.n_obs_states, dtype='float32')
-                dense_obs[obs] = 1
-                dense_obs = torch.from_numpy(dense_obs).to(self.device)
-
-                # predict distribution
-                with torch.no_grad():
-                    prediction = self.lstm(dense_obs).cpu().detach().numpy()
-
-                n_step_dist[step] += 1/(i+1) * (prediction - n_step_dist[step])
-                dist_curr_step = prediction
-
-            self.lstm.message = initial_message
-
-        return n_step_dist
+        self.prediction_cells = context.detach().cpu().numpy()
+        self.prediction_columns = self.prediction_obs.detach().cpu().numpy()
 
     def set_external_messages(self, messages=None):
         # update external cells
         if messages is not None:
-            print('set_external_messages', messages.shape)
-            print(messages)
             self.external_messages = messages
         elif self.external_input_size != 0:
             self.external_messages = normalize(
-                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
+                np.zeros(self.external_input_size).reshape(self.n_external_vars, -1)
             ).flatten()
 
     def set_context_messages(self, messages=None):
         # update context cells
         if messages is not None:
-            print('set_context_messages', messages.shape)
-            print(messages)
             self.context_messages = messages
         elif self.context_input_size != 0:
             self.context_messages = normalize(
-                np.zeros(self.context_input_size).reshape((self.n_context_vars, -1))
+                np.zeros(self.context_input_size).reshape(self.n_context_vars, -1)
             ).flatten()
 
     def make_state_snapshot(self):
         self.last_state_snapshot = (
-            self.internal_forward_messages.copy(),
-            self.external_messages.copy(),
-            self.context_messages.copy(),
-            self.prediction_cells.copy(),
-            self.prediction_columns.copy()
+            self.lstm.message,
+            self.internal_forward_messages,
+            self.external_messages,
+            self.context_messages,
+            self.prediction_cells,
+            self.prediction_columns
         )
 
     def restore_last_snapshot(self):
-        if self.last_state_snapshot is not None:
-            (
-                self.internal_forward_messages,
-                self.external_messages,
-                self.context_messages,
-                self.prediction_cells,
-                self.prediction_columns
-            ) = [x.copy() for x in self.last_state_snapshot]
+        if self.last_state_snapshot is None:
+            return
+
+        (
+            self.lstm.message,
+            self.internal_forward_messages,
+            self.external_messages,
+            self.context_messages,
+            self.prediction_cells,
+            self.prediction_columns
+        ) = self.last_state_snapshot
 
 
 class LSTMWMIterative:
@@ -297,17 +270,19 @@ class LSTMWMUnit(nn.Module):
             self,
             input_size,
             hidden_size,
-            external_input_size = 0
+            external_input_size=0
     ):
         super(LSTMWMUnit, self).__init__()
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.n_obs_states = input_size
-        self.n_external_obs_states = external_input_size
+        self.n_actions = external_input_size
         self.n_hidden_states = hidden_size
+        self.full_hidden_size = self.n_hidden_states * max(self.n_actions, 1)
 
         self.lstm = nn.LSTMCell(
-            input_size=self.n_obs_states + self.n_external_obs_states,
-            hidden_size=self.n_hidden_states
+            input_size=self.n_obs_states,
+            hidden_size=self.full_hidden_size
         )
 
         # The linear layer that maps from hidden state space back to obs space
@@ -316,16 +291,35 @@ class LSTMWMUnit(nn.Module):
             self.n_obs_states
         )
 
-        self.message = (
-            torch.zeros(self.n_hidden_states),
-            torch.zeros(self.n_hidden_states)
+        self.message = self.get_init_message()
+
+    def get_init_message(self) -> THiddenState:
+        return (
+            torch.zeros(self.full_hidden_size, device=self.device),
+            torch.zeros(self.full_hidden_size, device=self.device)
         )
 
-    def forward(self, obs):
+    def transition_to_next_state(self, obs):
         self.message = self.lstm(obs, self.message)
-        prediction_logit = self.hidden2obs(self.message[0])
+        return self.message
+
+    def get_action_dependent_context(self, action_probs=None):
+        obs_context_msg = self.message[0]
+
+        if action_probs is not None:
+            obs_context_msg = obs_context_msg.reshape(action_probs.shape[0], -1)
+            obs_context_msg = obs_context_msg * action_probs
+            obs_context_msg = torch.sum(obs_context_msg, dim=0)
+        return obs_context_msg
+
+    def decode_obs(self, obs_context_msg):
+        prediction_logit = self.hidden2obs(obs_context_msg)
         prediction = torch.sigmoid(prediction_logit)
         return prediction
+
+    def forward(self, obs):
+        self.transition_to_next_state(obs)
+        return self.decode_obs(self.message[0])
 
 
 class LSTMWMLayer(nn.Module):
