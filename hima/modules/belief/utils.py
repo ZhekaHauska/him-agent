@@ -14,7 +14,7 @@ _TIE_BREAKER_FACTOR = 1e-24
 
 
 def softmax(x, beta=1.0):
-    e_x = np.exp(beta * (x - x.mean()))
+    e_x = np.exp(beta * (x - x.max()))
     return e_x / e_x.sum()
 
 
