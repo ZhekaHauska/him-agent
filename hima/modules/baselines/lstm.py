@@ -97,6 +97,7 @@ class LstmLayer:
         self.lstm.message = self.lstm.get_init_message()
         self.context_messages = self.lstm.get_init_message()
         self.external_messages = np.zeros(self.external_input_size)
+        self.internal_forward_messages = np.zeros(self.hidden_size)
 
         self.prediction_obs = None
         self.prediction_cells = None
@@ -134,8 +135,8 @@ class LstmLayer:
             context = self.lstm.get_action_dependent_context(action_probs)
             self.prediction_obs = self.lstm.decode_obs(context)
 
-        self.prediction_cells = context.detach().cpu().numpy()
         self.prediction_columns = self.prediction_obs.detach().cpu().numpy()
+        self.prediction_cells = context.detach().cpu().numpy()
 
     def set_external_messages(self, messages=None):
         # update external cells
@@ -161,6 +162,7 @@ class LstmLayer:
             self.internal_forward_messages,
             self.external_messages,
             self.context_messages,
+            self.prediction_obs,
             self.prediction_cells,
             self.prediction_columns
         )
@@ -174,6 +176,7 @@ class LstmLayer:
             self.internal_forward_messages,
             self.external_messages,
             self.context_messages,
+            self.prediction_obs,
             self.prediction_cells,
             self.prediction_columns
         ) = self.last_state_snapshot
