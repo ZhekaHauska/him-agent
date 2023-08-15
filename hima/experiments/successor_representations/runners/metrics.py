@@ -86,22 +86,13 @@ class ImageMetrics:
                     self.log_dir,
                     f'{self.logger.name}_{metric.split("/")[-1]}_{step}.gif'
                 )
-                with imageio.get_writer(gif_path, mode='I', duration=1000/self.log_fps, loop=0) as writer:
-                    for image in values:
-                        writer.append_data(image)
-
-                self.logger.log(
-                    {
-                        metric: wandb.Video(gif_path)
-                    },
-                    step=step
+                # use new v3 API
+                imageio.v3.imwrite(
+                    # mode 'L': gray 8-bit ints; duration = 1000 / fps; loop == 0: infinitely
+                    gif_path, values, mode='L', duration=1000/self.log_fps, loop=0
                 )
+                self.logger.log({metric: wandb.Video(gif_path)}, step=step)
             elif len(values) > 0:
-                self.logger.log(
-                    {
-                        metric: wandb.Image(values[0])
-                    },
-                    step=step
-                )
+                self.logger.log({metric: wandb.Image(values[0])}, step=step)
 
         self.metrics = {metric: [] for metric in self.metrics.keys()}
