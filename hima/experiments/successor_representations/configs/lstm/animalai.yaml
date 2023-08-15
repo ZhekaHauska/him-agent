@@ -1,2 +1,3 @@
-n_hidden_states: 10
+n_hidden_vars: 1
+n_hidden_states: 400
 lr: 0.003

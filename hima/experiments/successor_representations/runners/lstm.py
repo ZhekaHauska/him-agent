@@ -122,12 +122,8 @@ class AnimalAITest:
             encoder = SPEnsemble(**encoder_conf)
             decoder = SPDecoder(encoder)
 
-            layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
             layer_conf['n_obs_vars'] = encoder.n_sp
-            layer_conf['n_context_states'] = (
-                    encoder.sps[0].getNumColumns() * layer_conf['cells_per_column']
-            )
-            layer_conf['n_context_vars'] = encoder.n_sp
+            layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
         elif encoder_type == 'sp_grouped':
             from hima.experiments.temporal_pooling.stp.sp_ensemble import (
                 SpatialPoolerGroupedWrapper
@@ -141,12 +137,8 @@ class AnimalAITest:
             encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
             decoder = make_decoder(encoder, decoder_type, decoder_conf)
 
-            layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
             layer_conf['n_obs_vars'] = encoder.n_groups
-            layer_conf['n_context_states'] = (
-                    encoder.getSingleNumColumns() * layer_conf['cells_per_column']
-            )
-            layer_conf['n_context_vars'] = encoder.n_groups
+            layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
         else:
             raise ValueError(f'Encoder type {encoder_type} is not supported')
 
@@ -154,18 +146,11 @@ class AnimalAITest:
         layer_conf['n_external_states'] = self.n_actions
         layer_conf['seed'] = self.seed
 
-        layer = Layer(**layer_conf)
+        layer = LstmLayer(**layer_conf)
 
-        cortical_column = CorticalColumn(
-            layer,
-            encoder,
-            decoder
-        )
-
-        self.agent = BioHIMA(
-            cortical_column,
-            **conf['agent']
-        )
+        # noinspection PyTypeChecker
+        cortical_column = CorticalColumn(layer, encoder, decoder)
+        self.agent = LstmBioHima(cortical_column, **conf['agent'])
 
         self.n_episodes = conf['run']['n_episodes']
         self.max_steps = conf['run']['max_steps']
@@ -175,14 +160,7 @@ class AnimalAITest:
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
-        self.initial_context = np.zeros_like(
-            self.agent.cortical_column.layer.context_messages
-        )
-        self.initial_context[
-            np.arange(
-                self.agent.cortical_column.layer.n_hidden_vars
-            ) * self.agent.cortical_column.layer.n_hidden_states
-        ] = 1
+        self.initial_context = layer.lstm.get_init_message()
 
         if self.logger is not None:
             from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
@@ -192,13 +170,10 @@ class AnimalAITest:
                     'main_metrics/reward': np.sum,
                     'main_metrics/steps': np.mean,
                     'layer/surprise_hidden': np.mean,
-                    'layer/n_segments': np.mean,
-                    'layer/n_factors': np.mean,
                     'agent/td_error': np.mean
                 },
                 self.logger
             )
-
             self.heatmap_metrics = HeatmapMetrics(
                 {
                     'agent/prior': np.mean,
@@ -206,12 +181,10 @@ class AnimalAITest:
                 },
                 self.logger
             )
-
             self.image_metrics = ImageMetrics(
                 [
                     'agent/behavior',
                     'agent/sr',
-                    'layer/factor_graph',
                     'layer/predictions'
                 ],
                 self.logger,
@@ -271,10 +244,6 @@ class AnimalAITest:
                         {
                             'main_metrics/reward': reward,
                             'layer/surprise_hidden': self.agent.surprise,
-                            'layer/n_segments': self.agent.cortical_column.layer.
-                            context_factors.connections.numSegments(),
-                            'layer/n_factors': self.agent.cortical_column.layer.
-                            context_factors.factor_connections.numSegments(),
                             'agent/td_error': self.agent.td_error
                         }
                     )
@@ -335,16 +304,6 @@ class AnimalAITest:
                         }
                     )
                     self.heatmap_metrics.log(i)
-
-                    self.image_metrics.update(
-                        {
-                            'layer/factor_graph': Image.open(
-                                io.BytesIO(
-                                    self.agent.cortical_column.layer.draw_factor_graph()
-                                )
-                            )
-                        }
-                    )
                     self.image_metrics.log(i)
             # <<< logging
         else:
@@ -449,7 +408,6 @@ class PinballTest:
                 },
                 self.logger
             )
-
             self.heatmap_metrics = HeatmapMetrics(
                 {
                     'agent/prior': np.mean,
@@ -457,7 +415,6 @@ class PinballTest:
                 },
                 self.logger
             )
-
             self.image_metrics = ImageMetrics(
                 [
                     'agent/behavior',
