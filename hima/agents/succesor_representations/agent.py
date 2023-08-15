@@ -119,9 +119,7 @@ class BioHIMA:
         else:
             self.surprise = 0
 
-        self.observation_messages = np.zeros_like(
-            self.observation_messages
-        )
+        self.observation_messages = np.zeros_like(self.observation_messages)
         self.observation_messages[self.cortical_column.output_sdr.sparse] = 1
 
         # striatum TD learning
@@ -138,10 +136,9 @@ class BioHIMA:
             )
 
             delta_sr = generated_sr - predicted_sr
-            delta_w = prediction_cells.reshape((-1, 1)) * delta_sr.reshape((1, -1))
+            delta_w = prediction_cells.reshape(-1, 1) * delta_sr.reshape(1, -1)
 
             self.striatum_weights += self.striatum_lr * delta_w
-
             self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
             self.td_error = np.sum(np.power(delta_sr, 2))
@@ -159,9 +156,10 @@ class BioHIMA:
         self.observation_prior = normalize(
             np.exp(
                 self.reward_scale * self.observation_rewards.reshape(
-                    (self.cortical_column.layer.n_obs_vars, -1)
+                    self.cortical_column.layer.n_obs_vars, -1
                 )
             )
+            
         ).flatten()
 
     def reset(self, initial_context_message, initial_external_message):
@@ -189,19 +187,15 @@ class BioHIMA:
 
         i = -1
         for i in range(n_steps):
-            sr += (self.gamma**i) * predicted_observation
+            sr += predicted_observation * self.gamma**i
 
-            self.cortical_column.predict(
-                context_messages
-            )
+            self.cortical_column.predict(context_messages)
 
             predicted_observation = self.cortical_column.layer.prediction_columns.copy()
             context_messages = self.cortical_column.layer.internal_forward_messages.copy()
 
         if approximate_tail:
-            sr += (self.gamma**(i+1)) * self.predict_sr(
-                context_messages
-            )
+            sr += self.predict_sr(context_messages) * self.gamma**(i+1)
 
         if save_state:
             self.cortical_column.restore_last_snapshot()
