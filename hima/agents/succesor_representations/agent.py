@@ -76,7 +76,7 @@ class BioHIMA:
                 self.cortical_column.layer.context_messages,
                 dense_action
             )
-
+            # TODO switch to predict_sr when TD is low
             sr = self._generate_sr(
                 self.sr_steps,
                 self.cortical_column.layer.prediction_cells,
@@ -87,8 +87,8 @@ class BioHIMA:
             self.cortical_column.restore_last_snapshot()
 
             action_values[action] = np.sum(
-                sr * self.observation_prior
-            )
+                sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
+            ) / self.cortical_column.layer.n_obs_vars
 
         action_dist = softmax(action_values, beta=self.inverse_temp)
         action = sample_categorical_variables(action_dist.reshape((1, -1)), self._rng)
