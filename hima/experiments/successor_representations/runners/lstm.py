@@ -14,10 +14,55 @@ from hima.agents.succesor_representations.agent import BioHIMA
 from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
-from hima.modules.baselines.lstm import LstmLayer
+from hima.modules.baselines.lstm import LstmLayer, THiddenState, to_numpy
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
+from hima.modules.belief.utils import normalize
 
 wandb = lazy_import('wandb')
+
+
+class LstmBioHima(BioHIMA):
+    def __init__(
+            self, cortical_column: CorticalColumn, gamma: float = 0.99,
+            observation_reward_lr: float = 0.01, striatum_lr: float = 1.0, sr_steps: int = 5,
+            approximate_tail: bool = True, inverse_temp: float = 1.0, reward_scale: float = 1.0,
+            seed: int = None
+    ):
+        super().__init__(
+            cortical_column,
+            gamma=gamma,
+            observation_reward_lr=observation_reward_lr,
+            striatum_lr=striatum_lr,
+            sr_steps=sr_steps,
+            approximate_tail=approximate_tail,
+            inverse_temp=inverse_temp,
+            reward_scale=reward_scale, seed=seed
+        )
+
+    def _extract_collapse_message(self, context_messages: THiddenState):
+        # (cell state, hidden state): cell state is used for observation prediction
+        msg, _ = context_messages
+        # cell (==observation logits) state: (full_hidden_size)
+        msg = to_numpy(msg)
+
+        # at this point we don't have action selected -> average state prediction over actions
+
+        # => reshape to split into n_actions heads
+        n_actions = self.cortical_column.layer.n_external_states
+        msg = msg.reshape(n_actions, -1)
+
+        # then sum them out over actions and normalize resulting vector
+        msg = np.sum(msg, axis=0, keepdims=True)
+        msg = normalize(msg).flatten()
+        return msg
+
+    def td_update_sr(self, generated_sr, predicted_sr, prediction_cells):
+        msg = self._extract_collapse_message(prediction_cells)
+        return super().td_update_sr(generated_sr, predicted_sr, msg)
+
+    def predict_sr(self, context_messages: THiddenState):
+        msg = self._extract_collapse_message(context_messages)
+        return super().predict_sr(msg)
 
 
 class AnimalAITest:
@@ -381,16 +426,8 @@ class PinballTest:
         layer = LstmLayer(**layer_conf)
 
         # noinspection PyTypeChecker
-        cortical_column = CorticalColumn(
-            layer,
-            encoder,
-            decoder
-        )
-
-        self.agent = BioHIMA(
-            cortical_column,
-            **conf['agent']
-        )
+        cortical_column = CorticalColumn(layer, encoder, decoder)
+        self.agent = LstmBioHima(cortical_column, **conf['agent'])
 
         self.n_episodes = conf['run']['n_episodes']
         self.max_steps = conf['run']['max_steps']
@@ -398,14 +435,7 @@ class PinballTest:
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
-        self.initial_context = np.zeros_like(
-            self.agent.cortical_column.layer.context_messages
-        )
-        self.initial_context[
-            np.arange(
-                self.agent.cortical_column.layer.n_hidden_vars
-            ) * self.agent.cortical_column.layer.n_hidden_states
-        ] = 1
+        self.initial_context = layer.lstm.get_init_message()
 
         if self.logger is not None:
             from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
@@ -415,8 +445,6 @@ class PinballTest:
                     'main_metrics/reward': np.sum,
                     'main_metrics/steps': np.mean,
                     'layer/surprise_hidden': np.mean,
-                    'layer/n_segments': np.mean,
-                    'layer/n_factors': np.mean,
                     'agent/td_error': np.mean
                 },
                 self.logger
@@ -434,7 +462,6 @@ class PinballTest:
                 [
                     'agent/behavior',
                     'agent/sr',
-                    'layer/factor_graph',
                     'layer/predictions'
                 ],
                 self.logger,
@@ -462,7 +489,6 @@ class PinballTest:
                 running = not is_terminal
 
                 events = self.preprocess(obs)
-                print(events.shape)
                 # observe events_t and action_{t-1}
                 pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
                 self.agent.reinforce(reward)
@@ -480,10 +506,6 @@ class PinballTest:
                         {
                             'main_metrics/reward': reward,
                             'layer/surprise_hidden': self.agent.surprise,
-                            'layer/n_segments': self.agent.cortical_column.layer.
-                            context_factors.connections.numSegments(),
-                            'layer/n_factors': self.agent.cortical_column.layer.
-                            context_factors.factor_connections.numSegments(),
                             'agent/td_error': self.agent.td_error
                         }
                     )
@@ -544,16 +566,6 @@ class PinballTest:
                         }
                     )
                     self.heatmap_metrics.log(i)
-
-                    self.image_metrics.update(
-                        {
-                            'layer/factor_graph': Image.open(
-                                io.BytesIO(
-                                    self.agent.cortical_column.layer.draw_factor_graph()
-                                )
-                            )
-                        }
-                    )
                     self.image_metrics.log(i)
             # <<< logging
         else:
