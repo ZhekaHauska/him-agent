@@ -5,15 +5,16 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
 
+from hima.experiments.hmm.runners.utils import get_surprise
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import normalize, softmax, sample_categorical_variables
-from hima.experiments.hmm.runners.utils import get_surprise
 
 
 class BioHIMA:
     def __init__(
             self,
             cortical_column: CorticalColumn,
+            *,
             gamma: float = 0.99,
             observation_reward_lr: float = 0.01,
             striatum_lr: float = 1.0,
@@ -70,10 +71,14 @@ class BioHIMA:
         """
         self.cortical_column.make_state_snapshot()
 
-        action_values = np.zeros(self.cortical_column.layer.external_input_size)
+        n_actions = self.cortical_column.layer.external_input_size
+        action_values = np.zeros(n_actions)
+        dense_action = np.zeros_like(action_values)
 
-        for action in range(self.cortical_column.layer.external_input_size):
-            dense_action = np.zeros_like(action_values)
+        for action in range(n_actions):
+            # hacky way to clean previous one-hot, for 0th does nothing
+            dense_action[action-1] = 0
+            # set current one-hot
             dense_action[action] = 1
 
             self.cortical_column.predict(
@@ -122,28 +127,33 @@ class BioHIMA:
         self.observation_messages = np.zeros_like(self.observation_messages)
         self.observation_messages[self.cortical_column.output_sdr.sparse] = 1
 
+        if not learn:
+            return
+
         # striatum TD learning
-        if learn:
-            prediction_cells = self.cortical_column.layer.prediction_cells.copy()
+        # FIXME: copy can be removed
+        prediction_cells = self.cortical_column.layer.prediction_cells.copy()
 
-            predicted_sr = self.predict_sr(prediction_cells)
-            generated_sr, last_step_prediction = self._generate_sr(
-                self.sr_steps,
-                prediction_cells,
-                self.observation_messages,
-                approximate_tail=self.approximate_tail,
-                return_last_prediction_step=True
-            )
+        predicted_sr = self.predict_sr(prediction_cells)
+        generated_sr, last_step_prediction = self._generate_sr(
+            self.sr_steps,
+            prediction_cells,
+            self.observation_messages,
+            approximate_tail=self.approximate_tail,
+            return_last_prediction_step=True
+        )
+        self.td_update_sr(generated_sr, predicted_sr, prediction_cells)
+        return predicted_sr, generated_sr
 
-            delta_sr = generated_sr - predicted_sr
-            delta_w = prediction_cells.reshape(-1, 1) * delta_sr.reshape(1, -1)
+    def td_update_sr(self, generated_sr, predicted_sr, prediction_cells):
+        delta_sr = generated_sr - predicted_sr
+        delta_sr = np.clip(delta_sr, -10, 10)
+        delta_w = np.outer(prediction_cells, delta_sr)
 
-            self.striatum_weights += self.striatum_lr * delta_w
-            self.striatum_weights = np.clip(self.striatum_weights, 0, None)
+        self.striatum_weights += self.striatum_lr * delta_w
+        self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
-            self.td_error = np.sum(np.power(delta_sr, 2))
-
-            return predicted_sr, generated_sr
+        self.td_error = np.sum(np.power(delta_sr, 2))
 
     def reinforce(self, reward):
         """
@@ -185,17 +195,18 @@ class BioHIMA:
         predicted_observation = initial_prediction
         context_messages = initial_messages
 
-        i = -1
-        for i in range(n_steps):
-            sr += predicted_observation * self.gamma**i
+        t = -1
+        for t in range(n_steps):
+            sr += predicted_observation * self.gamma**t
 
             self.cortical_column.predict(context_messages)
 
+            # FIXME: I think column copy could be safely removed
             predicted_observation = self.cortical_column.layer.prediction_columns.copy()
             context_messages = self.cortical_column.layer.internal_forward_messages.copy()
 
         if approximate_tail:
-            sr += self.predict_sr(context_messages) * self.gamma**(i+1)
+            sr += self.predict_sr(context_messages) * self.gamma**(t+1)
 
         if save_state:
             self.cortical_column.restore_last_snapshot()

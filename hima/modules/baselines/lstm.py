@@ -22,14 +22,16 @@ THiddenState = tuple[torch.Tensor, torch.Tensor]
 class LstmLayer:
     # layer state
     last_state_snapshot: tuple | None
+
     # hidden state for making prediction: hidden size
     context_messages: THiddenState
+    internal_forward_messages: list[torch.Tensor, torch.Tensor]
+
     # actions
     external_messages: np.ndarray
-    internal_forward_messages: torch
 
     prediction_obs: torch.Tensor | None
-    # predicted state: message[0]
+    # action-dependent full state: (message[0] * action_probs, message[1])
     prediction_cells: np.ndarray | None
     # predicted observation
     prediction_columns: np.ndarray | None
@@ -95,9 +97,9 @@ class LstmLayer:
         # layer state
         self.last_state_snapshot = None
         self.lstm.message = self.lstm.get_init_message()
-        self.context_messages = self.lstm.get_init_message()
+        self.context_messages = self.lstm.message
+        self.internal_forward_messages = list(self.lstm.message)
         self.external_messages = np.zeros(self.external_input_size)
-        self.internal_forward_messages = np.zeros(self.hidden_size)
 
         self.prediction_obs = None
         self.prediction_cells = None
@@ -125,6 +127,8 @@ class LstmLayer:
         with torch.set_grad_enabled(learn):
             self.lstm.transition_to_next_state(dense_obs)
 
+        self.internal_forward_messages = list(self.lstm.message)
+
     def predict(self, learn: bool = False):
         action_probs = None
         if self.external_input_size != 0:
@@ -132,11 +136,13 @@ class LstmLayer:
             action_probs = torch.unsqueeze(action_probs, 1)
 
         with torch.set_grad_enabled(learn):
-            context = self.lstm.get_action_dependent_context(action_probs)
-            self.prediction_obs = self.lstm.decode_obs(context)
+            self.lstm.apply_action_to_context(action_probs)
+            self.prediction_obs = self.lstm.decode_obs()
 
-        self.prediction_columns = self.prediction_obs.detach().cpu().numpy()
-        self.prediction_cells = context.detach().cpu().numpy()
+        self.internal_forward_messages = list(self.lstm.message)
+        self.prediction_cells = self.internal_forward_messages
+
+        self.prediction_columns = to_numpy(self.prediction_obs)
 
     def set_external_messages(self, messages=None):
         # update external cells
@@ -151,6 +157,7 @@ class LstmLayer:
         # update context cells
         if messages is not None:
             self.context_messages = messages
+            self.lstm.message = tuple(self.context_messages)
         elif self.context_input_size != 0:
             self.context_messages = normalize(
                 np.zeros(self.context_input_size).reshape(self.n_context_vars, -1)
@@ -306,23 +313,31 @@ class LSTMWMUnit(nn.Module):
         self.message = self.lstm(obs, self.message)
         return self.message
 
-    def get_action_dependent_context(self, action_probs=None):
-        obs_context_msg = self.message[0]
+    def apply_action_to_context(self, action_probs):
+        if self.n_actions <= 1:
+            return
 
-        if action_probs is not None:
-            obs_context_msg = obs_context_msg.reshape(action_probs.shape[0], -1)
-            obs_context_msg = obs_context_msg * action_probs
-            obs_context_msg = torch.sum(obs_context_msg, dim=0)
-        return obs_context_msg
+        msg = self.message[0]
 
-    def decode_obs(self, obs_context_msg):
-        prediction_logit = self.hidden2obs(obs_context_msg)
+        msg = msg.reshape(self.n_actions, -1)
+        msg = msg * action_probs
+        msg = msg.flatten()
+
+        self.message = msg, self.message[1]
+
+    def decode_obs(self):
+        obs_msg = self.message[0]
+
+        if self.n_actions > 1:
+            obs_msg = torch.sum(obs_msg.reshape(self.n_actions, -1), dim=0)
+
+        prediction_logit = self.hidden2obs(obs_msg)
         prediction = torch.sigmoid(prediction_logit)
         return prediction
 
     def forward(self, obs):
         self.transition_to_next_state(obs)
-        return self.decode_obs(self.message[0])
+        return self.decode_obs()
 
 
 class LSTMWMLayer(nn.Module):
@@ -363,3 +378,9 @@ class LSTMWMLayer(nn.Module):
         prediction = torch.sigmoid(prediction_logit)
         return prediction
 
+
+def to_numpy(x):
+    if isinstance(x, np.ndarray):
+        return x
+    # torch
+    return x.detach().cpu().numpy()
