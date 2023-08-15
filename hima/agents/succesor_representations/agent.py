@@ -15,29 +15,33 @@ class BioHIMA:
             self,
             cortical_column: CorticalColumn,
             gamma: float = 0.99,
-            observation_prior_lr: float = 1.0,
+            observation_reward_lr: float = 0.01,
             striatum_lr: float = 1.0,
             sr_steps: int = 5,
             approximate_tail: bool = True,
             inverse_temp: float = 1.0,
+            reward_scale: float = 1.0,
             seed: int = None
     ):
-        self.observation_prior_lr = observation_prior_lr
+        self.observation_reward_lr = observation_reward_lr
         self.striatum_lr = striatum_lr
         self.cortical_column = cortical_column
         self.gamma = gamma
         self.sr_steps = sr_steps
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
+        self.reward_scale = reward_scale
 
-        self.observation_prior = normalize(
-            np.ones(
-                (
-                    self.cortical_column.layer.n_obs_vars,
-                    self.cortical_column.layer.n_obs_states
-                )
+        self.observation_rewards = np.zeros(
+            (
+                self.cortical_column.layer.n_obs_vars,
+                self.cortical_column.layer.n_obs_states
             )
+        )
+        self.observation_prior = normalize(
+            np.exp(self.observation_rewards)
         ).flatten()
+        self.observation_rewards = self.observation_rewards.flatten()
 
         self.observation_messages = self.observation_prior.copy()
 
@@ -149,9 +153,15 @@ class BioHIMA:
         Adapt prior distribution of observations according to external reward.
             reward: float in [0, 1]
         """
-        self.observation_prior += reward * self.observation_prior_lr * self.observation_messages
+        self.observation_rewards += self.observation_reward_lr * self.observation_messages * (
+            reward - self.observation_rewards
+        )
         self.observation_prior = normalize(
-            self.observation_prior.reshape((self.cortical_column.layer.n_obs_vars, -1))
+            np.exp(
+                self.reward_scale * self.observation_rewards.reshape(
+                    (self.cortical_column.layer.n_obs_vars, -1)
+                )
+            )
         ).flatten()
 
     def reset(self, initial_context_message, initial_external_message):
