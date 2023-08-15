@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
+
 import matplotlib.pyplot as plt
 
 from hima.modules.htm.connections import Connections
@@ -190,9 +192,9 @@ class Factors:
         self.segment_activity[active_segments] += self.segment_activity_lr * (
                 1 - self.segment_activity[active_segments]
         )
-        self.segment_activity[non_active_segments] -= self.segment_activity_lr * self.segment_activity[
-            non_active_segments
-        ]
+        self.segment_activity[non_active_segments] -= (
+                self.segment_activity_lr * self.segment_activity[non_active_segments]
+        )
 
         if prune:
             n_segments_to_prune = int(
@@ -240,8 +242,8 @@ class Layer:
     """
         This class represents a layer of the neocortex model.
     """
-    context_factors: Factors
-    internal_factors: Factors
+    context_factors: Factors | None
+    internal_factors: Factors | None
 
     def __init__(
             self,
@@ -428,7 +430,7 @@ class Layer:
         self.prediction_cells = None
         self.prediction_columns = None
 
-    def predict(self, include_context_connections=True, include_internal_connections=False):
+    def predict(self, include_context_connections=True, include_internal_connections=False, **_):
         # step 1: predict cells based on context and external messages
         # block internal messages
         # think about it as thalamus orchestration of the neocortex

@@ -43,7 +43,7 @@ class CorticalColumn:
             external_messages = None
 
         self.layer.set_external_messages(external_messages)
-        self.layer.predict()
+        self.layer.predict(learn=learn)
 
         self.input_sdr.sparse = local_input
         self.predicted_image = self.decoder.decode(
@@ -53,7 +53,6 @@ class CorticalColumn:
         )
 
         self.encoder.compute(self.input_sdr, learn, self.output_sdr)
-
         self.layer.observe(self.output_sdr.sparse, learn=learn)
 
         self.layer.set_context_messages(self.layer.internal_forward_messages)
