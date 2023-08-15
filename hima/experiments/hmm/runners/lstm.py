@@ -342,7 +342,7 @@ class PinballTest:
 
         self.env = Pinball(**conf['env'])
 
-        obs = self.env.obs()
+        obs, *_ = self.env.obs()
         self.obs_shape = (obs.shape[0], obs.shape[1])
 
         self.encoder_type = conf['run']['encoder']
@@ -475,12 +475,16 @@ class PinballTest:
             self.hmm.reset()
 
             self.env.step()
-            prev_im = self.preprocess(self.env.obs())
+
+            obs, *_ = self.env.obs()
+            prev_im = self.preprocess(obs)
             prev_diff = np.zeros_like(prev_im)
 
             while True:
                 self.env.step()
-                raw_im = self.preprocess(self.env.obs())
+
+                obs, *_ = self.env.obs()
+                raw_im = self.preprocess(obs)
                 thresh = raw_im.mean()
                 diff = np.abs(raw_im - prev_im) >= thresh
                 prev_im = raw_im.copy()
