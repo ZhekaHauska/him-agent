@@ -16,7 +16,7 @@ from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.modules.baselines.lstm import LstmLayer, THiddenState, to_numpy
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
-from hima.modules.belief.utils import normalize
+from hima.modules.belief.utils import softmax
 
 wandb = lazy_import('wandb')
 
@@ -52,8 +52,8 @@ class LstmBioHima(BioHIMA):
         msg = msg.reshape(n_actions, -1)
 
         # then sum them out over actions and normalize resulting vector
-        msg = np.sum(msg, axis=0, keepdims=True)
-        msg = normalize(msg).flatten()
+        msg = np.sum(msg, axis=0)
+        msg = softmax(msg).flatten()
         return msg
 
     def td_update_sr(self, generated_sr, predicted_sr, prediction_cells):

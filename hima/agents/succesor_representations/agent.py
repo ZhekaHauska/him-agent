@@ -147,7 +147,6 @@ class BioHIMA:
 
     def td_update_sr(self, generated_sr, predicted_sr, prediction_cells):
         delta_sr = generated_sr - predicted_sr
-        delta_sr = np.clip(delta_sr, -10, 10)
         delta_w = np.outer(prediction_cells, delta_sr)
 
         self.striatum_weights += self.striatum_lr * delta_w
