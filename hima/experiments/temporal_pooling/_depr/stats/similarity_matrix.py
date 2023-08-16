@@ -202,7 +202,7 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
                 )
 
         # store mean similarity
-        mean_similarity = safe_divide(similarity_sum, n_seq_elements, default=similarity_sum)
+        mean_similarity = safe_divide(similarity_sum, n_seq_elements)
         for j in range(self.n_sequences):
             if self.sequences[j] is None:
                 continue
@@ -258,7 +258,7 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
 
         # FIXME: use online_similarity_decay
         # update mean similarity for the entire `current_seq_id` row
-        mean_similarity = safe_divide(similarity_sum, n_seq_elements, default=similarity_sum)
+        mean_similarity = safe_divide(similarity_sum, n_seq_elements)
         for j in range(self.n_sequences):
             if self.pmfs[j] is None:
                 continue

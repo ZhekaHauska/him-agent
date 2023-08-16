@@ -56,10 +56,7 @@ class AttractorTracker(Tracker):
         # step metrics
         sdr: set = self.sequence[-1]
         prev_sdr = self.sequence[-2] if len(self.sequence) > 1 else set()
-        sym_diff = safe_divide(
-            len(sdr ^ prev_sdr),
-            len(sdr | prev_sdr)
-        )
+        sym_diff = safe_divide(len(sdr ^ prev_sdr), len(sdr | prev_sdr))
 
         if self.n_repeats_per_step is None:
             self.step_cum_sym_diff_rate.append(sym_diff)

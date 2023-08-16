@@ -317,10 +317,10 @@ def point_pmf_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
 def standardize_sample_distribution(x: np.ndarray, normalization: str) -> np.ndarray:
     if normalization == MEAN_STD_NORMALIZATION:
         unbiased_x = x - np.mean(x)
-        return safe_divide(unbiased_x, np.std(x), default=unbiased_x)
+        return safe_divide(unbiased_x, np.std(x))
     elif normalization == MIN_MINMAX_NORMALIZATION:
         unbiased_x = x - np.min(x)
-        return safe_divide(unbiased_x, np.max(x) - np.min(x), default=unbiased_x)
+        return safe_divide(unbiased_x, np.max(x) - np.min(x))
     elif isnone(normalization, 'no') == NO_NORMALIZATION:
         return x
     else:

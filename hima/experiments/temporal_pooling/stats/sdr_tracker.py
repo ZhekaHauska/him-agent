@@ -113,10 +113,7 @@ class SdrTracker:
         }
 
     def aggregate_pmf(self) -> np.ndarray:
-        return safe_divide(
-            self.aggregate_histogram, len(self.sequence),
-            default=self.aggregate_histogram
-        )
+        return safe_divide(self.aggregate_histogram, len(self.sequence))
 
 
 def get_sdr_tracker(on: dict) -> SdrTracker:

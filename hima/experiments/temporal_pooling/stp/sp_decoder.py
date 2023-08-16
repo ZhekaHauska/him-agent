@@ -27,10 +27,7 @@ class SpatialPoolerDecoder:
             input_probs = np.zeros(self.sp.ff_size)
             self.backpropagate_output_probs(self.sp, output_probs, input_probs)
 
-        input_probs = np.clip(
-            safe_divide(input_probs, output_probs.sum(), default=input_probs),
-            0., 1.
-        )
+        input_probs = np.clip(safe_divide(input_probs, output_probs.sum()), 0., 1.)
         return input_probs
 
     def learn(self, output_probs, correct_obs, decoded_obs=None):

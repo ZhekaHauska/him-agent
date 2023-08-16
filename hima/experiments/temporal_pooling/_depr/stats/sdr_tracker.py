@@ -49,10 +49,7 @@ class SdrTracker(Tracker):
         self.aggregate_histogram = np.zeros(self.sds.size)
 
     def aggregate_pmf(self) -> np.ndarray:
-        return safe_divide(
-            self.aggregate_histogram, len(self.sequence),
-            default=self.aggregate_histogram
-        )
+        return safe_divide(self.aggregate_histogram, len(self.sequence))
 
     def on_sequence_started(self, sequence_id: int):
         self._reset()
@@ -70,13 +67,8 @@ class SdrTracker(Tracker):
         self.sparsity = safe_divide(sdr_size, self.sds.size)
         self.relative_sparsity = safe_divide(sdr_size, self.sds.active_size)
 
-        self.diff_relative_rate = safe_divide(
-            len(sdr - prev_sdr), self.sds.active_size
-        )
-        self.sym_diff_rate = safe_divide(
-            len(sdr ^ prev_sdr),
-            len(sdr | prev_sdr)
-        )
+        self.diff_relative_rate = safe_divide(len(sdr - prev_sdr), self.sds.active_size)
+        self.sym_diff_rate = safe_divide(len(sdr ^ prev_sdr), len(sdr | prev_sdr))
 
         # aggregate/cluster/sequence metrics
         aggregate_union_size = np.count_nonzero(self.aggregate_histogram)

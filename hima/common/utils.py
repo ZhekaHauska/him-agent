@@ -112,14 +112,12 @@ def clip(x: Any, low=None, high=None) -> Any:
     return x
 
 
-def safe_divide(x, y, default=0.):
+def safe_divide(x, y):
     """
-    Allows specifying a default value that will be returned in divide-by-zero case.
-    Warning: it may not work as you might expect for floats!
+    Return x / y or just x itself if y == 0 preventing NaNs.
+    Warning: it may not work as you might expect for floats, use it only when you need exact match!
     """
-    if y == 0:
-        return default
-    return x / y
+    return x / y if y != 0 else x
 
 
 def prepend_dict_keys(d: dict[str, Any], prefix, separator='/'):
