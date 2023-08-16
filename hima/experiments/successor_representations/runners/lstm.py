@@ -21,6 +21,8 @@ wandb = lazy_import('wandb')
 
 
 class LstmBioHima(BioHIMA):
+    """Patch-like adaptation of BioHIMA to work with LSTM layer."""
+
     def __init__(self, cortical_column: CorticalColumn, **kwargs):
         super().__init__(cortical_column, **kwargs)
 
@@ -30,14 +32,16 @@ class LstmBioHima(BioHIMA):
         # cell (==observation logits) state: (full_hidden_size)
         msg = to_numpy(msg)
 
-        # at this point we don't have action selected -> average state prediction over actions
+        # NB: at this point action probs should be already applied to the msg
+        # i.e. it is executed with the lstm state after `predict` but before `observe`
 
         # => reshape to split into n_actions heads
         n_actions = self.cortical_column.layer.n_external_states
         msg = msg.reshape(n_actions, -1)
 
-        # then sum them out over actions and normalize resulting vector
+        # then sum them out to get `expectation over action policy`
         msg = np.sum(msg, axis=0)
+        # normalize result to get probs-like message
         msg = softmax(msg).flatten()
         return msg
 
