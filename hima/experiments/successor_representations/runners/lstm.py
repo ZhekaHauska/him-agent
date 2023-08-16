@@ -3,19 +3,18 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-import io
 import os
 import sys
 
 import numpy as np
-from PIL import Image
 
 from hima.agents.succesor_representations.agent import BioHIMA
 from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
+from hima.common.sdr import sparse_to_dense
 from hima.modules.baselines.lstm import LstmLayer, THiddenState, to_numpy
-from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
+from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import softmax
 
 wandb = lazy_import('wandb')
@@ -190,9 +189,13 @@ class AnimalAITest:
                 self.logger,
                 log_fps=conf['run']['log_gif_fps']
             )
+        else:
+            from metrics import ScalarMetrics
+            self.scalar_metrics = ScalarMetrics({'agent/td_error': np.mean}, self.logger)
 
     def run(self):
         episode_print_schedule = 25
+        decoder = self.agent.cortical_column.decoder
 
         for i in range(self.n_episodes):
             if i % episode_print_schedule == 0:
@@ -221,11 +224,12 @@ class AnimalAITest:
                     obs = self.environment.get_obs_dict(dec.obs)["camera"]
                     reward += dec.reward
 
-                if len(term):
+                if len(term) > 0:
                     obs = self.environment.get_obs_dict(term.obs)["camera"]
                     reward += term.reward
                     running = False
 
+                # noinspection PyUnboundLocalVariable
                 events = self.preprocess(obs)
 
                 pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
@@ -249,38 +253,19 @@ class AnimalAITest:
                     )
 
                     if (i % self.update_rate) == 0:
-                        raw_beh = (self.prev_image * 255).astype('uint8')
+                        raw_beh = self.to_img(self.prev_image)
+                        proc_beh = self.to_img(sparse_to_dense(events, self.raw_obs_shape))
+                        pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
+                        pred_sr = self.to_img(decoder.decode(pred_sr))
+                        gen_sr = self.to_img(decoder.decode(gen_sr))
 
-                        proc_beh = np.zeros(self.raw_obs_shape).flatten()
-                        proc_beh[events] = 1
-                        proc_beh = (proc_beh.reshape(self.raw_obs_shape) * 255).astype('uint8')
-
-                        pred_beh = (self.agent.cortical_column.predicted_image.reshape(
-                            self.raw_obs_shape
-                        ) * 255).astype('uint8')
-
-                        if pred_sr is not None:
-                            pred_sr = (
-                                    self.agent.cortical_column.decoder.decode(pred_sr)
-                                    .reshape(self.raw_obs_shape) * 255
-                            ).astype('uint8')
-                        else:
-                            pred_sr = np.zeros(self.raw_obs_shape).astype('uint8')
-
-                        if gen_sr is not None:
-                            gen_sr = (
-                                    self.agent.cortical_column.decoder.decode(gen_sr)
-                                    .reshape(self.raw_obs_shape) * 255
-                            ).astype('uint8')
-                        else:
-                            gen_sr = np.zeros(self.raw_obs_shape).astype('uint8')
-
-                        self.image_metrics.update(
-                            {
-                                'agent/behavior': np.hstack(
-                                    [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr])
-                            }
-                        )
+                        self.image_metrics.update({
+                            'agent/behavior': np.hstack([
+                                raw_beh, proc_beh, pred_beh, pred_sr, gen_sr
+                            ])
+                        })
+                else:
+                    self.scalar_metrics.update({'agent/td_error': self.agent.td_error})
                 # <<< logging
 
                 steps += 1
@@ -305,9 +290,18 @@ class AnimalAITest:
                     )
                     self.heatmap_metrics.log(i)
                     self.image_metrics.log(i)
+            else:
+                print(np.mean(self.scalar_metrics.metrics['agent/td_error']))
+                self.scalar_metrics.metrics['agent/td_error'] = []
             # <<< logging
         else:
             self.environment.close()
+
+    def to_img(self, x: np.ndarray, shape=None):
+        if shape is None:
+            shape = self.raw_obs_shape
+        x = x * 255
+        return x.reshape(shape).astype('uint8')
 
     def preprocess(self, image):
         gray = np.dot(image, [299 / 1000, 587 / 1000, 114 / 1000])
@@ -398,7 +392,6 @@ class PinballTest:
 
         if self.logger is not None:
             from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
-            # define metrics
             self.scalar_metrics = ScalarMetrics(
                 {
                     'main_metrics/reward': np.sum,
@@ -424,9 +417,13 @@ class PinballTest:
                 self.logger,
                 log_fps=conf['run']['log_gif_fps']
             )
+        else:
+            from metrics import ScalarMetrics
+            self.scalar_metrics = ScalarMetrics({'agent/td_error': np.mean}, self.logger)
 
     def run(self):
         episode_print_schedule = 50
+        decoder = self.agent.cortical_column.decoder
 
         for i in range(self.n_episodes):
             if i % episode_print_schedule == 0:
@@ -451,7 +448,6 @@ class PinballTest:
                 self.agent.reinforce(reward)
 
                 if running:
-                    # action = self._rng.integers(self.n_actions)
                     action = self.agent.sample_action()
                     # convert to AAI action
                     pinball_action = self.actions[action]
@@ -459,47 +455,26 @@ class PinballTest:
 
                 # >>> logging
                 if self.logger is not None:
-                    self.scalar_metrics.update(
-                        {
-                            'main_metrics/reward': reward,
-                            'layer/surprise_hidden': self.agent.surprise,
-                            'agent/td_error': self.agent.td_error
-                        }
-                    )
+                    self.scalar_metrics.update({
+                        'main_metrics/reward': reward,
+                        'layer/surprise_hidden': self.agent.surprise,
+                        'agent/td_error': self.agent.td_error
+                    })
 
                     if (i % self.update_rate) == 0:
-                        raw_beh = (self.prev_image * 255).astype('uint8')
+                        raw_beh = self.to_img(self.prev_image)
+                        proc_beh = self.to_img(sparse_to_dense(events, self.raw_obs_shape))
+                        pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
+                        pred_sr = self.to_img(decoder.decode(pred_sr))
+                        gen_sr = self.to_img(decoder.decode(gen_sr))
 
-                        proc_beh = np.zeros(self.raw_obs_shape).flatten()
-                        proc_beh[events] = 1
-                        proc_beh = (proc_beh.reshape(self.raw_obs_shape) * 255).astype('uint8')
-
-                        pred_beh = (self.agent.cortical_column.predicted_image.reshape(
-                            self.raw_obs_shape
-                        ) * 255).astype('uint8')
-
-                        if pred_sr is not None:
-                            pred_sr = (
-                                    self.agent.cortical_column.decoder.decode(pred_sr)
-                                    .reshape(self.raw_obs_shape) * 255
-                            ).astype('uint8')
-                        else:
-                            pred_sr = np.zeros(self.raw_obs_shape).astype('uint8')
-
-                        if gen_sr is not None:
-                            gen_sr = (
-                                    self.agent.cortical_column.decoder.decode(gen_sr)
-                                    .reshape(self.raw_obs_shape) * 255
-                            ).astype('uint8')
-                        else:
-                            gen_sr = np.zeros(self.raw_obs_shape).astype('uint8')
-
-                        self.image_metrics.update(
-                            {
-                                'agent/behavior': np.hstack(
-                                    [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr])
-                            }
-                        )
+                        self.image_metrics.update({
+                            'agent/behavior': np.hstack([
+                                raw_beh, proc_beh, pred_beh, pred_sr, gen_sr
+                            ])
+                        })
+                else:
+                    self.scalar_metrics.update({'agent/td_error': self.agent.td_error})
                 # <<< logging
 
                 steps += 1
@@ -513,9 +488,7 @@ class PinballTest:
                 self.scalar_metrics.log(i)
 
                 if (i % self.update_rate) == 0:
-                    prior_probs = self.agent.cortical_column.decoder.decode(
-                        self.agent.observation_prior
-                    ).reshape(self.raw_obs_shape)
+                    prior_probs = self.to_img(decoder.decode(self.agent.observation_prior))
                     self.heatmap_metrics.update(
                         {
                             'agent/prior': prior_probs,
@@ -524,9 +497,18 @@ class PinballTest:
                     )
                     self.heatmap_metrics.log(i)
                     self.image_metrics.log(i)
+            else:
+                print(np.mean(self.scalar_metrics.metrics['agent/td_error']))
+                self.scalar_metrics.metrics['agent/td_error'] = []
             # <<< logging
         else:
             self.environment.close()
+
+    def to_img(self, x: np.ndarray, shape=None):
+        if shape is None:
+            shape = self.raw_obs_shape
+        x = x * 255
+        return x.reshape(shape).astype('uint8')
 
     def preprocess(self, image):
         gray = np.dot(image[:, :, :3], [299 / 1000, 587 / 1000, 114 / 1000])
