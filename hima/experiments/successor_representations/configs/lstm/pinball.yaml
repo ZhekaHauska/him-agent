@@ -1,3 +1,7 @@
 n_hidden_vars: 1
-n_hidden_states: 400
-lr: 0.003
+n_hidden_states: 500
+decoder_bias: true
+
+# higher: faster td_error converge | lower: better surprise
+# > 0.04 is unstable | 0.01 - 0.02 is good | prev default: 0.003
+lr: 0.01
