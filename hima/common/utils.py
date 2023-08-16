@@ -3,13 +3,13 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
 
 from functools import wraps
 from timeit import default_timer as timer
-from typing import Any, Union, Optional
+from typing import Any
 
 import numpy as np
-
 
 DecayingValue = tuple[float, float]
 Coord2d = tuple[int, int]
@@ -20,14 +20,14 @@ def isnone(x, default):
     return x if x is not None else default
 
 
-def ensure_list(arr: Optional[Union[Any, list[Any]]]) -> Optional[list[Any]]:
+def ensure_list(arr: Any | list[Any] | None) -> list[Any] | None:
     """Wraps single value to list or return list as it is."""
     if arr is not None and not isinstance(arr, list):
         arr = [arr]
     return arr
 
 
-def safe_ith(arr: Optional[list], ind: int, default: Any = None) -> Optional[Any]:
+def safe_ith(arr: list | None, ind: int, default: Any = None) -> Any | None:
     """Performs safe index access. If array is None, returns default."""
     if arr is not None:
         return arr[ind]
