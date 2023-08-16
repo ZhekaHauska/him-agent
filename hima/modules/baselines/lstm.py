@@ -48,6 +48,7 @@ class LstmLayer:
             n_external_states: int = 0,
             lr=2e-3,
             seed=None,
+            decoder_bias: bool = True,
     ):
         torch.set_num_threads(1)
 
@@ -81,7 +82,8 @@ class LstmLayer:
         self.lstm = LSTMWMUnit(
             input_size=self.input_size,
             hidden_size=self.hidden_size,
-            external_input_size= self.external_input_size
+            external_input_size= self.external_input_size,
+            decoder_bias=decoder_bias
         ).to(self.device)
 
         self.loss_function = nn.BCELoss()
@@ -280,7 +282,8 @@ class LSTMWMUnit(nn.Module):
             self,
             input_size,
             hidden_size,
-            external_input_size=0
+            external_input_size: int = 0,
+            decoder_bias: bool = True
     ):
         super(LSTMWMUnit, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -298,7 +301,8 @@ class LSTMWMUnit(nn.Module):
         # The linear layer that maps from hidden state space back to obs space
         self.hidden2obs = nn.Linear(
             self.n_hidden_states,
-            self.n_obs_states
+            self.n_obs_states,
+            bias=decoder_bias
         )
 
         self.message = self.get_init_message()
