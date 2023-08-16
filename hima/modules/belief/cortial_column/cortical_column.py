@@ -47,9 +47,7 @@ class CorticalColumn:
 
         self.input_sdr.sparse = local_input
         self.predicted_image = self.decoder.decode(
-            self.layer.prediction_columns,
-            learn=learn,
-            correct_obs=self.input_sdr.dense
+            self.layer.prediction_columns, learn=learn, correct_obs=self.input_sdr.dense
         )
 
         self.encoder.compute(self.input_sdr, learn, self.output_sdr)
@@ -62,10 +60,7 @@ class CorticalColumn:
         self.layer.set_external_messages(external_messages)
         self.layer.predict()
 
-        self.predicted_image = self.decoder.decode(
-            self.layer.prediction_columns,
-            learn=False
-        )
+        self.predicted_image = self.decoder.decode(self.layer.prediction_columns, learn=False)
 
     def reset(self, context_messages, external_messages):
         self.layer.reset()
@@ -74,8 +69,9 @@ class CorticalColumn:
 
     def make_state_snapshot(self):
         self.layer.make_state_snapshot()
-        self.last_state_snapshot = self.predicted_image.copy()
+        # NB: no need to copy, as we do not mutate images, only overwrite the entirely
+        self.last_state_snapshot = self.predicted_image
 
     def restore_last_snapshot(self):
         self.layer.restore_last_snapshot()
-        self.predicted_image = self.last_state_snapshot.copy()
+        self.predicted_image = self.last_state_snapshot
