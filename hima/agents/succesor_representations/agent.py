@@ -3,11 +3,13 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
+
 import numpy as np
 
 from hima.experiments.hmm.runners.utils import get_surprise
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
-from hima.modules.belief.utils import normalize, softmax, sample_categorical_variables
+from hima.modules.belief.utils import normalize, softmax
 
 
 class BioHIMA:
@@ -22,6 +24,7 @@ class BioHIMA:
             approximate_tail: bool = True,
             inverse_temp: float = 1.0,
             reward_scale: float = 1.0,
+            exploration_eps: float = -1,
             seed: int = None
     ):
         self.observation_reward_lr = observation_reward_lr
@@ -32,32 +35,19 @@ class BioHIMA:
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
         self.reward_scale = reward_scale
+        self.exploration_eps = exploration_eps
 
-        self.observation_rewards = np.zeros(
-            (
-                self.cortical_column.layer.n_obs_vars,
-                self.cortical_column.layer.n_obs_states
-            )
-        )
-        self.observation_prior = normalize(
-            np.exp(self.observation_rewards)
-        ).flatten()
-        self.observation_rewards = self.observation_rewards.flatten()
+        layer = self.cortical_column.layer
+        observation_rewards = np.zeros((layer.n_obs_vars, layer.n_obs_states))
 
+        self.observation_rewards = observation_rewards.flatten()
+        self.observation_prior = normalize(np.exp(observation_rewards)).flatten()
         self.observation_messages = self.observation_prior.copy()
 
-        self.striatum_weights = np.zeros(
-            (
-                (
-                    self.cortical_column.layer.n_hidden_states *
-                    self.cortical_column.layer.n_hidden_vars
-                 ),
-                (
-                    self.cortical_column.layer.n_obs_states *
-                    self.cortical_column.layer.n_obs_vars
-                )
-            )
-        )
+        self.striatum_weights = np.zeros((
+            (layer.n_hidden_states * layer.n_hidden_vars),
+            (layer.n_obs_states * layer.n_obs_vars)
+        ))
 
         self.surprise = 0
         self.td_error = 0
@@ -99,9 +89,7 @@ class BioHIMA:
                 sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
             ) / self.cortical_column.layer.n_obs_vars
 
-        action_dist = softmax(action_values, beta=self.inverse_temp)
-        action = self._rng.choice(n_actions, p=action_dist)
-        return action
+        return self._select_action(action_values)
 
     def observe(self, observation, learn=True):
         """
@@ -218,3 +206,19 @@ class BioHIMA:
         sr = np.dot(hidden_vars_dist, self.striatum_weights)
         sr /= self.cortical_column.layer.n_hidden_vars
         return sr
+
+    def _select_action(self, action_values):
+        n_actions = self.cortical_column.layer.external_input_size
+
+        if self.exploration_eps < 0:
+            # softmax policy
+            action_dist = softmax(action_values, beta=self.inverse_temp)
+            action = self._rng.choice(n_actions, p=action_dist)
+        else:
+            # eps-greedy policy
+            if self._rng.random() < self.exploration_eps:
+                # random
+                action = self._rng.choice(n_actions)
+            else:
+                action = np.argmax(action_values)
+        return action
