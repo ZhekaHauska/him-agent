@@ -56,40 +56,10 @@ class BioHIMA:
         self._rng = np.random.default_rng(seed)
 
     def sample_action(self):
-        """
-        Evaluate and sample actions
-        """
-        self.cortical_column.make_state_snapshot()
-
-        n_actions = self.cortical_column.layer.external_input_size
-        action_values = np.zeros(n_actions)
-        dense_action = np.zeros_like(action_values)
-
-        for action in range(n_actions):
-            # hacky way to clean previous one-hot, for 0th does nothing
-            dense_action[action-1] = 0
-            # set current one-hot
-            dense_action[action] = 1
-
-            self.cortical_column.predict(
-                self.cortical_column.layer.context_messages,
-                dense_action
-            )
-            # TODO switch to predict_sr when TD is low
-            sr = self._generate_sr(
-                self.sr_steps,
-                self.cortical_column.layer.prediction_cells,
-                self.cortical_column.layer.prediction_columns,
-                save_state=False
-            )
-
-            self.cortical_column.restore_last_snapshot()
-
-            action_values[action] = np.sum(
-                sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
-            ) / self.cortical_column.layer.n_obs_vars
-
-        return self._select_action(action_values)
+        """Evaluate and sample actions."""
+        action_values = self.evaluate_actions()
+        action = self._select_action(action_values)
+        return action
 
     def observe(self, observation, learn=True):
         """
@@ -206,6 +176,40 @@ class BioHIMA:
         sr = np.dot(hidden_vars_dist, self.striatum_weights)
         sr /= self.cortical_column.layer.n_hidden_vars
         return sr
+
+    def evaluate_actions(self):
+        """Evaluate Q[s,a] for each action."""
+        self.cortical_column.make_state_snapshot()
+
+        n_actions = self.cortical_column.layer.external_input_size
+        action_values = np.zeros(n_actions)
+        dense_action = np.zeros_like(action_values)
+
+        for action in range(n_actions):
+            # hacky way to clean previous one-hot, for 0th does nothing
+            dense_action[action-1] = 0
+            # set current one-hot
+            dense_action[action] = 1
+
+            self.cortical_column.predict(
+                self.cortical_column.layer.context_messages,
+                dense_action
+            )
+            # TODO switch to predict_sr when TD is low
+            sr = self._generate_sr(
+                self.sr_steps,
+                self.cortical_column.layer.prediction_cells,
+                self.cortical_column.layer.prediction_columns,
+                save_state=False
+            )
+
+            self.cortical_column.restore_last_snapshot()
+
+            action_values[action] = np.sum(
+                sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
+            ) / self.cortical_column.layer.n_obs_vars
+
+        return action_values
 
     def _select_action(self, action_values):
         n_actions = self.cortical_column.layer.external_input_size
