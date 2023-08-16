@@ -100,9 +100,8 @@ class BioHIMA:
             ) / self.cortical_column.layer.n_obs_vars
 
         action_dist = softmax(action_values, beta=self.inverse_temp)
-        action = sample_categorical_variables(action_dist.reshape((1, -1)), self._rng)
-
-        return action[0]
+        action = self._rng.choice(n_actions, p=action_dist)
+        return action
 
     def observe(self, observation, learn=True):
         """
