@@ -21,22 +21,8 @@ wandb = lazy_import('wandb')
 
 
 class LstmBioHima(BioHIMA):
-    def __init__(
-            self, cortical_column: CorticalColumn, gamma: float = 0.99,
-            observation_reward_lr: float = 0.01, striatum_lr: float = 1.0, sr_steps: int = 5,
-            approximate_tail: bool = True, inverse_temp: float = 1.0, reward_scale: float = 1.0,
-            seed: int = None
-    ):
-        super().__init__(
-            cortical_column,
-            gamma=gamma,
-            observation_reward_lr=observation_reward_lr,
-            striatum_lr=striatum_lr,
-            sr_steps=sr_steps,
-            approximate_tail=approximate_tail,
-            inverse_temp=inverse_temp,
-            reward_scale=reward_scale, seed=seed
-        )
+    def __init__(self, cortical_column: CorticalColumn, **kwargs):
+        super().__init__(cortical_column, **kwargs)
 
     def _extract_collapse_message(self, context_messages: THiddenState):
         # (cell state, hidden state): cell state is used for observation prediction
