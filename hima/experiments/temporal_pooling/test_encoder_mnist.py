@@ -145,7 +145,7 @@ class SpEncoderExperiment:
         dense_obs = self.data.dense_sdrs[obs_ind]
 
         state = self.encoder.compute(obs, learn=learn)
-        dense_state = sparse_to_dense(state, self.output_sds.size, dtype=float)
+        dense_state = sparse_to_dense(state, size=self.output_sds.size)
 
         state_probs = self.noisy(dense_state)
 
@@ -163,7 +163,7 @@ class SpEncoderExperiment:
         dense_obs = self.data.dense_sdrs[obs_ind].astype(float).reshape(self.data.image_shape)
 
         state = self.encoder.compute(obs, learn=False)
-        dense_state = sparse_to_dense(state, self.output_sds.size, dtype=float)
+        dense_state = sparse_to_dense(state, size=self.output_sds.size)
 
         state_probs = self.noisy(dense_state)
 

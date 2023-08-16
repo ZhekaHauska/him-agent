@@ -125,3 +125,15 @@ def prepend_dict_keys(d: dict[str, Any], prefix, separator='/'):
         f'{prefix}{separator}{k}': d[k]
         for k in d
     }
+
+
+def to_gray_img(img: np.ndarray, like: tuple[int, int] | np.ndarray = None):
+    img = img * 255
+    if like is not None:
+        if isinstance(like, np.ndarray):
+            shape = like.shape
+        else:
+            shape = like
+        img = img.reshape(shape)
+
+    return img.astype(np.uint8)

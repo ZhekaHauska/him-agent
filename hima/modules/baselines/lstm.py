@@ -118,7 +118,7 @@ class LstmLayer:
         self._reinit_messages_and_states()
 
     def observe(self, observation, learn: bool = True):
-        dense_obs = sparse_to_dense(observation, self.input_size, dtype=float)
+        dense_obs = sparse_to_dense(observation, size=self.input_size)
         dense_obs = torch.from_numpy(dense_obs).float().to(self.device)
 
         if learn:

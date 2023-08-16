@@ -13,6 +13,7 @@ from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
+from hima.common.utils import to_gray_img, isnone
 from hima.modules.baselines.lstm import LstmLayer, THiddenState, to_numpy
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import softmax
@@ -244,7 +245,7 @@ class AnimalAITest:
 
                     if (i % self.update_rate) == 0:
                         raw_beh = self.to_img(self.prev_image)
-                        proc_beh = self.to_img(sparse_to_dense(events, self.raw_obs_shape))
+                        proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
                         pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
                         pred_sr = self.to_img(decoder.decode(pred_sr))
                         gen_sr = self.to_img(decoder.decode(gen_sr))
@@ -288,10 +289,7 @@ class AnimalAITest:
             self.environment.close()
 
     def to_img(self, x: np.ndarray, shape=None):
-        if shape is None:
-            shape = self.raw_obs_shape
-        x = x * 255
-        return x.reshape(shape).astype('uint8')
+        return to_gray_img(x, like=isnone(shape, self.raw_obs_shape))
 
     def preprocess(self, image):
         gray = np.dot(image, [299 / 1000, 587 / 1000, 114 / 1000])
@@ -438,6 +436,7 @@ class PinballTest:
                 self.agent.reinforce(reward)
 
                 if running:
+                    # action = self._rng.choice(self.n_actions)
                     action = self.agent.sample_action()
                     # convert to AAI action
                     pinball_action = self.actions[action]
@@ -453,7 +452,7 @@ class PinballTest:
 
                     if (i % self.update_rate) == 0:
                         raw_beh = self.to_img(self.prev_image)
-                        proc_beh = self.to_img(sparse_to_dense(events, self.raw_obs_shape))
+                        proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
                         pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
                         pred_sr = self.to_img(decoder.decode(pred_sr))
                         gen_sr = self.to_img(decoder.decode(gen_sr))
@@ -488,17 +487,15 @@ class PinballTest:
                     self.heatmap_metrics.log(i)
                     self.image_metrics.log(i)
             else:
-                print(np.mean(self.scalar_metrics.metrics['agent/td_error']))
-                self.scalar_metrics.metrics['agent/td_error'] = []
+                td_errors = self.scalar_metrics.metrics['agent/td_error']
+                print(f'{len(td_errors)}: {np.mean(td_errors)}')
+                td_errors.clear()
             # <<< logging
         else:
             self.environment.close()
 
     def to_img(self, x: np.ndarray, shape=None):
-        if shape is None:
-            shape = self.raw_obs_shape
-        x = x * 255
-        return x.reshape(shape).astype('uint8')
+        return to_gray_img(x, like=isnone(shape, self.raw_obs_shape))
 
     def preprocess(self, image):
         gray = np.dot(image[:, :, :3], [299 / 1000, 587 / 1000, 114 / 1000])

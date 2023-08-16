@@ -17,7 +17,7 @@ from hima.common.config.base import override_config, read_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
-from hima.common.utils import prepend_dict_keys
+from hima.common.utils import prepend_dict_keys, to_gray_img
 from hima.experiments.hmm.runners.utils import get_surprise_2
 from hima.modules.belief.cortial_column.layer import Layer
 
@@ -52,10 +52,6 @@ class EpisodeStats:
         self.hidden_probs_stack = []
         self.n_step_surprise_obs = [[] for _ in range(n_prediction_steps)]
         self.n_step_surprise_hid = [[] for _ in range(n_prediction_steps)]
-
-
-def to_img(a):
-    return (a * 255).astype(np.uint8)
 
 
 class PinballTest:
@@ -317,8 +313,7 @@ class PinballTest:
 
             prev_obs = obs.copy()
             prev_raw_img = raw_img.copy()
-
-            prev_state = sparse_to_dense(state_sdr, self.state_shape).reshape(self.state_shape)
+            prev_state = sparse_to_dense(state_sdr, like=prev_state)
 
         # AFTER EPISODE IS DONE
         if writer_raw is not None:
@@ -392,9 +387,9 @@ class PinballTest:
             obs_predictions.append(obs_prediction)
             state_predictions.append(state_prediction)
 
-            obs_img_predictions.append(to_img(obs_prediction))
+            obs_img_predictions.append(to_gray_img(obs_prediction))
             if state_img_predictions is not None:
-                state_img_predictions.append(to_img(state_prediction))
+                state_img_predictions.append(to_gray_img(state_prediction))
 
             self.hmm.set_context_messages(self.hmm.internal_forward_messages)
 
@@ -405,9 +400,9 @@ class PinballTest:
             episode_stats, obs_predictions, state_predictions, obs_sdr, state_sdr
         )
 
-        writer_raw.append_data(np.hstack([to_img(prev_obs)] + obs_img_predictions))
+        writer_raw.append_data(np.hstack([to_gray_img(prev_obs)] + obs_img_predictions))
         if state_img_predictions is not None:
-            writer_hidden.append_data(np.hstack([to_img(prev_state)] + state_img_predictions))
+            writer_hidden.append_data(np.hstack([to_gray_img(prev_state)] + state_img_predictions))
 
     def make_smth_with_predictions(
             self, episode_stats, obs_predictions, hidden_probs, obs_sdr, state_sdr
