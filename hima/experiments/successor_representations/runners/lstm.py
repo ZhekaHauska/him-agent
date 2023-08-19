@@ -46,9 +46,9 @@ class LstmBioHima(BioHIMA):
         msg = softmax(msg).flatten()
         return msg
 
-    def td_update_sr(self, generated_sr, predicted_sr, prediction_cells):
+    def td_update_sr(self, target_sr, predicted_sr, prediction_cells):
         msg = self._extract_collapse_message(prediction_cells)
-        return super().td_update_sr(generated_sr, predicted_sr, msg)
+        return super().td_update_sr(target_sr, predicted_sr, msg)
 
     def predict_sr(self, context_messages: THiddenState):
         msg = self._extract_collapse_message(context_messages)

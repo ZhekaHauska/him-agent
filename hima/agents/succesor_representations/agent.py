@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from hima.common.sdr import sparse_to_dense
 from hima.experiments.hmm.runners.utils import get_surprise
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import normalize, softmax
@@ -39,9 +40,8 @@ class BioHIMA:
 
         layer = self.cortical_column.layer
         observation_rewards = np.zeros((layer.n_obs_vars, layer.n_obs_states))
-
         self.observation_rewards = observation_rewards.flatten()
-        self.observation_prior = normalize(np.exp(observation_rewards)).flatten()
+        self.observation_prior = self.get_observations_prior(self.observation_rewards)
         self.observation_messages = self.observation_prior.copy()
 
         self.striatum_weights = np.zeros((
@@ -71,25 +71,20 @@ class BioHIMA:
         events, action = observation
         # predict current events using observed action
         self.cortical_column.observe(events, action, learn=learn)
+        encoded_obs = self.cortical_column.output_sdr.sparse
 
-        if len(self.cortical_column.output_sdr.sparse) > 0:
+        self.surprise = 0
+        if len(encoded_obs) > 0:
             self.surprise = get_surprise(
-                self.cortical_column.layer.prediction_columns,
-                self.cortical_column.output_sdr.sparse,
-                mode='categorical'
+                self.cortical_column.layer.prediction_columns, encoded_obs, mode='categorical'
             )
-        else:
-            self.surprise = 0
 
-        self.observation_messages = np.zeros_like(self.observation_messages)
-        self.observation_messages[self.cortical_column.output_sdr.sparse] = 1
-
+        self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
         if not learn:
             return
-
         # striatum TD learning
-        # FIXME: copy can be removed
-        prediction_cells = self.cortical_column.layer.prediction_cells.copy()
+
+        prediction_cells = self.cortical_column.layer.prediction_cells
 
         predicted_sr = self.predict_sr(prediction_cells)
         generated_sr, last_step_prediction = self._generate_sr(
@@ -102,31 +97,27 @@ class BioHIMA:
         self.td_update_sr(generated_sr, predicted_sr, prediction_cells)
         return predicted_sr, generated_sr
 
-    def td_update_sr(self, generated_sr, predicted_sr, prediction_cells):
-        delta_sr = generated_sr - predicted_sr
-        delta_w = np.outer(prediction_cells, delta_sr)
+    def td_update_sr(self, target_sr, predicted_sr, prediction_cells):
+        error_sr = target_sr - predicted_sr
+        # dSR / dW for linear model
+        delta_w = np.outer(prediction_cells, error_sr)
 
         self.striatum_weights += self.striatum_lr * delta_w
+        # FIXME: why does it need to clip negatives?
         self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
-        self.td_error = np.sum(np.power(delta_sr, 2))
+        self.td_error = np.sum(np.power(error_sr, 2))
 
     def reinforce(self, reward):
         """
         Adapt prior distribution of observations according to external reward.
             reward: float in [0, 1]
         """
-        self.observation_rewards += self.observation_reward_lr * self.observation_messages * (
-            reward - self.observation_rewards
-        )
-        self.observation_prior = normalize(
-            np.exp(
-                self.reward_scale * self.observation_rewards.reshape(
-                    self.cortical_column.layer.n_obs_vars, -1
-                )
-            )
-            
-        ).flatten()
+        # learn with mse loss
+        lr, messages = self.observation_reward_lr, self.observation_messages
+
+        self.observation_rewards += lr * messages * (reward - self.observation_rewards)
+        self.observation_prior = self.get_observations_prior(self.observation_rewards)
 
     def reset(self, initial_context_message, initial_external_message):
         self.cortical_column.reset(initial_context_message, initial_external_message)
@@ -198,8 +189,8 @@ class BioHIMA:
             # TODO switch to predict_sr when TD is low
             sr = self._generate_sr(
                 self.sr_steps,
-                self.cortical_column.layer.prediction_cells,
-                self.cortical_column.layer.prediction_columns,
+                initial_messages=self.cortical_column.layer.prediction_cells,
+                initial_prediction=self.cortical_column.layer.prediction_columns,
                 save_state=False
             )
 
@@ -210,6 +201,11 @@ class BioHIMA:
             ) / self.cortical_column.layer.n_obs_vars
 
         return action_values
+
+    def get_observations_prior(self, rewards):
+        scale = self.reward_scale
+        rewards = rewards.reshape(self.cortical_column.layer.n_obs_vars, -1)
+        return normalize(np.exp(scale * rewards)).flatten()
 
     def _select_action(self, action_values):
         n_actions = self.cortical_column.layer.external_input_size
