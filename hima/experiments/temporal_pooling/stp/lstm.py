@@ -90,8 +90,11 @@ class LstmLayer:
         return self.predicted_observation_npy, correctly_predicted
 
     def make_stats(self, obs_sdr: SparseSdr, dense_obs: DenseSdr):
-        tp = np.dot(dense_obs, self.predicted_observation_npy)
-        tp_fp = self.predicted_observation_npy.sum()
+        tp = 0.
+        tp_fp = 0.
+        if self.predicted_observation_npy is not None:
+            tp = np.dot(dense_obs, self.predicted_observation_npy)
+            tp_fp = self.predicted_observation_npy.sum()
         tp_fn = len(obs_sdr)
 
         # precision: tp / tp+fp
