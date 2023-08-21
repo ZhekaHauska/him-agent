@@ -235,6 +235,17 @@ models:
       - TM.set_predicted_cells()
       - TM.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
+  LSTM+SE_DVS+SE:
+    - input.sdr -> SE_DVS.feedforward.sdr
+    - SE_DVS.compute()
+    - SE_DVS.output.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - SE.output.sdr -> TM.feedforward.sdr
+    - compute TM:
+        - TM.predict()
+        - TM.set_predicted_cells()
+        - TM.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
   LSTM:
     - input.sdr -> TM.feedforward.sdr
     - compute LSTM:

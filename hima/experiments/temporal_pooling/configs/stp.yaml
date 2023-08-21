@@ -128,6 +128,7 @@ models:
   +SE+AA: $_base.models.+SE+AA
   +AA: $_base.models.+AA
   +SE: $_base.models.+SE
+  LSTM+SE_DVS+SE: $_base.models.LSTM+SE_DVS+SE
   LSTM: $_base.models.LSTM
   Baseline TM: $_base.models.Baseline TM
 
@@ -135,11 +136,10 @@ SE:
   sp:
     _base_: $_base.spatial_pooler.default
     initial_rf_to_input_ratio: 8.0
-    max_rf_to_input_ratio: 1.5
-    learning_rate: 0.001
-    global_inhibition_strength: 0.2
+    target_rf_to_input_ratio: 1.5
+    learning_rate: 0.02
     newborn_pruning_cycle: 2.0
-    newborn_pruning_stages: 10
+    newborn_pruning_stages: 20
     prune_grow_cycle: 10.0
     adapt_to_ff_sparsity: False
   stp:
