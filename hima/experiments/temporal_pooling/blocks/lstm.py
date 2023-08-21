@@ -21,7 +21,7 @@ WINNER_CELLS = 'winner_cells.sdr'
 
 
 class LstmBlock(Block):
-    family = 'lstm'
+    family = 'temporal_memory'
     supported_streams = {
         FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
     }
