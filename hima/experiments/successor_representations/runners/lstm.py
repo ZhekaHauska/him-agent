@@ -270,9 +270,9 @@ class AnimalAITest:
                 self.scalar_metrics.log(i)
 
                 if (i % self.update_rate) == 0:
-                    prior_probs = self.agent.cortical_column.decoder.decode(
-                        self.agent.observation_prior
-                    ).reshape(self.raw_obs_shape)
+                    prior_probs = decoder.decode(self.agent.observation_prior).reshape(
+                        self.raw_obs_shape
+                    )
                     self.heatmap_metrics.update(
                         {
                             'agent/prior': prior_probs,
@@ -477,7 +477,9 @@ class PinballTest:
                 self.scalar_metrics.log(i)
 
                 if (i % self.update_rate) == 0:
-                    prior_probs = self.to_img(decoder.decode(self.agent.observation_prior))
+                    prior_probs = decoder.decode(self.agent.observation_prior).reshape(
+                        self.raw_obs_shape
+                    )
                     self.heatmap_metrics.update(
                         {
                             'agent/prior': prior_probs,

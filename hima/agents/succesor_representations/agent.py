@@ -55,6 +55,9 @@ class BioHIMA:
         self.seed = seed
         self._rng = np.random.default_rng(seed)
 
+    def reset(self, initial_context_message, initial_external_message):
+        self.cortical_column.reset(initial_context_message, initial_external_message)
+
     def sample_action(self):
         """Evaluate and sample actions."""
         action_values = self.evaluate_actions()
@@ -87,26 +90,14 @@ class BioHIMA:
         prediction_cells = self.cortical_column.layer.prediction_cells
 
         predicted_sr = self.predict_sr(prediction_cells)
-        generated_sr, last_step_prediction = self._generate_sr(
+        generated_sr = self._generate_sr(
             self.sr_steps,
-            prediction_cells,
-            self.observation_messages,
+            initial_messages=prediction_cells,
+            initial_prediction=self.observation_messages,
             approximate_tail=self.approximate_tail,
-            return_last_prediction_step=True
         )
         self.td_update_sr(generated_sr, predicted_sr, prediction_cells)
         return predicted_sr, generated_sr
-
-    def td_update_sr(self, target_sr, predicted_sr, prediction_cells):
-        error_sr = target_sr - predicted_sr
-        # dSR / dW for linear model
-        delta_w = np.outer(prediction_cells, error_sr)
-
-        self.striatum_weights += self.striatum_lr * delta_w
-        # FIXME: why does it need to clip negatives?
-        self.striatum_weights = np.clip(self.striatum_weights, 0, None)
-
-        self.td_error = np.sum(np.power(error_sr, 2))
 
     def reinforce(self, reward):
         """
@@ -119,8 +110,39 @@ class BioHIMA:
         self.observation_rewards += lr * messages * (reward - self.observation_rewards)
         self.observation_prior = self.get_observations_prior(self.observation_rewards)
 
-    def reset(self, initial_context_message, initial_external_message):
-        self.cortical_column.reset(initial_context_message, initial_external_message)
+    def evaluate_actions(self):
+        """Evaluate Q[s,a] for each action."""
+        self.cortical_column.make_state_snapshot()
+
+        n_actions = self.cortical_column.layer.external_input_size
+        action_values = np.zeros(n_actions)
+        dense_action = np.zeros_like(action_values)
+
+        for action in range(n_actions):
+            # hacky way to clean previous one-hot, for 0th does nothing
+            dense_action[action-1] = 0
+            # set current one-hot
+            dense_action[action] = 1
+
+            self.cortical_column.predict(
+                context_messages=self.cortical_column.layer.context_messages,
+                external_messages=dense_action
+            )
+            # TODO switch to predict_sr when TD is low
+            sr = self._generate_sr(
+                self.sr_steps,
+                initial_messages=self.cortical_column.layer.prediction_cells,
+                initial_prediction=self.cortical_column.layer.prediction_columns,
+                save_state=False
+            )
+
+            self.cortical_column.restore_last_snapshot()
+
+            action_values[action] = np.sum(
+                sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
+            ) / self.cortical_column.layer.n_obs_vars
+
+        return action_values
 
     def _generate_sr(
             self,
@@ -131,9 +153,7 @@ class BioHIMA:
             return_last_prediction_step=False,
             save_state=True
     ):
-        """
-        Policy is assumed to be uniform.
-        """
+        # NB: Policy is assumed to be uniform.
         if save_state:
             self.cortical_column.make_state_snapshot()
 
@@ -168,43 +188,21 @@ class BioHIMA:
         sr /= self.cortical_column.layer.n_hidden_vars
         return sr
 
-    def evaluate_actions(self):
-        """Evaluate Q[s,a] for each action."""
-        self.cortical_column.make_state_snapshot()
+    def td_update_sr(self, target_sr, predicted_sr, prediction_cells):
+        error_sr = target_sr - predicted_sr
+        # dSR / dW for linear model
+        delta_w = np.outer(prediction_cells, error_sr)
 
-        n_actions = self.cortical_column.layer.external_input_size
-        action_values = np.zeros(n_actions)
-        dense_action = np.zeros_like(action_values)
+        self.striatum_weights += self.striatum_lr * delta_w
+        # FIXME: why does it need to clip negatives?
+        self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
-        for action in range(n_actions):
-            # hacky way to clean previous one-hot, for 0th does nothing
-            dense_action[action-1] = 0
-            # set current one-hot
-            dense_action[action] = 1
-
-            self.cortical_column.predict(
-                self.cortical_column.layer.context_messages,
-                dense_action
-            )
-            # TODO switch to predict_sr when TD is low
-            sr = self._generate_sr(
-                self.sr_steps,
-                initial_messages=self.cortical_column.layer.prediction_cells,
-                initial_prediction=self.cortical_column.layer.prediction_columns,
-                save_state=False
-            )
-
-            self.cortical_column.restore_last_snapshot()
-
-            action_values[action] = np.sum(
-                sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
-            ) / self.cortical_column.layer.n_obs_vars
-
-        return action_values
+        self.td_error = np.sum(np.power(error_sr, 2))
 
     def get_observations_prior(self, rewards):
         scale = self.reward_scale
         rewards = rewards.reshape(self.cortical_column.layer.n_obs_vars, -1)
+        # FIXME: should it be `softmax(scale * rewards, axis=-1)`?
         return normalize(np.exp(scale * rewards)).flatten()
 
     def _select_action(self, action_values):
