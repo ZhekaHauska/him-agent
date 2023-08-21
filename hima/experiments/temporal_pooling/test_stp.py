@@ -200,5 +200,7 @@ class StpExperiment:
             if block.family in blocks_family:
                 block.reset()
 
-    def print_with_timestamp(self, text: str):
-        print_with_timestamp(text, self.init_time)
+    def print_with_timestamp(self, *args, cond: bool = True):
+        if not cond:
+            return
+        print_with_timestamp(self.init_time, *args)
