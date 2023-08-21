@@ -177,8 +177,8 @@ TM:
     _type_: tm.lstm
     seed: ???
     input_size: ???
-    hidden_size: 500
-    lr: 0.01
+    hidden_size: 800
+    lr: 0.002
 
 AA:
   general_feedback_tm:
