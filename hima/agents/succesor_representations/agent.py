@@ -159,8 +159,8 @@ class BioHIMA:
 
         sr = np.zeros_like(self.observation_prior)
 
-        predicted_observation = initial_prediction
         context_messages = initial_messages
+        predicted_observation = initial_prediction
 
         t = -1
         for t in range(n_steps):
@@ -168,9 +168,8 @@ class BioHIMA:
 
             self.cortical_column.predict(context_messages)
 
-            # FIXME: I think column copy could be safely removed
-            predicted_observation = self.cortical_column.layer.prediction_columns.copy()
             context_messages = self.cortical_column.layer.internal_forward_messages.copy()
+            predicted_observation = self.cortical_column.layer.prediction_columns
 
         if approximate_tail:
             sr += self.predict_sr(context_messages) * self.gamma**(t+1)

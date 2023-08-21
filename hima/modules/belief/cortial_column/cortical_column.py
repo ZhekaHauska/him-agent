@@ -50,6 +50,7 @@ class CorticalColumn:
             self.layer.prediction_columns, learn=learn, correct_obs=self.input_sdr.dense
         )
 
+        # observe real outcome and optionally learn using prediction error
         self.encoder.compute(self.input_sdr, learn, self.output_sdr)
         self.layer.observe(self.output_sdr.sparse, learn=learn)
 
@@ -69,7 +70,7 @@ class CorticalColumn:
 
     def make_state_snapshot(self):
         self.layer.make_state_snapshot()
-        # NB: no need to copy, as we do not mutate images, only overwrite the entirely
+        # NB: no need to copy the predicted image, as we overwrite it entirely without mutations
         self.last_state_snapshot = self.predicted_image
 
     def restore_last_snapshot(self):
