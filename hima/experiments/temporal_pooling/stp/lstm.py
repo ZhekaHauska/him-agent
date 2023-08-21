@@ -60,7 +60,6 @@ class LstmLayer:
         self.predicted_observation_npy = None
         self.make_stats(
             [],
-            np.zeros(self.input_size, dtype=int),
             np.zeros(self.input_size, dtype=int)
         )
 
@@ -80,9 +79,8 @@ class LstmLayer:
                 self.lstm.message[1].detach(),
             )
 
-            bin_pred = self.predicted_observation_npy > 0.5
-            correctly_predicted = np.flatnonzero(bin_pred[observation])
-            self.make_stats(observation, dense_obs, bin_pred)
+            correctly_predicted = np.flatnonzero(self.predicted_observation[observation] > 0.5)
+            self.make_stats(observation, dense_obs)
 
         with torch.set_grad_enabled(learn):
             self.lstm.transition_to_next_state(dense_obs)
@@ -91,19 +89,23 @@ class LstmLayer:
         self.predicted_observation_npy = to_numpy(self.predicted_observation)
         return self.predicted_observation_npy, correctly_predicted
 
-    def make_stats(self, observation: SparseSdr, dense_obs: DenseSdr, bin_prediction):
-        n_tp_fn_cells = n_tp_fn_columns = len(observation)
-        n_tp_fp_columns = len(np.flatnonzero(bin_prediction))
-        n_fn_columns = len(np.flatnonzero(bin_prediction[observation] == 0))
-        n_tp_columns = n_tp_fn_columns - n_fn_columns
-        # recall: tp / tp+fp
+    def make_stats(self, obs_sdr: SparseSdr, dense_obs: DenseSdr):
+        tp = np.dot(dense_obs, self.predicted_observation_npy)
+        tp_fp = self.predicted_observation_npy.sum()
+        tp_fn = len(obs_sdr)
+
+        # precision: tp / tp+fp
+        precision = safe_divide(tp, tp_fp)
+        # recall: tp / tp+fn
+        recall = safe_divide(tp, tp_fn)
+
         # anomaly, miss rate: 1 - recall = fp / tp+fp
-        self.column_miss_rate = safe_divide(n_fn_columns, n_tp_fn_columns)
+        self.column_miss_rate = 1 - recall
         # precision
-        self.column_precision = safe_divide(n_tp_columns, n_tp_fp_columns)
+        self.column_precision = precision
         self.column_imprecision = 1 - self.column_precision
         # predicted / actual == prediction relative sparsity
-        self.column_prediction_volume = safe_divide(n_tp_fp_columns, n_tp_fn_columns)
+        self.column_prediction_volume = safe_divide(tp_fp, tp_fn)
 
         self.cell_imprecision = self.column_imprecision
         # predicted / actual == prediction relative sparsity
