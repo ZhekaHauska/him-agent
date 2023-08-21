@@ -138,9 +138,9 @@ SE:
     initial_rf_to_input_ratio: 8.0
     target_rf_to_input_ratio: 1.5
     learning_rate: 0.02
-    newborn_pruning_cycle: 2.0
+    newborn_pruning_cycle: 2.5
     newborn_pruning_stages: 20
-    prune_grow_cycle: 10.0
+    prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: False
   stp:
     _base_: $_base.spatial_temporal_pooler.default
@@ -203,7 +203,7 @@ SA:
   sp:
     _base_: $_base.spatial_pooler.default
     initial_rf_to_input_ratio: 4.0  #12?
-    max_rf_to_input_ratio: 2.0
+    target_max_rf_sparsity: 2.0
     learning_rate: 0.02
     newborn_pruning_cycle: 1.0
     newborn_pruning_stages: 4
@@ -228,7 +228,7 @@ SE_DVS:
     learning_rate: 0.001
     newborn_pruning_cycle: 2.5
     newborn_pruning_stages: 20
-    prune_grow_cycle: 10.0
+    prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: False
   stp:
     _base_: $_base.spatial_temporal_pooler.default
@@ -273,11 +273,11 @@ blocks:
     output_sds: [1200, 0.04]
     sp:
       _base_: SE_DVS.sp
-      initial_rf_to_input_ratio: 4.0
-      max_rf_to_input_ratio: 2.0
+      initial_rf_to_input_ratio: 5.0
+      target_max_rf_sparsity: 0.4
       adapt_to_ff_sparsity: True
       learning_rate: 0.002
-      newborn_pruning_cycle: 1.0
+      newborn_pruning_cycle: 2.5
       boosting_k: 0.25
 
 stats_and_metrics:
