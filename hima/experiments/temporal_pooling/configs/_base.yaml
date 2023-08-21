@@ -235,6 +235,13 @@ models:
       - TM.set_predicted_cells()
       - TM.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
+  LSTM:
+    - input.sdr -> TM.feedforward.sdr
+    - compute LSTM:
+      - TM.predict()
+      - TM.set_predicted_cells()
+      - TM.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
   Baseline TM:
     - input.sdr -> TM.feedforward.sdr
     - compute TM:

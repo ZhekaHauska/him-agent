@@ -46,6 +46,9 @@ def _resolve_block(type_tag: str):
     if type_tag == 'block.tm':
         from hima.experiments.temporal_pooling.blocks.tm import TemporalMemoryBlock
         return TemporalMemoryBlock
+    if type_tag == 'block.lstm':
+        from hima.experiments.temporal_pooling.blocks.lstm import LstmBlock
+        return LstmBlock
 
 
 def _resolve_temporal_memory(type_tag: str):
@@ -59,6 +62,9 @@ def _resolve_temporal_memory(type_tag: str):
             TemporalMemory
         )
         return TemporalMemory
+    if type_tag == 'tm.lstm':
+        from hima.experiments.temporal_pooling.stp.lstm import LstmLayer
+        return LstmLayer
 
 
 def _resolve_spatial_pooler(type_tag: str):

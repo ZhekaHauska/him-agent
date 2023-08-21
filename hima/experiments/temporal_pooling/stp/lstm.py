@@ -5,13 +5,13 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
 
-from hima.common.sdr import sparse_to_dense
-from hima.modules.belief.utils import normalize
+from hima.common.sdr import sparse_to_dense, SparseSdr, DenseSdr
+from hima.common.utils import safe_divide
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -20,69 +20,28 @@ THiddenState = tuple[torch.Tensor, torch.Tensor]
 
 
 class LstmLayer:
-    # layer state
-    last_state_snapshot: tuple | None
-
-    # hidden state for making prediction: hidden size
-    context_messages: THiddenState
-    internal_forward_messages: list[torch.Tensor, torch.Tensor]
-
-    # actions
-    external_messages: np.ndarray
-
-    prediction_obs: torch.Tensor | None
-    # action-dependent full state: (message[0] * action_probs, message[1])
-    prediction_cells: np.ndarray | None
-    # predicted observation
-    prediction_columns: np.ndarray | None
-
-    loss: torch.Tensor | None
+    predicted_observation: torch.Tensor | None
+    predicted_observation_npy: DenseSdr | None
 
     def __init__(
-            self,
-            n_obs_vars: int,
-            n_obs_states: int,
-            n_hidden_vars: int,
-            n_hidden_states: int,
-            n_external_vars: int = 0,
-            n_external_states: int = 0,
+            self, *,
+            input_size: int,
+            hidden_size: int,
             lr=2e-3,
             seed=None,
             decoder_bias: bool = True,
     ):
         torch.set_num_threads(1)
 
-        # n_groups/vars: 6-10
-        self.n_obs_vars = n_obs_vars
-        # sps[0]
-        self.n_obs_states = n_obs_states
-        self.n_columns = self.n_obs_vars * self.n_obs_states
-
-        # actions_dim: 1
-        self.n_external_vars = n_external_vars
-        # n_actions
-        self.n_external_states = n_external_states
-
-        self.n_hidden_vars = n_hidden_vars
-        self.n_hidden_states = n_hidden_states
-
-        # context === observation
-        self.n_context_vars = self.n_hidden_vars
-        self.n_context_states = self.n_hidden_states
-
-        self.input_size = self.n_obs_vars * self.n_obs_states
-        self.hidden_size = self.n_hidden_vars * self.n_hidden_states
-        self.internal_cells = self.hidden_size
-        self.context_input_size = self.hidden_size
-        self.external_input_size = self.n_external_vars * self.n_external_states
+        self.input_size = input_size
+        self.hidden_size = hidden_size
 
         self.lr = lr
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        self.lstm = LSTMWMUnit(
+        self.lstm = LstmUnit(
             input_size=self.input_size,
             hidden_size=self.hidden_size,
-            external_input_size= self.external_input_size,
             decoder_bias=decoder_bias
         ).to(self.device)
 
@@ -93,98 +52,80 @@ class LstmLayer:
             torch.manual_seed(seed)
         self.rng = np.random.default_rng(seed)
 
-        self._reinit_messages_and_states()
-
-    def _reinit_messages_and_states(self):
-        # layer state
-        self.last_state_snapshot = None
-        self.lstm.message = self.lstm.get_init_message()
-        self.context_messages = self.lstm.message
-        self.internal_forward_messages = list(self.lstm.message)
-        self.external_messages = np.zeros(self.external_input_size)
-
-        self.prediction_obs = None
-        self.prediction_cells = None
-        self.prediction_columns = None
-
-        self.loss = None
+        self.reset()
 
     def reset(self):
-        self.optimizer.zero_grad()
-        if self.loss is not None:
-            self.loss.backward()
-            self.optimizer.step()
+        self.lstm.message = self.lstm.get_init_message()
+        self.predicted_observation = None
+        self.predicted_observation_npy = None
+        self.make_stats(
+            [],
+            np.zeros(self.input_size, dtype=int),
+            np.zeros(self.input_size, dtype=int)
+        )
 
-        self._reinit_messages_and_states()
-
-    def observe(self, observation, learn: bool = True):
+    def observe(self, observation: SparseSdr, learn: bool = True):
         dense_obs = sparse_to_dense(observation, size=self.input_size)
         dense_obs = torch.from_numpy(dense_obs).float().to(self.device)
 
-        if learn:
-            if self.loss is None:
-                self.loss = 0
-            self.loss += self.loss_function(self.prediction_obs, dense_obs)
+        correctly_predicted = []
+        if learn and self.predicted_observation is not None:
+            self.optimizer.zero_grad()
+            loss = self.loss_function(self.predicted_observation, dense_obs)
+            loss.backward()
+            self.optimizer.step()
+
+            self.lstm.message = (
+                self.lstm.message[0].detach(),
+                self.lstm.message[1].detach(),
+            )
+
+            bin_pred = self.predicted_observation_npy > 0.5
+            correctly_predicted = np.flatnonzero(bin_pred[observation])
+            self.make_stats(observation, dense_obs, bin_pred)
 
         with torch.set_grad_enabled(learn):
             self.lstm.transition_to_next_state(dense_obs)
+            self.predicted_observation = self.lstm.decode_obs()
 
-        self.internal_forward_messages = list(self.lstm.message)
+        self.predicted_observation_npy = to_numpy(self.predicted_observation)
+        return self.predicted_observation_npy, correctly_predicted
 
-    def predict(self, learn: bool = False):
-        action_probs = None
-        if self.external_input_size != 0:
-            action_probs = torch.from_numpy(self.external_messages).float().to(self.device)
-            action_probs = torch.unsqueeze(action_probs, 1)
+    def make_stats(self, observation: SparseSdr, dense_obs: DenseSdr, bin_prediction):
+        n_tp_fn_cells = n_tp_fn_columns = len(observation)
+        n_tp_fp_columns = len(np.flatnonzero(bin_prediction))
+        n_fn_columns = len(np.flatnonzero(bin_prediction[observation] == 0))
+        n_tp_columns = n_tp_fn_columns - n_fn_columns
+        # recall: tp / tp+fp
+        # anomaly, miss rate: 1 - recall = fp / tp+fp
+        self.column_miss_rate = safe_divide(n_fn_columns, n_tp_fn_columns)
+        # precision
+        self.column_precision = safe_divide(n_tp_columns, n_tp_fp_columns)
+        self.column_imprecision = 1 - self.column_precision
+        # predicted / actual == prediction relative sparsity
+        self.column_prediction_volume = safe_divide(n_tp_fp_columns, n_tp_fn_columns)
 
-        with torch.set_grad_enabled(learn):
-            self.lstm.apply_action_to_context(action_probs)
-            self.prediction_obs = self.lstm.decode_obs()
-
-        self.internal_forward_messages = list(self.lstm.message)
-        self.prediction_cells = self.internal_forward_messages
-
-        self.prediction_columns = to_numpy(self.prediction_obs)
-
-    def set_external_messages(self, messages=None):
-        # update external cells
-        if messages is not None:
-            self.external_messages = messages
-        elif self.external_input_size != 0:
-            self.external_messages = normalize(
-                np.zeros(self.external_input_size).reshape(self.n_external_vars, -1)
-            ).flatten()
-
-    def set_context_messages(self, messages=None):
-        # update context cells
-        if messages is not None:
-            self.context_messages = messages
-            self.lstm.message = tuple(self.context_messages)
-        elif self.context_input_size != 0:
-            self.context_messages = normalize(
-                np.zeros(self.context_input_size).reshape(self.n_context_vars, -1)
-            ).flatten()
+        self.cell_imprecision = self.column_imprecision
+        # predicted / actual == prediction relative sparsity
+        self.cell_prediction_volume = self.column_prediction_volume
 
 
-class LSTMWMUnit(nn.Module):
+class LstmUnit(nn.Module):
     def __init__(
-            self,
+            self, *,
             input_size,
             hidden_size,
-            external_input_size: int = 0,
             decoder_bias: bool = True
     ):
-        super(LSTMWMUnit, self).__init__()
+        super(LstmUnit, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.n_obs_states = input_size
-        self.n_actions = external_input_size
         self.n_hidden_states = hidden_size
-        self.full_hidden_size = self.n_hidden_states * max(self.n_actions, 1)
 
         self.lstm = nn.LSTMCell(
             input_size=self.n_obs_states,
-            hidden_size=self.full_hidden_size
+            hidden_size=self.n_hidden_states
         )
 
         # The linear layer that maps from hidden state space back to obs space
@@ -198,32 +139,16 @@ class LSTMWMUnit(nn.Module):
 
     def get_init_message(self) -> THiddenState:
         return (
-            torch.zeros(self.full_hidden_size, device=self.device),
-            torch.zeros(self.full_hidden_size, device=self.device)
+            torch.zeros(self.n_hidden_states, device=self.device),
+            torch.zeros(self.n_hidden_states, device=self.device)
         )
 
     def transition_to_next_state(self, obs):
         self.message = self.lstm(obs, self.message)
         return self.message
 
-    def apply_action_to_context(self, action_probs):
-        if self.n_actions <= 1:
-            return
-
-        msg = self.message[0]
-
-        msg = msg.reshape(self.n_actions, -1)
-        msg = msg * action_probs
-        msg = msg.flatten()
-
-        self.message = msg, self.message[1]
-
     def decode_obs(self):
         obs_msg = self.message[0]
-
-        if self.n_actions > 1:
-            obs_msg = torch.sum(obs_msg.reshape(self.n_actions, -1), dim=0)
-
         prediction_logit = self.hidden2obs(obs_msg)
         prediction = torch.sigmoid(prediction_logit)
         return prediction

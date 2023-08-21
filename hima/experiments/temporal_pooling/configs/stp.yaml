@@ -128,6 +128,7 @@ models:
   +SE+AA: $_base.models.+SE+AA
   +AA: $_base.models.+AA
   +SE: $_base.models.+SE
+  LSTM: $_base.models.LSTM
   Baseline TM: $_base.models.Baseline TM
 
 SE:
@@ -172,6 +173,12 @@ TM:
     predicted_segment_decrement_basal: 0.004
     max_synapses_per_segment_basal: 2.1
     max_segments_per_cell_basal: 16
+  lstm:
+    _type_: tm.lstm
+    seed: ???
+    input_size: ???
+    hidden_size: 500
+    lr: 0.01
 
 AA:
   general_feedback_tm:

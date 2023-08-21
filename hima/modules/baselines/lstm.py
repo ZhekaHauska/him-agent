@@ -246,10 +246,7 @@ class LSTMWMIterative:
             self.loss = None
 
         self.prediction = torch.zeros(self.n_obs_states, device=self.device)
-        self.lstm.message = (
-            torch.zeros(self.n_hidden_states, device=self.device),
-            torch.zeros(self.n_hidden_states, device=self.device),
-        )
+        self.lstm.message = self.lstm.get_init_message()
 
     def n_step_prediction(self, initial_dist, steps, mc_iterations=100):
         n_step_dist = np.zeros((steps, self.n_obs_states))
