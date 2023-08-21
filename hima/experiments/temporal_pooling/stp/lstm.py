@@ -104,6 +104,7 @@ class LstmLayer:
 
         # anomaly, miss rate: 1 - recall = fp / tp+fp
         self.column_miss_rate = 1 - recall
+        self.anomaly = self.column_miss_rate
         # precision
         self.column_precision = precision
         self.column_imprecision = 1 - self.column_precision
