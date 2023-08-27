@@ -4,13 +4,10 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
-
-from hima.modules.belief.cortial_column.layer import Layer
-from hima.modules.htm.spatial_pooler import SPEnsemble
-from hima.modules.htm.spatial_pooler import SPDecoder
 from htm.bindings.sdr import SDR
 
-from typing import Union
+from hima.modules.belief.cortial_column.layer import Layer
+from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
 
 
 class CorticalColumn:

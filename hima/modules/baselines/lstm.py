@@ -16,7 +16,10 @@ from hima.modules.belief.utils import normalize
 torch.autograd.set_detect_anomaly(True)
 
 
-THiddenState = tuple[torch.Tensor, torch.Tensor]
+TLstmHiddenState = tuple[torch.Tensor, torch.Tensor]
+
+# the bool variable describes lstm current hidden state: True — observed, False — predicted
+TLstmLayerHiddenState = list[bool, TLstmHiddenState]
 
 
 class LstmLayer:
@@ -24,8 +27,8 @@ class LstmLayer:
     last_state_snapshot: tuple | None
 
     # hidden state for making prediction: hidden size
-    context_messages: THiddenState
-    internal_forward_messages: list[torch.Tensor, torch.Tensor]
+    context_messages: TLstmLayerHiddenState
+    internal_forward_messages: TLstmLayerHiddenState
 
     # actions
     external_messages: np.ndarray
@@ -99,8 +102,8 @@ class LstmLayer:
         # layer state
         self.last_state_snapshot = None
         self.lstm.message = self.lstm.get_init_message()
-        self.context_messages = self.lstm.message
-        self.internal_forward_messages = list(self.lstm.message)
+        self.internal_forward_messages = [True, self.lstm.message]
+        self.context_messages = self.internal_forward_messages
         self.external_messages = np.zeros(self.external_input_size)
 
         self.prediction_obs = None
@@ -129,7 +132,7 @@ class LstmLayer:
         with torch.set_grad_enabled(learn):
             self.lstm.transition_to_next_state(dense_obs)
 
-        self.internal_forward_messages = list(self.lstm.message)
+        self.internal_forward_messages = [True, self.lstm.message]
 
     def predict(self, learn: bool = False):
         action_probs = None
@@ -137,11 +140,17 @@ class LstmLayer:
             action_probs = torch.from_numpy(self.external_messages).float().to(self.device)
             action_probs = torch.unsqueeze(action_probs, 1)
 
+        is_observed, _ = self.context_messages
+        if not learn and not is_observed:
+            # should observe what was predicted previously before making new prediction
+            with torch.no_grad():
+                self.lstm.transition_to_next_state(obs=self.prediction_obs)
+
         with torch.set_grad_enabled(learn):
             self.lstm.apply_action_to_context(action_probs)
             self.prediction_obs = self.lstm.decode_obs()
 
-        self.internal_forward_messages = list(self.lstm.message)
+        self.internal_forward_messages = [False, self.lstm.message]
         self.prediction_cells = self.internal_forward_messages
 
         self.prediction_columns = to_numpy(self.prediction_obs)
@@ -159,8 +168,9 @@ class LstmLayer:
         # update context cells
         if messages is not None:
             self.context_messages = messages
-            self.lstm.message = tuple(self.context_messages)
+            self.lstm.message = self.context_messages[1]
         elif self.context_input_size != 0:
+            assert False, f"Below is incorrect, implement it!"
             self.context_messages = normalize(
                 np.zeros(self.context_input_size).reshape(self.n_context_vars, -1)
             ).flatten()
@@ -304,7 +314,7 @@ class LSTMWMUnit(nn.Module):
 
         self.message = self.get_init_message()
 
-    def get_init_message(self) -> THiddenState:
+    def get_init_message(self) -> TLstmHiddenState:
         return (
             torch.zeros(self.full_hidden_size, device=self.device),
             torch.zeros(self.full_hidden_size, device=self.device)

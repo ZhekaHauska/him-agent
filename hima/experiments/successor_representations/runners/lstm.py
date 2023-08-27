@@ -14,7 +14,7 @@ from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import to_gray_img, isnone
-from hima.modules.baselines.lstm import LstmLayer, THiddenState, to_numpy
+from hima.modules.baselines.lstm import LstmLayer, to_numpy, TLstmLayerHiddenState
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import softmax
 
@@ -27,9 +27,9 @@ class LstmBioHima(BioHIMA):
     def __init__(self, cortical_column: CorticalColumn, **kwargs):
         super().__init__(cortical_column, **kwargs)
 
-    def _extract_collapse_message(self, context_messages: THiddenState):
-        # (cell state, hidden state): cell state is used for observation prediction
-        msg, _ = context_messages
+    def _extract_collapse_message(self, context_messages: TLstmLayerHiddenState):
+        # (bool, (cell state, hidden state)): cell state is used for observation prediction
+        _, (msg, _) = context_messages
         # cell (==observation logits) state: (full_hidden_size)
         msg = to_numpy(msg)
 
@@ -46,11 +46,11 @@ class LstmBioHima(BioHIMA):
         msg = softmax(msg).flatten()
         return msg
 
-    def td_update_sr(self, target_sr, predicted_sr, prediction_cells):
+    def td_update_sr(self, target_sr, predicted_sr, prediction_cells: TLstmLayerHiddenState):
         msg = self._extract_collapse_message(prediction_cells)
         return super().td_update_sr(target_sr, predicted_sr, msg)
 
-    def predict_sr(self, context_messages: THiddenState):
+    def predict_sr(self, context_messages: TLstmLayerHiddenState):
         msg = self._extract_collapse_message(context_messages)
         return super().predict_sr(msg)
 
@@ -150,7 +150,7 @@ class AnimalAITest:
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
-        self.initial_context = layer.lstm.get_init_message()
+        self.initial_context = layer.context_messages
 
         if self.logger is not None:
             from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
@@ -376,7 +376,7 @@ class PinballTest:
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
-        self.initial_context = layer.lstm.get_init_message()
+        self.initial_context = layer.context_messages
 
         if self.logger is not None:
             from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
