@@ -8,9 +8,9 @@ from __future__ import annotations
 import numpy as np
 
 from hima.common.sdr import sparse_to_dense
+from hima.common.utils import softmax
 from hima.experiments.hmm.runners.utils import get_surprise
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
-from hima.modules.belief.utils import normalize, softmax
 
 
 class BioHIMA:
@@ -202,8 +202,7 @@ class BioHIMA:
     def get_observations_prior(self, rewards):
         scale = self.reward_scale
         rewards = rewards.reshape(self.cortical_column.layer.n_obs_vars, -1)
-        # FIXME: should it be `softmax(scale * rewards, axis=-1)`?
-        return normalize(np.exp(scale * rewards)).flatten()
+        return softmax(scale * rewards, beta=self.inverse_temp).flatten()
 
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True

@@ -21,28 +21,28 @@ def isnone(x, default):
 
 
 def ensure_list(arr: Any | list[Any] | None) -> list[Any] | None:
-    """Wraps single value to list or return list as it is."""
+    """Wrap single value to list or return list as it is."""
     if arr is not None and not isinstance(arr, list):
         arr = [arr]
     return arr
 
 
 def safe_ith(arr: list | None, ind: int, default: Any = None) -> Any | None:
-    """Performs safe index access. If array is None, returns default."""
+    """Perform safe index access. If array is None, returns default."""
     if arr is not None:
         return arr[ind]
     return default
 
 
 def wrap(obj, *wrappers):
-    """Sequentially wraps object."""
+    """Sequentially wrap passed object."""
     for wrapper in wrappers:
         obj = wrapper(obj)
     return obj
 
 
 def timed(f):
-    """Wraps function with the timer that returns tuple: result, elapsed_time."""
+    """Wrap function with the timer that returns tuple: result, elapsed_time."""
     @wraps(f)
     def _wrap(*args, **kw):
         start = timer()
@@ -53,28 +53,28 @@ def timed(f):
 
 
 def exp_sum(ema, decay, val):
-    """Returns new exponential moving average (EMA) adding next value."""
+    """Return updated exponential moving average (EMA) with the added new value."""
     return ema * decay + val
 
 
 def lin_sum(x, lr, y):
-    """Returns linear sum."""
+    """Return linear sum."""
     return x + lr * (y - x)
 
 
 def update_slice_exp_sum(s, ind, decay, val):
-    """Updates EMA for specified slice."""
+    """Update EMA only for specified slice."""
     s[ind] *= decay
     s[ind] += val
 
 
 def update_slice_lin_sum(s, ind, lr, val):
-    """Updates slice value estimate with specified learning rate."""
+    """Update slice value estimate with specified learning rate."""
     s[ind] = (1 - lr) * s[ind] + lr * val
 
 
 def update_exp_trace(traces, tr, decay, val=1., with_reset=False):
-    """Updates exponential trace."""
+    """Update an exponential trace."""
     traces *= decay
     if with_reset:
         traces[tr] = val
@@ -83,26 +83,34 @@ def update_exp_trace(traces, tr, decay, val=1., with_reset=False):
 
 
 def exp_decay(value: DecayingValue) -> DecayingValue:
-    """Applies decay to specified DecayingValue."""
+    """Apply decay to specified DecayingValue."""
     x, decay = value
     return x * decay, decay
 
 
 def multiply_decaying_value(value: DecayingValue, alpha: float) -> DecayingValue:
-    """Returns new tuple with the first value multiplied by specified factor."""
+    """Return new tuple with the first value multiplied by the specified factor."""
     x, decay = value
     return x * alpha, decay
 
 
-def softmax(x: np.ndarray, temp=1.) -> np.ndarray:
-    """Computes softmax values for a vector `x` with a given temperature."""
+def softmax(
+        x: np.ndarray, *, temp: float = None, beta: float = None, axis: int = -1
+) -> np.ndarray:
+    """
+    Compute softmax values for a vector `x` with a given temperature or inverse temperature.
+    The softmax operation is applied over the last axis by default, or over the specified axis.
+    """
+    temp = isnone(temp, beta)
+    temp = isnone(temp, 1.0)
+
     temp = clip(temp, 1e-5, 1e+3)
-    e_x = np.exp((x - np.max(x, axis=-1)) / temp)
-    return e_x / e_x.sum(axis=-1)
+    e_x = np.exp((x - np.max(x, axis=axis, keepdims=True)) / temp)
+    return e_x / np.sum(e_x, axis=axis, keepdims=True)
 
 
 def clip(x: Any, low=None, high=None) -> Any:
-    """Clips `x` with the provided thresholds."""
+    """Clip the value with the provided thresholds. NB: doesn't support vectorization."""
 
     # both x < x and x > x are False, so consider them as safeguards
     if x < isnone(low, x):
@@ -112,7 +120,7 @@ def clip(x: Any, low=None, high=None) -> Any:
     return x
 
 
-def safe_divide(x, y):
+def safe_divide(x, y: int | float):
     """
     Return x / y or just x itself if y == 0 preventing NaNs.
     Warning: it may not work as you might expect for floats, use it only when you need exact match!
@@ -121,6 +129,7 @@ def safe_divide(x, y):
 
 
 def prepend_dict_keys(d: dict[str, Any], prefix, separator='/'):
+    """Add specified prefix to all the dict keys."""
     return {
         f'{prefix}{separator}{k}': d[k]
         for k in d
