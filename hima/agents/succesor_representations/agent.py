@@ -61,7 +61,8 @@ class BioHIMA:
     def sample_action(self):
         """Evaluate and sample actions."""
         action_values = self.evaluate_actions()
-        action = self._select_action(action_values)
+        action_dist = self._get_action_selection_distribution(action_values)
+        action = self._rng.choice(self.n_actions, p=action_dist)
         return action
 
     def observe(self, observation, learn=True):
@@ -204,18 +205,28 @@ class BioHIMA:
         # FIXME: should it be `softmax(scale * rewards, axis=-1)`?
         return normalize(np.exp(scale * rewards)).flatten()
 
-    def _select_action(self, action_values):
-        n_actions = self.cortical_column.layer.external_input_size
+    def _get_action_selection_distribution(
+            self, action_values, on_policy: bool = True
+    ) -> np.ndarray:
+        # off policy (=not on_policy) means greedy, on policy — just as usual
 
-        if self.exploration_eps < 0:
+        if on_policy and self.exploration_eps < 0:
             # softmax policy
             action_dist = softmax(action_values, beta=self.inverse_temp)
-            action = self._rng.choice(n_actions, p=action_dist)
         else:
-            # eps-greedy policy
-            if self._rng.random() < self.exploration_eps:
-                # random
-                action = self._rng.choice(n_actions)
-            else:
-                action = np.argmax(action_values)
-        return action
+            # greedy off policy or eps-greedy
+            best_action = np.argmax(action_values)
+            # make greedy policy
+            # noinspection PyTypeChecker
+            action_dist = sparse_to_dense([best_action], like=action_values)
+
+            if on_policy and self.exploration_eps > 0:
+                # add exploration if on policy eps-greedy
+                action_dist[best_action] = 1 - self.exploration_eps
+                action_dist[:] += self.exploration_eps / self.n_actions
+
+        return action_dist
+
+    @property
+    def n_actions(self):
+        return self.cortical_column.layer.external_input_size
