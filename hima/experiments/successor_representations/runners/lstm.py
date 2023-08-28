@@ -14,6 +14,7 @@ from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import to_gray_img, isnone
+from hima.experiments.successor_representations.runners.utils import print_digest, make_decoder
 from hima.modules.baselines.lstm import LstmLayer, to_numpy, TLstmLayerHiddenState
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import softmax
@@ -182,15 +183,23 @@ class AnimalAITest:
             )
         else:
             from metrics import ScalarMetrics
-            self.scalar_metrics = ScalarMetrics({'agent/td_error': np.mean}, self.logger)
+            self.scalar_metrics = ScalarMetrics(
+                {
+                    'main_metrics/reward': np.sum,
+                    'main_metrics/steps': np.mean,
+                    'layer/surprise_hidden': np.mean,
+                    'agent/td_error': np.mean
+                },
+                self.logger
+            )
 
     def run(self):
         episode_print_schedule = 25
         decoder = self.agent.cortical_column.decoder
 
-        for i in range(self.n_episodes):
-            if i % episode_print_schedule == 0:
-                print(f'Episode {i}')
+        for episode in range(self.n_episodes):
+            if episode % episode_print_schedule == 0:
+                print(f'Episode {episode}')
 
             steps = 0
             running = True
@@ -234,16 +243,13 @@ class AnimalAITest:
                     self.environment.set_actions(self.behavior, aai_action.action_tuple)
 
                 # >>> logging
+                self.scalar_metrics.update({
+                    'main_metrics/reward': reward,
+                    'layer/surprise_hidden': self.agent.surprise,
+                    'agent/td_error': self.agent.td_error
+                })
                 if self.logger is not None:
-                    self.scalar_metrics.update(
-                        {
-                            'main_metrics/reward': reward,
-                            'layer/surprise_hidden': self.agent.surprise,
-                            'agent/td_error': self.agent.td_error
-                        }
-                    )
-
-                    if (i % self.update_rate) == 0:
+                    if (episode % self.update_rate) == 0:
                         raw_beh = self.to_img(self.prev_image)
                         proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
                         pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
@@ -255,8 +261,6 @@ class AnimalAITest:
                                 raw_beh, proc_beh, pred_beh, pred_sr, gen_sr
                             ])
                         })
-                else:
-                    self.scalar_metrics.update({'agent/td_error': self.agent.td_error})
                 # <<< logging
 
                 steps += 1
@@ -265,11 +269,11 @@ class AnimalAITest:
                     running = False
 
             # >>> logging
+            self.scalar_metrics.update({'main_metrics/steps': steps})
             if self.logger is not None:
-                self.scalar_metrics.update({'main_metrics/steps': steps})
-                self.scalar_metrics.log(i)
+                self.scalar_metrics.log(episode)
 
-                if (i % self.update_rate) == 0:
+                if (episode % self.update_rate) == 0:
                     prior_probs = decoder.decode(self.agent.observation_prior).reshape(
                         self.raw_obs_shape
                     )
@@ -279,11 +283,11 @@ class AnimalAITest:
                             'agent/striatum_weights': self.agent.striatum_weights
                         }
                     )
-                    self.heatmap_metrics.log(i)
-                    self.image_metrics.log(i)
+                    self.heatmap_metrics.log(episode)
+                    self.image_metrics.log(episode)
             else:
-                print(np.mean(self.scalar_metrics.metrics['agent/td_error']))
-                self.scalar_metrics.metrics['agent/td_error'] = []
+                print_digest(self.scalar_metrics.summarize())
+                self.scalar_metrics.reset()
             # <<< logging
         else:
             self.environment.close()
@@ -407,15 +411,23 @@ class PinballTest:
             )
         else:
             from metrics import ScalarMetrics
-            self.scalar_metrics = ScalarMetrics({'agent/td_error': np.mean}, self.logger)
+            self.scalar_metrics = ScalarMetrics(
+                {
+                    'main_metrics/reward': np.sum,
+                    'main_metrics/steps': np.mean,
+                    'layer/surprise_hidden': np.mean,
+                    'agent/td_error': np.mean
+                },
+                self.logger
+            )
 
     def run(self):
         episode_print_schedule = 50
         decoder = self.agent.cortical_column.decoder
 
-        for i in range(self.n_episodes):
-            if i % episode_print_schedule == 0:
-                print(f'Episode {i}')
+        for episode in range(self.n_episodes):
+            if episode % episode_print_schedule == 0:
+                print(f'Episode {episode}')
 
             steps = 0
             running = True
@@ -443,14 +455,13 @@ class PinballTest:
                     self.environment.act(pinball_action)
 
                 # >>> logging
+                self.scalar_metrics.update({
+                    'main_metrics/reward': reward,
+                    'layer/surprise_hidden': self.agent.surprise,
+                    'agent/td_error': self.agent.td_error
+                })
                 if self.logger is not None:
-                    self.scalar_metrics.update({
-                        'main_metrics/reward': reward,
-                        'layer/surprise_hidden': self.agent.surprise,
-                        'agent/td_error': self.agent.td_error
-                    })
-
-                    if (i % self.update_rate) == 0:
+                    if (episode % self.update_rate) == 0:
                         raw_beh = self.to_img(self.prev_image)
                         proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
                         pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
@@ -462,8 +473,6 @@ class PinballTest:
                                 raw_beh, proc_beh, pred_beh, pred_sr, gen_sr
                             ])
                         })
-                else:
-                    self.scalar_metrics.update({'agent/td_error': self.agent.td_error})
                 # <<< logging
 
                 steps += 1
@@ -472,11 +481,11 @@ class PinballTest:
                     running = False
 
             # >>> logging
+            self.scalar_metrics.update({'main_metrics/steps': steps})
             if self.logger is not None:
-                self.scalar_metrics.update({'main_metrics/steps': steps})
-                self.scalar_metrics.log(i)
+                self.scalar_metrics.log(episode)
 
-                if (i % self.update_rate) == 0:
+                if (episode % self.update_rate) == 0:
                     prior_probs = decoder.decode(self.agent.observation_prior).reshape(
                         self.raw_obs_shape
                     )
@@ -486,12 +495,11 @@ class PinballTest:
                             'agent/striatum_weights': self.agent.striatum_weights
                         }
                     )
-                    self.heatmap_metrics.log(i)
-                    self.image_metrics.log(i)
+                    self.heatmap_metrics.log(episode)
+                    self.image_metrics.log(episode)
             else:
-                td_errors = self.scalar_metrics.metrics['agent/td_error']
-                print(f'{len(td_errors)}: {np.mean(td_errors)}')
-                td_errors.clear()
+                print_digest(self.scalar_metrics.summarize())
+                self.scalar_metrics.reset()
             # <<< logging
         else:
             self.environment.close()
@@ -510,17 +518,6 @@ class PinballTest:
         events = np.flatnonzero(diff > thresh)
 
         return events
-
-
-def make_decoder(encoder, decoder, decoder_conf):
-    if decoder == 'naive':
-        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
-        return SpatialPoolerDecoder(encoder)
-    elif decoder == 'learned':
-        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerLearnedDecoder
-        return SpatialPoolerLearnedDecoder(encoder, **decoder_conf)
-    else:
-        raise ValueError(f'Decoder {decoder} is not supported')
 
 
 def main(config_path):
