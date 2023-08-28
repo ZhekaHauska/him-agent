@@ -245,8 +245,7 @@ class BioHIMA:
         # FIXME: why does it need to clip negatives?
         self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
-        # FIXME sum -> mean to normalize over different hidden space sizes
-        self.td_error = np.sum(np.power(error_sr, 2))
+        self.td_error = np.mean(np.power(error_sr, 2))
         self.td_error_ma = lin_sum(self.td_error_ma, 0.2, self.td_error)
 
     def get_observations_prior(self, rewards):
@@ -286,7 +285,7 @@ class BioHIMA:
         return ActionValueEstimate.PREDICT
 
     def _should_plan(self):
-        p = 1 - np.exp(-np.sqrt(self.td_error_ma) / 10)
+        p = 1 - np.exp(-np.sqrt(self.td_error_ma))
         return self._rng.random() < p
 
     @property
