@@ -26,7 +26,6 @@ class CorticalColumn:
         self.decoder = decoder
 
         self.predicted_image = None
-        self.last_state_snapshot = None
 
         self.input_sdr = SDR(self.encoder.getNumInputs())
         self.output_sdr = SDR(self.encoder.getNumColumns())
@@ -66,10 +65,20 @@ class CorticalColumn:
         self.layer.set_external_messages(external_messages)
 
     def make_state_snapshot(self):
-        self.layer.make_state_snapshot()
-        # NB: no need to copy the predicted image, as we overwrite it entirely without mutations
-        self.last_state_snapshot = self.predicted_image
+        return (
+            # mutable attributes:
+            # immutable attributes:
+            self.layer.make_state_snapshot(),
+            self.predicted_image
+        )
 
-    def restore_last_snapshot(self):
-        self.layer.restore_last_snapshot()
-        self.predicted_image = self.last_state_snapshot
+    def restore_last_snapshot(self, snapshot):
+        if snapshot is None:
+            return
+
+        (
+            layer_snapshot,
+            self.predicted_image
+        ) = snapshot
+
+        self.layer.restore_last_snapshot(layer_snapshot)

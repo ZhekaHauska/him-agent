@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from collections import deque
 from enum import Enum, auto
 
 import numpy as np
@@ -79,6 +80,8 @@ class BioHIMA:
             (layer.n_obs_states * layer.n_obs_vars)
         ))
 
+        self.state_snapshot_stack = deque()
+
         self.surprise = 0
         self.td_error = 0
         # td moving average
@@ -88,6 +91,7 @@ class BioHIMA:
         self._rng = np.random.default_rng(seed)
 
     def reset(self, initial_context_message, initial_external_message):
+        assert len(self.state_snapshot_stack) == 0
         self.cortical_column.reset(initial_context_message, initial_external_message)
 
     def sample_action(self):
@@ -145,7 +149,7 @@ class BioHIMA:
 
     def evaluate_actions(self, *, with_planning: bool = False):
         """Evaluate Q[s,a] for each action."""
-        self.cortical_column.make_state_snapshot()
+        self._make_state_snapshot()
 
         n_actions = self.cortical_column.layer.external_input_size
         action_values = np.zeros(n_actions)
@@ -174,12 +178,13 @@ class BioHIMA:
             else:
                 sr = self.predict_sr(self.cortical_column.layer.context_messages)
 
-            self.cortical_column.restore_last_snapshot()
+            self._restore_last_snapshot(pop=False)
 
             action_values[action] = np.sum(
                 sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
             ) / self.cortical_column.layer.n_obs_vars
 
+        self.state_snapshot_stack.pop()
         return action_values
 
     def _generate_sr(
@@ -193,7 +198,7 @@ class BioHIMA:
     ):
         # NB: Policy is assumed to be uniform.
         if save_state:
-            self.cortical_column.make_state_snapshot()
+            self._make_state_snapshot()
 
         sr = np.zeros_like(self.observation_prior)
 
@@ -224,7 +229,7 @@ class BioHIMA:
             sr += self.predict_sr(context_messages) * self.gamma**(t+1)
 
         if save_state:
-            self.cortical_column.restore_last_snapshot()
+            self._restore_last_snapshot()
 
         if return_last_prediction_step:
             return sr, context_messages
@@ -287,6 +292,15 @@ class BioHIMA:
     def _should_plan(self):
         p = 1 - np.exp(-np.sqrt(self.td_error_ma))
         return self._rng.random() < p
+
+    def _make_state_snapshot(self):
+        self.state_snapshot_stack.append(
+            self.cortical_column.make_state_snapshot()
+        )
+
+    def _restore_last_snapshot(self, pop: bool = True):
+        snapshot = self.state_snapshot_stack.pop() if pop else self.state_snapshot_stack[-1]
+        self.cortical_column.restore_last_snapshot(snapshot)
 
     @property
     def n_actions(self):

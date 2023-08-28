@@ -23,9 +23,6 @@ TLstmLayerHiddenState = list[bool, TLstmHiddenState]
 
 
 class LstmLayer:
-    # layer state
-    last_state_snapshot: tuple | None
-
     # hidden state for making prediction: hidden size
     context_messages: TLstmLayerHiddenState
     internal_forward_messages: TLstmLayerHiddenState
@@ -100,7 +97,6 @@ class LstmLayer:
 
     def _reinit_messages_and_states(self):
         # layer state
-        self.last_state_snapshot = None
         self.lstm.message = self.lstm.get_init_message()
         self.internal_forward_messages = [True, self.lstm.message]
         self.context_messages = self.internal_forward_messages
@@ -171,12 +167,14 @@ class LstmLayer:
             self.lstm.message = self.context_messages[1]
         elif self.context_input_size != 0:
             assert False, f"Below is incorrect, implement it!"
-            self.context_messages = normalize(
-                np.zeros(self.context_input_size).reshape(self.n_context_vars, -1)
-            ).flatten()
+            # self.context_messages = normalize(
+            #     np.zeros(self.context_input_size).reshape(self.n_context_vars, -1)
+            # ).flatten()
 
     def make_state_snapshot(self):
-        self.last_state_snapshot = (
+        return (
+            # mutable attributes:
+            # immutable attributes:
             self.lstm.message,
             self.internal_forward_messages,
             self.external_messages,
@@ -186,8 +184,8 @@ class LstmLayer:
             self.prediction_columns
         )
 
-    def restore_last_snapshot(self):
-        if self.last_state_snapshot is None:
+    def restore_last_snapshot(self, snapshot):
+        if snapshot is None:
             return
 
         (
@@ -198,7 +196,7 @@ class LstmLayer:
             self.prediction_obs,
             self.prediction_cells,
             self.prediction_columns
-        ) = self.last_state_snapshot
+        ) = snapshot
 
 
 class LSTMWMIterative:
