@@ -5,12 +5,31 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from enum import Enum, auto
+
 import numpy as np
 
 from hima.common.sdr import sparse_to_dense
-from hima.common.utils import softmax
+from hima.common.utils import softmax, lin_sum
 from hima.experiments.hmm.runners.utils import get_surprise
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
+
+
+class ExplorationPolicy(Enum):
+    SOFTMAX = 1
+    EPS_GREEDY = auto()
+
+
+class SrEstimatePlanning(Enum):
+    UNIFORM = 1
+    ON_POLICY = auto()
+    OFF_POLICY = auto()
+
+
+class ActionValueEstimate(Enum):
+    PREDICT = 1
+    PLAN = auto()
+    BALANCE = auto()
 
 
 class BioHIMA:
@@ -25,8 +44,10 @@ class BioHIMA:
             approximate_tail: bool = True,
             inverse_temp: float = 1.0,
             reward_scale: float = 1.0,
+            seed: int = None,
             exploration_eps: float = -1,
-            seed: int = None
+            action_value_estimate: str = 'plan',
+            sr_estimate_planning: str = 'uniform',
     ):
         self.observation_reward_lr = observation_reward_lr
         self.striatum_lr = striatum_lr
@@ -36,7 +57,16 @@ class BioHIMA:
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
         self.reward_scale = reward_scale
-        self.exploration_eps = exploration_eps
+
+        if exploration_eps < 0:
+            self.exploration_policy = ExplorationPolicy.SOFTMAX
+            self.exploration_eps = 0
+        else:
+            self.exploration_policy = ExplorationPolicy.EPS_GREEDY
+            self.exploration_eps = exploration_eps
+
+        self.action_value_estimate = ActionValueEstimate[action_value_estimate.upper()]
+        self.sr_estimate_planning = SrEstimatePlanning[sr_estimate_planning.upper()]
 
         layer = self.cortical_column.layer
         observation_rewards = np.zeros((layer.n_obs_vars, layer.n_obs_states))
@@ -51,6 +81,8 @@ class BioHIMA:
 
         self.surprise = 0
         self.td_error = 0
+        # td moving average
+        self.td_error_ma = 0
 
         self.seed = seed
         self._rng = np.random.default_rng(seed)
@@ -60,7 +92,7 @@ class BioHIMA:
 
     def sample_action(self):
         """Evaluate and sample actions."""
-        action_values = self.evaluate_actions()
+        action_values = self.evaluate_actions(with_planning=True)
         action_dist = self._get_action_selection_distribution(action_values)
         action = self._rng.choice(self.n_actions, p=action_dist)
         return action
@@ -111,13 +143,15 @@ class BioHIMA:
         self.observation_rewards += lr * messages * (reward - self.observation_rewards)
         self.observation_prior = self.get_observations_prior(self.observation_rewards)
 
-    def evaluate_actions(self):
+    def evaluate_actions(self, *, with_planning: bool = False):
         """Evaluate Q[s,a] for each action."""
         self.cortical_column.make_state_snapshot()
 
         n_actions = self.cortical_column.layer.external_input_size
         action_values = np.zeros(n_actions)
         dense_action = np.zeros_like(action_values)
+
+        estimate_strategy = self._get_action_value_estimate_strategy(with_planning)
 
         for action in range(n_actions):
             # hacky way to clean previous one-hot, for 0th does nothing
@@ -129,13 +163,16 @@ class BioHIMA:
                 context_messages=self.cortical_column.layer.context_messages,
                 external_messages=dense_action
             )
-            # TODO switch to predict_sr when TD is low
-            sr = self._generate_sr(
-                self.sr_steps,
-                initial_messages=self.cortical_column.layer.prediction_cells,
-                initial_prediction=self.cortical_column.layer.prediction_columns,
-                save_state=False
-            )
+
+            if estimate_strategy == ActionValueEstimate.PLAN:
+                sr = self._generate_sr(
+                    self.sr_steps,
+                    initial_messages=self.cortical_column.layer.prediction_cells,
+                    initial_prediction=self.cortical_column.layer.prediction_columns,
+                    save_state=False
+                )
+            else:
+                sr = self.predict_sr(self.cortical_column.layer.context_messages)
 
             self.cortical_column.restore_last_snapshot()
 
@@ -167,7 +204,18 @@ class BioHIMA:
         for t in range(n_steps):
             sr += predicted_observation * self.gamma**t
 
-            self.cortical_column.predict(context_messages)
+            if self.sr_estimate_planning == SrEstimatePlanning.UNIFORM:
+                action_dist = None
+            else:
+                # on/off-policy
+                # NB: evaluate actions directly with prediction, not with n-step planning!
+                action_values = self.evaluate_actions(with_planning=False)
+                action_dist = self._get_action_selection_distribution(
+                    action_values,
+                    on_policy=self.sr_estimate_planning == SrEstimatePlanning.ON_POLICY
+                )
+
+            self.cortical_column.predict(context_messages, external_messages=action_dist)
 
             context_messages = self.cortical_column.layer.internal_forward_messages.copy()
             predicted_observation = self.cortical_column.layer.prediction_columns
@@ -197,7 +245,9 @@ class BioHIMA:
         # FIXME: why does it need to clip negatives?
         self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
+        # FIXME sum -> mean to normalize over different hidden space sizes
         self.td_error = np.sum(np.power(error_sr, 2))
+        self.td_error_ma = lin_sum(self.td_error_ma, 0.2, self.td_error)
 
     def get_observations_prior(self, rewards):
         scale = self.reward_scale
@@ -207,10 +257,9 @@ class BioHIMA:
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True
     ) -> np.ndarray:
-        # off policy (=not on_policy) means greedy, on policy — just as usual
+        # off policy means greedy, on policy — with current exploration strategy
 
-        if on_policy and self.exploration_eps < 0:
-            # softmax policy
+        if on_policy and self.exploration_policy == ExplorationPolicy.SOFTMAX:
             action_dist = softmax(action_values, beta=self.inverse_temp)
         else:
             # greedy off policy or eps-greedy
@@ -219,12 +268,26 @@ class BioHIMA:
             # noinspection PyTypeChecker
             action_dist = sparse_to_dense([best_action], like=action_values)
 
-            if on_policy and self.exploration_eps > 0:
-                # add exploration if on policy eps-greedy
+            if on_policy and self.exploration_policy == ExplorationPolicy.EPS_GREEDY:
+                # add uniform exploration
                 action_dist[best_action] = 1 - self.exploration_eps
                 action_dist[:] += self.exploration_eps / self.n_actions
 
         return action_dist
+
+    def _get_action_value_estimate_strategy(self, with_planning: bool) -> ActionValueEstimate:
+        if not with_planning or self.action_value_estimate == ActionValueEstimate.PREDICT:
+            return ActionValueEstimate.PREDICT
+
+        # with_planning == True
+        if self.action_value_estimate == ActionValueEstimate.PLAN or self._should_plan():
+            return ActionValueEstimate.PLAN
+
+        return ActionValueEstimate.PREDICT
+
+    def _should_plan(self):
+        p = 1 - np.exp(-np.sqrt(self.td_error_ma) / 10)
+        return self._rng.random() < p
 
     @property
     def n_actions(self):

@@ -4,3 +4,10 @@ striatum_lr: 0.05
 sr_steps: 5
 approximate_tail: True
 inverse_temp: 1.0
+
+# -1: softmax | p \in [0, 1]: eps-greedy
+exploration_eps: -1
+# predict | plan | balance === 0-step | n-step | td-error based probability to use n-step
+action_value_estimate: balance
+# uniform | on_policy | off_policy
+sr_estimate_planning: on_policy
