@@ -176,7 +176,7 @@ class BioHIMA:
                     save_state=False
                 )
             else:
-                sr = self.predict_sr(self.cortical_column.layer.context_messages)
+                sr = self.predict_sr(self.cortical_column.layer.prediction_cells)
 
             self._restore_last_snapshot(pop=False)
 
@@ -193,10 +193,8 @@ class BioHIMA:
             initial_messages,
             initial_prediction,
             approximate_tail=True,
-            return_last_prediction_step=False,
             save_state=True
     ):
-        # NB: Policy is assumed to be uniform.
         if save_state:
             self._make_state_snapshot()
 
@@ -231,10 +229,7 @@ class BioHIMA:
         if save_state:
             self._restore_last_snapshot()
 
-        if return_last_prediction_step:
-            return sr, context_messages
-        else:
-            return sr
+        return sr
 
     def predict_sr(self, hidden_vars_dist):
         sr = np.dot(hidden_vars_dist, self.striatum_weights)
@@ -256,7 +251,7 @@ class BioHIMA:
     def get_observations_prior(self, rewards):
         scale = self.reward_scale
         rewards = rewards.reshape(self.cortical_column.layer.n_obs_vars, -1)
-        return softmax(scale * rewards, beta=self.inverse_temp).flatten()
+        return softmax(scale * rewards).flatten()
 
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True
