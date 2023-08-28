@@ -3,11 +3,14 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-import imageio
-import matplotlib.pyplot as plt
-import seaborn as sns
-import wandb
 import os
+
+from hima.common.lazy_imports import lazy_import
+
+wandb = lazy_import('wandb')
+plt = lazy_import('matplotlib.pyplot')
+sns = lazy_import('seaborn')
+imageio = lazy_import('imageio')
 
 
 class ScalarMetrics:
@@ -20,19 +23,19 @@ class ScalarMetrics:
         for key, value in metric_values.items():
             self.metrics[key].append(value)
 
-    def log(self, step):
-        average_metrics = {
+    def summarize(self):
+        return {
             key: self.agg_func[key](values)
             for key, values in self.metrics.items()
             if len(values) > 0
         }
 
-        self.logger.log(
-            average_metrics,
-            step=step
-        )
-
+    def reset(self):
         self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+    def log(self, step):
+        self.logger.log(self.summarize(), step=step)
+        self.reset()
 
 
 class HeatmapMetrics:
@@ -45,27 +48,28 @@ class HeatmapMetrics:
         for key, value in metric_values.items():
             self.metrics[key].append(value)
 
-    def log(self, step):
-        average_metrics = {
+    def summarize(self):
+        return {
             key: self.agg_func[key](values, axis=0)
             for key, values in self.metrics.items()
             if len(values) > 0
         }
 
+    def reset(self):
+        self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+    def log(self, step):
+        average_metrics = self.summarize()
+
         log_dict = {}
         for key, value in average_metrics.items():
             plt.figure()
-            log_dict[key] = wandb.Image(
-                sns.heatmap(value)
-            )
-        self.logger.log(
-            log_dict,
-            step=step
-        )
+            log_dict[key] = wandb.Image(sns.heatmap(value))
 
+        self.logger.log(log_dict, step=step)
         plt.close('all')
 
-        self.metrics = {metric: [] for metric in self.metrics.keys()}
+        self.reset()
 
 
 class ImageMetrics:
@@ -92,7 +96,7 @@ class ImageMetrics:
                     gif_path, values, mode='L', duration=1000/self.log_fps, loop=0
                 )
                 self.logger.log({metric: wandb.Video(gif_path)}, step=step)
-            elif len(values) > 0:
+            elif len(values) == 1:
                 self.logger.log({metric: wandb.Image(values[0])}, step=step)
 
         self.metrics = {metric: [] for metric in self.metrics.keys()}
