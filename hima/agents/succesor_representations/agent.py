@@ -11,7 +11,7 @@ from enum import Enum, auto
 import numpy as np
 
 from hima.common.sdr import sparse_to_dense
-from hima.common.utils import softmax, lin_sum
+from hima.common.utils import softmax, lin_sum, safe_divide
 from hima.experiments.hmm.runners.utils import get_surprise
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 
@@ -97,7 +97,7 @@ class BioHIMA:
     def sample_action(self):
         """Evaluate and sample actions."""
         action_values = self.evaluate_actions(with_planning=True)
-        action_dist = self._get_action_selection_distribution(action_values)
+        action_dist = self._get_action_selection_distribution(action_values, on_policy=True)
         action = self._rng.choice(self.n_actions, p=action_dist)
         return action
 
@@ -156,9 +156,12 @@ class BioHIMA:
         dense_action = np.zeros_like(action_values)
 
         estimate_strategy = self._get_action_value_estimate_strategy(with_planning)
+        # log_obs_prior = np.log(
+        #     np.clip(self.observation_prior, 1e-100, 1)
+        # )
 
         for action in range(n_actions):
-            # hacky way to clean previous one-hot, for 0th does nothing
+            # hacky way to clean previous one-hot, for 0-th does nothing
             dense_action[action-1] = 0
             # set current one-hot
             dense_action[action] = 1
@@ -178,13 +181,14 @@ class BioHIMA:
             else:
                 sr = self.predict_sr(self.cortical_column.layer.prediction_cells)
 
+            action_values[action] = np.sum(sr * self.observation_prior)
+            # action_values[action] = np.sum(sr * log_obs_prior)
             self._restore_last_snapshot(pop=False)
 
-            action_values[action] = np.sum(
-                sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
-            ) / self.cortical_column.layer.n_obs_vars
-
         self.state_snapshot_stack.pop()
+
+        # make irrelevant to the number of obs vars
+        action_values /= self.cortical_column.layer.n_obs_vars
         return action_values
 
     def _generate_sr(
@@ -249,16 +253,17 @@ class BioHIMA:
         self.td_error_ma = lin_sum(self.td_error_ma, 0.2, self.td_error)
 
     def get_observations_prior(self, rewards):
-        scale = self.reward_scale
         rewards = rewards.reshape(self.cortical_column.layer.n_obs_vars, -1)
-        return softmax(scale * rewards).flatten()
+        return softmax(rewards, beta=self.reward_scale).flatten()
 
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True
     ) -> np.ndarray:
         # off policy means greedy, on policy — with current exploration strategy
-
         if on_policy and self.exploration_policy == ExplorationPolicy.SOFTMAX:
+            # normalize values before applying softmax to make the choice
+            # of the softmax temperature scale invariant
+            action_values = safe_divide(action_values, np.abs(action_values.sum()))
             action_dist = softmax(action_values, beta=self.inverse_temp)
         else:
             # greedy off policy or eps-greedy
@@ -285,7 +290,7 @@ class BioHIMA:
         return ActionValueEstimate.PREDICT
 
     def _should_plan(self):
-        p = 1 - np.exp(-np.sqrt(self.td_error_ma))
+        p = 1 - np.exp(-np.sqrt(self.td_error_ma) / .4)
         return self._rng.random() < p
 
     def _make_state_snapshot(self):
