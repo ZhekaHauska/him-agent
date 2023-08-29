@@ -101,10 +101,10 @@ def softmax(
     Compute softmax values for a vector `x` with a given temperature or inverse temperature.
     The softmax operation is applied over the last axis by default, or over the specified axis.
     """
-    temp = isnone(temp, beta)
-    temp = isnone(temp, 1.0)
-
+    beta = isnone(beta, 1.0)
+    temp = isnone(temp, 1 / beta)
     temp = clip(temp, 1e-5, 1e+3)
+
     e_x = np.exp((x - np.max(x, axis=axis, keepdims=True)) / temp)
     return e_x / np.sum(e_x, axis=axis, keepdims=True)
 
