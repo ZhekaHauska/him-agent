@@ -34,7 +34,10 @@ class CorticalColumn:
         # predict current local input step
         if external_input is not None:
             external_messages = np.zeros(self.layer.external_input_size)
-            external_messages[external_input] = 1
+            if external_input >= 0:
+                external_messages[external_input] = 1
+            else:
+                external_messages = np.empty(0)
         else:
             external_messages = None
 

@@ -6,15 +6,17 @@
 import numpy as np
 from typing import Literal, Optional
 from hima.common.utils import softmax
-from hima.modules.belief.utils import normalize
 from hmmlearn.hmm import CategoricalHMM
 from copy import copy
+from hima.modules.baselines.cscg import CHMM
+
+import warnings
+from hima.modules.belief.utils import softmax, normalize, sample_categorical_variables
+from hima.modules.belief.utils import EPS, UINT_DTYPE, REAL64_DTYPE
 
 
 L_MODE = Literal['bw', 'bw_base', 'bw_iter', 'htm']
 INI_MODE = Literal['dirichlet', 'normal', 'uniform']
-
-EPS = 1e-15
 
 
 class CHMMBasic:
@@ -385,3 +387,258 @@ class HMM:
         self.transition_probs = self.model.transmat_.copy()
         self.state_prior = self.model.startprob_.copy()
         self.emission_probs = self.model.emissionprob_.copy()
+
+
+class CHMMLayer:
+    def __init__(
+            self,
+            n_obs_states: int,
+            cells_per_column: int,
+            batch_size: int = 100,
+            n_context_states: int = 0,
+            n_external_states: int = 0,
+            alpha: float = 1.0,
+            seed: int = None,
+    ):
+        self._rng = np.random.default_rng(seed)
+
+        self.timestep = 1
+        self.n_obs_vars = 1
+        self.n_hidden_vars = 1
+        self.n_obs_states = n_obs_states
+        self.n_external_vars = 1
+        self.n_external_states = n_external_states
+        self.n_context_vars = 1
+        self.n_context_states = n_context_states
+        self.batch_size = batch_size
+
+        self.cells_per_column = cells_per_column
+        self.n_hidden_states = cells_per_column * n_obs_states
+
+        self.internal_cells = self.n_hidden_vars * self.n_hidden_states
+        self.external_input_size = self.n_external_vars * self.n_external_states
+        self.context_input_size = self.n_context_vars * self.n_context_states
+
+        self.input_sdr_size = n_obs_states
+
+        # trainable parameters
+        self.transition_probs = self._rng.dirichlet(
+            alpha=[alpha] * self.n_hidden_states * self.n_external_states,
+            size=self.n_hidden_states
+        ).reshape((self.n_external_states, self.n_hidden_states, self.n_hidden_states))
+        self.state_prior = self._rng.dirichlet(alpha=[alpha] * self.n_hidden_states)
+
+        self.n_columns = self.n_obs_states
+
+        # layer state
+        self.last_state_snapshot = None
+
+        self.internal_forward_messages = np.zeros(
+            self.internal_cells,
+            dtype=REAL64_DTYPE
+        )
+        self.external_messages = np.zeros(
+            self.external_input_size,
+            dtype=REAL64_DTYPE
+        )
+        self.context_messages = np.zeros(
+            self.context_input_size,
+            dtype=REAL64_DTYPE
+        )
+
+        self.prediction_cells = None
+        self.prediction_columns = None
+
+        self.observations = []
+        self.actions = []
+
+        # cells are numbered in the following order:
+        # internal cells | context cells | external cells
+        self.internal_cells_range = (
+            0,
+            self.internal_cells
+        )
+        self.context_cells_range = (
+            self.internal_cells_range[1],
+            self.internal_cells_range[1] + self.context_input_size
+        )
+        self.external_cells_range = (
+            self.context_cells_range[1],
+            self.context_cells_range[1] + self.external_input_size
+        )
+
+    def set_external_messages(self, messages=None):
+        # update external cells
+        if messages is not None:
+            self.external_messages = messages
+        elif self.external_input_size != 0:
+            self.external_messages = normalize(
+                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
+            ).flatten()
+
+    def set_context_messages(self, messages=None):
+        # update external cells
+        if messages is not None:
+            self.context_messages = messages
+        elif self.context_input_size != 0:
+            self.context_messages = normalize(
+                np.zeros(self.context_input_size).reshape((self.n_context_vars, -1))
+            ).flatten()
+
+    def make_state_snapshot(self):
+        self.last_state_snapshot = (
+            self.internal_forward_messages.copy(),
+            self.external_messages.copy(),
+            self.context_messages.copy(),
+            self.prediction_cells.copy(),
+            self.prediction_columns.copy()
+        )
+
+    def restore_last_snapshot(self):
+        if self.last_state_snapshot is not None:
+            (
+                self.internal_forward_messages,
+                self.external_messages,
+                self.context_messages,
+                self.prediction_cells,
+                self.prediction_columns
+            ) = [x.copy() for x in self.last_state_snapshot]
+
+    def reset(self):
+        self.internal_forward_messages = np.zeros(
+            self.internal_cells,
+            dtype=REAL64_DTYPE
+        )
+        self.external_messages = np.zeros(
+            self.external_input_size,
+            dtype=REAL64_DTYPE
+        )
+        self.context_messages = np.zeros(
+            self.context_input_size,
+            dtype=REAL64_DTYPE
+        )
+
+        self.prediction_cells = None
+        self.prediction_columns = None
+
+    def predict(self, include_context_connections=True, include_internal_connections=False, **_):
+        if self.context_messages.size == 0:
+            self.internal_forward_messages = self.state_prior.copy()
+        else:
+            trans_probs_action = np.sum(
+                self.transition_probs * self.external_messages.reshape((-1, 1, 1)),
+                axis=0
+            )
+            self.internal_forward_messages = np.dot(self.context_messages, trans_probs_action)
+            self.internal_forward_messages = normalize(
+                self.internal_forward_messages.reshape(
+                    (self.n_hidden_vars, self.n_hidden_states)
+                )
+            ).flatten()
+
+        self.prediction_cells = self.internal_forward_messages.copy()
+        self.prediction_columns = self.prediction_cells.reshape(
+            (self.n_columns, self.cells_per_column)
+        ).sum(axis=-1)
+
+    def observe(
+            self,
+            observation: np.ndarray,
+            learn: bool = True
+    ):
+        # update messages
+        cells = self._get_cells_for_observation(observation)
+        obs_factor = np.zeros_like(self.internal_forward_messages)
+        obs_factor[cells] = 1
+        self.internal_forward_messages *= obs_factor
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            self.internal_forward_messages = normalize(
+                self.internal_forward_messages.reshape((self.n_hidden_vars, -1)),
+                obs_factor.reshape((self.n_hidden_vars, -1))
+            ).flatten()
+
+        if learn:
+            self.observations.append(observation[0])
+            if self.external_messages.size != 0:
+                self.actions.append(
+                    sample_categorical_variables(
+                        self.external_messages.reshape((1, -1)),
+                        self._rng
+                    )[0]
+                )
+            else:
+                self.actions.append(-1)
+
+            if (self.timestep % self.batch_size) == 0:
+                x = np.array(self.observations, dtype=np.int64)
+                self.actions.append(-1)
+                a = np.array(self.actions[1:], dtype=np.int64)
+
+                chmm = CHMM(
+                    np.full(self.n_obs_states, fill_value=self.cells_per_column),
+                    x,
+                    a,
+                    pseudocount=EPS,
+                    dtype=REAL64_DTYPE,
+                    seed=self._rng.integers(np.iinfo(np.int32).max)
+                )
+                chmm.learn_em_T(x, a, n_iter=100, term_early=False)
+                self.transition_probs = chmm.T.copy()
+                self.state_prior = chmm.Pi_x.copy()
+                self.observations.clear()
+                self.actions.clear()
+
+        self.timestep += 1
+
+    def _get_cells_for_observation(self, obs_states):
+        vars_for_obs_states = obs_states // self.n_obs_states
+        all_vars = np.arange(self.n_obs_vars)
+        vars_without_states = all_vars[np.isin(all_vars, vars_for_obs_states, invert=True)]
+
+        cells_for_empty_vars = self._get_cells_in_vars(vars_without_states)
+
+        cells_in_columns = (
+                (
+                        obs_states * self.cells_per_column
+                ).reshape((-1, 1)) +
+                np.arange(self.cells_per_column, dtype=UINT_DTYPE)
+        ).flatten()
+
+        return np.concatenate([cells_for_empty_vars, cells_in_columns])
+
+    def _get_cells_in_vars(self, variables):
+        internal_vars_mask = variables < self.n_hidden_vars
+        context_vars_mask = (
+                (variables >= self.n_hidden_vars) &
+                (variables < (self.n_hidden_vars + self.n_context_vars))
+        )
+        external_vars_mask = (
+                variables >= (self.n_hidden_vars + self.n_context_vars)
+        )
+
+        cells_in_internal_vars = (
+                (variables[internal_vars_mask] * self.n_hidden_states).reshape((-1, 1)) +
+                np.arange(self.n_hidden_states, dtype=UINT_DTYPE)
+        ).flatten()
+
+        cells_in_context_vars = (
+                ((variables[context_vars_mask] - self.n_hidden_vars) *
+                 self.n_context_states).reshape((-1, 1)) +
+                np.arange(self.n_context_states, dtype=UINT_DTYPE)
+        ).flatten() + self.context_cells_range[0]
+
+        cells_in_external_vars = (
+                ((variables[external_vars_mask] - self.n_hidden_vars - self.n_context_vars) *
+                 self.n_external_states).reshape((-1, 1)) +
+                np.arange(self.n_external_states, dtype=UINT_DTYPE)
+        ).flatten() + self.external_cells_range[0]
+
+        return np.concatenate(
+            [
+                cells_in_internal_vars,
+                cells_in_context_vars,
+                cells_in_external_vars
+            ]
+        )
