@@ -15,6 +15,7 @@ from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.baselines.hmm import CHMMLayer
+from hima.experiments.successor_representations.runners.utils import make_decoder
 
 wandb = lazy_import('wandb')
 
@@ -60,6 +61,25 @@ class PinballTest:
             layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
             layer_conf['n_context_states'] = (
                     encoder.sps[0].getNumColumns() * layer_conf['cells_per_column']
+            )
+        elif encoder_type == 'sp_grouped':
+            from hima.experiments.temporal_pooling.stp.sp_ensemble import (
+                SpatialPoolerGroupedWrapper
+            )
+            encoder_conf['seed'] = self.seed
+            encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
+
+            decoder_type = conf['run'].get('decoder', None)
+            decoder_conf = conf['decoder']
+
+            encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
+            assert encoder.n_groups == 1
+
+            decoder = make_decoder(encoder, decoder_type, decoder_conf)
+
+            layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
+            layer_conf['n_context_states'] = (
+                    encoder.getSingleNumColumns() * layer_conf['cells_per_column']
             )
         else:
             raise ValueError(f'Encoder type {encoder_type} is not supported')
