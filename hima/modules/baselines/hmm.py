@@ -430,9 +430,6 @@ class CHMMLayer:
 
         self.n_columns = self.n_obs_states
 
-        # layer state
-        self.last_state_snapshot = None
-
         self.internal_forward_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
@@ -486,23 +483,30 @@ class CHMMLayer:
             ).flatten()
 
     def make_state_snapshot(self):
-        self.last_state_snapshot = (
+        return (
+            # mutable attributes:
             self.internal_forward_messages.copy(),
-            self.external_messages.copy(),
-            self.context_messages.copy(),
-            self.prediction_cells.copy(),
-            self.prediction_columns.copy()
+            # immutable attributes:
+            self.external_messages,
+            self.context_messages,
+            self.prediction_cells,
+            self.prediction_columns
         )
 
-    def restore_last_snapshot(self):
-        if self.last_state_snapshot is not None:
-            (
-                self.internal_forward_messages,
-                self.external_messages,
-                self.context_messages,
-                self.prediction_cells,
-                self.prediction_columns
-            ) = [x.copy() for x in self.last_state_snapshot]
+    def restore_last_snapshot(self, snapshot):
+        if snapshot is None:
+            return
+
+        (
+            self.internal_forward_messages,
+            self.external_messages,
+            self.context_messages,
+            self.prediction_cells,
+            self.prediction_columns
+        ) = snapshot
+
+        # explicitly copy mutable attributes:
+        self.internal_forward_messages = self.internal_forward_messages.copy()
 
     def reset(self):
         self.internal_forward_messages = np.zeros(
