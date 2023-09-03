@@ -551,9 +551,14 @@ class CHMMLayer:
             learn: bool = True
     ):
         # update messages
-        cells = self._get_cells_for_observation(observation)
-        obs_factor = np.zeros_like(self.internal_forward_messages)
-        obs_factor[cells] = 1
+        if len(observation) > 0:
+            cells = self._get_cells_for_observation(observation)
+            obs_factor = np.zeros_like(self.internal_forward_messages)
+            obs_factor[cells] = 1
+        else:
+            obs_factor = np.ones_like(self.internal_forward_messages)
+            observation = [-1]
+
         self.internal_forward_messages *= obs_factor
 
         with warnings.catch_warnings():

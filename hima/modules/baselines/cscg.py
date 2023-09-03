@@ -475,7 +475,11 @@ def forward(T_tr, Pi, n_clones, x, a, store_messages=False):
     # forward pass
     t, log2_lik = 0, np.zeros(len(x), dtype)
     j = x[t]
-    j_start, j_stop = state_loc[j : j + 2]
+    if j >= 0:
+        j_start, j_stop = state_loc[j: j + 2]
+    else:
+        j_start, j_stop = 0, Pi.size
+
     message = Pi[j_start:j_stop].copy().astype(dtype)
     p_obs = message.sum()
     assert p_obs > 0
@@ -497,10 +501,16 @@ def forward(T_tr, Pi, n_clones, x, a, store_messages=False):
             x[t - 1],
             x[t],
         )  # at time t-1 -> t we go from observation i to observation j
-        (i_start, i_stop), (j_start, j_stop) = (
-            state_loc[i : i + 2],
-            state_loc[j : j + 2],
-        )
+        # handel missing observations
+        if i >= 0:
+            (i_start, i_stop) = state_loc[i: i + 2]
+        else:
+            i_start, i_stop = 0, T_tr.shape[1]
+
+        if j >= 0:
+            (j_start, j_stop) = state_loc[j: j + 2]
+        else:
+            j_start, j_stop = 0, T_tr.shape[1]
 
         if aij >= 0:
             message = np.ascontiguousarray(T_tr[aij, j_start:j_stop, i_start:i_stop]).dot(
