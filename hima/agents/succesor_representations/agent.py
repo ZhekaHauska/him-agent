@@ -139,7 +139,7 @@ class BioHIMA:
     def reinforce(self, reward):
         """
         Adapt prior distribution of observations according to external reward.
-            reward: float in [0, 1]
+            reward: float
         """
         # learn with mse loss
         lr, messages = self.observation_reward_lr, self.observation_messages
@@ -156,9 +156,6 @@ class BioHIMA:
         dense_action = np.zeros_like(action_values)
 
         estimate_strategy = self._get_action_value_estimate_strategy(with_planning)
-        # log_obs_prior = np.log(
-        #     np.clip(self.observation_prior, 1e-100, 1)
-        # )
 
         for action in range(n_actions):
             # hacky way to clean previous one-hot, for 0-th does nothing
@@ -181,8 +178,11 @@ class BioHIMA:
             else:
                 sr = self.predict_sr(self.cortical_column.layer.prediction_cells)
 
-            action_values[action] = np.sum(sr * self.observation_prior)
-            # action_values[action] = np.sum(sr * log_obs_prior)
+            # average value predicted by all variables
+            action_values[action] = np.sum(
+                sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
+            ) / self.cortical_column.layer.n_obs_vars
+
             self._restore_last_snapshot(pop=False)
 
         self.state_snapshot_stack.pop()
