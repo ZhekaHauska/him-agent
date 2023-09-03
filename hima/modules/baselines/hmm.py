@@ -398,6 +398,8 @@ class CHMMLayer:
             n_context_states: int = 0,
             n_external_states: int = 0,
             alpha: float = 1.0,
+            lr: float = 1.0,
+            em_iterations: int = 100,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -411,6 +413,8 @@ class CHMMLayer:
         self.n_context_vars = 1
         self.n_context_states = n_context_states
         self.batch_size = batch_size
+        self.em_iterations = em_iterations
+        self.lr = lr
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -593,9 +597,13 @@ class CHMMLayer:
                     dtype=REAL64_DTYPE,
                     seed=self._rng.integers(np.iinfo(np.int32).max)
                 )
-                chmm.learn_em_T(x, a, n_iter=100, term_early=False)
-                self.transition_probs = chmm.T.copy()
-                self.state_prior = chmm.Pi_x.copy()
+                chmm.T = self.transition_probs
+                chmm.Pi_x = self.state_prior
+                chmm.learn_em_T(x, a, n_iter=self.em_iterations, term_early=False)
+
+                self.transition_probs += self.lr * (chmm.T.copy() - self.transition_probs)
+                self.state_prior += self.lr * (chmm.Pi_x.copy() - self.state_prior)
+
                 self.observations.clear()
                 self.actions.clear()
 
