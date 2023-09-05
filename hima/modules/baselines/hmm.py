@@ -554,14 +554,14 @@ class CHMMLayer:
             observation: np.ndarray,
             learn: bool = True
     ):
+        # TODO handle missing observations
+        if len(observation) == 0:
+            return
+
         # update messages
-        if len(observation) > 0:
-            cells = self._get_cells_for_observation(observation)
-            obs_factor = np.zeros_like(self.internal_forward_messages)
-            obs_factor[cells] = 1
-        else:
-            obs_factor = np.ones_like(self.internal_forward_messages)
-            observation = [-1]
+        cells = self._get_cells_for_observation(observation)
+        obs_factor = np.zeros_like(self.internal_forward_messages)
+        obs_factor[cells] = 1
 
         self.internal_forward_messages *= obs_factor
 

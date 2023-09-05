@@ -33,7 +33,7 @@ def validate_seq(x, a, n_clones=None):
     assert len(x) == len(a) > 0
     assert len(x.shape) == len(a.shape) == 1, "Flatten your array first"
     assert x.dtype == a.dtype == np.int64
-    assert 0 <= x.min(), "Number of emissions inconsistent with training sequence"
+    # assert 0 <= x.min(), "Number of emissions inconsistent with training sequence"
     if n_clones is not None:
         assert len(n_clones.shape) == 1, "Flatten your array first"
         assert n_clones.dtype == np.int64
@@ -475,10 +475,7 @@ def forward(T_tr, Pi, n_clones, x, a, store_messages=False):
     # forward pass
     t, log2_lik = 0, np.zeros(len(x), dtype)
     j = x[t]
-    if j >= 0:
-        j_start, j_stop = state_loc[j: j + 2]
-    else:
-        j_start, j_stop = 0, Pi.size
+    j_start, j_stop = state_loc[j: j + 2]
 
     message = Pi[j_start:j_stop].copy().astype(dtype)
     p_obs = message.sum()
@@ -501,16 +498,8 @@ def forward(T_tr, Pi, n_clones, x, a, store_messages=False):
             x[t - 1],
             x[t],
         )  # at time t-1 -> t we go from observation i to observation j
-        # handel missing observations
-        if i >= 0:
-            (i_start, i_stop) = state_loc[i: i + 2]
-        else:
-            i_start, i_stop = 0, T_tr.shape[1]
-
-        if j >= 0:
-            (j_start, j_stop) = state_loc[j: j + 2]
-        else:
-            j_start, j_stop = 0, T_tr.shape[1]
+        (i_start, i_stop) = state_loc[i: i + 2]
+        (j_start, j_stop) = state_loc[j: j + 2]
 
         if aij >= 0:
             message = np.ascontiguousarray(T_tr[aij, j_start:j_stop, i_start:i_stop]).dot(
