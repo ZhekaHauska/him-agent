@@ -432,6 +432,9 @@ class CHMMLayer:
         ).reshape((self.n_external_states, self.n_hidden_states, self.n_hidden_states))
         self.state_prior = self._rng.dirichlet(alpha=[alpha] * self.n_hidden_states)
 
+        self.transition_stats = np.zeros_like(self.transition_probs)
+        self.state_prior_stats = np.zeros_like(self.state_prior)
+
         self.n_columns = self.n_obs_states
 
         self.internal_forward_messages = np.zeros(
@@ -601,8 +604,14 @@ class CHMMLayer:
                 chmm.Pi_x = self.state_prior
                 chmm.learn_em_T(x, a, n_iter=self.em_iterations, term_early=False)
 
-                self.transition_probs += self.lr * (chmm.T.copy() - self.transition_probs)
-                self.state_prior += self.lr * (chmm.Pi_x.copy() - self.state_prior)
+                # TODO normalize transition matrix
+                self.transition_stats += self.lr * (chmm.T.copy() - self.transition_stats)
+                self.state_prior_stats += self.lr * (chmm.Pi_x.copy() - self.state_prior_stats)
+
+                self.transition_probs = self.transition_stats / self.transition_stats.sum(
+                    axis=2
+                )[:, :, None]
+                self.state_prior = self.state_prior_stats / self.state_prior_stats.sum()
 
                 self.observations.clear()
                 self.actions.clear()
