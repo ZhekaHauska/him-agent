@@ -604,7 +604,6 @@ class CHMMLayer:
                 chmm.Pi_x = self.state_prior
                 chmm.learn_em_T(x, a, n_iter=self.em_iterations, term_early=False)
 
-                # TODO normalize transition matrix
                 self.transition_stats += self.lr * (chmm.T.copy() - self.transition_stats)
                 self.state_prior_stats += self.lr * (chmm.Pi_x.copy() - self.state_prior_stats)
 
