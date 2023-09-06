@@ -3,10 +3,13 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from typing import Union, Optional
+
 import numpy as np
 from htm.bindings.sdr import SDR
 
 from hima.modules.belief.cortial_column.layer import Layer
+from hima.modules.baselines.hmm import CHMMLayer
 from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
 
 
@@ -17,9 +20,9 @@ class CorticalColumn:
     """
     def __init__(
             self,
-            layer: Layer,
-            encoder: SPEnsemble,
-            decoder: SPDecoder
+            layer: Union[Layer, CHMMLayer],
+            encoder: Optional[SPEnsemble],
+            decoder: Optional[SPDecoder]
     ):
         self.layer = layer
         self.encoder = encoder
@@ -27,8 +30,12 @@ class CorticalColumn:
 
         self.predicted_image = None
 
-        self.input_sdr = SDR(self.encoder.getNumInputs())
-        self.output_sdr = SDR(self.encoder.getNumColumns())
+        if self.encoder is not None:
+            self.input_sdr = SDR(self.encoder.getNumInputs())
+            self.output_sdr = SDR(self.encoder.getNumColumns())
+        else:
+            self.input_sdr = SDR(self.layer.input_sdr_size)
+            self.output_sdr = SDR(self.layer.input_sdr_size)
 
     def observe(self, local_input, external_input, learn=True):
         # predict current local input step
@@ -45,14 +52,21 @@ class CorticalColumn:
         self.layer.predict(learn=learn)
 
         self.input_sdr.sparse = local_input
-        self.predicted_image = self.decoder.decode(
-            self.layer.prediction_columns, learn=learn, correct_obs=self.input_sdr.dense
-        )
+
+        if self.decoder is not None:
+            self.predicted_image = self.decoder.decode(
+                self.layer.prediction_columns, learn=learn, correct_obs=self.input_sdr.dense
+            )
+        else:
+            self.predicted_image = self.layer.prediction_columns
 
         # observe real outcome and optionally learn using prediction error
-        self.encoder.compute(self.input_sdr, learn, self.output_sdr)
-        self.layer.observe(self.output_sdr.sparse, learn=learn)
+        if self.encoder is not None:
+            self.encoder.compute(self.input_sdr, learn, self.output_sdr)
+        else:
+            self.output_sdr.sparse = self.input_sdr.sparse
 
+        self.layer.observe(self.output_sdr.sparse, learn=learn)
         self.layer.set_context_messages(self.layer.internal_forward_messages)
 
     def predict(self, context_messages, external_messages=None):
@@ -60,7 +74,10 @@ class CorticalColumn:
         self.layer.set_external_messages(external_messages)
         self.layer.predict()
 
-        self.predicted_image = self.decoder.decode(self.layer.prediction_columns, learn=False)
+        if self.decoder is not None:
+            self.predicted_image = self.decoder.decode(self.layer.prediction_columns, learn=False)
+        else:
+            self.predicted_image = self.layer.prediction_columns
 
     def reset(self, context_messages, external_messages):
         self.layer.reset()
