@@ -165,21 +165,22 @@ class PinballTest:
                 self.agent.reinforce(reward)
 
                 if running:
-                    # action = self._rng.integers(self.n_actions)
-                    action = self.agent.sample_action()
+                    action = self._rng.integers(self.n_actions)
+                    # action = self.agent.sample_action()
                     # convert to AAI action
                     pinball_action = self.actions[action]
                     self.environment.act(pinball_action)
 
                 # >>> logging
                 if self.logger is not None:
-                    self.scalar_metrics.update(
-                        {
-                            'main_metrics/reward': reward,
-                            'layer/surprise_hidden': self.agent.surprise,
-                            'agent/td_error': self.agent.td_error
-                        }
-                    )
+                    if steps > 0:
+                        self.scalar_metrics.update(
+                            {
+                                'main_metrics/reward': reward,
+                                'layer/surprise_hidden': self.agent.surprise,
+                                'agent/td_error': self.agent.td_error
+                            }
+                        )
 
                     if (i % self.update_rate) == 0:
                         raw_beh = (self.prev_image * 255).astype('uint8')
@@ -255,6 +256,160 @@ class PinballTest:
         return events
 
 
+class GridWorldTest:
+    def __init__(self, logger, conf):
+        from hima.envs.gridworld import GridWorld
+
+        self.logger = logger
+        self.seed = conf['run'].get('seed')
+        self._rng = np.random.default_rng(self.seed)
+
+        env_conf = conf['env']
+        self.environment = GridWorld(
+            room=np.array(env_conf['room']),
+            default_reward=env_conf['default_reward'],
+            seed=self.seed
+        )
+
+        self.start_position = conf['run']['start_position']
+        self.actions = conf['run']['actions']
+        self.n_actions = len(self.actions)
+
+        # assembly agent
+        layer_conf = conf['layer']
+        layer_conf['n_external_states'] = self.n_actions
+        layer_conf['n_obs_states'] = np.max(self.environment.colors) + 1
+        layer_conf['n_context_states'] = (
+                layer_conf['n_obs_states'] * layer_conf['cells_per_column']
+        )
+        layer_conf['seed'] = self.seed
+
+        layer = CHMMLayer(**layer_conf)
+
+        cortical_column = CorticalColumn(
+            layer,
+            encoder=None,
+            decoder=None
+        )
+
+        self.agent = BioHIMA(
+            cortical_column,
+            **conf['agent']
+        )
+
+        self.n_episodes = conf['run']['n_episodes']
+        self.max_steps = conf['run']['max_steps']
+        self.update_rate = conf['run']['update_rate']
+
+        self.initial_context = np.empty(0)
+
+        if self.logger is not None:
+            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
+            # define metrics
+            self.scalar_metrics = ScalarMetrics(
+                {
+                    'main_metrics/reward': np.sum,
+                    'main_metrics/steps': np.mean,
+                    'layer/surprise_hidden': np.mean,
+                    'agent/td_error': np.mean
+                },
+                self.logger
+            )
+
+            self.heatmap_metrics = HeatmapMetrics(
+                {
+                    'agent/striatum_weights': np.mean
+                },
+                self.logger
+            )
+
+            self.image_metrics = ImageMetrics(
+                [
+                    'agent/behavior'
+                ],
+                self.logger,
+                log_fps=conf['run']['log_gif_fps']
+            )
+
+    def run(self):
+        episode_print_schedule = 50
+
+        for i in range(self.n_episodes):
+            if i % episode_print_schedule == 0:
+                print(f'Episode {i}')
+
+            steps = 0
+            running = True
+            action = -1
+
+            self.environment.reset(*self.start_position)
+            self.agent.reset(self.initial_context, np.empty(0))
+
+            while running:
+                self.environment.step()
+                obs, reward, is_terminal = self.environment.obs()
+                running = not is_terminal
+
+                events = [obs]
+                # observe events_t and action_{t-1}
+                pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
+                self.agent.reinforce(reward)
+
+                if running:
+                    action = self._rng.integers(self.n_actions)
+                    # action = self.agent.sample_action()
+                    # convert to AAI action
+                    pinball_action = self.actions[action]
+                    self.environment.act(pinball_action)
+
+                # >>> logging
+                if self.logger is not None:
+                    if steps > 0:
+                        self.scalar_metrics.update(
+                            {
+                                'main_metrics/reward': reward,
+                                'layer/surprise_hidden': self.agent.surprise,
+                                'agent/td_error': self.agent.td_error
+                            }
+                        )
+
+                    if (i % self.update_rate) == 0:
+                        raw_beh = self.environment.colors.astype(np.float64)
+                        agent_color = self.agent.cortical_column.layer.n_obs_states + 1
+                        raw_beh[self.environment.r, self.environment.c] = agent_color
+                        raw_beh += 1
+                        raw_beh /= (agent_color + 1)
+
+                        raw_beh = (raw_beh * 255).astype('uint8')
+
+                        self.image_metrics.update(
+                            {
+                                'agent/behavior': raw_beh
+                            }
+                        )
+                # <<< logging
+
+                steps += 1
+
+                if steps >= self.max_steps:
+                    running = False
+
+            # >>> logging
+            if self.logger is not None:
+                self.scalar_metrics.update({'main_metrics/steps': steps})
+                self.scalar_metrics.log(i)
+
+                if (i % self.update_rate) == 0:
+                    self.heatmap_metrics.update(
+                        {
+                            'agent/striatum_weights': self.agent.striatum_weights
+                        }
+                    )
+                    self.heatmap_metrics.log(i)
+                    self.image_metrics.log(i)
+            # <<< logging
+
+
 def main(config_path):
     if len(sys.argv) > 1:
         config_path = sys.argv[1]
@@ -265,7 +420,9 @@ def main(config_path):
     config['env'] = read_config(config['run']['env_conf'])
     config['agent'] = read_config(config['run']['agent_conf'])
     config['layer'] = read_config(config['run']['layer_conf'])
-    config['encoder'] = read_config(config['run']['encoder_conf'])
+
+    if 'encoder_conf' in config['run']:
+        config['encoder'] = read_config(config['run']['encoder_conf'])
 
     if 'decoder_conf' in config['run']:
         config['decoder'] = read_config(config['run']['decoder_conf'])
@@ -287,6 +444,8 @@ def main(config_path):
 
     if config['run']['experiment'] == 'pinball':
         runner = PinballTest(logger, config)
+    elif config['run']['experiment'] == 'gridworld':
+        runner = GridWorldTest(logger, config)
     else:
         raise ValueError(f'There is no such experiment {config["run"]["experiment"]}!')
 

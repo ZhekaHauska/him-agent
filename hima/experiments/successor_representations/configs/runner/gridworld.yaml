@@ -1,0 +1,19 @@
+log: True
+save_model: False
+project_name: 'sr_gridworld_chmm_test_memory'
+run_tag: null
+
+n_episodes: 501
+update_rate: 20
+max_steps: 50
+log_gif_fps: 5
+start_position: [5, 0]
+actions: [0, 1, 2, 3]
+
+agent_conf: 'configs/agent/gridworld.yaml'
+layer_conf: 'configs/hmm/gridworld.yaml'
+env_conf: 'configs/gridworld/default.yaml'
+
+experiment: gridworld
+
+seed: null
