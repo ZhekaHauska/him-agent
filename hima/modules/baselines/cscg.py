@@ -449,21 +449,23 @@ def updateC(C, T, n_clones, mess_fwd, mess_bwd, x, a):
             x[t - 1],
             x[t],
         )  # at time t-1 -> t we go from observation i to observation j
-        (tm1_start, tm1_stop), (t_start, t_stop) = (
-            mess_loc[t - 1 : t + 1],
-            mess_loc[t : t + 2],
-        )
-        (i_start, i_stop), (j_start, j_stop) = (
-            state_loc[i : i + 2],
-            state_loc[j : j + 2],
-        )
-        q = (
-            mess_fwd[tm1_start:tm1_stop].reshape(-1, 1)
-            * T[aij, i_start:i_stop, j_start:j_stop]
-            * mess_bwd[t_start:t_stop].reshape(1, -1)
-        )
-        q /= q.sum()
-        C[aij, i_start:i_stop, j_start:j_stop] += q
+
+        if aij >= 0:
+            (tm1_start, tm1_stop), (t_start, t_stop) = (
+                mess_loc[t - 1 : t + 1],
+                mess_loc[t : t + 2],
+            )
+            (i_start, i_stop), (j_start, j_stop) = (
+                state_loc[i : i + 2],
+                state_loc[j : j + 2],
+            )
+            q = (
+                mess_fwd[tm1_start:tm1_stop].reshape(-1, 1)
+                * T[aij, i_start:i_stop, j_start:j_stop]
+                * mess_bwd[t_start:t_stop].reshape(1, -1)
+            )
+            q /= q.sum()
+            C[aij, i_start:i_stop, j_start:j_stop] += q
 
 
 @nb.njit
