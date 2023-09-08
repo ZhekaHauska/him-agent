@@ -1,7 +1,14 @@
 gamma: 0.99
 observation_reward_lr: 0.04
+reward_scale: 20.0
 striatum_lr: 0.02
 sr_steps: 5
 approximate_tail: True
 inverse_temp: 1.0
-reward_scale: 20.0
+
+# p \in [0, 1]: eps-greedy | otherwise (use -1): softmax
+exploration_eps: -1
+# predict | plan | balance === 0-step | n-step | td-error based probability to use n-step
+action_value_estimate: predict
+# uniform | on_policy | off_policy
+sr_estimate_planning: on_policy

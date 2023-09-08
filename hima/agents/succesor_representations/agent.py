@@ -186,9 +186,6 @@ class BioHIMA:
             self._restore_last_snapshot(pop=False)
 
         self.state_snapshot_stack.pop()
-
-        # make irrelevant to the number of obs vars
-        action_values /= self.cortical_column.layer.n_obs_vars
         return action_values
 
     def _generate_sr(

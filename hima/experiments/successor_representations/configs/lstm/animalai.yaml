@@ -1,3 +1,5 @@
 n_hidden_vars: 1
 n_hidden_states: 400
+decoder_bias: true
+
 lr: 0.003
