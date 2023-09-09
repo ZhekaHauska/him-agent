@@ -16,6 +16,7 @@ from hima.common.run.argparse import parse_arg_list
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.baselines.hmm import CHMMLayer
 from hima.experiments.successor_representations.runners.utils import make_decoder
+from typing import Literal
 
 wandb = lazy_import('wandb')
 
@@ -103,6 +104,7 @@ class PinballTest:
         self.n_episodes = conf['run']['n_episodes']
         self.max_steps = conf['run']['max_steps']
         self.update_rate = conf['run']['update_rate']
+        self.camera_mode = conf['run']['camera_mode']
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -159,14 +161,14 @@ class PinballTest:
                 obs, reward, is_terminal = self.environment.obs()
                 running = not is_terminal
 
-                events = self.preprocess(obs)
+                events = self.preprocess(obs, mode=self.camera_mode)
                 # observe events_t and action_{t-1}
                 pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
                 self.agent.reinforce(reward)
 
                 if running:
-                    action = self._rng.integers(self.n_actions)
-                    # action = self.agent.sample_action()
+                    # action = self._rng.integers(self.n_actions)
+                    action = self.agent.sample_action()
                     # convert to AAI action
                     pinball_action = self.actions[action]
                     self.environment.act(pinball_action)
@@ -243,10 +245,15 @@ class PinballTest:
         else:
             self.environment.close()
 
-    def preprocess(self, image):
+    def preprocess(self, image, mode: Literal['abs', 'clip'] = 'abs'):
         gray = np.dot(image[:, :, :3], [299 / 1000, 587 / 1000, 114 / 1000])
 
-        diff = np.abs(gray - self.prev_image)
+        if mode == 'abs':
+            diff = np.abs(gray - self.prev_image)
+        elif mode == 'clip':
+            diff = np.clip(gray - self.prev_image, 0, None)
+        else:
+            raise ValueError(f'There is no such mode: "{mode}"!')
 
         self.prev_image = gray.copy()
 
@@ -356,8 +363,8 @@ class GridWorldTest:
                 self.agent.reinforce(reward)
 
                 if running:
-                    action = self._rng.integers(self.n_actions)
-                    # action = self.agent.sample_action()
+                    # action = self._rng.integers(self.n_actions)
+                    action = self.agent.sample_action()
                     # convert to AAI action
                     pinball_action = self.actions[action]
                     self.environment.act(pinball_action)
