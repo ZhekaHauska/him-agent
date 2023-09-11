@@ -175,14 +175,13 @@ class PinballTest:
 
                 # >>> logging
                 if self.logger is not None:
-                    if steps > 0:
-                        self.scalar_metrics.update(
-                            {
-                                'main_metrics/reward': reward,
-                                'layer/surprise_hidden': self.agent.surprise,
-                                'agent/td_error': self.agent.td_error
-                            }
-                        )
+                    self.scalar_metrics.update(
+                        {
+                            'main_metrics/reward': reward,
+                            'layer/surprise_hidden': self.agent.surprise,
+                            'agent/td_error': self.agent.td_error
+                        }
+                    )
 
                     if (i % self.update_rate) == 0:
                         raw_beh = (self.prev_image * 255).astype('uint8')

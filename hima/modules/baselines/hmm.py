@@ -11,7 +11,7 @@ from copy import copy
 from hima.modules.baselines.cscg import CHMM
 
 import warnings
-from hima.modules.belief.utils import softmax, normalize, sample_categorical_variables
+from hima.modules.belief.utils import normalize, sample_categorical_variables
 from hima.modules.belief.utils import EPS, UINT_DTYPE, REAL64_DTYPE
 
 
@@ -69,10 +69,10 @@ class CHMMBasic:
 
         if self.initialization != 'dirichlet':
             self.transition_probs = np.vstack(
-                [softmax(x, self.temp) for x in self.log_transition_factors]
+                [softmax(x, temp=self.temp) for x in self.log_transition_factors]
             )
 
-            self.state_prior = softmax(self.log_state_prior, self.temp)
+            self.state_prior = softmax(self.log_state_prior, temp=self.temp)
         else:
             self.log_transition_factors = np.log(self.transition_probs)
             self.log_state_prior = np.log(self.state_prior)
@@ -282,7 +282,7 @@ class CHMMBasic:
                     predicted_state
                 ]
 
-            self.state_prior = softmax(self.log_state_prior, self.temp)
+            self.state_prior = softmax(self.log_state_prior, temp=self.temp)
         else:
             w = self.log_transition_factors[prev_state, next_state]
 
@@ -300,7 +300,7 @@ class CHMMBasic:
                 )
 
             self.transition_probs = np.vstack(
-                [softmax(x, self.temp) for x in self.log_transition_factors]
+                [softmax(x, temp=self.temp) for x in self.log_transition_factors]
             )
 
         self.active_state = next_state
@@ -602,7 +602,7 @@ class CHMMLayer:
                 )
                 chmm.T = self.transition_probs
                 chmm.Pi_x = self.state_prior
-                chmm.learn_em_T(x, a, n_iter=self.em_iterations, term_early=False)
+                chmm.learn_em_T_Pi_x(x, a, n_iter=self.em_iterations, term_early=False)
 
                 self.transition_stats += self.lr * (chmm.T.copy() - self.transition_stats)
                 self.state_prior_stats += self.lr * (chmm.Pi_x.copy() - self.state_prior_stats)

@@ -141,6 +141,7 @@ class CHMM(object):
         n_states = self.n_clones.sum()
         n_actions = a.max() + 1
         self.C = np.random.rand(n_actions, n_states, n_states).astype(dtype)
+        self.C_Pi_x = np.random.rand(n_states).astype(dtype)
         self.Pi_x = np.ones(n_states) / n_states
         self.Pi_a = np.ones(n_actions) / n_actions
         self.update_T()
@@ -151,6 +152,12 @@ class CHMM(object):
         norm = self.T.sum(2, keepdims=True)
         norm[norm == 0] = 1
         self.T /= norm
+
+    def update_Pi_x(self):
+        self.Pi_x = self.C_Pi_x + self.pseudocount
+        norm = self.C_Pi_x.sum()
+        if norm > 0:
+            self.Pi_x /= norm
 
     # def update_T(self):
     #     self.T = self.C + self.pseudocount
@@ -218,7 +225,7 @@ class CHMM(object):
         states = backtraceE(self.T, E, self.n_clones, x, a, mess_fwd)
         return -log2_lik, states
 
-    def learn_em_T(self, x, a, n_iter=100, term_early=True):
+    def learn_em_T_Pi_x(self, x, a, n_iter=100, term_early=True):
         """Run EM training, keeping E deterministic and fixed, learning T"""
         sys.stdout.flush()
         convergence = []
@@ -235,9 +242,10 @@ class CHMM(object):
                 store_messages=True,
             )
             mess_bwd = backward(self.T, self.n_clones, x, a)
-            updateC(self.C, self.T, self.n_clones, mess_fwd, mess_bwd, x, a)
+            updateC_Pi_x(self.C_Pi_x, self.C, self.T, self.n_clones, mess_fwd, mess_bwd, x, a)
             # M
             self.update_T()
+            self.update_Pi_x()
             convergence.append(-log2_lik.mean())
             pbar.set_postfix(train_bps=convergence[-1])
             if log2_lik.mean() <= log2_lik_old:
@@ -438,11 +446,13 @@ def backwardE(T, E, n_clones, x, a):
 
 
 @nb.njit
-def updateC(C, T, n_clones, mess_fwd, mess_bwd, x, a):
+def updateC_Pi_x(C_Pi_x, C, T, n_clones, mess_fwd, mess_bwd, x, a):
     state_loc = np.hstack((np.array([0], dtype=n_clones.dtype), n_clones)).cumsum()
     mess_loc = np.hstack((np.array([0], dtype=n_clones.dtype), n_clones[x])).cumsum()
     timesteps = len(x)
     C[:] = 0
+    C_Pi_x[:] = 0
+    first = True
     for t in range(1, timesteps):
         aij, i, j = (
             a[t - 1],
@@ -466,7 +476,14 @@ def updateC(C, T, n_clones, mess_fwd, mess_bwd, x, a):
             )
             q /= q.sum()
             C[aij, i_start:i_stop, j_start:j_stop] += q
-
+            if first:
+                C_Pi_x[i_start:i_stop] += (
+                        mess_fwd[tm1_start:tm1_stop] *
+                        mess_bwd[tm1_start:tm1_stop]
+                )
+                first = False
+        else:
+            first = True
 
 @nb.njit
 def forward(T_tr, Pi, n_clones, x, a, store_messages=False):
