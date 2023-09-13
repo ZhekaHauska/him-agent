@@ -1,10 +1,10 @@
 log: True
 save_model: False
-project_name: 'sr_test'
-run_tag: null
+project_name: 'sr_animalai_final'
+run_tag: lstm
 
 n_episodes: 501
-update_rate: 10
+update_rate: 50
 max_steps: 50
 reset_context_period: 10
 action_inertia: 3
@@ -17,7 +17,7 @@ decoder: naive
 
 env_conf: 'configs/animalai/default.yaml'
 agent_conf: 'configs/agent/animalai.yaml'
-layer_conf: 'configs/layer/animalai.yaml'
+layer_conf: 'configs/lstm/animalai.yaml'
 encoder_conf: 'configs/encoder/sp_grouped_aai.yaml'
 decoder_conf: 'configs/decoder/animalai.yaml'
 

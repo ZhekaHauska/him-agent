@@ -44,7 +44,6 @@ class BioHIMA:
             sr_steps: int = 5,
             approximate_tail: bool = True,
             inverse_temp: float = 1.0,
-            reward_scale: float = 1.0,
             seed: int = None,
             exploration_eps: float = -1,
             action_value_estimate: str = 'plan',
@@ -57,7 +56,6 @@ class BioHIMA:
         self.sr_steps = sr_steps
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
-        self.reward_scale = reward_scale
 
         if exploration_eps < 0:
             self.exploration_policy = ExplorationPolicy.SOFTMAX
