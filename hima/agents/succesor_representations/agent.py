@@ -124,16 +124,16 @@ class BioHIMA:
             return
         # striatum TD learning
 
-        prediction_cells = self.cortical_column.layer.prediction_cells
+        current_state = self.cortical_column.layer.internal_forward_messages
 
-        predicted_sr = self.predict_sr(prediction_cells)
+        predicted_sr = self.predict_sr(current_state)
         generated_sr = self._generate_sr(
             self.sr_steps,
-            initial_messages=prediction_cells,
+            initial_messages=current_state,
             initial_prediction=self.observation_messages,
             approximate_tail=self.approximate_tail,
         )
-        self.td_update_sr(generated_sr, predicted_sr, prediction_cells)
+        self.td_update_sr(generated_sr, predicted_sr, current_state)
         return predicted_sr, generated_sr
 
     def reinforce(self, reward):
