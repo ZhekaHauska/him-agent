@@ -72,8 +72,7 @@ class BioHIMA:
         layer = self.cortical_column.layer
         observation_rewards = np.zeros((layer.n_obs_vars, layer.n_obs_states))
         self.observation_rewards = observation_rewards.flatten()
-        self.observation_prior = self.get_observations_prior(self.observation_rewards)
-        self.observation_messages = self.observation_prior.copy()
+        self.observation_messages = np.zeros_like(self.observation_rewards)
 
         self.striatum_weights = np.zeros((
             (layer.n_hidden_states * layer.n_hidden_vars),
@@ -145,7 +144,6 @@ class BioHIMA:
         lr, messages = self.observation_reward_lr, self.observation_messages
 
         self.observation_rewards += lr * messages * (reward - self.observation_rewards)
-        self.observation_prior = self.get_observations_prior(self.observation_rewards)
 
     def evaluate_actions(self, *, with_planning: bool = False):
         """Evaluate Q[s,a] for each action."""
@@ -180,7 +178,7 @@ class BioHIMA:
 
             # average value predicted by all variables
             action_values[action] = np.sum(
-                sr * np.log(np.clip(self.observation_prior, 1e-7, 1))
+                sr * self.observation_rewards
             ) / self.cortical_column.layer.n_obs_vars
 
             self._restore_last_snapshot(pop=False)
@@ -199,7 +197,7 @@ class BioHIMA:
         if save_state:
             self._make_state_snapshot()
 
-        sr = np.zeros_like(self.observation_prior)
+        sr = np.zeros_like(self.observation_messages)
 
         context_messages = initial_messages
         predicted_observation = initial_prediction
@@ -248,10 +246,6 @@ class BioHIMA:
 
         self.td_error = np.mean(np.power(error_sr, 2))
         self.td_error_ma = lin_sum(self.td_error_ma, 0.2, self.td_error)
-
-    def get_observations_prior(self, rewards):
-        rewards = rewards.reshape(self.cortical_column.layer.n_obs_vars, -1)
-        return softmax(rewards, beta=self.reward_scale).flatten()
 
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True
