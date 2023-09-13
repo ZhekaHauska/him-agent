@@ -14,6 +14,7 @@ from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
+from hima.modules.belief.utils import normalize
 from hima.modules.baselines.hmm import CHMMLayer
 from hima.experiments.successor_representations.runners.utils import make_decoder
 from typing import Literal
@@ -125,7 +126,7 @@ class PinballTest:
 
             self.heatmap_metrics = HeatmapMetrics(
                 {
-                    'agent/prior': np.mean,
+                    'agent/obs_rewards': np.mean,
                     'agent/striatum_weights': np.mean
                 },
                 self.logger
@@ -151,6 +152,7 @@ class PinballTest:
             steps = 0
             running = True
             action = -1
+            total_reward = 0
 
             self.prev_image = self.initial_previous_image
             self.environment.reset(self.start_position)
@@ -160,11 +162,12 @@ class PinballTest:
                 self.environment.step()
                 obs, reward, is_terminal = self.environment.obs()
                 running = not is_terminal
+                total_reward += reward
 
                 events = self.preprocess(obs, mode=self.camera_mode)
                 # observe events_t and action_{t-1}
                 pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
-                self.agent.reinforce(reward)
+                self.agent.reinforce(total_reward)
 
                 if running:
                     # action = self._rng.integers(self.n_actions)
@@ -196,7 +199,13 @@ class PinballTest:
 
                         if pred_sr is not None:
                             pred_sr = (
-                                    self.agent.cortical_column.decoder.decode(pred_sr)
+                                    self.agent.cortical_column.decoder.decode(
+                                        normalize(
+                                            pred_sr.reshape(
+                                                self.agent.cortical_column.layer.n_obs_vars, -1
+                                            )
+                                        ).flatten()
+                                    )
                                     .reshape(self.raw_obs_shape) * 255
                             ).astype('uint8')
                         else:
@@ -204,7 +213,13 @@ class PinballTest:
 
                         if gen_sr is not None:
                             gen_sr = (
-                                    self.agent.cortical_column.decoder.decode(gen_sr)
+                                    self.agent.cortical_column.decoder.decode(
+                                        normalize(
+                                            gen_sr.reshape(
+                                                self.agent.cortical_column.layer.n_obs_vars, -1
+                                            )
+                                        ).flatten()
+                                    )
                                     .reshape(self.raw_obs_shape) * 255
                             ).astype('uint8')
                         else:
@@ -229,12 +244,16 @@ class PinballTest:
                 self.scalar_metrics.log(i)
 
                 if (i % self.update_rate) == 0:
-                    prior_probs = self.agent.cortical_column.decoder.decode(
-                        self.agent.observation_prior
+                    obs_rewards = self.agent.cortical_column.decoder.decode(
+                        normalize(
+                            self.agent.observation_rewards.reshape(
+                                self.agent.cortical_column.layer.n_obs_vars, -1
+                            )
+                        ).flatten()
                     ).reshape(self.raw_obs_shape)
                     self.heatmap_metrics.update(
                         {
-                            'agent/prior': prior_probs,
+                            'agent/obs_rewards': obs_rewards,
                             'agent/striatum_weights': self.agent.striatum_weights
                         }
                     )
