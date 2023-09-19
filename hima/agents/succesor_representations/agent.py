@@ -105,6 +105,10 @@ class BioHIMA:
                 events: sparse sdr
                 action: sparse sdr
         """
+        # backup state for classic TD learning
+        previous_state = self.cortical_column.layer.internal_forward_messages.copy()
+        previous_observation = self.observation_messages.copy()
+
         events, action = observation
         # predict current events using observed action
         self.cortical_column.observe(events, action, learn=learn)
@@ -119,18 +123,24 @@ class BioHIMA:
         self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
         if not learn:
             return
-        # striatum TD learning
 
+        # striatum TD learning
         current_state = self.cortical_column.layer.internal_forward_messages
 
-        predicted_sr = self.predict_sr(current_state)
-        generated_sr = self._generate_sr(
-            self.sr_steps,
-            initial_messages=current_state,
-            initial_prediction=self.observation_messages,
-            approximate_tail=self.approximate_tail,
-        )
-        self.td_update_sr(generated_sr, predicted_sr, current_state)
+        if self.sr_steps > 0:
+            predicted_sr = self.predict_sr(current_state)
+            generated_sr = self._generate_sr(
+                self.sr_steps,
+                initial_messages=current_state,
+                initial_prediction=self.observation_messages,
+                approximate_tail=self.approximate_tail,
+            )
+            self.td_update_sr(generated_sr, predicted_sr, current_state)
+        else:
+            predicted_sr = self.predict_sr(previous_state)
+            generated_sr = previous_observation + self.gamma * self.predict_sr(current_state)
+            self.td_update_sr(generated_sr, predicted_sr, previous_state)
+
         return predicted_sr, generated_sr
 
     def reinforce(self, reward):
@@ -192,6 +202,10 @@ class BioHIMA:
             approximate_tail=True,
             save_state=True
     ):
+        """
+            n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
+            then this function is equivalent to predict_sr.
+        """
         if save_state:
             self._make_state_snapshot()
 
