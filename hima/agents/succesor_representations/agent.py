@@ -72,10 +72,14 @@ class BioHIMA:
         self.observation_rewards = observation_rewards.flatten()
         self.observation_messages = np.zeros_like(self.observation_rewards)
 
+        # state backups for model-free TD
+        self.previous_state = np.zeros_like(self.cortical_column.layer.internal_forward_messages)
+        self.previous_observation = np.zeros_like(self.observation_rewards)
+
         self.striatum_weights = np.zeros((
-            (layer.n_hidden_states * layer.n_hidden_vars),
-            (layer.n_obs_states * layer.n_obs_vars)
-        ))
+                (layer.n_hidden_states * layer.n_hidden_vars),
+                (layer.n_obs_states * layer.n_obs_vars)
+            ))
 
         self.state_snapshot_stack = deque()
 
@@ -91,6 +95,9 @@ class BioHIMA:
         assert len(self.state_snapshot_stack) == 0
         self.cortical_column.reset(initial_context_message, initial_external_message)
 
+        self.previous_state = np.zeros_like(self.cortical_column.layer.internal_forward_messages)
+        self.previous_observation = np.zeros_like(self.observation_rewards)
+
     def sample_action(self):
         """Evaluate and sample actions."""
         action_values = self.evaluate_actions(with_planning=True)
@@ -105,28 +112,29 @@ class BioHIMA:
                 events: sparse sdr
                 action: sparse sdr
         """
-        # backup state for classic TD learning
-        previous_state = self.cortical_column.layer.internal_forward_messages.copy()
-        previous_observation = self.observation_messages.copy()
-
         events, action = observation
-        # predict current events using observed action
-        self.cortical_column.observe(events, action, learn=learn)
-        encoded_obs = self.cortical_column.output_sdr.sparse
-
         self.surprise = 0
-        if len(encoded_obs) > 0:
-            self.surprise = get_surprise(
-                self.cortical_column.layer.prediction_columns, encoded_obs, mode='categorical'
-            )
 
-        self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
+        if events is not None:
+            # predict current events using observed action
+            self.cortical_column.observe(events, action, learn=learn)
+            encoded_obs = self.cortical_column.output_sdr.sparse
+
+            if len(encoded_obs) > 0:
+                self.surprise = get_surprise(
+                    self.cortical_column.layer.prediction_columns, encoded_obs, mode='categorical'
+                )
+
+            self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
+            current_state = self.cortical_column.layer.internal_forward_messages
+        else:
+            self.observation_messages = np.zeros_like(self.observation_rewards)
+            current_state = np.zeros_like(self.cortical_column.layer.internal_forward_messages)
+
         if not learn:
             return
 
         # striatum TD learning
-        current_state = self.cortical_column.layer.internal_forward_messages
-
         if self.sr_steps > 0:
             predicted_sr = self.predict_sr(current_state)
             generated_sr = self._generate_sr(
@@ -137,9 +145,13 @@ class BioHIMA:
             )
             self.td_update_sr(generated_sr, predicted_sr, current_state)
         else:
-            predicted_sr = self.predict_sr(previous_state)
-            generated_sr = previous_observation + self.gamma * self.predict_sr(current_state)
-            self.td_update_sr(generated_sr, predicted_sr, previous_state)
+            predicted_sr = self.predict_sr(self.previous_state)
+            generated_sr = self.previous_observation + self.gamma * self.predict_sr(current_state)
+            self.td_update_sr(generated_sr, predicted_sr, self.previous_state)
+
+            # backup state for classic TD learning
+            self.previous_state = self.cortical_column.layer.internal_forward_messages.copy()
+            self.previous_observation = self.observation_messages.copy()
 
         return predicted_sr, generated_sr
 
@@ -256,7 +268,7 @@ class BioHIMA:
         # FIXME: why does it need to clip negatives?
         self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
-        self.td_error = np.mean(np.power(error_sr, 2))
+        self.td_error = np.mean(np.power(delta_w, 2))
         self.td_error_ma = lin_sum(self.td_error_ma, 0.2, self.td_error)
 
     def _get_action_selection_distribution(
