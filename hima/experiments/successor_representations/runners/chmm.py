@@ -175,6 +175,10 @@ class PinballTest:
                     # convert to AAI action
                     pinball_action = self.actions[action]
                     self.environment.act(pinball_action)
+                else:
+                    # additional update for model-free TD
+                    if self.agent.sr_steps == 0:
+                        self.agent.observe((None, None), learn=True)
 
                 # >>> logging
                 if self.logger is not None:
