@@ -137,7 +137,7 @@ class BioHIMA:
         # striatum TD learning
         if self.sr_steps > 0:
             predicted_sr = self.predict_sr(current_state)
-            generated_sr = self._generate_sr(
+            generated_sr = self.generate_sr(
                 self.sr_steps,
                 initial_messages=current_state,
                 initial_prediction=self.observation_messages,
@@ -187,7 +187,7 @@ class BioHIMA:
             )
 
             if estimate_strategy == ActionValueEstimate.PLAN:
-                sr = self._generate_sr(
+                sr = self.generate_sr(
                     self.sr_steps,
                     initial_messages=self.cortical_column.layer.prediction_cells,
                     initial_prediction=self.cortical_column.layer.prediction_columns,
@@ -206,7 +206,7 @@ class BioHIMA:
         self.state_snapshot_stack.pop()
         return action_values
 
-    def _generate_sr(
+    def generate_sr(
             self,
             n_steps,
             initial_messages,
