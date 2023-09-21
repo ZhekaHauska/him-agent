@@ -71,10 +71,10 @@ def datagen_structured_obs_room(
     Each of the above are list of states from which the corresponding action is not allowed.
 
     """
-    np.random.seed(seed)
+    rng = np.random.default_rng(seed)
     H, W = room.shape
     if start_r is None or start_c is None:
-        start_r, start_c = np.random.randint(H), np.random.randint(W)
+        start_r, start_c = rng.integers(H), rng.integers(W)
 
     actions = np.zeros(length, int)
     x = np.zeros(length, int)  # observations
@@ -97,7 +97,7 @@ def datagen_structured_obs_room(
         if (r, c) in no_down:
             act_list.remove(3)
 
-        a = np.random.choice(act_list)
+        a = rng.choice(act_list)
 
         # Check for actions taking out of the matrix boundary.
         prev_r = r
@@ -131,7 +131,7 @@ class CHMM(object):
         """Construct a CHMM objct. n_clones is an array where n_clones[i] is the
         number of clones assigned to observation i. x and a are the observation sequences
         and action sequences, respectively."""
-        np.random.seed(seed)
+        self._rng = np.random.default_rng(seed)
         self.n_clones = n_clones
         validate_seq(x, a, self.n_clones)
         assert pseudocount >= 0.0, "The pseudocount should be positive"
@@ -140,8 +140,8 @@ class CHMM(object):
         self.dtype = dtype
         n_states = self.n_clones.sum()
         n_actions = a.max() + 1
-        self.C = np.random.rand(n_actions, n_states, n_states).astype(dtype)
-        self.C_Pi_x = np.random.rand(n_states).astype(dtype)
+        self.C = self._rng.random(size=(n_actions, n_states, n_states)).astype(dtype)
+        self.C_Pi_x = self._rng.random(n_states).astype(dtype)
         self.Pi_x = np.ones(n_states) / n_states
         self.Pi_a = np.ones(n_actions) / n_actions
         self.update_T()
@@ -325,12 +325,12 @@ class CHMM(object):
         assert length > 0
         state_loc = np.hstack(([0], self.n_clones)).cumsum(0)
         sample_x = np.zeros(length, dtype=np.int64)
-        sample_a = np.random.choice(len(self.Pi_a), size=length, p=self.Pi_a)
+        sample_a = self._rng.choice(len(self.Pi_a), size=length, p=self.Pi_a)
 
         # Sample
         p_h = self.Pi_x
         for t in range(length):
-            h = np.random.choice(len(p_h), p=p_h)
+            h = self._rng.choice(len(p_h), p=p_h)
             sample_x[t] = np.digitize(h, state_loc) - 1
             p_h = self.T[sample_a[t], h]
         return sample_x, sample_a
@@ -354,7 +354,7 @@ class CHMM(object):
                 alpha, T_weighted[state_loc[obs_tm1] : state_loc[obs_tm1 + 1], :]
             )
             long_alpha /= long_alpha.sum()
-            idx = np.random.choice(np.arange(self.n_clones.sum()), p=long_alpha)
+            idx = self._rng.choice(np.arange(self.n_clones.sum()), p=long_alpha)
 
             sym = np.digitize(idx, state_loc) - 1
             seq.append(sym)
@@ -630,7 +630,7 @@ def forward_mp(T_tr, Pi, n_clones, x, a, store_messages=False):
 @nb.njit
 def rargmax(x):
     # return x.argmax()  # <- favors clustering towards smaller state numbers
-    return np.random.choice((x == x.max()).nonzero()[0])
+    return self._rng.choice((x == x.max()).nonzero()[0])
 
 
 @nb.njit
