@@ -68,18 +68,18 @@ class BioHIMA:
         self.sr_estimate_planning = SrEstimatePlanning[sr_estimate_planning.upper()]
 
         layer = self.cortical_column.layer
+        layer_obs_size = layer.n_obs_states * layer.n_obs_vars
+        layer_hidden_size = layer.n_hidden_states * layer.n_hidden_vars
+
         observation_rewards = np.zeros((layer.n_obs_vars, layer.n_obs_states))
         self.observation_rewards = observation_rewards.flatten()
         self.observation_messages = np.zeros_like(self.observation_rewards)
 
         # state backups for model-free TD
-        self.previous_state = np.zeros_like(self.cortical_column.layer.internal_forward_messages)
+        self.previous_state = self.cortical_column.layer.internal_forward_messages.copy()
         self.previous_observation = np.zeros_like(self.observation_rewards)
 
-        self.striatum_weights = np.zeros((
-                (layer.n_hidden_states * layer.n_hidden_vars),
-                (layer.n_obs_states * layer.n_obs_vars)
-            ))
+        self.striatum_weights = np.zeros((layer_hidden_size, layer_obs_size))
 
         self.state_snapshot_stack = deque()
 
@@ -95,7 +95,7 @@ class BioHIMA:
         assert len(self.state_snapshot_stack) == 0
         self.cortical_column.reset(initial_context_message, initial_external_message)
 
-        self.previous_state = np.zeros_like(self.cortical_column.layer.internal_forward_messages)
+        self.previous_state = self.cortical_column.layer.internal_forward_messages.copy()
         self.previous_observation = np.zeros_like(self.observation_rewards)
 
     def sample_action(self):
@@ -226,9 +226,9 @@ class BioHIMA:
         context_messages = initial_messages
         predicted_observation = initial_prediction
 
-        t = -1
+        discount = 1.0
         for t in range(n_steps):
-            sr += predicted_observation * self.gamma**t
+            sr += predicted_observation * discount
 
             if self.sr_estimate_planning == SrEstimatePlanning.UNIFORM:
                 action_dist = None
@@ -245,9 +245,10 @@ class BioHIMA:
 
             context_messages = self.cortical_column.layer.internal_forward_messages.copy()
             predicted_observation = self.cortical_column.layer.prediction_columns
+            discount *= self.gamma
 
         if approximate_tail:
-            sr += self.predict_sr(context_messages) * self.gamma**(t+1)
+            sr += self.predict_sr(context_messages) * discount
 
         if save_state:
             self._restore_last_snapshot()
@@ -263,9 +264,10 @@ class BioHIMA:
         error_sr = target_sr - predicted_sr
         # dSR / dW for linear model
         delta_w = np.outer(prediction_cells, error_sr)
+        # to make gradient correct, revert division in predict_sr
+        delta_w *= self.cortical_column.layer.n_hidden_vars
 
         self.striatum_weights += self.striatum_lr * delta_w
-        # FIXME: why does it need to clip negatives?
         self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
         self.td_error = np.mean(np.power(delta_w, 2))

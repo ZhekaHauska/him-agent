@@ -492,6 +492,10 @@ class PinballTest:
             while running:
                 self.environment.step()
                 obs, reward, is_terminal = self.environment.obs()
+
+                # false_early_stop = is_terminal and steps < self.max_steps - 1 and reward < 0.
+                # assert not false_early_stop
+
                 running = not is_terminal
 
                 events = self.preprocess(obs)

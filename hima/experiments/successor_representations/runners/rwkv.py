@@ -8,41 +8,17 @@ import sys
 
 import numpy as np
 
-from hima.agents.succesor_representations.agent import BioHIMA
 from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import to_gray_img, isnone
+from hima.experiments.successor_representations.runners.lstm import LstmBioHima
 from hima.experiments.successor_representations.runners.utils import print_digest, make_decoder
-from hima.modules.baselines.lstm import LstmLayer, to_numpy, TLstmLayerHiddenState
+from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 
 wandb = lazy_import('wandb')
-
-
-class LstmBioHima(BioHIMA):
-    """Patch-like adaptation of BioHIMA to work with LSTM layer."""
-
-    def __init__(self, cortical_column: CorticalColumn, **kwargs):
-        super().__init__(cortical_column, **kwargs)
-
-    def _extract_collapse_message(self, context_messages: TLstmLayerHiddenState):
-        # extract model state from layer state
-        _, (state_out, _) = context_messages
-
-        # convert model hidden state to probabilities
-        # noinspection PyUnresolvedReferences
-        state_probs_out = self.cortical_column.layer.model.as_probabilistic_out(state_out)
-        return to_numpy(state_probs_out)
-
-    def td_update_sr(self, target_sr, predicted_sr, prediction_cells: TLstmLayerHiddenState):
-        msg = self._extract_collapse_message(prediction_cells)
-        return super().td_update_sr(target_sr, predicted_sr, msg)
-
-    def predict_sr(self, context_messages: TLstmLayerHiddenState):
-        msg = self._extract_collapse_message(context_messages)
-        return super().predict_sr(msg)
 
 
 class AnimalAITest:
@@ -133,7 +109,7 @@ class AnimalAITest:
         layer_conf['n_external_states'] = self.n_actions
         layer_conf['seed'] = self.seed
 
-        layer = LstmLayer(**layer_conf)
+        layer = RwkvLayer(**layer_conf)
 
         # noinspection PyTypeChecker
         cortical_column = CorticalColumn(layer, encoder, decoder)
@@ -375,7 +351,7 @@ class PinballTest:
         layer_conf['n_external_states'] = self.n_actions
         layer_conf['seed'] = self.seed
 
-        layer = LstmLayer(**layer_conf)
+        layer = RwkvLayer(**layer_conf)
 
         # noinspection PyTypeChecker
         cortical_column = CorticalColumn(layer, encoder, decoder)
@@ -540,10 +516,10 @@ def main(config_path):
     config['run'] = read_config(config_path)
     experiment = config['run']['experiment']
     if experiment == 'animalai':
-        config['run']['layer_conf'] = 'configs/lstm/animalai.yaml'
+        config['run']['layer_conf'] = 'configs/rwkv/animalai.yaml'
         runner = AnimalAITest
     elif experiment == 'pinball':
-        config['run']['layer_conf'] = 'configs/lstm/pinball.yaml'
+        config['run']['layer_conf'] = 'configs/rwkv/pinball.yaml'
         runner = PinballTest
     else:
         raise ValueError(f'There is no such {experiment=}!')
@@ -551,9 +527,8 @@ def main(config_path):
     config['env'] = read_config(config['run']['env_conf'])
     config['agent'] = read_config(config['run']['agent_conf'])
     config['layer'] = read_config(config['run']['layer_conf'])
+    config['encoder'] = read_config(config['run']['encoder_conf'])
 
-    if 'encoder_conf' in config['run']:
-        config['encoder'] = read_config(config['run']['encoder_conf'])
     if 'decoder_conf' in config['run']:
         config['decoder'] = read_config(config['run']['decoder_conf'])
 

@@ -69,6 +69,9 @@ class Sds:
         assert isinstance(other, Sds)
         return self.size == other.size and self.active_size == other.active_size
 
+    def __repr__(self):
+        return str(self)
+
     def __str__(self):
         return f'({self.shape}, {self.size}, {self.active_size}, {self.sparsity:.4f})'
 

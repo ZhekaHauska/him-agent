@@ -21,5 +21,10 @@ def print_digest(metrics: dict):
     ep_return = metrics['main_metrics/reward']
     td_error = metrics['agent/td_error']
     surprise = metrics['layer/surprise_hidden']
+    stats = f'{ep_len:2d}: R = {ep_return:5.2f} | TD = {td_error:8.4f} | Srp = {surprise:.7f}'
 
-    print(f'{ep_len:2d}: R = {ep_return:5.2f} | TD = {td_error:8.4f} | Srp = {surprise:.7f}')
+    if 'layer/loss' in metrics:
+        loss = metrics['layer/loss']
+        stats += f'| Loss = {loss:.7f}'
+
+    print(stats)

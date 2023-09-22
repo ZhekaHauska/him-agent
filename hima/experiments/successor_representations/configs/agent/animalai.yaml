@@ -1,6 +1,5 @@
 gamma: 0.99
 observation_reward_lr: 0.04
-reward_scale: 20.0
 striatum_lr: 0.02
 sr_steps: 5
 approximate_tail: True

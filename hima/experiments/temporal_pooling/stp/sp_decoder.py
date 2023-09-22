@@ -98,7 +98,6 @@ class SpatialPoolerLearnedDecoder:
         if decoded_obs is None:
             decoded_obs = self.decode(output_probs, learn=False)
 
-        # sigmoid_derivative = decoded_obs * (1 - decoded_obs) * self.scale
         loss_derivative = decoded_obs - correct_obs
         lr = self.lr / self.n_updates ** self.power_t
         self.weights -= np.outer(loss_derivative, lr * output_probs)
