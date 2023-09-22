@@ -15,7 +15,7 @@ from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import normalize
-from hima.modules.baselines.hmm import CHMMLayer
+from hima.modules.baselines.hmm import FCHMMLayer
 from hima.experiments.successor_representations.runners.utils import make_decoder
 from typing import Literal
 
@@ -45,7 +45,7 @@ class PinballTest:
         self.actions = conf['run']['actions']
         self.n_actions = len(self.actions)
 
-        self.agent = self.load_agent(conf, conf['run'].get('agent_path', None))
+        self.agent = self.make_agent(conf, conf['run'].get('agent_path', None))
 
         self.n_episodes = conf['run']['n_episodes']
         self.max_steps = conf['run']['max_steps']
@@ -275,7 +275,7 @@ class PinballTest:
 
         return events
 
-    def load_agent(self, conf=None, path=None):
+    def make_agent(self, conf=None, path=None):
         if path is not None:
             raise NotImplementedError
         elif conf is not None:
@@ -283,47 +283,41 @@ class PinballTest:
             encoder_type = conf['run']['encoder']
             encoder_conf = conf['encoder']
             layer_conf = conf['layer']
+            seed = conf['run']['seed']
 
             if encoder_type == 'sp_ensemble':
                 from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
 
-                encoder_conf['seed'] = self.seed
+                encoder_conf['seed'] = seed
                 encoder_conf['inputDimensions'] = list(self.raw_obs_shape)
 
                 encoder = SPEnsemble(**encoder_conf)
                 decoder = SPDecoder(encoder)
-                assert encoder.n_sp == 1
 
+                layer_conf['n_obs_vars'] = encoder.n_sp
                 layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
-                layer_conf['n_context_states'] = (
-                        encoder.sps[0].getNumColumns() * layer_conf['cells_per_column']
-                )
             elif encoder_type == 'sp_grouped':
                 from hima.experiments.temporal_pooling.stp.sp_ensemble import (
                     SpatialPoolerGroupedWrapper
                 )
-                encoder_conf['seed'] = self.seed
+                encoder_conf['seed'] = seed
                 encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
 
                 decoder_type = conf['run'].get('decoder', None)
                 decoder_conf = conf['decoder']
 
                 encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
-                assert encoder.n_groups == 1
-
                 decoder = make_decoder(encoder, decoder_type, decoder_conf)
 
+                layer_conf['n_obs_vars'] = encoder.n_groups
                 layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
-                layer_conf['n_context_states'] = (
-                        encoder.getSingleNumColumns() * layer_conf['cells_per_column']
-                )
             else:
                 raise ValueError(f'Encoder type {encoder_type} is not supported')
 
             layer_conf['n_external_states'] = self.n_actions
-            layer_conf['seed'] = self.seed
+            layer_conf['seed'] = seed
 
-            layer = CHMMLayer(**layer_conf)
+            layer = FCHMMLayer(**layer_conf)
 
             cortical_column = CorticalColumn(
                 layer,
@@ -331,7 +325,7 @@ class PinballTest:
                 decoder
             )
 
-            conf['agent']['seed'] = self.seed
+            conf['agent']['seed'] = seed
             agent = BioHIMA(
                 cortical_column,
                 **conf['agent']
@@ -399,7 +393,7 @@ class GridWorldTest:
         )
         layer_conf['seed'] = self.seed
 
-        layer = CHMMLayer(**layer_conf)
+        layer = FCHMMLayer(**layer_conf)
 
         cortical_column = CorticalColumn(
             layer,

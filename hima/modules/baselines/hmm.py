@@ -389,29 +389,29 @@ class HMM:
         self.emission_probs = self.model.emissionprob_.copy()
 
 
-class CHMMLayer:
+class FCHMMLayer:
     def __init__(
             self,
+            n_obs_vars: int,
             n_obs_states: int,
             cells_per_column: int,
-            batch_size: int = 100,
-            n_context_states: int = 0,
             n_external_states: int = 0,
-            alpha: float = 1.0,
             lr: float = 1.0,
+            batch_size: int = 100,
             em_iterations: int = 100,
+            alpha: float = 1.0,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
 
         self.timestep = 1
-        self.n_obs_vars = 1
-        self.n_hidden_vars = 1
+        self.n_obs_vars = n_obs_vars
+        self.n_hidden_vars = n_obs_vars
         self.n_obs_states = n_obs_states
         self.n_external_vars = 1
         self.n_external_states = n_external_states
-        self.n_context_vars = 1
-        self.n_context_states = n_context_states
+        self.n_context_vars = n_obs_vars
+        self.n_context_states = n_obs_states * cells_per_column
         self.batch_size = batch_size
         self.em_iterations = em_iterations
         self.lr = lr
@@ -426,16 +426,26 @@ class CHMMLayer:
         self.input_sdr_size = n_obs_states
 
         # trainable parameters
-        self.transition_probs = self._rng.dirichlet(
-            alpha=[alpha] * self.n_hidden_states * self.n_external_states,
-            size=self.n_hidden_states
-        ).reshape((self.n_external_states, self.n_hidden_states, self.n_hidden_states))
-        self.state_prior = self._rng.dirichlet(alpha=[alpha] * self.n_hidden_states)
-
+        self.transition_probs = np.zeros(
+            (
+                self.n_hidden_vars,
+                self.n_external_states,
+                self.n_hidden_states,
+                self.n_hidden_states
+            )
+        )
         self.transition_stats = np.zeros_like(self.transition_probs)
+        self.state_prior = np.zeros((self.n_hidden_vars, self.n_hidden_states))
         self.state_prior_stats = np.zeros_like(self.state_prior)
 
-        self.n_columns = self.n_obs_states
+        for i in range(self.n_hidden_vars):
+            self.transition_probs[i] = self._rng.dirichlet(
+                alpha=[alpha] * self.n_hidden_states * self.n_external_states,
+                size=self.n_hidden_states
+            ).reshape((self.n_external_states, self.n_hidden_states, self.n_hidden_states))
+            self.state_prior[i] = self._rng.dirichlet(alpha=[alpha] * self.n_hidden_states)
+
+        self.n_columns = self.n_obs_states * self.n_obs_vars
 
         self.internal_forward_messages = np.zeros(
             self.internal_cells,
@@ -453,7 +463,7 @@ class CHMMLayer:
         self.prediction_cells = None
         self.prediction_columns = None
 
-        self.observations = []
+        self.observations = [list() for _ in range(self.n_hidden_vars)]
         self.actions = []
 
         # cells are numbered in the following order:
@@ -534,17 +544,18 @@ class CHMMLayer:
 
     def predict(self, include_context_connections=True, include_internal_connections=False, **_):
         if self.context_messages.size == 0:
-            self.internal_forward_messages = self.state_prior.copy()
+            self.internal_forward_messages = self.state_prior.flatten()
         else:
             trans_probs_action = np.sum(
-                self.transition_probs * self.external_messages.reshape((-1, 1, 1)),
-                axis=0
+                self.transition_probs * self.external_messages.reshape((1, -1, 1, 1)),
+                axis=1
             )
-            self.internal_forward_messages = np.dot(self.context_messages, trans_probs_action)
+            self.internal_forward_messages = np.einsum('kj,kji->ki',
+                self.context_messages.reshape((self.n_hidden_vars, -1)),
+                trans_probs_action
+            )
             self.internal_forward_messages = normalize(
-                self.internal_forward_messages.reshape(
-                    (self.n_hidden_vars, self.n_hidden_states)
-                )
+                self.internal_forward_messages
             ).flatten()
 
         self.prediction_cells = self.internal_forward_messages.copy()
@@ -576,7 +587,9 @@ class CHMMLayer:
             ).flatten()
 
         if learn:
-            self.observations.append(observation[0])
+            for obs in observation:
+                self.observations[obs//self.n_obs_states].append(obs % self.n_obs_states)
+
             if self.external_messages.size != 0:
                 self.actions.append(
                     sample_categorical_variables(
@@ -592,27 +605,32 @@ class CHMMLayer:
                 self.actions.append(-1)
                 a = np.array(self.actions[1:], dtype=np.int64)
 
-                chmm = CHMM(
-                    np.full(self.n_obs_states, fill_value=self.cells_per_column),
-                    x,
-                    a,
-                    pseudocount=EPS,
-                    dtype=REAL64_DTYPE,
-                    seed=self._rng.integers(np.iinfo(np.int32).max)
-                )
-                chmm.T = self.transition_probs
-                chmm.Pi_x = self.state_prior
-                chmm.learn_em_T_Pi_x(x, a, n_iter=self.em_iterations, term_early=False)
+                for i in range(self.n_hidden_vars):
+                    chmm = CHMM(
+                        np.full(self.n_obs_states, fill_value=self.cells_per_column),
+                        x[i],
+                        a,
+                        pseudocount=EPS,
+                        dtype=REAL64_DTYPE,
+                        seed=self._rng.integers(np.iinfo(np.int32).max)
+                    )
+                    chmm.T = self.transition_probs[i]
+                    chmm.Pi_x = self.state_prior[i]
+                    chmm.learn_em_T_Pi_x(x[i], a, n_iter=self.em_iterations, term_early=False)
 
-                self.transition_stats += self.lr * (chmm.T.copy() - self.transition_stats)
-                self.state_prior_stats += self.lr * (chmm.Pi_x.copy() - self.state_prior_stats)
+                    self.transition_stats[i] += self.lr * (
+                            chmm.T.copy() - self.transition_stats[i]
+                    )
+                    self.state_prior_stats[i] += self.lr * (
+                            chmm.Pi_x.copy() - self.state_prior_stats[i]
+                    )
 
-                self.transition_probs = self.transition_stats / self.transition_stats.sum(
-                    axis=2
-                )[:, :, None]
-                self.state_prior = self.state_prior_stats / self.state_prior_stats.sum()
+                    self.transition_probs[i] = self.transition_stats[i] / self.transition_stats[i].sum(
+                        axis=2
+                    )[:, :, None]
+                    self.state_prior[i] = self.state_prior_stats[i] / self.state_prior_stats[i].sum()
 
-                self.observations.clear()
+                self.observations = [list() for _ in range(self.n_hidden_vars)]
                 self.actions.clear()
 
         self.timestep += 1
