@@ -17,6 +17,7 @@ from hima.experiments.successor_representations.runners.lstm import LstmBioHima
 from hima.experiments.successor_representations.runners.utils import print_digest, make_decoder
 from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
+from hima.modules.belief.utils import normalize
 
 wandb = lazy_import('wandb')
 
@@ -140,7 +141,7 @@ class AnimalAITest:
             )
             self.heatmap_metrics = HeatmapMetrics(
                 {
-                    'agent/prior': np.mean,
+                    'agent/obs_rewards': np.mean,
                     'agent/striatum_weights': np.mean
                 },
                 self.logger
@@ -250,12 +251,16 @@ class AnimalAITest:
                 self.scalar_metrics.log(episode)
 
                 if (episode % self.update_rate) == 0:
-                    prior_probs = decoder.decode(self.agent.observation_prior).reshape(
-                        self.raw_obs_shape
-                    )
+                    obs_rewards = self.agent.cortical_column.decoder.decode(
+                        normalize(
+                            self.agent.observation_rewards.reshape(
+                                self.agent.cortical_column.layer.n_obs_vars, -1
+                            )
+                        ).flatten()
+                    ).reshape(self.raw_obs_shape)
                     self.heatmap_metrics.update(
                         {
-                            'agent/prior': prior_probs,
+                            'agent/obs_rewards': obs_rewards,
                             'agent/striatum_weights': self.agent.striatum_weights
                         }
                     )
@@ -379,7 +384,7 @@ class PinballTest:
             )
             self.heatmap_metrics = HeatmapMetrics(
                 {
-                    'agent/prior': np.mean,
+                    'agent/obs_rewards': np.mean,
                     'agent/striatum_weights': np.mean
                 },
                 self.logger
@@ -473,12 +478,16 @@ class PinballTest:
                 self.scalar_metrics.log(episode)
 
                 if (episode % self.update_rate) == 0:
-                    prior_probs = decoder.decode(self.agent.observation_prior).reshape(
-                        self.raw_obs_shape
-                    )
+                    obs_rewards = self.agent.cortical_column.decoder.decode(
+                        normalize(
+                            self.agent.observation_rewards.reshape(
+                                self.agent.cortical_column.layer.n_obs_vars, -1
+                            )
+                        ).flatten()
+                    ).reshape(self.raw_obs_shape)
                     self.heatmap_metrics.update(
                         {
-                            'agent/prior': prior_probs,
+                            'agent/obs_rewards': obs_rewards,
                             'agent/striatum_weights': self.agent.striatum_weights
                         }
                     )

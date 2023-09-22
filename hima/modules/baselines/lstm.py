@@ -412,10 +412,11 @@ class LSTMWMIterative:
         dense_obs = torch.from_numpy(dense_obs).to(self.device)
 
         if learn:
+            loss = self.loss_function(self.prediction, dense_obs)
             if self.loss is None:
-                self.loss = self.loss_function(self.prediction, dense_obs)
+                self.loss = loss
             else:
-                self.loss += self.loss_function(self.prediction, dense_obs)
+                self.loss += loss
 
             self.prediction = self.lstm(dense_obs)
         else:

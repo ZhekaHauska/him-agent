@@ -261,11 +261,16 @@ class BioHIMA:
         return sr
 
     def td_update_sr(self, target_sr, predicted_sr, prediction_cells):
+        n_hidden_vars = self.cortical_column.layer.n_hidden_vars
+
         error_sr = target_sr - predicted_sr
+        # "gradient"-clipping
+        error_sr = np.clip(error_sr, -4.0 / n_hidden_vars, 4.0 / n_hidden_vars)
+
         # dSR / dW for linear model
         delta_w = np.outer(prediction_cells, error_sr)
         # to make gradient correct, revert division in predict_sr
-        delta_w *= self.cortical_column.layer.n_hidden_vars
+        delta_w *= n_hidden_vars
 
         self.striatum_weights += self.striatum_lr * delta_w
         self.striatum_weights = np.clip(self.striatum_weights, 0, None)

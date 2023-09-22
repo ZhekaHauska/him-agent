@@ -1,6 +1,6 @@
 gamma: 0.95
 observation_reward_lr: 0.05
-striatum_lr: 0.05
+striatum_lr: 0.002
 sr_steps: 5
 approximate_tail: True
 inverse_temp: 10.0
