@@ -4,6 +4,8 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import os
+import numpy as np
+from hima.experiments.hmm.runners.utils import get_surprise
 
 from hima.common.lazy_imports import lazy_import
 
@@ -100,3 +102,55 @@ class ImageMetrics:
                 self.logger.log({metric: wandb.Image(values[0])}, step=step)
 
         self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+
+class SRStack:
+    def __init__(self, name, logger, srs_size, history_length=5, normalize=True):
+        self.name = name
+        self.logger = logger
+        self.srs_size = srs_size
+        self.history_length = history_length
+        self.normalize = normalize
+        self.srs = np.ones((history_length, srs_size))
+        self.timestep = 0
+        self.ages = np.arange(history_length)[::-1]
+        self.surprises = np.zeros(history_length)
+
+    def update(self, sr, events):
+        self.srs[self.timestep % self.history_length] = sr
+        self.ages += 1
+        self.ages %= self.history_length
+        self.timestep += 1
+
+        surprises = self.get_surprise(events)
+        self.surprises[self.ages] += surprises
+
+    def log(self, step):
+        self.logger.log(
+            {
+                f'{self.name}_{i}':
+                self.surprises[i]/(self.timestep - i)
+                for i in range(self.history_length)
+            },
+            step=step
+        )
+        self.reset()
+
+    def reset(self):
+        self.srs = np.ones((self.history_length, self.srs_size))
+        self.timestep = 0
+        self.ages = np.arange(self.history_length)[::-1]
+        self.surprises = np.zeros(self.history_length)
+
+    def get_surprise(self, events):
+        surprise = - np.sum(
+            np.log(
+                np.clip(self.srs[:, events], 1e-7, 1)
+            ),
+            axis=-1
+        )
+
+        if self.normalize:
+            surprise /= len(events)
+
+        return surprise

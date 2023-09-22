@@ -60,7 +60,7 @@ class PinballTest:
         self.initial_context = np.empty(0)
 
         if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
+            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
             # define metrics
             self.scalar_metrics = ScalarMetrics(
                 {
@@ -68,8 +68,8 @@ class PinballTest:
                     'main_metrics/steps': np.mean,
                     'layer/surprise_hidden': np.mean,
                     'agent/td_error': np.mean,
-                    'agent/test_sr_mse_approx_tail': np.mean,
-                    'agent/test_sr_mse': np.mean
+                    'sr/test_mse_approx_tail': np.mean,
+                    'sr/test_mse': np.mean
                 },
                 self.logger
             )
@@ -92,6 +92,40 @@ class PinballTest:
                 self.logger,
                 log_fps=conf['run']['log_gif_fps']
             )
+
+            if self.test_srs:
+                self.predicted_sr_stack = SRStack(
+                    'sr/pred/hid/surprise',
+                    self.logger,
+                    self.agent.observation_messages.size,
+                    self.test_sr_steps
+                )
+
+                self.generated_sr_stack = SRStack(
+                    'sr/gen/hid/surprise',
+                    self.logger,
+                    self.agent.observation_messages.size,
+                    self.test_sr_steps
+                )
+
+                self.predicted_sr_stack_raw = SRStack(
+                    'sr/pred/raw/surprise',
+                    self.logger,
+                    self.raw_obs_shape[0] * self.raw_obs_shape[1],
+                    self.test_sr_steps,
+                )
+
+                self.generated_sr_stack_raw = SRStack(
+                    'sr/gen/raw/surprise',
+                    self.logger,
+                    self.raw_obs_shape[0] * self.raw_obs_shape[1],
+                    self.test_sr_steps,
+                )
+            else:
+                self.predicted_sr_stack = None
+                self.predicted_sr_stack_raw = None
+                self.generated_sr_stack = None
+                self.generated_sr_stack_raw = None
 
     def run(self):
         total_reward = np.zeros(self.raw_obs_shape).flatten()
@@ -140,24 +174,53 @@ class PinballTest:
                         }
                     )
                     if self.test_srs:
-                        sr_mse_approx_tail, _, gen_sr_test_tail = self.compare_srs(
+                        (
+                            sr_mse_approx_tail,
+                            _,
+                            gen_sr_test_tail,
+                            _,
+                            gen_sr_test_tail_raw
+                        ) = self.compare_srs(
                             self.test_sr_steps,
                             True
                         )
-                        sr_mse, pred_sr_test, gen_sr_test = self.compare_srs(
+                        (
+                            sr_mse,
+                            pred_sr_test,
+                            gen_sr_test,
+                            pred_sr_test_raw,
+                            gen_sr_test_raw
+                        ) = self.compare_srs(
                             self.test_sr_steps,
                             False
                         )
                         self.scalar_metrics.update(
                             {
-                                'agent/test_sr_mse_approx_tail': sr_mse_approx_tail,
-                                'agent/test_sr_mse': sr_mse
+                                'sr/test_mse_approx_tail': sr_mse_approx_tail,
+                                'sr/test_mse': sr_mse
                             }
                         )
+
+                        self.predicted_sr_stack.update(
+                            pred_sr_test,
+                            self.agent.cortical_column.output_sdr.sparse
+                        )
+                        self.predicted_sr_stack_raw.update(
+                            pred_sr_test_raw,
+                            self.agent.cortical_column.input_sdr.sparse
+                        )
+                        self.generated_sr_stack.update(
+                            gen_sr_test,
+                            self.agent.cortical_column.output_sdr.sparse
+                        )
+                        self.generated_sr_stack_raw.update(
+                            gen_sr_test_raw,
+                            self.agent.cortical_column.input_sdr.sparse
+                        )
                     else:
-                        pred_sr_test = None
-                        gen_sr_test = None
-                        gen_sr_test_tail = None
+                        pred_sr_test_raw = None
+                        gen_sr_test_raw = None
+                        gen_sr_test_tail_raw = None
 
                     if (i % self.update_rate) == 0:
                         raw_beh = (self.prev_image * 255).astype('uint8')
@@ -212,13 +275,13 @@ class PinballTest:
                                         [
                                             raw_beh,
                                             proc_beh,
-                                            (pred_sr_test.reshape(
+                                            (pred_sr_test_raw.reshape(
                                                 self.raw_obs_shape
                                             ) * 255).astype('uint8'),
-                                            (gen_sr_test.reshape(
+                                            (gen_sr_test_raw.reshape(
                                                 self.raw_obs_shape
                                             ) * 255).astype('uint8'),
-                                            (gen_sr_test_tail.reshape(
+                                            (gen_sr_test_tail_raw.reshape(
                                                 self.raw_obs_shape
                                             ) * 255).astype('uint8')
                                         ]
@@ -236,6 +299,12 @@ class PinballTest:
             if self.logger is not None:
                 self.scalar_metrics.update({'main_metrics/steps': steps})
                 self.scalar_metrics.log(i)
+
+                if self.test_srs:
+                    self.predicted_sr_stack.log(i)
+                    self.predicted_sr_stack_raw.log(i)
+                    self.generated_sr_stack.log(i)
+                    self.generated_sr_stack_raw.log(i)
 
                 if (i % self.update_rate) == 0:
                     obs_rewards = self.agent.cortical_column.decoder.decode(
@@ -338,31 +407,34 @@ class PinballTest:
     def compare_srs(self, sr_steps, approximate_tail):
         current_state = self.agent.cortical_column.layer.internal_forward_messages
         pred_sr = self.agent.predict_sr(current_state)
+        pred_sr = normalize(
+                pred_sr.reshape(
+                    self.agent.cortical_column.layer.n_obs_vars, -1
+                )
+            ).flatten()
+
         gen_sr = self.agent.generate_sr(
             sr_steps,
             initial_messages=current_state,
             initial_prediction=self.agent.observation_messages,
             approximate_tail=approximate_tail,
         )
-
-        pred_sr = self.agent.cortical_column.decoder.decode(
-            normalize(
-                pred_sr.reshape(
-                    self.agent.cortical_column.layer.n_obs_vars, -1
-                )
-            ).flatten()
-        )
-        gen_sr = self.agent.cortical_column.decoder.decode(
-            normalize(
+        gen_sr = normalize(
                 gen_sr.reshape(
                     self.agent.cortical_column.layer.n_obs_vars, -1
                 )
             ).flatten()
+
+        pred_sr_raw = self.agent.cortical_column.decoder.decode(
+            pred_sr
+        )
+        gen_sr_raw = self.agent.cortical_column.decoder.decode(
+            gen_sr
         )
 
-        mse = np.mean(np.power(pred_sr - gen_sr, 2))
+        mse = np.mean(np.power(pred_sr_raw - gen_sr_raw, 2))
 
-        return mse, pred_sr, gen_sr
+        return mse, pred_sr, gen_sr, pred_sr_raw, gen_sr_raw
 
 
 class GridWorldTest:
