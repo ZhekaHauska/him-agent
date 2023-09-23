@@ -110,10 +110,10 @@ class LstmLayer:
 
         if self.n_obs_states == 1:
             # predicted values: logits for further sigmoid application
-            self.loss_function = nn.BCEWithLogitsLoss(reduction='sum')
+            self.loss_function = nn.BCEWithLogitsLoss(reduction='mean')
         else:
             # predicted values: logits for further vars-wise softmax application
-            self.loss_function = nn.CrossEntropyLoss(reduction='sum', label_smoothing=1e-3)
+            self.loss_function = nn.CrossEntropyLoss(reduction='sum')
 
         self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr)
         # self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
@@ -152,16 +152,14 @@ class LstmLayer:
         return self.model.decode_obs(state_out)
 
     def reset(self):
-        self.optimizer.zero_grad()
-        if self.accumulated_loss is not None:
-            mean_loss = self.accumulated_loss / self.accumulated_loss_steps
-            mean_loss.backward()
-            self.optimizer.step()
-
+        self.backpropagate_loss()
         self._reinit_messages_and_states()
 
     def observe(self, observation, learn: bool = True):
-        dense_obs = sparse_to_dense(observation, size=self.input_size)
+        if observation.size == self.input_size:
+            dense_obs = observation
+        else:
+            dense_obs = sparse_to_dense(observation, size=self.input_size)
         dense_obs = torch.from_numpy(dense_obs).float().to(self.device)
 
         if learn:
@@ -172,12 +170,18 @@ class LstmLayer:
             self.last_loss_value = loss.item()
             self.accumulated_loss += loss
             self.accumulated_loss_steps += 1
+            # if self.accumulated_loss_steps % 5 == 0:
+            #     self.backpropagate_loss()
 
         _, state = self.internal_state
         with torch.set_grad_enabled(learn):
             state = self.transition_with_observation(dense_obs, state)
 
         self.internal_state = [True, state]
+        # self.internal_state = [
+        #     self.internal_state[0],
+        #     (self.internal_state[1][0].detach(), self.internal_state[1][1].detach())
+        # ]
         self.internal_forward_messages = self.internal_state
 
     def predict(self, learn: bool = False):
@@ -187,12 +191,6 @@ class LstmLayer:
         if self.external_input_size != 0:
             action_probs = self.external_messages
             action_probs = torch.from_numpy(action_probs).float().to(self.device)
-
-        if not learn and not is_observed:
-            # PLANNING:
-            # should observe what was predicted previously before making new prediction
-            with torch.no_grad():
-                state = self.transition_with_observation(self.predicted_obs_logits, state)
 
         with torch.set_grad_enabled(learn):
             if self.external_input_size != 0:
@@ -217,7 +215,22 @@ class LstmLayer:
             shape = self.n_obs_vars, self.n_obs_states
             logits = torch.unsqueeze(torch.reshape(logits, shape).T, 0)
             target = torch.unsqueeze(torch.reshape(target, shape).T, 0)
-            return self.loss_function(logits, target)
+            return self.loss_function(logits, target) / self.n_obs_vars
+
+    def backpropagate_loss(self):
+        if self.accumulated_loss is None:
+            return
+
+        self.optimizer.zero_grad()
+        mean_loss = self.accumulated_loss / self.accumulated_loss_steps
+        mean_loss.backward()
+        self.optimizer.step()
+
+        self.accumulated_loss = None
+        self.internal_state = [
+            self.internal_state[0],
+            (self.internal_state[1][0].detach(), self.internal_state[1][1].detach())
+        ]
 
     def set_external_messages(self, messages=None):
         # update external cells
@@ -269,6 +282,9 @@ class LstmLayer:
 
 
 class LstmWorldModel(nn.Module):
+    out_temp: float = 4.0
+    obs_temp: float = 4.0
+
     def __init__(
             self,
             n_obs_vars: int,
@@ -301,28 +317,38 @@ class LstmWorldModel(nn.Module):
                 # 50x36x1
                 nn.Conv2d(1, 4, 5, 3, 2),
                 # 17x11x2
-                nn.Conv2d(4, 8, 5, 2, 2),
+                nn.Conv2d(4, 4, 5, 2, 2),
                 # 9x6x4
-                # nn.Conv2d(8, 8, 3, 1, 1),
+                # nn.Conv2d(4, 8, 3, 1, 1),
                 # 9x6x4
                 nn.Flatten(0),
-                # 432
             )
-            encoded_input_size = 432
+            encoded_input_size = 216
         else:
-            self.encoder = None
-            encoded_input_size = self.input_size
+            # self.encoder = None
+            # encoded_input_size = self.input_size
+            layers = [self.input_size, 2 * self.n_obs_states, self.hidden_size]
+            self.encoder = nn.Sequential(
+                nn.Linear(layers[0], layers[1], bias=False),
+                nn.SiLU(),
+                nn.Linear(layers[1], layers[2], bias=True),
+                nn.Tanh(),
+                # nn.Linear(self.hidden_size, self.hidden_size, bias=False),
+            )
+            encoded_input_size = layers[-1]
 
         self.state_lstm = nn.LSTMCell(
             input_size=encoded_input_size,
-            hidden_size=self.hidden_size
+            hidden_size=self.hidden_size,
+            # bias=False
         )
 
         if self.action_size > 0:
             # self.action_projection = nn.Linear()
             self.action_lstm = nn.LSTMCell(
                 input_size=self.action_size,
-                hidden_size=self.hidden_size
+                hidden_size=self.hidden_size,
+                # bias=False
             )
 
         self.decoder = None
@@ -334,12 +360,15 @@ class LstmWorldModel(nn.Module):
                     nn.Linear(self.hidden_size, 1000),
                     nn.SiLU(),
                     nn.Linear(1000, 4000),
-                    nn.Tanh(),
+                    nn.SiLU(),
                     nn.Linear(4000, self.input_size, bias=False),
                 )
             else:
-                # NB: single linear layer is tested to work better than MLP
                 self.decoder = nn.Sequential(
+                    nn.Linear(self.hidden_size, self.hidden_size, bias=False),
+                    nn.SiLU(),
+                    # nn.Linear(self.hidden_size, self.hidden_size, bias=False),
+                    # nn.SiLU(),
                     nn.Linear(self.hidden_size, self.input_size, bias=False),
                 )
 
@@ -352,10 +381,15 @@ class LstmWorldModel(nn.Module):
     def transition_with_observation(self, obs, state):
         if self.encoder is not None:
             obs = self.encoder(obs)
-        return self.state_lstm(obs, state)
+        state_out, state_cell = self.state_lstm(obs, state)
+        # increase temperature for out state
+        return state_out * self.out_temp, state_cell
 
     def transition_with_action(self, action_probs, state):
-        return self.action_lstm(action_probs, state)
+        # return state
+        state_out, state_cell = self.action_lstm(action_probs, state)
+        # increase temperature for out state
+        return state_out * self.out_temp, state_cell
 
     def decode_obs(self, state_out):
         if self.decoder is None:
@@ -363,7 +397,7 @@ class LstmWorldModel(nn.Module):
 
         state_probs_out = self.as_probabilistic_out(state_out)
         obs_logit = self.decoder(state_probs_out)
-        return obs_logit
+        return obs_logit * self.obs_temp
 
     def as_probabilistic_out(self, state_out):
         return as_distributions(
@@ -571,7 +605,7 @@ def as_distributions(logits, n_vars, n_states):
         # each var has its own distribution of states obtained with softmax:
         return torch.softmax(
             torch.reshape(logits, (n_vars, n_states)),
-            dim=1
+            dim=-1
         ).flatten()
 
 
