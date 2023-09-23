@@ -111,7 +111,7 @@ def to_single_sds(group_sds) -> tuple[int, Sds]:
     n_groups = group_sds.active_size
 
     shape = group_sds.shape
-    single_shape = (shape[0] // n_groups,) + shape[1:]
+    single_shape = shape[:-1] + (shape[-1] // n_groups, )
     single_sds = Sds.make((single_shape, group_sds.sparsity))
 
     return n_groups, single_sds
