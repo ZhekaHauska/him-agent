@@ -253,6 +253,7 @@ class BioHIMA:
         if save_state:
             self._restore_last_snapshot()
 
+        sr /= self.cortical_column.layer.n_hidden_vars
         return sr
 
     def predict_sr(self, hidden_vars_dist):
@@ -264,18 +265,16 @@ class BioHIMA:
         n_hidden_vars = self.cortical_column.layer.n_hidden_vars
 
         error_sr = target_sr - predicted_sr
-        # "gradient"-clipping
-        error_sr = np.clip(error_sr, -4.0 / n_hidden_vars, 4.0 / n_hidden_vars)
+        # to make the gradient correct, revert normalization by hidden vars
+        error_sr *= n_hidden_vars
 
         # dSR / dW for linear model
         delta_w = np.outer(prediction_cells, error_sr)
-        # to make gradient correct, revert division in predict_sr
-        delta_w *= n_hidden_vars
 
         self.striatum_weights += self.striatum_lr * delta_w
         self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
-        self.td_error = np.mean(np.power(delta_w, 2))
+        self.td_error = np.mean(np.power(error_sr, 2))
         self.td_error_ma = lin_sum(self.td_error_ma, 0.2, self.td_error)
 
     def _get_action_selection_distribution(
