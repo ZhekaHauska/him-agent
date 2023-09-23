@@ -310,6 +310,13 @@ class LstmWorldModel(nn.Module):
         self.n_hidden_states = n_hidden_states
         self.hidden_size = self.n_hidden_vars * self.n_hidden_states
 
+        self.action_repeat_k = self.input_size // self.n_actions // 3
+        self.tiled_action_size = self.action_repeat_k * self.action_size
+
+        self.empty_action = torch.zeros((self.tiled_action_size, )).to(self.device)
+        self.empty_obs = torch.zeros((self.input_size, )).to(self.device)
+        self.full_input_size = self.input_size + self.tiled_action_size
+
         pinball_raw_image = self.n_obs_vars == 50 * 36 and self.n_obs_states == 1
         if pinball_raw_image:
             self.encoder = nn.Sequential(
@@ -326,30 +333,21 @@ class LstmWorldModel(nn.Module):
             encoded_input_size = 216
         else:
             # self.encoder = None
-            # encoded_input_size = self.input_size
-            layers = [self.input_size, 2 * self.n_obs_states, self.hidden_size]
+            # encoded_input_size = self.full_input_size
+            layers = [self.full_input_size, 3 * self.n_obs_states, self.hidden_size]
             self.encoder = nn.Sequential(
                 nn.Linear(layers[0], layers[1], bias=False),
                 nn.SiLU(),
                 nn.Linear(layers[1], layers[2], bias=True),
                 nn.Tanh(),
-                # nn.Linear(self.hidden_size, self.hidden_size, bias=False),
             )
             encoded_input_size = layers[-1]
 
-        self.state_lstm = nn.LSTMCell(
+        self.lstm = nn.LSTMCell(
             input_size=encoded_input_size,
             hidden_size=self.hidden_size,
-            # bias=False
+            bias=True
         )
-
-        if self.action_size > 0:
-            # self.action_projection = nn.Linear()
-            self.action_lstm = nn.LSTMCell(
-                input_size=self.action_size,
-                hidden_size=self.hidden_size,
-                # bias=False
-            )
 
         self.decoder = None
         if with_decoder:
@@ -367,8 +365,6 @@ class LstmWorldModel(nn.Module):
                 self.decoder = nn.Sequential(
                     nn.Linear(self.hidden_size, self.hidden_size, bias=False),
                     nn.SiLU(),
-                    # nn.Linear(self.hidden_size, self.hidden_size, bias=False),
-                    # nn.SiLU(),
                     nn.Linear(self.hidden_size, self.input_size, bias=False),
                 )
 
@@ -379,15 +375,21 @@ class LstmWorldModel(nn.Module):
         )
 
     def transition_with_observation(self, obs, state):
+        if self.action_size > 0:
+            obs = torch.cat((obs, self.empty_action.detach()))
         if self.encoder is not None:
             obs = self.encoder(obs)
-        state_out, state_cell = self.state_lstm(obs, state)
+        state_out, state_cell = self.lstm(obs, state)
         # increase temperature for out state
         return state_out * self.out_temp, state_cell
 
     def transition_with_action(self, action_probs, state):
-        # return state
-        state_out, state_cell = self.action_lstm(action_probs, state)
+        action_probs = action_probs.expand(self.action_repeat_k, -1).flatten()
+        obs = torch.cat((self.empty_obs.detach(), action_probs))
+
+        if self.encoder is not None:
+            obs = self.encoder(obs)
+        state_out, state_cell = self.lstm(obs, state)
         # increase temperature for out state
         return state_out * self.out_temp, state_cell
 

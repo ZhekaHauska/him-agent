@@ -98,7 +98,7 @@ class RwkvLayer:
             self.n_hidden_vars == self.n_obs_vars
             and self.n_hidden_states == self.n_obs_states
         )
-        print(f'LSTM {with_decoder=}')
+        print(f'RWKV {with_decoder=}')
 
         self.model = RwkvWorldModel(
             n_obs_vars=n_obs_vars,
@@ -112,13 +112,13 @@ class RwkvLayer:
 
         if self.n_obs_states == 1:
             # predicted values: logits for further sigmoid application
-            self.loss_function = nn.BCEWithLogitsLoss(reduction='sum')
+            self.loss_function = nn.BCEWithLogitsLoss(reduction='mean')
         else:
             # predicted values: logits for further vars-wise softmax application
-            self.loss_function = nn.CrossEntropyLoss(reduction='sum', label_smoothing=1e-3)
+            self.loss_function = nn.CrossEntropyLoss(reduction='sum')
 
-        # self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr)
-        self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
+        self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr)
+        # self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
 
         self._reinit_messages_and_states()
 
@@ -154,16 +154,14 @@ class RwkvLayer:
         return self.model.decode_obs(state_out)
 
     def reset(self):
-        self.optimizer.zero_grad()
-        if self.accumulated_loss is not None:
-            mean_loss = self.accumulated_loss / self.accumulated_loss_steps
-            mean_loss.backward()
-            self.optimizer.step()
-
+        self.backpropagate_loss()
         self._reinit_messages_and_states()
 
     def observe(self, observation, learn: bool = True):
-        dense_obs = sparse_to_dense(observation, size=self.input_size)
+        if observation.size == self.input_size:
+            dense_obs = observation
+        else:
+            dense_obs = sparse_to_dense(observation, size=self.input_size)
         dense_obs = torch.from_numpy(dense_obs).float().to(self.device)
 
         if learn:
@@ -174,12 +172,18 @@ class RwkvLayer:
             self.last_loss_value = loss.item()
             self.accumulated_loss += loss
             self.accumulated_loss_steps += 1
+            # if self.accumulated_loss_steps % 5 == 0:
+            #     self.backpropagate_loss()
 
         _, state = self.internal_state
         with torch.set_grad_enabled(learn):
             state = self.transition_with_observation(dense_obs, state)
 
         self.internal_state = [True, state]
+        # self.internal_state = [
+        #     self.internal_state[0],
+        #     (self.internal_state[1][0].detach(), self.internal_state[1][1].detach())
+        # ]
         self.internal_forward_messages = self.internal_state
 
     def predict(self, learn: bool = False):
@@ -189,12 +193,6 @@ class RwkvLayer:
         if self.external_input_size != 0:
             action_probs = self.external_messages
             action_probs = torch.from_numpy(action_probs).float().to(self.device)
-
-        if not learn and not is_observed:
-            # PLANNING:
-            # should observe what was predicted previously before making new prediction
-            with torch.no_grad():
-                state = self.transition_with_observation(self.predicted_obs_logits, state)
 
         with torch.set_grad_enabled(learn):
             if self.external_input_size != 0:
@@ -219,7 +217,22 @@ class RwkvLayer:
             shape = self.n_obs_vars, self.n_obs_states
             logits = torch.unsqueeze(torch.reshape(logits, shape).T, 0)
             target = torch.unsqueeze(torch.reshape(target, shape).T, 0)
-            return self.loss_function(logits, target)
+            return self.loss_function(logits, target) / self.n_obs_vars
+
+    def backpropagate_loss(self):
+        if self.accumulated_loss is None:
+            return
+
+        self.optimizer.zero_grad()
+        mean_loss = self.accumulated_loss / self.accumulated_loss_steps
+        mean_loss.backward()
+        self.optimizer.step()
+
+        self.accumulated_loss = None
+        self.internal_state = [
+            self.internal_state[0],
+            (self.internal_state[1][0].detach(), self.internal_state[1][1].detach())
+        ]
 
     def set_external_messages(self, messages=None):
         # update external cells
@@ -271,6 +284,9 @@ class RwkvLayer:
 
 
 class RwkvWorldModel(nn.Module):
+    out_temp: float = 1.0
+    obs_temp: float = 1.0
+
     def __init__(
             self,
             n_obs_vars: int,
@@ -296,6 +312,13 @@ class RwkvWorldModel(nn.Module):
         self.n_hidden_states = n_hidden_states
         self.hidden_size = self.n_hidden_vars * self.n_hidden_states
 
+        self.action_repeat_k = self.input_size // self.n_actions // 3
+        self.tiled_action_size = self.action_repeat_k * self.action_size
+
+        self.empty_action = torch.zeros((self.tiled_action_size, )).to(self.device)
+        self.empty_obs = torch.zeros((self.input_size, )).to(self.device)
+        self.full_input_size = self.input_size + self.tiled_action_size
+
         pinball_raw_image = self.n_obs_vars == 50 * 36 and self.n_obs_states == 1
         if pinball_raw_image:
             self.encoder = nn.Sequential(
@@ -303,29 +326,30 @@ class RwkvWorldModel(nn.Module):
                 # 50x36x1
                 nn.Conv2d(1, 4, 5, 3, 2),
                 # 17x11x2
-                nn.Conv2d(4, 8, 5, 2, 2),
+                nn.Conv2d(4, 4, 5, 2, 2),
                 # 9x6x4
-                # nn.Conv2d(8, 8, 3, 1, 1),
+                # nn.Conv2d(4, 8, 3, 1, 1),
                 # 9x6x4
                 nn.Flatten(0),
-                # 432
             )
-            encoded_input_size = 432
+            encoded_input_size = 216
         else:
-            self.encoder = None
-            encoded_input_size = self.input_size
+            # self.encoder = None
+            # encoded_input_size = self.full_input_size
+            layers = [self.full_input_size, 3 * self.n_obs_states, self.hidden_size]
+            self.encoder = nn.Sequential(
+                nn.Linear(layers[0], layers[1], bias=False),
+                nn.SiLU(),
+                nn.Linear(layers[1], layers[2], bias=True),
+                nn.Tanh(),
+            )
+            encoded_input_size = layers[-1]
 
         self.input_projection = nn.Sequential(
             nn.Linear(encoded_input_size, self.hidden_size),
             nn.LayerNorm(self.hidden_size)
         )
         self.rwkv = RwkvCell(hidden_size=self.hidden_size)
-
-        if self.action_size > 0:
-            self.action_projection = nn.Sequential(
-                nn.Linear(self.action_size, self.hidden_size),
-                nn.LayerNorm(self.hidden_size)
-            )
 
         self.decoder = None
         if with_decoder:
@@ -336,12 +360,13 @@ class RwkvWorldModel(nn.Module):
                     nn.Linear(self.hidden_size, 1000),
                     nn.SiLU(),
                     nn.Linear(1000, 4000),
-                    nn.Tanh(),
+                    nn.SiLU(),
                     nn.Linear(4000, self.input_size, bias=False),
                 )
             else:
-                # NB: single linear layer is tested to work better than MLP
                 self.decoder = nn.Sequential(
+                    nn.Linear(self.hidden_size, self.hidden_size, bias=False),
+                    nn.SiLU(),
                     nn.Linear(self.hidden_size, self.input_size, bias=False),
                 )
 
@@ -352,14 +377,25 @@ class RwkvWorldModel(nn.Module):
         )
 
     def transition_with_observation(self, obs, state):
+        if self.action_size > 0:
+            obs = torch.cat((obs, self.empty_action.detach()))
         if self.encoder is not None:
             obs = self.encoder(obs)
         x = self.input_projection(obs)
-        return self.rwkv(x, state)
+        state_out, state_cell = self.rwkv(x, state)
+        # increase temperature for out state
+        return state_out * self.out_temp, state_cell
 
     def transition_with_action(self, action_probs, state):
-        obs = self.action_projection(action_probs)
-        return self.rwkv(obs, state)
+        action_probs = action_probs.expand(self.action_repeat_k, -1).flatten()
+        obs = torch.cat((self.empty_obs.detach(), action_probs))
+
+        if self.encoder is not None:
+            obs = self.encoder(obs)
+        x = self.input_projection(obs)
+        state_out, state_cell = self.rwkv(x, state)
+        # increase temperature for out state
+        return state_out * self.out_temp, state_cell
 
     def decode_obs(self, state_out):
         if self.decoder is None:
