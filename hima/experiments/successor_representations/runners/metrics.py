@@ -108,12 +108,12 @@ class SRStack:
         self.name = name
         self.logger = logger
         self.srs_size = srs_size
-        self.history_length = history_length
+        self.history_length = history_length + 1
         self.normalize = normalize
-        self.srs = np.ones((history_length, srs_size))
+        self.srs = np.ones((self.history_length, srs_size))
         self.timestep = 0
-        self.ages = np.arange(history_length)[::-1]
-        self.surprises = np.zeros(history_length)
+        self.ages = np.arange(self.history_length)[::-1]
+        self.surprises = np.zeros(self.history_length)
 
     def update(self, sr, events):
         self.srs[self.timestep % self.history_length] = sr
