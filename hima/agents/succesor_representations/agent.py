@@ -253,7 +253,6 @@ class BioHIMA:
         if save_state:
             self._restore_last_snapshot()
 
-        sr /= self.cortical_column.layer.n_hidden_vars
         return sr
 
     def predict_sr(self, hidden_vars_dist):
