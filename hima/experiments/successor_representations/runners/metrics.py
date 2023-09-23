@@ -5,7 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import os
 import numpy as np
-from hima.experiments.hmm.runners.utils import get_surprise
 
 from hima.common.lazy_imports import lazy_import
 
@@ -131,6 +130,7 @@ class SRStack:
                 f'{self.name}_{i}':
                 self.surprises[i]/(self.timestep - i)
                 for i in range(self.history_length)
+                if (self.timestep - i) > 0
             },
             step=step
         )
@@ -143,14 +143,17 @@ class SRStack:
         self.surprises = np.zeros(self.history_length)
 
     def get_surprise(self, events):
-        surprise = - np.sum(
-            np.log(
-                np.clip(self.srs[:, events], 1e-7, 1)
-            ),
-            axis=-1
-        )
+        if len(events) > 0:
+            surprise = - np.sum(
+                np.log(
+                    np.clip(self.srs[:, events], 1e-7, 1)
+                ),
+                axis=-1
+            )
 
-        if self.normalize:
-            surprise /= len(events)
+            if self.normalize:
+                surprise /= len(events)
+        else:
+            surprise = 0
 
         return surprise

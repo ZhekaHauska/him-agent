@@ -67,7 +67,7 @@ class PinballTest:
                     'main_metrics/reward': np.sum,
                     'main_metrics/steps': np.mean,
                     'layer/surprise_hidden': np.mean,
-                    'agent/td_error': np.mean,
+                    'sr/td_error': np.mean,
                     'sr/test_mse_approx_tail': np.mean,
                     'sr/test_mse': np.mean
                 },
@@ -86,7 +86,7 @@ class PinballTest:
             self.image_metrics = ImageMetrics(
                 [
                     'agent/behavior',
-                    'agent/sr',
+                    'sr/sr',
                     'layer/predictions'
                 ],
                 self.logger,
@@ -98,28 +98,28 @@ class PinballTest:
                     'sr/pred/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,
-                    self.test_sr_steps
+                    history_length=self.test_sr_steps
                 )
 
                 self.generated_sr_stack = SRStack(
                     'sr/gen/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,
-                    self.test_sr_steps
+                    history_length=self.test_sr_steps
                 )
 
                 self.predicted_sr_stack_raw = SRStack(
                     'sr/pred/raw/surprise',
                     self.logger,
                     self.raw_obs_shape[0] * self.raw_obs_shape[1],
-                    self.test_sr_steps,
+                    history_length=self.test_sr_steps,
                 )
 
                 self.generated_sr_stack_raw = SRStack(
                     'sr/gen/raw/surprise',
                     self.logger,
                     self.raw_obs_shape[0] * self.raw_obs_shape[1],
-                    self.test_sr_steps,
+                    history_length=self.test_sr_steps,
                 )
             else:
                 self.predicted_sr_stack = None
@@ -170,7 +170,7 @@ class PinballTest:
                         {
                             'main_metrics/reward': reward,
                             'layer/surprise_hidden': self.agent.surprise,
-                            'agent/td_error': self.agent.td_error
+                            'sr/td_error': self.agent.td_error
                         }
                     )
                     if self.test_srs:
@@ -271,7 +271,7 @@ class PinballTest:
                         if self.test_srs:
                             self.image_metrics.update(
                                 {
-                                    'agent/sr': np.hstack(
+                                    'sr/sr': np.hstack(
                                         [
                                             raw_beh,
                                             proc_beh,
