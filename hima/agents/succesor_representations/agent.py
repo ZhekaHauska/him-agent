@@ -128,8 +128,7 @@ class BioHIMA:
             self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
             current_state = self.cortical_column.layer.internal_forward_messages
         else:
-            self.observation_messages = np.zeros_like(self.observation_rewards)
-            current_state = np.zeros_like(self.cortical_column.layer.internal_forward_messages)
+            return
 
         if not learn:
             return
