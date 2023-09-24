@@ -102,11 +102,11 @@ class PinballTest:
             self.decoder = SPDecoder(self.encoder)
 
             shape = self.encoder.sps[0].getColumnDimensions()
-            self.state_shape = (shape[0] * self.encoder.n_sp, shape[1])
+            self.state_shape = (shape[0] * self.encoder.n_groups, shape[1])
             self.sp_input = SDR(self.encoder.getNumInputs())
             self.sp_output = SDR(self.encoder.getNumColumns())
 
-            self.n_hmm_obs_vars = self.encoder.n_sp
+            self.n_hmm_obs_vars = self.encoder.n_groups
             self.n_hmm_obs_states = self.encoder.sps[0].getNumColumns()
             self.surprise_mode = 'categorical'
 

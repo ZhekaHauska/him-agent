@@ -1016,7 +1016,7 @@ class SPEnsemble:
             n_areas=1,
             **kwargs
     ):
-        self.n_sp = n_sp
+        self.n_groups = n_sp
         self.n_areas = n_areas
 
         self.seed = kwargs.pop('seed')
@@ -1030,8 +1030,8 @@ class SPEnsemble:
 
         self.sps = []
 
-        seeds = self._rng.integers(np.iinfo(np.int32).max, size=self.n_sp)
-        for i in range(self.n_sp):
+        seeds = self._rng.integers(np.iinfo(np.int32).max, size=self.n_groups)
+        for i in range(self.n_groups):
             self.sps.append(
                 HtmSpatialPooler(
                     inputDimensions=self.sp_shape,
@@ -1062,7 +1062,7 @@ class SPEnsemble:
         )
 
     def getNumColumns(self):
-        return self.sps[0].getNumColumns() * self.n_sp
+        return self.sps[0].getNumColumns() * self.n_groups
 
     def getNumInputs(self):
         return self.input_size
@@ -1072,6 +1072,9 @@ class SPEnsemble:
 
     def getInputDimensions(self):
         return self.input_shape
+
+    def getSingleNumColumns(self):
+        return self.sps[0].getNumColumns()
 
 
 class SPDecoder:

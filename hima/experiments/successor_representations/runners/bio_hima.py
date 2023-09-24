@@ -79,11 +79,11 @@ class AnimalAITest:
             decoder = SPDecoder(encoder)
 
             layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
-            layer_conf['n_obs_vars'] = encoder.n_sp
+            layer_conf['n_obs_vars'] = encoder.n_groups
             layer_conf['n_context_states'] = (
                     encoder.sps[0].getNumColumns() * layer_conf['cells_per_column']
             )
-            layer_conf['n_context_vars'] = encoder.n_sp
+            layer_conf['n_context_vars'] = encoder.n_groups
         elif encoder_type == 'sp_grouped':
             from hima.experiments.temporal_pooling.stp.sp_ensemble import (
                 SpatialPoolerGroupedWrapper
@@ -374,11 +374,11 @@ class PinballTest:
             decoder = SPDecoder(encoder)
 
             layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
-            layer_conf['n_obs_vars'] = encoder.n_sp
+            layer_conf['n_obs_vars'] = encoder.n_groups
             layer_conf['n_context_states'] = (
                     encoder.sps[0].getNumColumns() * layer_conf['cells_per_column']
             )
-            layer_conf['n_context_vars'] = encoder.n_sp
+            layer_conf['n_context_vars'] = encoder.n_groups
         elif encoder_type == 'sp_grouped':
             from hima.experiments.temporal_pooling.stp.sp_ensemble import (
                 SpatialPoolerGroupedWrapper
