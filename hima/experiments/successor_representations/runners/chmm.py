@@ -17,6 +17,9 @@ from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import normalize
 from hima.modules.baselines.hmm import FCHMMLayer
 from hima.experiments.successor_representations.runners.utils import make_decoder
+from hima.common.utils import to_gray_img, isnone
+from hima.common.sdr import sparse_to_dense
+
 from typing import Literal
 
 wandb = lazy_import('wandb')
@@ -128,6 +131,7 @@ class PinballTest:
                 self.generated_sr_stack_raw = None
 
     def run(self):
+        decoder = self.agent.cortical_column.decoder
         total_reward = np.zeros(self.raw_obs_shape).flatten()
         for i in range(self.n_episodes):
             steps = 0
@@ -223,41 +227,33 @@ class PinballTest:
                         gen_sr_test_tail_raw = None
 
                     if (i % self.update_rate) == 0:
-                        raw_beh = (self.prev_image * 255).astype('uint8')
-
-                        proc_beh = np.zeros(self.raw_obs_shape).flatten()
-                        proc_beh[events] = 1
-                        proc_beh = (proc_beh.reshape(self.raw_obs_shape) * 255).astype('uint8')
-
-                        pred_beh = (self.agent.cortical_column.predicted_image.reshape(
-                            self.raw_obs_shape
-                        ) * 255).astype('uint8')
+                        raw_beh = self.to_img(self.prev_image)
+                        proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
+                        pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
 
                         if pred_sr is not None:
-                            pred_sr = (
-                                    self.agent.cortical_column.decoder.decode(
+                            pred_sr = self.to_img(
+                                    decoder.decode(
                                         normalize(
                                             pred_sr.reshape(
                                                 self.agent.cortical_column.layer.n_obs_vars, -1
                                             )
                                         ).flatten()
                                     )
-                                    .reshape(self.raw_obs_shape) * 255
-                            ).astype('uint8')
+                            )
                         else:
                             pred_sr = np.zeros(self.raw_obs_shape).astype('uint8')
 
                         if gen_sr is not None:
-                            gen_sr = (
-                                    self.agent.cortical_column.decoder.decode(
+                            gen_sr = self.to_img(
+                                    decoder.decode(
                                         normalize(
                                             gen_sr.reshape(
                                                 self.agent.cortical_column.layer.n_obs_vars, -1
                                             )
                                         ).flatten()
                                     )
-                                    .reshape(self.raw_obs_shape) * 255
-                            ).astype('uint8')
+                            )
                         else:
                             gen_sr = np.zeros(self.raw_obs_shape).astype('uint8')
 
@@ -275,15 +271,9 @@ class PinballTest:
                                         [
                                             raw_beh,
                                             proc_beh,
-                                            (pred_sr_test_raw.reshape(
-                                                self.raw_obs_shape
-                                            ) * 255).astype('uint8'),
-                                            (gen_sr_test_raw.reshape(
-                                                self.raw_obs_shape
-                                            ) * 255).astype('uint8'),
-                                            (gen_sr_test_tail_raw.reshape(
-                                                self.raw_obs_shape
-                                            ) * 255).astype('uint8')
+                                            self.to_img(pred_sr_test_raw),
+                                            self.to_img(gen_sr_test_raw),
+                                            self.to_img(gen_sr_test_tail_raw)
                                         ]
                                     )
                                 }
@@ -307,7 +297,7 @@ class PinballTest:
                     self.generated_sr_stack_raw.log(i)
 
                 if (i % self.update_rate) == 0:
-                    obs_rewards = self.agent.cortical_column.decoder.decode(
+                    obs_rewards = decoder.decode(
                         normalize(
                             self.agent.observation_rewards.reshape(
                                 self.agent.cortical_column.layer.n_obs_vars, -1
@@ -344,10 +334,14 @@ class PinballTest:
 
         return events
 
+    def to_img(self, x: np.ndarray, shape=None):
+        return to_gray_img(x, like=isnone(shape, self.raw_obs_shape))
+
     def make_agent(self, conf=None, path=None):
         if path is not None:
             raise NotImplementedError
         elif conf is not None:
+            layer_type = conf['run']['layer']
             # assembly agent
             encoder_type = conf['run']['encoder']
             encoder_conf = conf['encoder']
@@ -362,9 +356,6 @@ class PinballTest:
 
                 encoder = SPEnsemble(**encoder_conf)
                 decoder = SPDecoder(encoder)
-
-                layer_conf['n_obs_vars'] = encoder.n_sp
-                layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
             elif encoder_type == 'sp_grouped':
                 from hima.experiments.temporal_pooling.stp.sp_ensemble import (
                     SpatialPoolerGroupedWrapper
@@ -377,12 +368,11 @@ class PinballTest:
 
                 encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
                 decoder = make_decoder(encoder, decoder_type, decoder_conf)
-
-                layer_conf['n_obs_vars'] = encoder.n_groups
-                layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
             else:
                 raise ValueError(f'Encoder type {encoder_type} is not supported')
 
+            layer_conf['n_obs_vars'] = encoder.n_groups
+            layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
             layer_conf['n_external_states'] = self.n_actions
             layer_conf['seed'] = seed
 
@@ -395,6 +385,7 @@ class PinballTest:
             )
 
             conf['agent']['seed'] = seed
+
             agent = BioHIMA(
                 cortical_column,
                 **conf['agent']
