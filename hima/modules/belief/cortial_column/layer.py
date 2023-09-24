@@ -957,7 +957,7 @@ class Layer:
 
                 var_score = var_score[candidate_vars_for_cell]
 
-                # sample size can't be smaller than number of variables
+                # sample size can't be bigger than number of variables
                 sample_size = min(factors.n_vars_per_factor, len(candidate_vars_for_cell))
 
                 if sample_size == 0:
