@@ -1,7 +1,7 @@
 log: True
 save_model: False
-project_name: 'sr_pinball_sr_testing'
-run_tag: chmm
+project_name: 'sr_pinball_all'
+run_tag: null
 
 n_episodes: 501
 update_rate: 20
@@ -12,7 +12,7 @@ actions: [[0, 3], [0.5, 3], [-0.5, 3]]
 camera_mode: clip
 
 # if True then use random strategy
-reward_free: False
+reward_free: True
 
 # model based sr testing
 test_srs: True
@@ -22,14 +22,16 @@ test_sr_steps: 5
 encoder: sp_grouped
 # makes sense only for grouped: naive | learned
 decoder: learned
+# fchmm | dhtm | lstm | rwkv
+layer: lstm
 
 env_conf: 'configs/pinball/default.yaml'
 agent_conf: 'configs/agent/pinball.yaml'
-layer_conf: 'configs/hmm/pinball.yaml'
+layer_conf: 'configs/lstm/pinball.yaml'
 encoder_conf: 'configs/encoder/sp_grouped.yaml'
 decoder_conf: 'configs/decoder/pinball.yaml'
 
 experiment: pinball
 setup: fork_skewed
 
-seed: 717998582
+seed: null
