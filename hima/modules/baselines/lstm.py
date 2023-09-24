@@ -12,6 +12,8 @@ import torch.optim as optim
 
 from hima.common.sdr import sparse_to_dense
 from hima.modules.belief.utils import normalize
+from hima.agents.succesor_representations.agent import BioHIMA, SrEstimatePlanning
+from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 
 TLstmHiddenState = tuple[torch.Tensor, torch.Tensor]
 
@@ -616,3 +618,87 @@ def to_numpy(x):
         return x
     # torch
     return x.detach().cpu().numpy()
+
+
+class LstmBioHima(BioHIMA):
+    """Patch-like adaptation of BioHIMA to work with LSTM layer."""
+
+    def __init__(self, cortical_column: CorticalColumn, **kwargs):
+        super().__init__(cortical_column, **kwargs)
+
+    def generate_sr(
+            self,
+            n_steps,
+            initial_messages,
+            initial_prediction,
+            approximate_tail=True,
+            save_state=True
+    ):
+        """
+            n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
+            then this function is equivalent to predict_sr.
+        """
+        if save_state:
+            self._make_state_snapshot()
+
+        sr = np.zeros_like(self.observation_messages)
+
+        # represent state after getting observation
+        context_messages = initial_messages
+        # represent predicted observation
+        predicted_observation = initial_prediction
+
+        discount = 1.0
+        for t in range(n_steps):
+            sr += predicted_observation * discount
+
+            if self.sr_estimate_planning == SrEstimatePlanning.UNIFORM:
+                action_dist = None
+            else:
+                # on/off-policy
+                # NB: evaluate actions directly with prediction, not with n-step planning!
+                action_values = self.evaluate_actions(with_planning=False)
+                action_dist = self._get_action_selection_distribution(
+                    action_values,
+                    on_policy=self.sr_estimate_planning == SrEstimatePlanning.ON_POLICY
+                )
+
+            self.cortical_column.predict(context_messages, external_messages=action_dist)
+            predicted_observation = self.cortical_column.layer.prediction_columns
+
+            # THE ONLY ADDED CHANGE TO HIMA: explicitly observe predicted_observation
+            self.cortical_column.layer.observe(predicted_observation, learn=False)
+            # setting context is needed for action evaluation further on
+            self.cortical_column.layer.set_context_messages(
+                self.cortical_column.layer.internal_forward_messages
+            )
+            # ======
+
+            context_messages = self.cortical_column.layer.internal_forward_messages.copy()
+            discount *= self.gamma
+
+        if approximate_tail:
+            sr += self.predict_sr(context_messages) * discount
+
+        if save_state:
+            self._restore_last_snapshot()
+
+        sr /= self.cortical_column.layer.n_hidden_vars
+        return sr
+
+    def _extract_collapse_message(self, context_messages: TLstmLayerHiddenState):
+        # extract model state from layer state
+        _, (state_out, _) = context_messages
+
+        # convert model hidden state to probabilities
+        # noinspection PyUnresolvedReferences
+        state_probs_out = self.cortical_column.layer.model.as_probabilistic_out(state_out)
+        return to_numpy(state_probs_out)
+
+    def td_update_sr(self, target_sr, predicted_sr, prediction_cells: TLstmLayerHiddenState):
+        msg = self._extract_collapse_message(prediction_cells)
+        return super().td_update_sr(target_sr, predicted_sr, msg)
+
+    def predict_sr(self, context_messages: TLstmLayerHiddenState):
+        msg = self._extract_collapse_message(context_messages)
+        return super().predict_sr(msg)
