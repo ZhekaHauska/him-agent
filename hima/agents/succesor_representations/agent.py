@@ -260,11 +260,7 @@ class BioHIMA:
         return sr
 
     def td_update_sr(self, target_sr, predicted_sr, prediction_cells):
-        n_hidden_vars = self.cortical_column.layer.n_hidden_vars
-
         error_sr = target_sr - predicted_sr
-        # to make the gradient correct, revert normalization by hidden vars
-        error_sr *= n_hidden_vars
 
         # dSR / dW for linear model
         delta_w = np.outer(prediction_cells, error_sr)
