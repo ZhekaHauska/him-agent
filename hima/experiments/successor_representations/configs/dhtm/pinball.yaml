@@ -13,7 +13,7 @@ enable_internal_connections: False
 enable_context_connections: True
 
 context_factors_conf:
-  n_vars_per_factor: 2
+  n_vars_per_factor: 3
   max_factors_per_var: 1
   factor_lr: 0.05
   synapse_lr: 0.005

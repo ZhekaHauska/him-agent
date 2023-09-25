@@ -23,11 +23,11 @@ encoder: sp_grouped
 # makes sense only for grouped: naive | learned
 decoder: learned
 # fchmm | dhtm | lstm | rwkv
-layer: lstm
+layer: rwkv
 
 env_conf: 'configs/pinball/default.yaml'
 agent_conf: 'configs/agent/pinball.yaml'
-layer_conf: 'configs/lstm/pinball.yaml'
+layer_conf: 'configs/rwkv/pinball.yaml'
 encoder_conf: 'configs/encoder/sp_grouped.yaml'
 decoder_conf: 'configs/decoder/pinball.yaml'
 

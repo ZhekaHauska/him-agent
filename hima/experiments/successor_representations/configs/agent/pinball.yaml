@@ -1,7 +1,7 @@
-gamma: 0.95
+gamma: 0.99
 observation_reward_lr: 0.05
-striatum_lr: 0.01
-sr_steps: 5
+striatum_lr: 0.05
+sr_steps: 0  # 0 means model free TD (on policy)
 approximate_tail: True
 inverse_temp: 10.0
 
@@ -10,4 +10,4 @@ exploration_eps: -1
 # predict | plan | balance === 0-step | n-step | td-error based probability to use n-step
 action_value_estimate: predict
 # uniform | on_policy | off_policy
-sr_estimate_planning: on_policy
+sr_estimate_planning: uniform
