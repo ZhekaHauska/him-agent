@@ -587,8 +587,20 @@ class FCHMMLayer:
             ).flatten()
 
         if learn:
-            for obs in observation:
-                self.observations[obs//self.n_obs_states].append(obs % self.n_obs_states)
+            vars_with_obs = observation // self.n_obs_states
+            # FIXME strange bug if "observation %= n_obs_states"
+            observation = observation % self.n_obs_states
+            # fill missing observations with random observations
+            if len(vars_with_obs) < self.n_obs_vars:
+                filled_observation = self._rng.integers(0, self.n_obs_states, size=self.n_obs_vars)
+                filled_observation[vars_with_obs] = observation
+                observation = filled_observation
+            else:
+                # sort just in case, maybe it's not necessary
+                observation = observation[np.argsort(vars_with_obs)]
+
+            for var, event in enumerate(observation):
+                self.observations[var].append(event)
 
             if self.external_messages.size != 0:
                 self.actions.append(
