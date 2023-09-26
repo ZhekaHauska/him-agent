@@ -60,6 +60,7 @@ class PinballTest:
         self.test_srs = conf['run'].get('test_srs', False)
         self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
         self.layer_type = conf['run']['layer']
+        self.reset_context_period = conf['run'].get('reset_context_period', 0)
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -177,6 +178,12 @@ class PinballTest:
             self.agent.reset(self.initial_context, self.initial_external_message)
 
             while running:
+                if (self.reset_context_period > 0) and (steps > 0):
+                    if (steps % self.reset_context_period) == 0:
+                        self.agent.cortical_column.layer.set_context_messages(
+                            self.initial_context
+                        )
+
                 self.environment.step()
                 obs, reward, is_terminal = self.environment.obs()
                 running = not is_terminal
@@ -1061,6 +1068,7 @@ class GridWorldTest:
         self.test_srs = conf['run'].get('test_srs', False)
         self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
         self.layer_type = conf['run']['layer']
+        self.reset_context_period = conf['run'].get('reset_context_period', 0)
 
         if self.layer_type == 'fchmm':
             self.initial_action = -1
@@ -1162,6 +1170,12 @@ class GridWorldTest:
             self.agent.reset(self.initial_context, self.initial_external_message)
 
             while running:
+                if (self.reset_context_period > 0) and (steps > 0):
+                    if (steps % self.reset_context_period) == 0:
+                        self.agent.cortical_column.layer.set_context_messages(
+                            self.initial_context
+                        )
+
                 self.environment.step()
                 obs, reward, is_terminal = self.environment.obs()
                 events = [obs]
