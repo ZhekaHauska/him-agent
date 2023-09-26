@@ -50,6 +50,13 @@ class PinballTest:
         self.actions = conf['run']['actions']
         self.n_actions = len(self.actions)
 
+        if 'reset_context_period' in conf['layer']:
+            self.reset_context_period = conf['layer'].pop(
+                'reset_context_period'
+            )
+        else:
+            self.reset_context_period = 0
+
         self.agent = self.make_agent(conf, conf['run'].get('agent_path', None))
 
         self.n_episodes = conf['run']['n_episodes']
@@ -60,7 +67,6 @@ class PinballTest:
         self.test_srs = conf['run'].get('test_srs', False)
         self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
         self.layer_type = conf['run']['layer']
-        self.reset_context_period = conf['run'].get('reset_context_period', 0)
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -517,6 +523,13 @@ class AnimalAITest:
         self.current_setup_id = 0
         self.setup_period = conf['run'].get('setup_period', 0)
 
+        if 'reset_context_period' in conf['layer']:
+            self.reset_context_period = conf['layer'].pop(
+                'reset_context_period'
+            )
+        else:
+            self.reset_context_period = 0
+
         self.max_workers = max_workers
         self.env_conf = conf['env']
         self.env_conf['seed'] = self.seed
@@ -540,7 +553,6 @@ class AnimalAITest:
         self.test_srs = conf['run'].get('test_srs', False)
         self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
         self.layer_type = conf['run']['layer']
-        self.reset_context_period = conf['run'].get('reset_context_period', 0)
         self.action_inertia = conf['run'].get('action_inertia', 1)
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
@@ -1048,6 +1060,13 @@ class GridWorldTest:
         self.current_setup_id = 0
         self.setup_period = conf['run'].get('setup_period', 0)
 
+        if 'reset_context_period' in conf['layer']:
+            self.reset_context_period = conf['layer'].pop(
+                'reset_context_period'
+            )
+        else:
+            self.reset_context_period = 0
+
         (
             self.environment,
             self.raw_obs_shape,
@@ -1068,7 +1087,6 @@ class GridWorldTest:
         self.test_srs = conf['run'].get('test_srs', False)
         self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
         self.layer_type = conf['run']['layer']
-        self.reset_context_period = conf['run'].get('reset_context_period', 0)
 
         if self.layer_type == 'fchmm':
             self.initial_action = -1
