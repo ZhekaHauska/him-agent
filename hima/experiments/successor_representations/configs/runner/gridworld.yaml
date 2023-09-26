@@ -1,19 +1,33 @@
 log: True
 save_model: False
-project_name: 'sr_gridworld_chmm_test_memory'
+project_name: 'sr_gridworld_all'
 run_tag: null
 
 n_episodes: 501
-update_rate: 20
+update_rate: 50
 max_steps: 50
 log_gif_fps: 5
 start_position: [5, 0]
-actions: [0, 1, 2, 3]
+
+# if True then use random strategy
+reward_free: True
+
+# model based sr testing
+test_srs: True
+test_sr_steps: 5
+
+# sp_ensemble | sp_grouped
+encoder: sp_grouped
+# makes sense only for grouped: naive | learned
+decoder: learned
+# fchmm | dhtm | lstm | rwkv
+layer: rwkv
 
 agent_conf: 'configs/agent/gridworld.yaml'
-layer_conf: 'configs/hmm/gridworld.yaml'
-env_conf: 'configs/gridworld/default.yaml'
+layer_conf: 'configs/rwkv/gridworld.yaml'
 
 experiment: gridworld
+setups: [room1, room2]
+setup_period: 250
 
 seed: null

@@ -1033,120 +1033,217 @@ class AnimalAITest:
 
 class GridWorldTest:
     def __init__(self, logger, conf):
-        from hima.envs.gridworld import GridWorld
-
         self.logger = logger
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
 
-        env_conf = conf['env']
-        self.environment = GridWorld(
-            room=np.array(env_conf['room']),
-            default_reward=env_conf['default_reward'],
-            seed=self.seed
+        self.setups = conf['run']['setups']
+        self.current_setup_id = 0
+        self.setup_period = conf['run'].get('setup_period', 0)
+
+        (
+            self.environment,
+            self.raw_obs_shape,
+            self.actions,
+            self.n_actions
+         ) = self.setup_environment(
+            self.setups[self.current_setup_id]
         )
 
         self.start_position = conf['run']['start_position']
-        self.actions = conf['run']['actions']
-        self.n_actions = len(self.actions)
 
-        # assembly agent
-        layer_conf = conf['layer']
-        layer_conf['n_external_states'] = self.n_actions
-        layer_conf['n_obs_states'] = np.max(self.environment.colors) + 1
-        layer_conf['n_context_states'] = (
-                layer_conf['n_obs_states'] * layer_conf['cells_per_column']
-        )
-        layer_conf['seed'] = self.seed
-
-        layer = FCHMMLayer(**layer_conf)
-
-        cortical_column = CorticalColumn(
-            layer,
-            encoder=None,
-            decoder=None
-        )
-
-        self.agent = BioHIMA(
-            cortical_column,
-            **conf['agent']
-        )
+        self.agent = self.make_agent(conf, conf['run'].get('agent_path', None))
 
         self.n_episodes = conf['run']['n_episodes']
         self.max_steps = conf['run']['max_steps']
         self.update_rate = conf['run']['update_rate']
+        self.reward_free = conf['run'].get('reward_free', False)
+        self.test_srs = conf['run'].get('test_srs', False)
+        self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
+        self.layer_type = conf['run']['layer']
 
-        self.initial_context = np.empty(0)
+        if self.layer_type == 'fchmm':
+            self.initial_action = -1
+            self.initial_context = np.empty(0)
+            self.initial_external_message = np.empty(0)
+        elif self.layer_type == 'dhtm':
+            self.initial_action = None
+            self.initial_context = sparse_to_dense(
+                np.arange(
+                    self.agent.cortical_column.layer.n_hidden_vars
+                ) * self.agent.cortical_column.layer.n_hidden_states,
+                like=self.agent.cortical_column.layer.context_messages
+            )
+            self.initial_external_message = None
+        else:
+            self.initial_action = None
+            self.initial_context = self.agent.cortical_column.layer.context_messages
+            self.initial_external_message = None
 
         if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
+            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
             # define metrics
+            basic_scalar_metrics = {
+                'main_metrics/reward': np.sum,
+                'main_metrics/steps': np.mean,
+                'layer/surprise_hidden': np.mean,
+                'sr/td_error': np.mean,
+                'sr/test_mse_approx_tail': np.mean,
+                'sr/test_mse': np.mean
+            }
+
+            if self.layer_type == 'dhtm':
+                basic_scalar_metrics['layer/n_segments'] = np.mean
+
             self.scalar_metrics = ScalarMetrics(
-                {
-                    'main_metrics/reward': np.sum,
-                    'main_metrics/steps': np.mean,
-                    'layer/surprise_hidden': np.mean,
-                    'agent/td_error': np.mean
-                },
+                basic_scalar_metrics,
                 self.logger
             )
 
             self.heatmap_metrics = HeatmapMetrics(
                 {
-                    'agent/striatum_weights': np.mean
+                    'agent/obs_rewards': np.mean,
+                    'agent/striatum_weights': np.mean,
+                    'agent/real_rewards': np.mean
                 },
                 self.logger
             )
 
             self.image_metrics = ImageMetrics(
                 [
-                    'agent/behavior'
+                    'agent/behavior',
+                    'agent/predictions',
+                    'sr/sr',
+                    'layer/predictions'
                 ],
                 self.logger,
                 log_fps=conf['run']['log_gif_fps']
             )
 
+            if self.test_srs:
+                self.predicted_sr_stack = SRStack(
+                    'sr/pred/hid/surprise',
+                    self.logger,
+                    self.agent.observation_messages.size,
+                    history_length=self.test_sr_steps
+                )
+
+                self.generated_sr_stack = SRStack(
+                    'sr/gen/hid/surprise',
+                    self.logger,
+                    self.agent.observation_messages.size,
+                    history_length=self.test_sr_steps
+                )
+            else:
+                self.predicted_sr_stack = None
+                self.generated_sr_stack = None
+
     def run(self):
-        episode_print_schedule = 50
-
+        total_reward = np.zeros(self.raw_obs_shape).flatten()
         for i in range(self.n_episodes):
-            if i % episode_print_schedule == 0:
-                print(f'Episode {i}')
-
             steps = 0
             running = True
-            action = -1
+            action = self.initial_action
+
+            # change setup
+            if (self.setup_period * i > 0) and (i % self.setup_period == 0):
+                self.current_setup_id += 1
+                self.current_setup_id = self.current_setup_id % len(self.setups)
+                (
+                    self.environment,
+                    self.raw_obs_shape,
+                    self.actions,
+                    self.n_actions
+                ) = self.setup_environment(
+                    self.setups[self.current_setup_id]
+                )
 
             self.environment.reset(*self.start_position)
-            self.agent.reset(self.initial_context, np.empty(0))
+            self.agent.reset(self.initial_context, self.initial_external_message)
 
             while running:
                 self.environment.step()
                 obs, reward, is_terminal = self.environment.obs()
+                events = [obs]
                 running = not is_terminal
 
-                events = [obs]
                 # observe events_t and action_{t-1}
                 pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
                 self.agent.reinforce(reward)
 
+                total_reward[events] += reward
+
                 if running:
-                    # action = self._rng.integers(self.n_actions)
-                    action = self.agent.sample_action()
+                    if self.reward_free:
+                        action = self._rng.integers(self.n_actions)
+                    else:
+                        action = self.agent.sample_action()
+
                     # convert to AAI action
                     pinball_action = self.actions[action]
                     self.environment.act(pinball_action)
+                else:
+                    # additional update for model-free TD
+                    if self.agent.sr_steps == 0:
+                        self.agent.td_update_sr(
+                            self.agent.observation_messages,
+                            np.zeros_like(self.agent.observation_messages),
+                            self.agent.previous_state
+                        )
 
                 # >>> logging
                 if self.logger is not None:
-                    if steps > 0:
+                    scalar_metrics_update = {
+                        'main_metrics/reward': reward,
+                        'layer/surprise_hidden': self.agent.surprise,
+                        'sr/td_error': self.agent.td_error
+                    }
+                    if self.layer_type == 'dhtm':
+                        scalar_metrics_update['layer/n_segments'] = (
+                            self.agent.cortical_column.layer.
+                            context_factors.connections.numSegments()
+                        )
+                    self.scalar_metrics.update(
+                        scalar_metrics_update
+                    )
+
+                    if self.test_srs:
+                        (
+                            sr_mse_approx_tail,
+                            _,
+                            gen_sr_test_tail,
+                        ) = self.compare_srs(
+                            self.test_sr_steps,
+                            True
+                        )
+                        (
+                            sr_mse,
+                            pred_sr_test,
+                            gen_sr_test
+                        ) = self.compare_srs(
+                            self.test_sr_steps,
+                            False
+                        )
                         self.scalar_metrics.update(
                             {
-                                'main_metrics/reward': reward,
-                                'layer/surprise_hidden': self.agent.surprise,
-                                'agent/td_error': self.agent.td_error
+                                'sr/test_mse_approx_tail': sr_mse_approx_tail,
+                                'sr/test_mse': sr_mse
                             }
                         )
+
+                        self.predicted_sr_stack.update(
+                            pred_sr_test,
+                            self.agent.cortical_column.output_sdr.sparse
+                        )
+                        self.generated_sr_stack.update(
+                            gen_sr_test,
+                            self.agent.cortical_column.output_sdr.sparse
+                        )
+
+                    else:
+                        pred_sr_test = None
+                        gen_sr_test = None
+                        gen_sr_test_tail = None
 
                     if (i % self.update_rate) == 0:
                         raw_beh = self.environment.colors.astype(np.float64)
@@ -1154,14 +1251,46 @@ class GridWorldTest:
                         raw_beh[self.environment.r, self.environment.c] = agent_color
                         raw_beh += 1
                         raw_beh /= (agent_color + 1)
+                        raw_beh = self.to_img(raw_beh, shape=raw_beh.shape)
 
-                        raw_beh = (raw_beh * 255).astype('uint8')
+                        proc_beh = self.to_img(sparse_to_dense(events, shape=self.raw_obs_shape))
+                        pred_beh = self.to_img(
+                            self.agent.cortical_column.predicted_image,
+                            shape=self.raw_obs_shape
+                        )
+
+                        if pred_sr is not None:
+                            pred_sr = self.to_img(pred_sr, shape=self.raw_obs_shape)
+                        else:
+                            pred_sr = np.zeros(self.raw_obs_shape).astype('uint8')
+
+                        if gen_sr is not None:
+                            gen_sr = self.to_img(gen_sr, shape=self.raw_obs_shape)
+                        else:
+                            gen_sr = np.zeros(self.raw_obs_shape).astype('uint8')
 
                         self.image_metrics.update(
                             {
-                                'agent/behavior': raw_beh
+                                'agent/behavior': raw_beh,
+                                'agent/predictions': np.hstack(
+                                    [proc_beh, pred_beh, pred_sr, gen_sr]
+                                )
                             }
                         )
+
+                        if self.test_srs:
+                            self.image_metrics.update(
+                                {
+                                    'sr/sr': np.hstack(
+                                        [
+                                            proc_beh,
+                                            self.to_img(pred_sr_test, shape=self.raw_obs_shape),
+                                            self.to_img(gen_sr_test, shape=self.raw_obs_shape),
+                                            self.to_img(gen_sr_test_tail, shape=self.raw_obs_shape)
+                                        ]
+                                    )
+                                }
+                            )
                 # <<< logging
 
                 steps += 1
@@ -1174,15 +1303,124 @@ class GridWorldTest:
                 self.scalar_metrics.update({'main_metrics/steps': steps})
                 self.scalar_metrics.log(i)
 
+                if self.test_srs:
+                    self.predicted_sr_stack.log(i)
+                    self.generated_sr_stack.log(i)
+
                 if (i % self.update_rate) == 0:
+                    obs_rewards = self.agent.observation_rewards.reshape(self.raw_obs_shape)
                     self.heatmap_metrics.update(
                         {
-                            'agent/striatum_weights': self.agent.striatum_weights
+                            'agent/obs_rewards': obs_rewards,
+                            'agent/striatum_weights': self.agent.striatum_weights,
+                            'agent/real_rewards': total_reward.reshape(self.raw_obs_shape)
                         }
                     )
                     self.heatmap_metrics.log(i)
                     self.image_metrics.log(i)
             # <<< logging
+
+    def to_img(self, x: np.ndarray, shape=None):
+        return to_gray_img(x, like=isnone(shape, self.raw_obs_shape))
+
+    def make_agent(self, conf=None, path=None):
+        if path is not None:
+            raise NotImplementedError
+        elif conf is not None:
+            layer_type = conf['run']['layer']
+            # assembly agent
+            layer_conf = conf['layer']
+            seed = conf['run']['seed']
+
+            layer_conf['n_obs_vars'] = 1
+            layer_conf['n_obs_states'] = self.raw_obs_shape[0]
+            layer_conf['n_external_states'] = self.n_actions
+            layer_conf['seed'] = seed
+
+            if layer_type == 'fchmm':
+                layer = FCHMMLayer(**layer_conf)
+            elif layer_type == 'dhtm':
+                layer_conf['n_context_states'] = (
+                        layer_conf['n_obs_states'] * layer_conf['cells_per_column']
+                )
+                layer_conf['n_context_vars'] = 1
+                layer_conf['n_external_vars'] = 1
+                layer = Layer(**layer_conf)
+            elif layer_type == 'lstm':
+                layer_conf['n_external_vars'] = 1
+                layer = LstmLayer(**layer_conf)
+            elif layer_type == 'rwkv':
+                layer_conf['n_external_vars'] = 1
+                layer = RwkvLayer(**layer_conf)
+            else:
+                raise NotImplementedError
+
+            cortical_column = CorticalColumn(
+                layer,
+                encoder=None,
+                decoder=None
+            )
+
+            conf['agent']['seed'] = seed
+
+            if layer_type in {'lstm', 'rwkv'}:
+                agent = LstmBioHima(cortical_column, **conf['agent'])
+            else:
+                agent = BioHIMA(
+                    cortical_column,
+                    **conf['agent']
+                )
+        else:
+            raise ValueError
+
+        return agent
+
+    def compare_srs(self, sr_steps, approximate_tail):
+        current_state = self.agent.cortical_column.layer.internal_forward_messages
+        pred_sr = self.agent.predict_sr(current_state)
+        pred_sr = normalize(
+                pred_sr.reshape(
+                    self.agent.cortical_column.layer.n_obs_vars, -1
+                )
+            ).flatten()
+
+        gen_sr = self.agent.generate_sr(
+            sr_steps,
+            initial_messages=current_state,
+            initial_prediction=self.agent.observation_messages,
+            approximate_tail=approximate_tail,
+        )
+        gen_sr = normalize(
+                gen_sr.reshape(
+                    self.agent.cortical_column.layer.n_obs_vars, -1
+                )
+            ).flatten()
+
+        mse = np.mean(np.power(pred_sr - gen_sr, 2))
+
+        return mse, pred_sr, gen_sr
+
+    def setup_environment(self, setup: str):
+        from hima.envs.gridworld import GridWorld
+
+        config = read_config(os.path.join(
+            os.environ.get('GRIDWORLD_ROOT', None),
+            f"{setup}.yaml"
+        ))
+
+        env = GridWorld(
+            **{
+                'room': np.array(config['room']),
+                'default_reward': config['default_reward'],
+                'seed': self.seed
+            }
+        )
+
+        raw_obs_shape = (np.max(env.colors) + 1, 1)
+        actions = list(env.actions)
+        n_actions = len(actions)
+
+        return env, raw_obs_shape, actions, n_actions
 
 
 def main(config_path):
@@ -1192,7 +1430,8 @@ def main(config_path):
     config = dict()
 
     config['run'] = read_config(config_path)
-    config['env'] = read_config(config['run']['env_conf'])
+    if 'env_conf' in config['run']:
+        config['env'] = read_config(config['run']['env_conf'])
     config['agent'] = read_config(config['run']['agent_conf'])
     config['layer'] = read_config(config['run']['layer_conf'])
 
