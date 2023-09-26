@@ -32,6 +32,8 @@ encoder_conf: 'configs/encoder/sp_grouped_aai.yaml'
 decoder_conf: 'configs/decoder/animalai.yaml'
 
 experiment: animalai
-setup: 'competition/01-01-01.yaml'
+# list of setups
+setup: ['competition/01-01-01.yaml', 'competition/02-10-03.yaml']
+setup_period: 10
 
 seed: null

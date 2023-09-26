@@ -35,13 +35,13 @@ class PinballTest:
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
 
+        self.setups = conf['run']['setup']
+        self.current_setup_id = 0
+        self.setup_period = conf['run'].get('setup_period', 0)
+
         conf['env']['seed'] = self.seed
         conf['env']['exe_path'] = os.environ.get('PINBALL_EXE', None)
-        conf['env']['config_path'] = os.path.join(
-            os.environ.get('PINBALL_ROOT', None),
-            'configs',
-            f"{conf['run']['setup']}.json"
-        )
+        conf['env']['config_path'] = self.get_setup_path(self.setups[self.current_setup_id])
 
         self.environment = Pinball(**conf['env'])
         obs, _, _ = self.environment.obs()
@@ -164,6 +164,15 @@ class PinballTest:
             action = self.initial_action
 
             self.prev_image = self.initial_previous_image
+
+            # change setup
+            if (self.setup_period * i > 0) and (i % self.setup_period == 0):
+                self.current_setup_id += 1
+                self.current_setup_id = self.current_setup_id % len(self.setups)
+                self.environment.set_config(self.get_setup_path(self.setups[
+                    self.current_setup_id
+                ]))
+
             self.environment.reset(self.start_position)
             self.agent.reset(self.initial_context, self.initial_external_message)
 
@@ -482,49 +491,37 @@ class PinballTest:
 
         return mse, pred_sr, gen_sr, pred_sr_raw, gen_sr_raw
 
+    @staticmethod
+    def get_setup_path(setup):
+        return os.path.join(
+            os.environ.get('PINBALL_ROOT', None),
+            'configs',
+            f"{setup}.json"
+        )
+
 
 class AnimalAITest:
     def __init__(self, logger, conf, max_workers=10):
-        from animalai.envs.actions import AAIActions
-        from animalai.envs.environment import AnimalAIEnvironment
-        from mlagents_envs.exception import UnityWorkerInUseException
-
         self.logger = logger
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
 
-        conf['env']['seed'] = self.seed
-        conf['env']['file_name'] = os.environ.get('ANIMALAI_EXE', None)
-        conf['env']['arenas_configurations'] = os.path.join(
-            os.environ.get('ANIMALAI_ROOT', None),
-            'configs',
-            f"{conf['run']['setup']}"
-        )
+        self.setups = conf['run']['setup']
+        self.current_setup_id = 0
+        self.setup_period = conf['run'].get('setup_period', 0)
 
-        worker_id = 0
-        while worker_id < max_workers:
-            try:
-                self.environment = AnimalAIEnvironment(
-                    worker_id=worker_id,
-                    **conf['env']
-                )
-                break
-            except UnityWorkerInUseException:
-                worker_id += 1
-        else:
-            raise Exception('Too many workers.')
+        self.max_workers = max_workers
+        self.env_conf = conf['env']
+        self.env_conf['seed'] = self.seed
+        self.env_conf['file_name'] = os.environ.get('ANIMALAI_EXE', None)
 
-        # get agent proxi in unity
-        self.behavior = list(self.environment.behavior_specs.keys())[0]
-        self.raw_obs_shape = self.environment.behavior_specs[self.behavior].observation_specs[
-            0].shape[:2]
-        self.actions = [
-            AAIActions().LEFT,
-            AAIActions().FORWARDS,
-            AAIActions().RIGHT,
-            AAIActions().BACKWARDS
-        ]
-        self.n_actions = len(self.actions)
+        (
+            self.environment,
+            self.behavior,
+            self.raw_obs_shape,
+            self.actions,
+            self.n_actions
+        ) = self.setup_environment(self.setups[self.current_setup_id])
 
         self.agent = self.make_agent(conf, conf['run'].get('agent_path', None))
 
@@ -642,6 +639,20 @@ class AnimalAITest:
             action = self.initial_action
 
             self.prev_image = self.initial_previous_image
+
+            # change setup
+            if (self.setup_period * i > 0) and (i % self.setup_period == 0):
+                self.environment.close()
+                self.current_setup_id += 1
+                self.current_setup_id = self.current_setup_id % len(self.setups)
+                (
+                    self.environment,
+                    self.behavior,
+                    self.raw_obs_shape,
+                    self.actions,
+                    self.n_actions
+                ) = self.setup_environment(self.setups[self.current_setup_id])
+
             self.environment.reset()
             self.agent.reset(self.initial_context, self.initial_external_message)
 
@@ -867,6 +878,41 @@ class AnimalAITest:
     def to_img(self, x: np.ndarray, shape=None):
         return to_gray_img(x, like=isnone(shape, self.raw_obs_shape))
 
+    def setup_environment(self, setup):
+        from animalai.envs.actions import AAIActions
+        from animalai.envs.environment import AnimalAIEnvironment
+        from mlagents_envs.exception import UnityWorkerInUseException
+
+        self.env_conf['arenas_configurations'] = self.get_setup_path(
+            setup
+        )
+        worker_id = 0
+        while worker_id < self.max_workers:
+            try:
+                environment = AnimalAIEnvironment(
+                    worker_id=worker_id,
+                    **self.env_conf
+                )
+                break
+            except UnityWorkerInUseException:
+                worker_id += 1
+        else:
+            raise Exception('Too many workers.')
+
+        # get agent proxi in unity
+        behavior = list(environment.behavior_specs.keys())[0]
+        raw_obs_shape = environment.behavior_specs[behavior].observation_specs[
+            0].shape[:2]
+        actions = [
+            AAIActions().LEFT,
+            AAIActions().FORWARDS,
+            AAIActions().RIGHT,
+            AAIActions().BACKWARDS
+        ]
+        n_actions = len(actions)
+
+        return environment, behavior, raw_obs_shape, actions, n_actions
+
     def make_agent(self, conf=None, path=None):
         if path is not None:
             raise NotImplementedError
@@ -975,6 +1021,14 @@ class AnimalAITest:
         mse = np.mean(np.power(pred_sr_raw - gen_sr_raw, 2))
 
         return mse, pred_sr, gen_sr, pred_sr_raw, gen_sr_raw
+
+    @staticmethod
+    def get_setup_path(setup):
+        return os.path.join(
+            os.environ.get('ANIMALAI_ROOT', None),
+            'configs',
+            f"{setup}"
+        )
 
 
 class GridWorldTest:

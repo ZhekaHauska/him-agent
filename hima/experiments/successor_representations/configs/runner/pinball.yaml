@@ -32,6 +32,8 @@ encoder_conf: 'configs/encoder/sp_grouped.yaml'
 decoder_conf: 'configs/decoder/pinball.yaml'
 
 experiment: pinball
-setup: fork_skewed
+# list of setups
+setup: [fork_skewed, frog]
+setup_period: 250
 
 seed: null
