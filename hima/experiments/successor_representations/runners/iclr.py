@@ -67,6 +67,7 @@ class PinballTest:
         self.test_srs = conf['run'].get('test_srs', False)
         self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
         self.layer_type = conf['run']['layer']
+        self.action_inertia = conf['run'].get('action_inertia', 1)
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -202,10 +203,11 @@ class PinballTest:
                 total_reward[events] += reward
 
                 if running:
-                    if self.reward_free:
-                        action = self._rng.integers(self.n_actions)
-                    else:
-                        action = self.agent.sample_action()
+                    if (steps % self.action_inertia) == 0:
+                        if self.reward_free:
+                            action = self._rng.integers(self.n_actions)
+                        else:
+                            action = self.agent.sample_action()
 
                     # convert to AAI action
                     pinball_action = self.actions[action]
@@ -703,7 +705,7 @@ class AnimalAITest:
                 total_reward[events] += reward
 
                 if running:
-                    if (action is None) or ((steps % self.action_inertia) == 0):
+                    if (steps % self.action_inertia) == 0:
                         if self.reward_free:
                             action = self._rng.integers(self.n_actions)
                         else:
@@ -1465,6 +1467,9 @@ def main(config_path):
     if 'env_conf' in config['run']:
         config['env'] = read_config(config['run']['env_conf'])
     config['agent'] = read_config(config['run']['agent_conf'])
+
+    layer_conf_path = config['run']['layer_conf']
+    config['run']['layer'] = layer_conf_path.split('/')[-2]
     config['layer'] = read_config(config['run']['layer_conf'])
 
     if 'encoder_conf' in config['run']:

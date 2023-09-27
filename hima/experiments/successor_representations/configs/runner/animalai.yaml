@@ -21,8 +21,6 @@ test_sr_steps: 5
 encoder: sp_grouped
 # makes sense only for grouped: naive | learned
 decoder: learned
-# fchmm | dhtm | lstm | rwkv
-layer: rwkv
 
 env_conf: 'configs/animalai/default.yaml'
 agent_conf: 'configs/agent/animalai.yaml'
