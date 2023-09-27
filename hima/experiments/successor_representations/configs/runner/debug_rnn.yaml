@@ -1,0 +1,37 @@
+log: True
+save_model: False
+project_name: 'debug_rnn'
+run_tag: null
+
+n_episodes: 501
+update_rate: 20
+max_steps: 15
+log_gif_fps: 5
+start_position: [0, 0]
+actions: [[0, 3], [0.5, 3], [-0.5, 3]]
+camera_mode: clip
+
+# if True then use random strategy
+reward_free: True
+
+# model based sr testing
+test_srs: True
+test_sr_steps: 5
+
+# sp_ensemble | sp_grouped
+encoder: sp_grouped
+# makes sense only for grouped: naive | learned
+decoder: learned
+# fchmm | dhtm | lstm | rwkv
+layer: lstm
+
+env_conf: 'configs/pinball/default.yaml'
+agent_conf: 'configs/agent/pinball.yaml'
+layer_conf: 'configs/lstm/pinball.yaml'
+encoder_conf: 'configs/encoder/sp_grouped.yaml'
+decoder_conf: 'configs/decoder/pinball.yaml'
+
+experiment: pinball
+setup: fork_skewed
+
+seed: null

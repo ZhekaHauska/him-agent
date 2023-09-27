@@ -8,7 +8,6 @@ import sys
 
 import numpy as np
 
-from hima.agents.succesor_representations.agent import BioHIMA, SrEstimatePlanning
 from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
@@ -16,14 +15,14 @@ from hima.common.sdr import sparse_to_dense
 from hima.common.utils import to_gray_img, isnone
 from hima.experiments.successor_representations.runners.lstm import LstmBioHima
 from hima.experiments.successor_representations.runners.utils import print_digest, make_decoder
-from hima.modules.baselines.lstm import LstmLayer, to_numpy, TLstmLayerHiddenState
+from hima.experiments.temporal_pooling.stp.sp_ensemble import SpatialPoolerGroupedWrapper
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.utils import normalize
 
 wandb = lazy_import('wandb')
 
 
-class PinballTest:
+class PinballDebugTest:
     def __init__(self, logger, conf):
         from pinball import Pinball
 
@@ -53,48 +52,31 @@ class PinballTest:
         else:
             encoder_type = None
             encoder_conf = None
+
+        assert encoder_type == 'sp_grouped'
+        encoder_conf['seed'] = self.seed
+        encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
+        decoder_type = conf['run'].get('decoder', None)
+
+        self.encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
+        self.decoder = make_decoder(self.encoder, decoder_type, conf['decoder'])
+
         layer_conf = conf['layer']
-
-        if encoder_type == 'sp_ensemble':
-            from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
-
-            encoder_conf['seed'] = self.seed
-            encoder_conf['inputDimensions'] = list(self.raw_obs_shape)
-
-            encoder = SPEnsemble(**encoder_conf)
-            decoder = SPDecoder(encoder)
-
-            layer_conf['n_obs_vars'] = encoder.n_sp
-            layer_conf['n_obs_states'] = encoder.sps[0].getNumColumns()
-        elif encoder_type == 'sp_grouped':
-            from hima.experiments.temporal_pooling.stp.sp_ensemble import (
-                SpatialPoolerGroupedWrapper
-            )
-            encoder_conf['seed'] = self.seed
-            encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
-            decoder_type = conf['run'].get('decoder', None)
-
-            decoder_conf = conf['decoder']
-            encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
-            decoder = make_decoder(encoder, decoder_type, decoder_conf)
-
-            layer_conf['n_obs_vars'] = encoder.n_groups
-            layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
-        else:
-            encoder = None
-            decoder = None
-            layer_conf['n_obs_vars'] = np.prod(self.raw_obs_shape)
-            layer_conf['n_obs_states'] = 1
-
+        layer_conf['n_obs_vars'] = self.encoder.n_groups
+        layer_conf['n_obs_states'] = self.encoder.getSingleNumColumns()
         layer_conf['n_external_vars'] = 1
         layer_conf['n_external_states'] = self.n_actions
         layer_conf['seed'] = self.seed
 
-        layer = LstmLayer(**layer_conf)
-
-        # noinspection PyTypeChecker
-        cortical_column = CorticalColumn(layer, encoder, decoder)
-        self.agent = LstmBioHima(cortical_column, **conf['agent'])
+        layer = conf['run']['layer']
+        if layer == 'lstm':
+            from hima.modules.baselines.lstm import LstmLayer
+            self.layer = LstmLayer(**layer_conf)
+        elif layer == 'rwkv':
+            from hima.modules.baselines.rwkv import RwkvLayer
+            self.layer = RwkvLayer(**layer_conf)
+        else:
+            raise ValueError(f'Unsupported layer {layer}')
 
         self.n_episodes = conf['run']['n_episodes']
         self.max_steps = conf['run']['max_steps']
@@ -145,9 +127,69 @@ class PinballTest:
                 self.logger
             )
 
+    def reset(self):
+        self.layer.reset()
+        self.layer.set_context_messages(self.initial_context)
+        self.layer.set_external_messages(None)
+
+    def observe(self, obs, action, learn):
+        self.surprise = 0
+
+        if obs is None:
+            return
+
+        # predict current events using observed action
+        self.cortical_column.observe(events, action, learn=learn)
+
+        # predict current local input step
+        if action is not None:
+            external_messages = np.zeros(self.layer.external_input_size)
+            if action >= 0:
+                external_messages[action] = 1
+            else:
+                external_messages = np.empty(0)
+        else:
+            external_messages = None
+
+        self.layer.set_external_messages(external_messages)
+        self.layer.predict(learn=learn)
+
+        self.input_sdr.sparse = local_input
+
+        if self.decoder is not None:
+            self.predicted_image = self.decoder.decode(
+                self.layer.prediction_columns, learn=learn, correct_obs=self.input_sdr.dense
+            )
+        else:
+            self.predicted_image = self.layer.prediction_columns
+
+        # observe real outcome and optionally learn using prediction error
+        if self.encoder is not None:
+            self.encoder.compute(self.input_sdr, learn, self.output_sdr)
+        else:
+            self.output_sdr.sparse = self.input_sdr.sparse
+
+        self.layer.observe(self.output_sdr.sparse, learn=learn)
+        self.layer.set_context_messages(self.layer.internal_forward_messages)
+
+
+        encoded_obs = self.cortical_column.output_sdr.sparse
+
+        if len(encoded_obs) > 0:
+            self.surprise = get_surprise(
+                self.cortical_column.layer.prediction_columns, encoded_obs, mode='categorical'
+            )
+
+        self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
+
+
     def run(self):
+        self.raw_observations = []
+        self.observations = []
+        self.rewards = []
+
         episode_print_schedule = 50
-        decoder = self.agent.cortical_column.decoder
+        encoder, decoder = self.encoder, self.decoder
 
         for episode in range(self.n_episodes):
             if episode % episode_print_schedule == 0:
@@ -159,22 +201,24 @@ class PinballTest:
 
             self.prev_image = self.initial_previous_image
             self.environment.reset(self.start_position)
-            self.agent.reset(self.initial_context, action)
+            self.reset()
 
             while running:
                 self.environment.step()
                 obs, reward, is_terminal = self.environment.obs()
-                running = not is_terminal
-
                 events = self.preprocess(obs)
+
+                self.raw_observations.append(self.prev_image)
+                self.observations.append(events)
+                self.rewards.append(reward)
+
                 # observe events_t and action_{t-1}
                 pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
                 self.agent.reinforce(reward)
 
+                running = not is_terminal
                 if running:
-                    # action = self._rng.choice(self.n_actions)
-                    action = self.agent.sample_action()
-                    # convert to AAI action
+                    action = self._rng.choice(self.n_actions)
                     pinball_action = self.actions[action]
                     self.environment.act(pinball_action)
 
@@ -257,15 +301,9 @@ def main(config_path):
     config = dict()
 
     config['run'] = read_config(config_path)
-    experiment = config['run']['experiment']
-    if experiment == 'animalai':
-        config['run']['layer_conf'] = 'configs/lstm/animalai.yaml'
-        runner = AnimalAITest
-    elif experiment == 'pinball':
-        config['run']['layer_conf'] = 'configs/lstm/pinball.yaml'
-        runner = PinballTest
-    else:
-        raise ValueError(f'There is no such {experiment=}!')
+    runner = PinballDebugTest
+    layer = config['run']['layer']
+    config['run']['layer_conf'] = f'configs/{layer}/pinball.yaml'
 
     config['env'] = read_config(config['run']['env_conf'])
     config['agent'] = read_config(config['run']['agent_conf'])
@@ -280,7 +318,7 @@ def main(config_path):
     override_config(config, overrides)
 
     if config['run']['seed'] is None:
-        config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
+        config['run']['seed'] = np.random.randint(0, 1_000_000)
 
     if config['run']['log']:
         import wandb
@@ -296,5 +334,5 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    default_config = 'configs/runner/animalai.yaml'
+    default_config = 'configs/runner/debug_rnn.yaml'
     main(os.environ.get('RUN_CONF', default_config))
