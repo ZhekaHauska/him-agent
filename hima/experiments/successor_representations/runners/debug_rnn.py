@@ -13,11 +13,8 @@ from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import to_gray_img, isnone
-from hima.experiments.successor_representations.runners.lstm import LstmBioHima
-from hima.experiments.successor_representations.runners.utils import print_digest, make_decoder
+from hima.experiments.successor_representations.runners.utils import print_digest
 from hima.experiments.temporal_pooling.stp.sp_ensemble import SpatialPoolerGroupedWrapper
-from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
-from hima.modules.belief.utils import normalize
 
 wandb = lazy_import('wandb')
 
@@ -45,21 +42,12 @@ class PinballDebugTest:
         self.actions = conf['run']['actions']
         self.n_actions = len(self.actions)
 
-        # assembly agent
-        if 'encoder' in conf:
-            encoder_type = conf['run']['encoder']
-            encoder_conf = conf['encoder']
-        else:
-            encoder_type = None
-            encoder_conf = None
-
+        encoder_type = conf['run']['encoder']
+        encoder_conf = conf['encoder']
         assert encoder_type == 'sp_grouped'
         encoder_conf['seed'] = self.seed
         encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
-        decoder_type = conf['run'].get('decoder', None)
-
         self.encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
-        self.decoder = make_decoder(self.encoder, decoder_type, conf['decoder'])
 
         layer_conf = conf['layer']
         layer_conf['n_obs_vars'] = self.encoder.n_groups
@@ -84,112 +72,51 @@ class PinballDebugTest:
 
         self.initial_previous_image = np.zeros(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
-        self.initial_context = layer.context_messages
+        self.initial_context = self.layer.context_messages
 
-        if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
-            self.scalar_metrics = ScalarMetrics(
-                {
-                    'main_metrics/reward': np.sum,
-                    'main_metrics/steps': np.mean,
-                    'layer/surprise_hidden': np.mean,
-                    'layer/loss': np.mean,
-                    'agent/td_error': np.mean
-                },
-                self.logger
-            )
-            self.heatmap_metrics = HeatmapMetrics(
-                {
-                    'agent/obs_rewards': np.mean,
-                    'agent/striatum_weights': np.mean
-                },
-                self.logger
-            )
-            self.image_metrics = ImageMetrics(
-                [
-                    'agent/behavior',
-                    'agent/sr',
-                    'layer/predictions'
-                ],
-                self.logger,
-                log_fps=conf['run']['log_gif_fps']
-            )
-        else:
-            from metrics import ScalarMetrics
-            self.scalar_metrics = ScalarMetrics(
-                {
-                    'main_metrics/reward': np.sum,
-                    'main_metrics/steps': np.mean,
-                    'layer/surprise_hidden': np.mean,
-                    'layer/loss': np.mean,
-                    'agent/td_error': np.mean
-                },
-                self.logger
-            )
+        self.images = []
+        self.raw_observations = []
+        self.observations = []
+        self.predicted_observations = []
+        self.rewards = []
+
+        from metrics import ScalarMetrics
+        self.scalar_metrics = ScalarMetrics(
+            {
+                'main_metrics/reward': np.sum,
+                'main_metrics/steps': np.mean,
+                'layer/loss': np.mean,
+            },
+            self.logger
+        )
 
     def reset(self):
         self.layer.reset()
         self.layer.set_context_messages(self.initial_context)
         self.layer.set_external_messages(None)
 
-    def observe(self, obs, action, learn):
-        self.surprise = 0
-
-        if obs is None:
+    def observe(self, raw_obs, action, learn):
+        if raw_obs is None:
             return
 
-        # predict current events using observed action
-        self.cortical_column.observe(events, action, learn=learn)
-
         # predict current local input step
+        external_messages = None
         if action is not None:
-            external_messages = np.zeros(self.layer.external_input_size)
-            if action >= 0:
-                external_messages[action] = 1
-            else:
-                external_messages = np.empty(0)
-        else:
-            external_messages = None
+            external_messages = sparse_to_dense([action], size=self.layer.external_input_size)
 
         self.layer.set_external_messages(external_messages)
         self.layer.predict(learn=learn)
 
-        self.input_sdr.sparse = local_input
-
-        if self.decoder is not None:
-            self.predicted_image = self.decoder.decode(
-                self.layer.prediction_columns, learn=learn, correct_obs=self.input_sdr.dense
-            )
-        else:
-            self.predicted_image = self.layer.prediction_columns
-
         # observe real outcome and optionally learn using prediction error
-        if self.encoder is not None:
-            self.encoder.compute(self.input_sdr, learn, self.output_sdr)
-        else:
-            self.output_sdr.sparse = self.input_sdr.sparse
+        obs = self.encoder.compute(raw_obs, learn)
+        predicted_obs = self.layer.prediction_columns
 
-        self.layer.observe(self.output_sdr.sparse, learn=learn)
+        self.layer.observe(obs, learn=learn)
         self.layer.set_context_messages(self.layer.internal_forward_messages)
-
-
-        encoded_obs = self.cortical_column.output_sdr.sparse
-
-        if len(encoded_obs) > 0:
-            self.surprise = get_surprise(
-                self.cortical_column.layer.prediction_columns, encoded_obs, mode='categorical'
-            )
-
-        self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
-
+        return obs, predicted_obs
 
     def run(self):
-        self.raw_observations = []
-        self.observations = []
-        self.rewards = []
-
         episode_print_schedule = 50
-        encoder, decoder = self.encoder, self.decoder
 
         for episode in range(self.n_episodes):
             if episode % episode_print_schedule == 0:
@@ -203,18 +130,19 @@ class PinballDebugTest:
             self.environment.reset(self.start_position)
             self.reset()
 
-            while running:
+            while running and steps < self.max_steps:
                 self.environment.step()
-                obs, reward, is_terminal = self.environment.obs()
-                events = self.preprocess(obs)
+                image, reward, is_terminal = self.environment.obs()
+                raw_obs = self.preprocess(image)
 
-                self.raw_observations.append(self.prev_image)
-                self.observations.append(events)
+                self.images.append(self.prev_image)
+                self.raw_observations.append(raw_obs)
                 self.rewards.append(reward)
 
                 # observe events_t and action_{t-1}
-                pred_sr, gen_sr = self.agent.observe((events, action), learn=True)
-                self.agent.reinforce(reward)
+                obs, predicted_obs = self.observe(raw_obs, action, learn=True)
+                self.observations.append(obs)
+                self.predicted_observations.append(predicted_obs)
 
                 running = not is_terminal
                 if running:
@@ -226,51 +154,14 @@ class PinballDebugTest:
                 # noinspection PyUnresolvedReferences
                 self.scalar_metrics.update({
                     'main_metrics/reward': reward,
-                    'layer/surprise_hidden': self.agent.surprise,
-                    'layer/loss': self.agent.cortical_column.layer.last_loss_value,
-                    'agent/td_error': self.agent.td_error
+                    'layer/loss': self.layer.last_loss_value,
                 })
-                if self.logger is not None:
-                    if (episode % self.update_rate) == 0:
-                        raw_beh = self.to_img(self.prev_image)
-                        proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
-                        pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
-                        pred_sr = self.to_img(decoder.decode(pred_sr))
-                        gen_sr = self.to_img(decoder.decode(gen_sr))
-
-                        self.image_metrics.update({
-                            'agent/behavior': np.hstack([
-                                raw_beh, proc_beh, pred_beh, pred_sr, gen_sr
-                            ])
-                        })
-                # <<< logging
-
                 steps += 1
-
-                if steps >= self.max_steps:
-                    running = False
 
             # >>> logging
             self.scalar_metrics.update({'main_metrics/steps': steps})
             if self.logger is not None:
                 self.scalar_metrics.log(episode)
-
-                if (episode % self.update_rate) == 0:
-                    obs_rewards = self.agent.cortical_column.decoder.decode(
-                        normalize(
-                            self.agent.observation_rewards.reshape(
-                                self.agent.cortical_column.layer.n_obs_vars, -1
-                            )
-                        ).flatten()
-                    ).reshape(self.raw_obs_shape)
-                    self.heatmap_metrics.update(
-                        {
-                            'agent/obs_rewards': obs_rewards,
-                            'agent/striatum_weights': self.agent.striatum_weights
-                        }
-                    )
-                    self.heatmap_metrics.log(episode)
-                    self.image_metrics.log(episode)
             else:
                 print_digest(self.scalar_metrics.summarize())
                 self.scalar_metrics.reset()

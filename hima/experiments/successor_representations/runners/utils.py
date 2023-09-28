@@ -18,13 +18,18 @@ def make_decoder(encoder, decoder, decoder_conf):
 
 def print_digest(metrics: dict):
     ep_len = int(metrics['main_metrics/steps'])
-    ep_return = metrics['main_metrics/reward']
-    td_error = metrics['agent/td_error']
-    surprise = metrics['layer/surprise_hidden']
-    stats = f'{ep_len:2d}: R = {ep_return:5.2f} | TD = {td_error:12.8f} | Srp = {surprise:.7f}'
+    digest = f'{ep_len:2d}:'
 
+    if 'main_metrics/reward' in metrics:
+        ep_return = metrics['main_metrics/reward']
+        digest += f' R = {ep_return:5.2f}'
+    if 'agent/td_error' in metrics:
+        td_error = metrics['agent/td_error']
+        digest += f' | TD = {td_error:12.8f}'
+    if 'layer/surprise_hidden' in metrics:
+        surprise = metrics['layer/surprise_hidden']
+        digest += f' | Srp = {surprise:.7f}'
     if 'layer/loss' in metrics:
         loss = metrics['layer/loss']
-        stats += f'| Loss = {loss:.7f}'
-
-    print(stats)
+        digest += f'| Loss = {loss:.7f}'
+    print(digest)
