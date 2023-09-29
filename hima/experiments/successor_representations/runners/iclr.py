@@ -122,6 +122,7 @@ class PinballTest:
             self.image_metrics = ImageMetrics(
                 [
                     'agent/behavior',
+                    'agent/hidden',
                     'sr/sr',
                     'layer/predictions'
                 ],
@@ -291,6 +292,15 @@ class PinballTest:
                         proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
                         pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
 
+                        hid_beh = self.to_img(
+                            self.agent.cortical_column.layer.internal_forward_messages,
+                            shape=(self.agent.cortical_column.layer.n_columns, -1)
+                        )
+                        hid_pred_beh = self.to_img(
+                            self.agent.cortical_column.layer.prediction_cells,
+                            shape=(self.agent.cortical_column.layer.n_columns, -1)
+                        )
+
                         if pred_sr is not None:
                             pred_sr = self.to_img(
                                     decoder.decode(
@@ -320,7 +330,10 @@ class PinballTest:
                         self.image_metrics.update(
                             {
                                 'agent/behavior': np.hstack(
-                                    [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr])
+                                    [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr]),
+                                'agent/hidden': np.hstack(
+                                    [hid_beh, hid_pred_beh]
+                                )
                             }
                         )
 
@@ -610,6 +623,7 @@ class AnimalAITest:
             self.image_metrics = ImageMetrics(
                 [
                     'agent/behavior',
+                    'agent/hidden',
                     'sr/sr',
                     'layer/predictions'
                 ],
@@ -793,6 +807,15 @@ class AnimalAITest:
                         proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
                         pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
 
+                        hid_beh = self.to_img(
+                            self.agent.cortical_column.layer.internal_forward_messages,
+                            shape=(self.agent.cortical_column.layer.n_columns, -1)
+                        )
+                        hid_pred_beh = self.to_img(
+                            self.agent.cortical_column.layer.prediction_cells,
+                            shape=(self.agent.cortical_column.layer.n_columns, -1)
+                        )
+
                         if pred_sr is not None:
                             pred_sr = self.to_img(
                                     decoder.decode(
@@ -822,7 +845,10 @@ class AnimalAITest:
                         self.image_metrics.update(
                             {
                                 'agent/behavior': np.hstack(
-                                    [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr])
+                                    [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr]),
+                                'agent/hidden': np.hstack(
+                                    [hid_beh, hid_pred_beh]
+                                )
                             }
                         )
 
