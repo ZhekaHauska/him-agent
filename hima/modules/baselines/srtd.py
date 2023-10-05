@@ -50,7 +50,7 @@ class SRTD:
             activation_function=nn.SiLU,
             lr=0.01,
             tau=0.01,
-            batch_size=256
+            batch_size=32
     ):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.lr = lr
@@ -64,46 +64,50 @@ class SRTD:
             [hidden_size]*n_hidden_layers,
             activation_function
         ).to(self.device)
-        self.model_target = self.model.clone()
+        self.model_target = MLP(
+            input_size,
+            output_size,
+            [hidden_size]*n_hidden_layers,
+            activation_function
+        ).to(self.device)
+        self.model_target.load_state_dict(self.model.state_dict())
 
         self.accumulated_td_loss = None
         self.mse = nn.MSELoss()
         self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr)
 
-    def predict_sr(self, state):
-        with torch.no_grad():
-            predicted_sr = self.model_target(state)
+    def predict_sr(self, state, target=True):
+        if target:
+            with torch.no_grad():
+                predicted_sr = self.model_target(state).detach()
+        else:
+            predicted_sr = self.model(state)
         return predicted_sr
 
-    def compute_td_loss(self, target_sr, state, learn=True):
+    def compute_td_loss(self, target_sr, predicted_sr):
+        td_loss = self.mse(target_sr, predicted_sr)
+
         if self.accumulated_td_loss is None:
             self.accumulated_td_loss = 0
+        self.accumulated_td_loss += td_loss
 
-        if learn:
-            predicted_sr = self.model(state)
-            td_loss = self.mse(target_sr, predicted_sr)
-            self.accumulated_td_loss += td_loss
-            self.sample_counter += 1
-            if self.sample_counter >= self.batch_size:
-                self.sample_counter = 0
-                self.update()
-        else:
-            with torch.no_grad():
-                predicted_sr = self.model(state)
-                td_loss = self.mse(target_sr, predicted_sr)
+        self.sample_counter += 1
+        if self.sample_counter >= self.batch_size:
+            self.update()
 
         return td_loss.item()
 
     def update(self):
-        if self.accumulated_td_loss is None:
+        if (self.accumulated_td_loss is None) or (self.sample_counter == 0):
             return
 
         self.optimizer.zero_grad()
-        mean_loss = self.accumulated_td_loss / self.batch_size
+        mean_loss = self.accumulated_td_loss / self.sample_counter
         mean_loss.backward()
         self.optimizer.step()
 
         self.accumulated_td_loss = None
+        self.sample_counter = 0
 
         # soft target update
         model_target_state_dict = self.model_target.state_dict()

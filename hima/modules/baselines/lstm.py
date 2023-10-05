@@ -14,6 +14,7 @@ from hima.common.sdr import sparse_to_dense
 from hima.modules.belief.utils import normalize
 from hima.agents.succesor_representations.agent import BioHIMA, SrEstimatePlanning
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
+from hima.modules.baselines.srtd import SRTD
 
 TLstmHiddenState = tuple[torch.Tensor, torch.Tensor]
 
@@ -626,6 +627,11 @@ class LstmBioHima(BioHIMA):
     def __init__(self, cortical_column: CorticalColumn, **kwargs):
         super().__init__(cortical_column, **kwargs)
 
+        self.srtd = SRTD(
+            self.cortical_column.layer.hidden_size,
+            self.cortical_column.layer.input_size
+        )
+
     def generate_sr(
             self,
             n_steps,
@@ -693,12 +699,31 @@ class LstmBioHima(BioHIMA):
         # convert model hidden state to probabilities
         # noinspection PyUnresolvedReferences
         state_probs_out = self.cortical_column.layer.model.as_probabilistic_out(state_out)
-        return to_numpy(state_probs_out)
+        return state_probs_out.detach()
 
-    def td_update_sr(self, target_sr, predicted_sr, prediction_cells: TLstmLayerHiddenState):
-        msg = self._extract_collapse_message(prediction_cells)
-        return super().td_update_sr(target_sr, predicted_sr, msg)
+    def td_update_sr(self):
+        current_state = self._extract_collapse_message(
+            self.cortical_column.layer.internal_forward_messages
+        ).to(self.srtd.device)
+
+        predicted_sr = self.srtd.predict_sr(current_state, target=False)
+        target_sr = self.generate_sr(
+            self.sr_steps,
+            initial_messages=self.cortical_column.layer.internal_forward_messages,
+            initial_prediction=self.observation_messages,
+            approximate_tail=self.approximate_tail
+        )
+
+        target_sr = torch.tensor(target_sr)
+        target_sr = target_sr.float().to(self.srtd.device)
+
+        td_error = self.srtd.compute_td_loss(
+            target_sr,
+            predicted_sr
+        )
+
+        return to_numpy(predicted_sr), to_numpy(target_sr), td_error
 
     def predict_sr(self, context_messages: TLstmLayerHiddenState):
-        msg = self._extract_collapse_message(context_messages)
-        return super().predict_sr(msg)
+        msg = self._extract_collapse_message(context_messages).to(self.srtd.device)
+        return to_numpy(self.srtd.predict_sr(msg, target=True))

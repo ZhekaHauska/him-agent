@@ -126,7 +126,6 @@ class BioHIMA:
                 )
 
             self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
-            current_state = self.cortical_column.layer.internal_forward_messages
         else:
             return
 
@@ -134,23 +133,10 @@ class BioHIMA:
             return
 
         # striatum TD learning
-        if self.sr_steps > 0:
-            predicted_sr = self.predict_sr(current_state)
-            generated_sr = self.generate_sr(
-                self.sr_steps,
-                initial_messages=current_state,
-                initial_prediction=self.observation_messages,
-                approximate_tail=self.approximate_tail,
-            )
-            self.td_update_sr(generated_sr, predicted_sr, current_state)
-        else:
-            predicted_sr = self.predict_sr(self.previous_state)
-            generated_sr = self.previous_observation + self.gamma * self.predict_sr(current_state)
-            self.td_update_sr(generated_sr, predicted_sr, self.previous_state)
+        predicted_sr, generated_sr, td_error = self.td_update_sr()
 
-            # backup state for classic TD learning
-            self.previous_state = self.cortical_column.layer.internal_forward_messages.copy()
-            self.previous_observation = self.observation_messages.copy()
+        self.td_error = td_error
+        self.td_error_ma = lin_sum(self.td_error_ma, 0.2, self.td_error)
 
         return predicted_sr, generated_sr
 
@@ -259,7 +245,18 @@ class BioHIMA:
         sr /= self.cortical_column.layer.n_hidden_vars
         return sr
 
-    def td_update_sr(self, target_sr, predicted_sr, prediction_cells):
+    def td_update_sr(self):
+        current_state = self.cortical_column.layer.internal_forward_messages
+
+        predicted_sr = self.predict_sr(current_state)
+        target_sr = self.generate_sr(
+            self.sr_steps,
+            initial_messages=current_state,
+            initial_prediction=self.observation_messages,
+            approximate_tail=self.approximate_tail,
+        )
+        prediction_cells = current_state
+
         error_sr = target_sr - predicted_sr
 
         # dSR / dW for linear model
@@ -268,8 +265,9 @@ class BioHIMA:
         self.striatum_weights += self.striatum_lr * delta_w
         self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
-        self.td_error = np.mean(np.power(error_sr, 2))
-        self.td_error_ma = lin_sum(self.td_error_ma, 0.2, self.td_error)
+        td_error = np.mean(np.power(error_sr, 2))
+
+        return predicted_sr, target_sr, td_error
 
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True

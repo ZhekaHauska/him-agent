@@ -213,14 +213,6 @@ class PinballTest:
                     # convert to AAI action
                     pinball_action = self.actions[action]
                     self.environment.act(pinball_action)
-                else:
-                    # additional update for model-free TD
-                    if self.agent.sr_steps == 0:
-                        self.agent.td_update_sr(
-                            self.agent.observation_messages,
-                            np.zeros_like(self.agent.observation_messages),
-                            self.agent.previous_state
-                        )
 
                 # >>> logging
                 if self.logger is not None:
@@ -292,12 +284,22 @@ class PinballTest:
                         proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
                         pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
 
+                        actual_state = self.agent.cortical_column.layer.internal_forward_messages
+                        predicted_state = self.agent.cortical_column.layer.prediction_cells
+                        if type(actual_state) is list:
+                            actual_state = self.agent._extract_collapse_message(
+                                actual_state
+                            ).cpu().numpy()
+                            predicted_state = self.agent._extract_collapse_message(
+                                predicted_state
+                            ).cpu().numpy()
+
                         hid_beh = self.to_img(
-                            self.agent.cortical_column.layer.internal_forward_messages,
+                            actual_state,
                             shape=(self.agent.cortical_column.layer.n_columns, -1)
                         )
                         hid_pred_beh = self.to_img(
-                            self.agent.cortical_column.layer.prediction_cells,
+                            predicted_state,
                             shape=(self.agent.cortical_column.layer.n_columns, -1)
                         )
 
@@ -728,14 +730,6 @@ class AnimalAITest:
                     # convert to AAI action
                     aai_action = self.actions[action]
                     self.environment.set_actions(self.behavior, aai_action.action_tuple)
-                else:
-                    # additional update for model-free TD
-                    if self.agent.sr_steps == 0:
-                        self.agent.td_update_sr(
-                            self.agent.observation_messages,
-                            np.zeros_like(self.agent.observation_messages),
-                            self.agent.previous_state
-                        )
 
                 # >>> logging
                 if self.logger is not None:
@@ -1242,14 +1236,6 @@ class GridWorldTest:
                     # convert to AAI action
                     pinball_action = self.actions[action]
                     self.environment.act(pinball_action)
-                else:
-                    # additional update for model-free TD
-                    if self.agent.sr_steps == 0:
-                        self.agent.td_update_sr(
-                            self.agent.observation_messages,
-                            np.zeros_like(self.agent.observation_messages),
-                            self.agent.previous_state
-                        )
 
                 # >>> logging
                 if self.logger is not None:
