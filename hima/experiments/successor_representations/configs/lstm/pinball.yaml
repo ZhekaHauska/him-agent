@@ -1,3 +1,5 @@
 n_hidden_vars: 5
-n_hidden_states: 500
+n_hidden_states: 100
 lr: 0.001
+srtd_tau: 0.01
+srtd_batch_size: 256

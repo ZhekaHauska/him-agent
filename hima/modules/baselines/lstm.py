@@ -57,6 +57,8 @@ class LstmLayer:
             n_external_vars: int = 0,
             n_external_states: int = 0,
             lr=2e-3,
+            srtd_tau=0.01,
+            srtd_batch_size=32,
             seed=None,
     ):
         torch.set_num_threads(1)
@@ -90,14 +92,16 @@ class LstmLayer:
 
         self.lr = lr
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.srtd_tau = srtd_tau
+        self.srtd_batch_size = srtd_batch_size
 
         if seed is not None:
             torch.manual_seed(seed)
         self.rng = np.random.default_rng(seed)
 
         with_decoder = not (
-            self.n_hidden_vars == self.n_obs_vars
-            and self.n_hidden_states == self.n_obs_states
+                self.n_hidden_vars == self.n_obs_vars
+                and self.n_hidden_states == self.n_obs_states
         )
         print(f'LSTM {with_decoder=}')
 
@@ -140,8 +144,8 @@ class LstmLayer:
 
     def get_init_state(self):
         return [
-            True,                           # Is observed flag
-            self.model.get_init_state(),    # Model state
+            True,  # Is observed flag
+            self.model.get_init_state(),  # Model state
         ]
 
     def transition_with_observation(self, obs, state):
@@ -316,8 +320,8 @@ class LstmWorldModel(nn.Module):
         self.action_repeat_k = self.input_size // self.n_actions // 3
         self.tiled_action_size = self.action_repeat_k * self.action_size
 
-        self.empty_action = torch.zeros((self.tiled_action_size, )).to(self.device)
-        self.empty_obs = torch.zeros((self.input_size, )).to(self.device)
+        self.empty_action = torch.zeros((self.tiled_action_size,)).to(self.device)
+        self.empty_obs = torch.zeros((self.input_size,)).to(self.device)
         self.full_input_size = self.input_size + self.tiled_action_size
 
         pinball_raw_image = self.n_obs_vars == 50 * 36 and self.n_obs_states == 1
@@ -491,7 +495,7 @@ class LSTMWMIterative:
                 with torch.no_grad():
                     prediction = self.lstm(dense_obs).cpu().detach().numpy()
 
-                n_step_dist[step] += 1/(i+1) * (prediction - n_step_dist[step])
+                n_step_dist[step] += 1 / (i + 1) * (prediction - n_step_dist[step])
                 dist_curr_step = prediction
 
             self.lstm.message = initial_message
@@ -624,12 +628,18 @@ def to_numpy(x):
 class LstmBioHima(BioHIMA):
     """Patch-like adaptation of BioHIMA to work with LSTM layer."""
 
-    def __init__(self, cortical_column: CorticalColumn, **kwargs):
+    def __init__(
+            self, cortical_column: CorticalColumn,
+            **kwargs
+    ):
         super().__init__(cortical_column, **kwargs)
 
         self.srtd = SRTD(
             self.cortical_column.layer.hidden_size,
-            self.cortical_column.layer.input_size
+            self.cortical_column.layer.input_size,
+            lr=self.striatum_lr,
+            tau=self.cortical_column.layer.srtd_tau,
+            batch_size=self.cortical_column.layer.srtd_batch_size
         )
 
     def generate_sr(
