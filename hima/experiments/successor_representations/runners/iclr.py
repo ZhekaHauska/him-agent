@@ -9,12 +9,12 @@ import sys
 
 import numpy as np
 
-from hima.agents.succesor_representations.agent import BioHIMA
+from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima, FCHMMBioHima
 from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
-from hima.modules.baselines.lstm import LstmLayer, LstmBioHima
+from hima.modules.baselines.lstm import LstmLayer
 from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.belief.utils import normalize
 from hima.modules.baselines.hmm import FCHMMLayer
@@ -93,6 +93,9 @@ class PinballTest:
         if self.logger is not None:
             from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
             # define metrics
+            self.logger.define_metric("main_metrics/steps", summary="mean")
+            self.logger.define_metric("main_metrics/reward", summary="mean")
+
             basic_scalar_metrics = {
                 'main_metrics/reward': np.sum,
                 'main_metrics/steps': np.mean,
@@ -479,6 +482,8 @@ class PinballTest:
 
             if layer_type in {'lstm', 'rwkv'}:
                 agent = LstmBioHima(cortical_column, **conf['agent'])
+            elif layer_type == 'fchmm':
+                agent = FCHMMBioHima(cortical_column, **conf['agent'])
             else:
                 agent = BioHIMA(
                     cortical_column,

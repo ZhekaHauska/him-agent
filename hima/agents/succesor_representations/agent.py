@@ -14,6 +14,9 @@ from hima.common.sdr import sparse_to_dense
 from hima.common.utils import softmax, lin_sum, safe_divide
 from hima.experiments.hmm.runners.utils import get_surprise
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
+from hima.modules.baselines.srtd import SRTD
+from hima.modules.baselines.lstm import to_numpy, TLstmLayerHiddenState
+import torch
 
 
 class ExplorationPolicy(Enum):
@@ -318,3 +321,163 @@ class BioHIMA:
     @property
     def n_actions(self):
         return self.cortical_column.layer.external_input_size
+
+
+class FCHMMBioHima(BioHIMA):
+    """Patch-like adaptation of BioHIMA to work with LSTM layer."""
+
+    def __init__(
+            self, cortical_column: CorticalColumn,
+            **kwargs
+    ):
+        super().__init__(cortical_column, **kwargs)
+
+        self.srtd = SRTD(
+            self.cortical_column.layer.context_input_size,
+            self.cortical_column.layer.input_sdr_size,
+            lr=self.striatum_lr,
+            tau=self.cortical_column.layer.srtd_tau,
+            batch_size=self.cortical_column.layer.srtd_batch_size,
+            hidden_size=self.cortical_column.layer.srtd_hidden_size,
+            n_hidden_layers=self.cortical_column.layer.srtd_n_hidden_layers
+        )
+
+    def td_update_sr(self):
+        current_state = self.cortical_column.layer.internal_forward_messages
+        current_state = torch.tensor(current_state).float().to(self.srtd.device)
+
+        predicted_sr = self.srtd.predict_sr(current_state, target=False)
+        target_sr = self.generate_sr(
+            self.sr_steps,
+            initial_messages=self.cortical_column.layer.internal_forward_messages,
+            initial_prediction=self.observation_messages,
+            approximate_tail=self.approximate_tail
+        )
+
+        target_sr = torch.tensor(target_sr)
+        target_sr = target_sr.float().to(self.srtd.device)
+
+        td_error = self.srtd.compute_td_loss(
+            target_sr,
+            predicted_sr
+        )
+
+        return to_numpy(predicted_sr), to_numpy(target_sr), td_error
+
+    def predict_sr(self, context_messages):
+        msg = torch.tensor(context_messages).float().to(self.srtd.device)
+        return to_numpy(self.srtd.predict_sr(msg, target=True))
+
+
+class LstmBioHima(BioHIMA):
+    """Patch-like adaptation of BioHIMA to work with LSTM layer."""
+
+    def __init__(
+            self, cortical_column: CorticalColumn,
+            **kwargs
+    ):
+        super().__init__(cortical_column, **kwargs)
+
+        self.srtd = SRTD(
+            self.cortical_column.layer.hidden_size,
+            self.cortical_column.layer.input_size,
+            lr=self.striatum_lr,
+            tau=self.cortical_column.layer.srtd_tau,
+            batch_size=self.cortical_column.layer.srtd_batch_size
+        )
+
+    def generate_sr(
+            self,
+            n_steps,
+            initial_messages,
+            initial_prediction,
+            approximate_tail=True,
+            save_state=True
+    ):
+        """
+            n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
+            then this function is equivalent to predict_sr.
+        """
+        if save_state:
+            self._make_state_snapshot()
+
+        sr = np.zeros_like(self.observation_messages)
+
+        # represent state after getting observation
+        context_messages = initial_messages
+        # represent predicted observation
+        predicted_observation = initial_prediction
+
+        discount = 1.0
+        for t in range(n_steps):
+            sr += predicted_observation * discount
+
+            if self.sr_estimate_planning == SrEstimatePlanning.UNIFORM:
+                action_dist = None
+            else:
+                # on/off-policy
+                # NB: evaluate actions directly with prediction, not with n-step planning!
+                action_values = self.evaluate_actions(with_planning=False)
+                action_dist = self._get_action_selection_distribution(
+                    action_values,
+                    on_policy=self.sr_estimate_planning == SrEstimatePlanning.ON_POLICY
+                )
+
+            self.cortical_column.predict(context_messages, external_messages=action_dist)
+            predicted_observation = self.cortical_column.layer.prediction_columns
+
+            # THE ONLY ADDED CHANGE TO HIMA: explicitly observe predicted_observation
+            self.cortical_column.layer.observe(predicted_observation, learn=False)
+            # setting context is needed for action evaluation further on
+            self.cortical_column.layer.set_context_messages(
+                self.cortical_column.layer.internal_forward_messages
+            )
+            # ======
+
+            context_messages = self.cortical_column.layer.internal_forward_messages.copy()
+            discount *= self.gamma
+
+        if approximate_tail:
+            sr += self.predict_sr(context_messages) * discount
+
+        if save_state:
+            self._restore_last_snapshot()
+
+        sr /= self.cortical_column.layer.n_hidden_vars
+        return sr
+
+    def _extract_collapse_message(self, context_messages: TLstmLayerHiddenState):
+        # extract model state from layer state
+        _, (state_out, _) = context_messages
+
+        # convert model hidden state to probabilities
+        # noinspection PyUnresolvedReferences
+        state_probs_out = self.cortical_column.layer.model.as_probabilistic_out(state_out)
+        return state_probs_out.detach()
+
+    def td_update_sr(self):
+        current_state = self._extract_collapse_message(
+            self.cortical_column.layer.internal_forward_messages
+        ).to(self.srtd.device)
+
+        predicted_sr = self.srtd.predict_sr(current_state, target=False)
+        target_sr = self.generate_sr(
+            self.sr_steps,
+            initial_messages=self.cortical_column.layer.internal_forward_messages,
+            initial_prediction=self.observation_messages,
+            approximate_tail=self.approximate_tail
+        )
+
+        target_sr = torch.tensor(target_sr)
+        target_sr = target_sr.float().to(self.srtd.device)
+
+        td_error = self.srtd.compute_td_loss(
+            target_sr,
+            predicted_sr
+        )
+
+        return to_numpy(predicted_sr), to_numpy(target_sr), td_error
+
+    def predict_sr(self, context_messages: TLstmLayerHiddenState):
+        msg = self._extract_collapse_message(context_messages).to(self.srtd.device)
+        return to_numpy(self.srtd.predict_sr(msg, target=True))
