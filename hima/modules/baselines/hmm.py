@@ -400,6 +400,10 @@ class FCHMMLayer:
             batch_size: int = 100,
             em_iterations: int = 100,
             alpha: float = 1.0,
+            srtd_tau: float = 0.01,
+            srtd_batch_size: int = 32,
+            srtd_hidden_size: int = 256,
+            srtd_n_hidden_layers: int = 1,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -415,6 +419,10 @@ class FCHMMLayer:
         self.batch_size = batch_size
         self.em_iterations = em_iterations
         self.lr = lr
+        self.srtd_tau = srtd_tau
+        self.srtd_batch_size = srtd_batch_size
+        self.srtd_hidden_size = srtd_hidden_size
+        self.srtd_n_hidden_layers = srtd_n_hidden_layers
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
