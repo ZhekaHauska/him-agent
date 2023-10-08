@@ -61,7 +61,8 @@ class PinballTest:
 
         self.n_episodes = conf['run']['n_episodes']
         self.max_steps = conf['run']['max_steps']
-        self.update_rate = conf['run']['update_rate']
+        self.update_period = conf['run']['update_period']
+        self.update_start = conf['run']['update_start']
         self.camera_mode = conf['run']['camera_mode']
         self.reward_free = conf['run'].get('reward_free', False)
         self.test_srs = conf['run'].get('test_srs', False)
@@ -282,7 +283,7 @@ class PinballTest:
                         gen_sr_test_raw = None
                         gen_sr_test_tail_raw = None
 
-                    if (i % self.update_rate) == 0:
+                    if (i >= self.update_start) and (i % self.update_period) == 0:
                         raw_beh = self.to_img(self.prev_image)
                         proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
                         pred_beh = self.to_img(self.agent.cortical_column.predicted_image)
@@ -374,7 +375,7 @@ class PinballTest:
                     self.generated_sr_stack.log(i)
                     self.generated_sr_stack_raw.log(i)
 
-                if (i % self.update_rate) == 0:
+                if (i >= self.update_start) and (i % self.update_period) == 0:
                     obs_rewards = decoder.decode(
                         normalize(
                             self.agent.observation_rewards.reshape(

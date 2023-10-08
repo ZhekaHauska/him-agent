@@ -3,8 +3,9 @@ save_model: False
 project_name: 'sr_pinball_all'
 run_tag: null
 
-n_episodes: 501
-update_rate: 20
+n_episodes: 301
+update_period: 10
+update_start: 250
 max_steps: 15
 log_gif_fps: 5
 start_position: [0, 0]
