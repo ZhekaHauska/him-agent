@@ -11,12 +11,11 @@ start_position: [0, 0]
 actions: [[0, 3], [0.5, 3], [-0.5, 3]]
 camera_mode: clip
 
-# if True then use random strategy
-reward_free: True
+n_encoder_updates: 20_000
+use_cache: False
+cache_dir: ~/tmp/hima/debug_rnn
 
-# model based sr testing
-test_srs: True
-test_sr_steps: 5
+n_rnn_updates: 10_000
 
 # sp_ensemble | sp_grouped
 encoder: sp_grouped

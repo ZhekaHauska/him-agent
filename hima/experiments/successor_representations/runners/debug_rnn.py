@@ -4,9 +4,12 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import os
+import pickle
 import sys
+from pathlib import Path
 
 import numpy as np
+from tqdm import trange
 
 from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
@@ -19,10 +22,21 @@ from hima.experiments.temporal_pooling.stp.sp_ensemble import SpatialPoolerGroup
 wandb = lazy_import('wandb')
 
 
+class CachedRunData:
+    def __init__(self, encoder):
+        self.images = []
+        self.raw_observations = []
+        self.observations = []
+        self.predicted_observations = []
+        self.actions = []
+        self.rewards = []
+        self.dones = []
+
+        self.encoder = encoder
+
+
 class PinballDebugTest:
     def __init__(self, logger, conf):
-        from pinball import Pinball
-
         self.logger = logger
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
@@ -35,19 +49,29 @@ class PinballDebugTest:
             f"{conf['run']['setup']}.json"
         )
 
-        self.environment = Pinball(**conf['env'])
-        obs, _, _ = self.environment.obs()
-        self.raw_obs_shape = (obs.shape[0], obs.shape[1])
+        self.env_conf = conf['env']
+        self.raw_obs_shape = (50, 36)
         self.start_position = conf['run']['start_position']
-        self.actions = conf['run']['actions']
-        self.n_actions = len(self.actions)
+        self.pinball_actions = conf['run']['actions']
+        self.n_actions = len(self.pinball_actions)
 
         encoder_type = conf['run']['encoder']
         encoder_conf = conf['encoder']
         assert encoder_type == 'sp_grouped'
         encoder_conf['seed'] = self.seed
         encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
-        self.encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
+
+        self.use_cache = conf['run']['use_cache']
+        self.cache_dir = Path(conf['run']['cache_dir']).expanduser().resolve()
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_data_path = self.cache_dir / 'data.pkl'
+        if self.use_cache and self.cache_data_path.exists():
+            with self.cache_data_path.open('rb') as _f:
+                self.data = pickle.load(_f)
+            self.encoder = self.data.encoder
+        else:
+            self.encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
+            self.data = CachedRunData(self.encoder)
 
         layer_conf = conf['layer']
         layer_conf['n_obs_vars'] = self.encoder.n_groups
@@ -70,20 +94,16 @@ class PinballDebugTest:
         self.max_steps = conf['run']['max_steps']
         self.update_rate = conf['run']['update_rate']
 
+        self.n_encoder_updates = conf['run']['n_encoder_updates']
+        self.n_rnn_updates = conf['run']['n_rnn_updates']
+
         self.initial_previous_image = np.zeros(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
         self.initial_context = self.layer.context_messages
 
-        self.images = []
-        self.raw_observations = []
-        self.observations = []
-        self.predicted_observations = []
-        self.rewards = []
-
         from metrics import ScalarMetrics
         self.scalar_metrics = ScalarMetrics(
             {
-                'main_metrics/reward': np.sum,
                 'main_metrics/steps': np.mean,
                 'layer/loss': np.mean,
             },
@@ -95,10 +115,7 @@ class PinballDebugTest:
         self.layer.set_context_messages(self.initial_context)
         self.layer.set_external_messages(None)
 
-    def observe(self, raw_obs, action, learn):
-        if raw_obs is None:
-            return
-
+    def observe(self, obs, action, learn):
         # predict current local input step
         external_messages = None
         if action is not None:
@@ -108,14 +125,55 @@ class PinballDebugTest:
         self.layer.predict(learn=learn)
 
         # observe real outcome and optionally learn using prediction error
-        obs = self.encoder.compute(raw_obs, learn)
         predicted_obs = self.layer.prediction_columns
 
         self.layer.observe(obs, learn=learn)
         self.layer.set_context_messages(self.layer.internal_forward_messages)
-        return obs, predicted_obs
+        return predicted_obs
 
     def run(self):
+        self.collect_trajectories()
+        self.train_encoder()
+        self.encode_observations()
+
+        print_schedule = 5000
+        n_steps = self.n_rnn_updates
+        n_raw_obs = len(self.data.raw_observations)
+
+        self.reset()
+        action = None
+
+        for step in range(n_steps):
+            if step % print_schedule == 0:
+                self.scalar_metrics.update({'main_metrics/steps': step})
+                if self.logger is not None:
+                    self.scalar_metrics.log(step)
+                else:
+                    print_digest(self.scalar_metrics.summarize())
+                    self.scalar_metrics.reset()
+
+            i = step % n_raw_obs
+            obs = self.data.observations[i]
+            done = self.data.dones[i]
+
+            # observe events_t and action_{t-1}
+            predicted_obs = self.observe(obs, action, learn=True)
+
+            action = self.data.actions[i]
+            if done:
+                action = None
+                self.reset()
+
+            self.scalar_metrics.update({'layer/loss': self.layer.last_loss_value})
+
+    def collect_trajectories(self):
+        if len(self.data.raw_observations) > 0:
+            return
+
+        print('==> Collect trajectories')
+        from pinball import Pinball
+        environment = Pinball(**self.env_conf)
+
         episode_print_schedule = 50
 
         for episode in range(self.n_episodes):
@@ -124,50 +182,65 @@ class PinballDebugTest:
 
             steps = 0
             running = True
-            action = None
 
             self.prev_image = self.initial_previous_image
-            self.environment.reset(self.start_position)
+            environment.reset(self.start_position)
             self.reset()
 
             while running and steps < self.max_steps:
-                self.environment.step()
-                image, reward, is_terminal = self.environment.obs()
+                environment.step()
+                image, reward, is_terminal = environment.obs()
                 raw_obs = self.preprocess(image)
 
-                self.images.append(self.prev_image)
-                self.raw_observations.append(raw_obs)
-                self.rewards.append(reward)
+                self.data.images.append(self.prev_image)
+                self.data.raw_observations.append(raw_obs)
+                self.data.rewards.append(reward)
+                self.data.dones.append(is_terminal)
 
-                # observe events_t and action_{t-1}
-                obs, predicted_obs = self.observe(raw_obs, action, learn=True)
-                self.observations.append(obs)
-                self.predicted_observations.append(predicted_obs)
-
-                running = not is_terminal
-                if running:
-                    action = self._rng.choice(self.n_actions)
-                    pinball_action = self.actions[action]
-                    self.environment.act(pinball_action)
-
-                # >>> logging
-                # noinspection PyUnresolvedReferences
-                self.scalar_metrics.update({
-                    'main_metrics/reward': reward,
-                    'layer/loss': self.layer.last_loss_value,
-                })
+                action = self._rng.choice(self.n_actions)
+                self.data.actions.append(action)
+                if not is_terminal:
+                    environment.act(self.pinball_actions[action])
                 steps += 1
 
-            # >>> logging
-            self.scalar_metrics.update({'main_metrics/steps': steps})
-            if self.logger is not None:
-                self.scalar_metrics.log(episode)
-            else:
-                print_digest(self.scalar_metrics.summarize())
-                self.scalar_metrics.reset()
-            # <<< logging
-        else:
-            self.environment.close()
+        environment.close()
+        self.save_data()
+        print('<== Collect trajectories')
+
+    def train_encoder(self):
+        if self.encoder.newborn_pruning_stage != 0:
+            return
+
+        print('==> Learn encoder')
+        n_observations = len(self.data.raw_observations)
+
+        for _ in trange(self.n_encoder_updates):
+            ind = self._rng.choice(n_observations)
+            raw_obs = self.data.raw_observations[ind]
+            self.encoder.compute(raw_obs, learn=True)
+
+        self.save_data()
+        print('<== Learn encoder')
+
+    def encode_observations(self):
+        if len(self.data.observations) > 0:
+            return
+
+        print('==> Encode observations')
+        n_observations = len(self.data.raw_observations)
+
+        for ind in trange(n_observations):
+            raw_obs = self.data.raw_observations[ind]
+            obs = self.encoder.compute(raw_obs, learn=False)
+            self.data.observations.append(obs)
+
+        self.save_data()
+        print('<== Encode observations')
+
+    def save_data(self):
+        with self.cache_data_path.open('wb') as _f:
+            pickle.dump(self.data, _f)
+            print('Pickled!')
 
     def to_img(self, x: np.ndarray, shape=None):
         return to_gray_img(x, like=isnone(shape, self.raw_obs_shape))
