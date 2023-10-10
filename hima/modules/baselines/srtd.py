@@ -3,7 +3,6 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
