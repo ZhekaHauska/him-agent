@@ -35,13 +35,31 @@ class PinballTest:
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
 
+        self.n_episodes = conf['run']['n_episodes']
+        self.max_steps = conf['run']['max_steps']
+        self.update_period = conf['run']['update_period']
+        self.update_start = conf['run']['update_start']
+        self.camera_mode = conf['run']['camera_mode']
+        self.reward_free = conf['run'].get('reward_free', False)
+        self.test_srs = conf['run'].get('test_srs', False)
+        self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
+        self.layer_type = conf['run']['layer']
+        self.action_inertia = conf['run'].get('action_inertia', 1)
+
         self.setups = conf['run']['setup']
-        self.current_setup_id = 0
-        self.setup_period = conf['run'].get('setup_period', 0)
+        self.setup_period = conf['run'].get('setup_period', None)
+
+        if self.setup_period is None:
+            self.setup_period = [self.n_episodes//len(self.setups)]*len(self.setups)
+        elif type(self.setup_period) is int:
+            period = self.setup_period
+            self.setup_period = [period]*len(self.setups)
+
+        assert len(self.setups) == len(self.setup_period)
 
         conf['env']['seed'] = self.seed
         conf['env']['exe_path'] = os.environ.get('PINBALL_EXE', None)
-        conf['env']['config_path'] = self.get_setup_path(self.setups[self.current_setup_id])
+        conf['env']['config_path'] = self.get_setup_path(self.setups[0])
 
         self.environment = Pinball(**conf['env'])
         obs, _, _ = self.environment.obs()
@@ -58,17 +76,6 @@ class PinballTest:
             self.reset_context_period = 0
 
         self.agent = self.make_agent(conf, conf['run'].get('agent_path', None))
-
-        self.n_episodes = conf['run']['n_episodes']
-        self.max_steps = conf['run']['max_steps']
-        self.update_period = conf['run']['update_period']
-        self.update_start = conf['run']['update_start']
-        self.camera_mode = conf['run']['camera_mode']
-        self.reward_free = conf['run'].get('reward_free', False)
-        self.test_srs = conf['run'].get('test_srs', False)
-        self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
-        self.layer_type = conf['run']['layer']
-        self.action_inertia = conf['run'].get('action_inertia', 1)
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -171,6 +178,9 @@ class PinballTest:
     def run(self):
         decoder = self.agent.cortical_column.decoder
         total_reward = np.zeros(self.raw_obs_shape).flatten()
+        setup_episodes = 0
+        current_setup_id = 0
+
         for i in range(self.n_episodes):
             steps = 0
             running = True
@@ -179,12 +189,13 @@ class PinballTest:
             self.prev_image = self.initial_previous_image
 
             # change setup
-            if (self.setup_period * i > 0) and (i % self.setup_period == 0):
-                self.current_setup_id += 1
-                self.current_setup_id = self.current_setup_id % len(self.setups)
+            if setup_episodes >= self.setup_period[current_setup_id]:
+                current_setup_id += 1
+                current_setup_id = current_setup_id % len(self.setups)
                 self.environment.set_config(self.get_setup_path(self.setups[
-                    self.current_setup_id
+                    current_setup_id
                 ]))
+                setup_episodes = 0
 
             self.environment.reset(self.start_position)
             self.agent.reset(self.initial_context, self.initial_external_message)
@@ -393,6 +404,7 @@ class PinballTest:
                     self.heatmap_metrics.log(i)
                     self.image_metrics.log(i)
             # <<< logging
+            setup_episodes += 1
         else:
             self.environment.close()
 
@@ -542,9 +554,27 @@ class AnimalAITest:
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
 
+        self.n_episodes = conf['run']['n_episodes']
+        self.max_steps = conf['run']['max_steps']
+        self.update_period = conf['run']['update_period']
+        self.update_start = conf['run']['update_start']
+        self.camera_mode = conf['run']['camera_mode']
+        self.reward_free = conf['run'].get('reward_free', False)
+        self.test_srs = conf['run'].get('test_srs', False)
+        self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
+        self.layer_type = conf['run']['layer']
+        self.action_inertia = conf['run'].get('action_inertia', 1)
+
         self.setups = conf['run']['setup']
-        self.current_setup_id = 0
-        self.setup_period = conf['run'].get('setup_period', 0)
+        self.setup_period = conf['run'].get('setup_period', None)
+
+        if self.setup_period is None:
+            self.setup_period = [self.n_episodes // len(self.setups)] * len(self.setups)
+        elif type(self.setup_period) is int:
+            period = self.setup_period
+            self.setup_period = [period] * len(self.setups)
+
+        assert len(self.setups) == len(self.setup_period)
 
         if 'reset_context_period' in conf['layer']:
             self.reset_context_period = conf['layer'].pop(
@@ -564,20 +594,9 @@ class AnimalAITest:
             self.raw_obs_shape,
             self.actions,
             self.n_actions
-        ) = self.setup_environment(self.setups[self.current_setup_id])
+        ) = self.setup_environment(self.setups[0])
 
         self.agent = self.make_agent(conf, conf['run'].get('agent_path', None))
-
-        self.n_episodes = conf['run']['n_episodes']
-        self.max_steps = conf['run']['max_steps']
-        self.update_period = conf['run']['update_period']
-        self.update_start = conf['run']['update_start']
-        self.camera_mode = conf['run']['camera_mode']
-        self.reward_free = conf['run'].get('reward_free', False)
-        self.test_srs = conf['run'].get('test_srs', False)
-        self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
-        self.layer_type = conf['run']['layer']
-        self.action_inertia = conf['run'].get('action_inertia', 1)
 
         self.initial_previous_image = self._rng.random(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -677,6 +696,9 @@ class AnimalAITest:
     def run(self):
         decoder = self.agent.cortical_column.decoder
         total_reward = np.zeros(self.raw_obs_shape).flatten()
+        setup_episodes = 0
+        current_setup_id = 0
+
         for i in range(self.n_episodes):
             steps = 0
             running = True
@@ -685,17 +707,18 @@ class AnimalAITest:
             self.prev_image = self.initial_previous_image
 
             # change setup
-            if (self.setup_period * i > 0) and (i % self.setup_period == 0):
+            if setup_episodes >= self.setup_period[current_setup_id]:
                 self.environment.close()
-                self.current_setup_id += 1
-                self.current_setup_id = self.current_setup_id % len(self.setups)
+                current_setup_id += 1
+                current_setup_id = current_setup_id % len(self.setups)
                 (
                     self.environment,
                     self.behavior,
                     self.raw_obs_shape,
                     self.actions,
                     self.n_actions
-                ) = self.setup_environment(self.setups[self.current_setup_id])
+                ) = self.setup_environment(self.setups[current_setup_id])
+                setup_episodes = 0
 
             self.environment.reset()
             self.agent.reset(self.initial_context, self.initial_external_message)
@@ -913,6 +936,7 @@ class AnimalAITest:
                     self.heatmap_metrics.log(i)
                     self.image_metrics.log(i)
             # <<< logging
+            setup_episodes += 1
         else:
             self.environment.close()
 
