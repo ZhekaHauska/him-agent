@@ -997,7 +997,7 @@ class AnimalAITest:
             AAIActions().LEFT,
             AAIActions().FORWARDS,
             AAIActions().RIGHT,
-            AAIActions().BACKWARDS
+            # AAIActions().BACKWARDS
         ]
         n_actions = len(actions)
 
