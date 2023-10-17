@@ -1,3 +1,0 @@
-export PINBALL_EXE=path/to/exe
-export PINBALL_ROOT=path/to/project/root
-export WANDB_ENTITY=hauska

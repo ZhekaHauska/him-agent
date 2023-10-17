@@ -7,7 +7,7 @@
 from hima.modules.belief.dchmm import DCHMM
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
 from htm.bindings.sdr import SDR
-from hima.experiments.hmm.runners.utils import get_surprise
+from hima.experiments.sequence.runners.utils import get_surprise
 from hima.common.sdr_encoders import IntBucketEncoder
 
 try:

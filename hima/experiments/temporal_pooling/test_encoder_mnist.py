@@ -15,7 +15,7 @@ from hima.common.sdr import SparseSdr, sparse_to_dense
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, safe_divide, prepend_dict_keys
-from hima.experiments.hmm.runners.utils import get_surprise_2
+from hima.experiments.sequence.runners.utils import get_surprise_2
 from hima.experiments.temporal_pooling.data.mnist import MnistDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.utils import resolve_random_seed

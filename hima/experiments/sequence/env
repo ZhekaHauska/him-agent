@@ -1,0 +1,6 @@
+export __GLX_VENDOR_LIBRARY_NAME=nvidia
+export __NV_PRIME_RENDER_OFFLOAD=1
+export PINBALL_EXE=/home/evgenio/Activity/HTM/htm_rl_tepo/pinball/Pinball.x86_64
+export PINBALL_ROOT=/home/evgenio/Activity/HTM/htm_rl_tepo/pinball;PYTHONUNBUFFERED=1
+export RUN_CONF=configs/runner/hmm/pinball.yaml
+export WANDB_ENTITY=hauska

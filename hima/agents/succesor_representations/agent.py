@@ -12,7 +12,7 @@ import numpy as np
 
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import softmax, lin_sum, safe_divide
-from hima.experiments.hmm.runners.utils import get_surprise
+from hima.experiments.sequence.runners.utils import get_surprise
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.baselines.srtd import SRTD
 from hima.modules.baselines.lstm import to_numpy, TLstmLayerHiddenState

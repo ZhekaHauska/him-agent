@@ -9,7 +9,7 @@ from hima.modules.htm.tm_writer import HTMWriter
 from hima.envs.mpg.mpg import MultiMarkovProcessGrammar, draw_mpg
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler
 from htm.bindings.sdr import SDR
-from hima.experiments.hmm.runners.utils import get_surprise
+from hima.experiments.sequence.runners.utils import get_surprise
 
 try:
     from pinball import Pinball

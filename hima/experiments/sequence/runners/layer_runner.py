@@ -7,7 +7,7 @@ from hima.modules.belief.cortial_column.layer import Layer, REAL_DTYPE, UINT_DTY
 from hima.modules.belief.cortial_column.input_layer import Encoder, Decoder
 from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsemble
 from htm.bindings.sdr import SDR
-from hima.experiments.hmm.runners.utils import get_surprise
+from hima.experiments.sequence.runners.utils import get_surprise
 
 try:
     from pinball import Pinball

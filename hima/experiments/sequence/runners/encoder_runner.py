@@ -18,7 +18,7 @@ from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import prepend_dict_keys, to_gray_img
-from hima.experiments.hmm.runners.utils import get_surprise_2
+from hima.experiments.sequence.runners.utils import get_surprise_2
 from hima.modules.belief.cortial_column.layer import Layer
 
 try:
