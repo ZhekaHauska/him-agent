@@ -564,6 +564,9 @@ class AnimalAITest:
         self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
         self.layer_type = conf['run']['layer']
         self.action_inertia = conf['run'].get('action_inertia', 1)
+        self.frame_skip = conf['run'].get('frame_skip', 0)
+
+        assert self.frame_skip >= 0
 
         self.setups = conf['run']['setup']
         self.setup_period = conf['run'].get('setup_period', None)
@@ -730,18 +733,27 @@ class AnimalAITest:
                             self.initial_context
                         )
 
-                self.environment.step()
-                dec, term = self.environment.get_steps(self.behavior)
-
                 reward = 0
-                if len(dec) > 0:
-                    obs = self.environment.get_obs_dict(dec.obs)["camera"]
-                    reward += dec.reward
+                for frame in range(self.frame_skip + 1):
+                    if action is not None:
+                        aai_action = self.actions[action]
+                        self.environment.set_actions(self.behavior, aai_action.action_tuple)
 
-                if len(term):
-                    obs = self.environment.get_obs_dict(term.obs)["camera"]
-                    reward += term.reward
-                    running = False
+                    self.environment.step()
+                    dec, term = self.environment.get_steps(self.behavior)
+
+                    if len(dec) > 0:
+                        obs = self.environment.get_obs_dict(dec.obs)["camera"]
+                        reward += dec.reward
+
+                    if len(term):
+                        obs = self.environment.get_obs_dict(term.obs)["camera"]
+                        reward += term.reward
+                        running = False
+                        break
+
+                    if action is None:
+                        break
 
                 events = self.preprocess(obs, mode=self.camera_mode)
                 # observe events_t and action_{t-1}
@@ -756,10 +768,6 @@ class AnimalAITest:
                             action = self._rng.integers(self.n_actions)
                         else:
                             action = self.agent.sample_action()
-
-                    # convert to AAI action
-                    aai_action = self.actions[action]
-                    self.environment.set_actions(self.behavior, aai_action.action_tuple)
 
                 # >>> logging
                 if self.logger is not None:

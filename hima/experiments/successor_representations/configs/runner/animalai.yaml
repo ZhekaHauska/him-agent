@@ -1,20 +1,22 @@
 log: True
 save_model: False
-project_name: 'sr_animalai_all'
+project_name: null
 run_tag: null
 
-n_episodes: 501
-update_rate: 50
+n_episodes: 901
+update_period: 50
+update_start: 0
 max_steps: 50
-action_inertia: 3
 log_gif_fps: 5
+action_inertia: 1
+frame_skip: 10
 camera_mode: clip
 
 # if True then use random strategy
-reward_free: True
+reward_free: False
 
 # model based sr testing
-test_srs: True
+test_srs: False
 test_sr_steps: 5
 
 # sp_ensemble | sp_grouped
@@ -24,13 +26,15 @@ decoder: learned
 
 env_conf: 'configs/animalai/default.yaml'
 agent_conf: 'configs/agent/animalai.yaml'
-layer_conf: 'configs/rwkv/animalai.yaml'
+layer_conf: 'configs/dhtm/animalai.yaml'
 encoder_conf: 'configs/encoder/sp_grouped_aai.yaml'
 decoder_conf: 'configs/decoder/animalai.yaml'
 
 experiment: animalai
 # list of setups
-setup: ['competition/01-01-01.yaml', 'competition/02-10-03.yaml']
-setup_period: 10
+setup:
+  # ['competition/01-01-01.yaml', 'competition/01-01-01_wall.yaml']
+  ['custom/two_ways_both.yaml', 'custom/two_ways_left.yaml', 'custom/two_ways_right.yaml']
+setup_period: [99, 299, 600]
 
 seed: null
