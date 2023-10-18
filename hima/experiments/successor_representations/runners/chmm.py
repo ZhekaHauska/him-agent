@@ -63,7 +63,7 @@ class PinballTest:
         self.initial_context = np.empty(0)
 
         if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
             # define metrics
             self.scalar_metrics = ScalarMetrics(
                 {
@@ -476,7 +476,7 @@ class GridWorldTest:
         self.initial_context = np.empty(0)
 
         if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
             # define metrics
             self.scalar_metrics = ScalarMetrics(
                 {

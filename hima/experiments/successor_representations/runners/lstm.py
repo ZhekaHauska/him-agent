@@ -211,7 +211,7 @@ class AnimalAITest:
         self.initial_context = layer.context_messages
 
         if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
             # define metrics
             self.scalar_metrics = ScalarMetrics(
                 {
@@ -240,7 +240,7 @@ class AnimalAITest:
                 log_fps=conf['run']['log_gif_fps']
             )
         else:
-            from metrics import ScalarMetrics
+            from hima.common.metrics import ScalarMetrics
             self.scalar_metrics = ScalarMetrics(
                 {
                     'main_metrics/reward': np.sum,
@@ -455,7 +455,7 @@ class PinballTest:
         self.initial_context = layer.context_messages
 
         if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics
             self.scalar_metrics = ScalarMetrics(
                 {
                     'main_metrics/reward': np.sum,
@@ -483,7 +483,7 @@ class PinballTest:
                 log_fps=conf['run']['log_gif_fps']
             )
         else:
-            from metrics import ScalarMetrics
+            from hima.common.metrics import ScalarMetrics
             self.scalar_metrics = ScalarMetrics(
                 {
                     'main_metrics/reward': np.sum,

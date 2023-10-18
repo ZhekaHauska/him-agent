@@ -99,7 +99,7 @@ class PinballTest:
             self.initial_external_message = None
 
         if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
             # define metrics
             self.logger.define_metric("main_metrics/steps", summary="mean")
             self.logger.define_metric("main_metrics/reward", summary="mean")
@@ -623,7 +623,7 @@ class AnimalAITest:
             self.initial_external_message = None
 
         if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
             # define metrics
             basic_scalar_metrics = {
                     'main_metrics/reward': np.sum,
@@ -1178,7 +1178,7 @@ class GridWorldTest:
             self.initial_external_message = None
 
         if self.logger is not None:
-            from metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
             # define metrics
             basic_scalar_metrics = {
                 'main_metrics/reward': np.sum,

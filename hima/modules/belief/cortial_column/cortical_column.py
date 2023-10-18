@@ -12,6 +12,7 @@ from hima.modules.belief.cortial_column.layer import Layer
 from hima.modules.baselines.hmm import FCHMMLayer
 from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
 from hima.modules.baselines.lstm import LstmLayer
+from hima.common.metrics import get_surprise
 
 
 class CorticalColumn:
@@ -30,6 +31,7 @@ class CorticalColumn:
         self.decoder = decoder
 
         self.predicted_image = None
+        self.surprise = 0
 
         if self.encoder is not None:
             self.input_sdr = SDR(self.encoder.getNumInputs())
@@ -69,6 +71,13 @@ class CorticalColumn:
 
         self.layer.observe(self.output_sdr.sparse, learn=learn)
         self.layer.set_context_messages(self.layer.internal_forward_messages)
+
+        self.surprise = 0
+        encoded_obs = self.output_sdr.sparse
+        if len(encoded_obs) > 0:
+            self.surprise = get_surprise(
+                self.layer.prediction_columns, encoded_obs, mode='categorical'
+            )
 
     def predict(self, context_messages, external_messages=None):
         self.layer.set_context_messages(context_messages)

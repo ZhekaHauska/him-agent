@@ -121,13 +121,8 @@ class BioHIMA:
         if events is not None:
             # predict current events using observed action
             self.cortical_column.observe(events, action, learn=learn)
+            self.surprise = self.cortical_column.surprise
             encoded_obs = self.cortical_column.output_sdr.sparse
-
-            if len(encoded_obs) > 0:
-                self.surprise = get_surprise(
-                    self.cortical_column.layer.prediction_columns, encoded_obs, mode='categorical'
-                )
-
             self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
         else:
             return
