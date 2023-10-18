@@ -317,12 +317,14 @@ class PinballTest:
         )
 
     def add_noise(self, pos, act):
+        x, y = pos
+        phi, m = act
         if self.pos_sigma != 0:
-            pos[0] += self._rng.normal(scale=self.pos_sigma, size=1)[0]
-            pos[1] += self._rng.normal(scale=self.pos_sigma, size=1)[0]
+            x += self._rng.normal(scale=self.pos_sigma, size=1)[0]
+            y += self._rng.normal(scale=self.pos_sigma, size=1)[0]
         if self.act_sigma != 0:
-            act[0] += self._rng.normal(scale=self.act_sigma, size=1)[0]
-        return pos, act
+            phi += self._rng.normal(scale=self.act_sigma, size=1)[0]
+        return (x, y), (phi, m)
 
 
 class AnimalAITest:
