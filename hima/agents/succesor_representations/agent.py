@@ -11,8 +11,8 @@ from enum import Enum, auto
 import numpy as np
 
 from hima.common.sdr import sparse_to_dense
-from hima.common.utils import softmax, lin_sum, safe_divide
-from hima.experiments.sequence.runners.utils import get_surprise
+from hima.common.utils import softmax, safe_divide
+from hima.common.smooth_values import SSValue
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.baselines.srtd import SRTD
 from hima.modules.baselines.lstm import to_numpy, TLstmLayerHiddenState
@@ -51,12 +51,14 @@ class BioHIMA:
             exploration_eps: float = -1,
             action_value_estimate: str = 'plan',
             sr_estimate_planning: str = 'uniform',
+            lr_surprise=(0.2, 0.01),
+            lr_td_error=(0.2, 0.01)
     ):
         self.observation_reward_lr = observation_reward_lr
-        self.striatum_lr = striatum_lr
+        self.max_striatum_lr = striatum_lr
         self.cortical_column = cortical_column
         self.gamma = gamma
-        self.sr_steps = sr_steps
+        self.max_sr_steps = sr_steps
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
 
@@ -86,10 +88,9 @@ class BioHIMA:
 
         self.state_snapshot_stack = deque()
 
-        self.surprise = 0
-        self.td_error = 0
-        # td moving average
-        self.td_error_ma = 0
+        # metrics
+        self.ss_td_error = SSValue(*lr_td_error)
+        self.ss_surprise = SSValue(*lr_surprise)
 
         self.seed = seed
         self._rng = np.random.default_rng(seed)
@@ -116,12 +117,10 @@ class BioHIMA:
                 action: sparse sdr
         """
         events, action = observation
-        self.surprise = 0
 
         if events is not None:
             # predict current events using observed action
             self.cortical_column.observe(events, action, learn=learn)
-            self.surprise = self.cortical_column.surprise
             encoded_obs = self.cortical_column.output_sdr.sparse
             self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
         else:
@@ -133,8 +132,8 @@ class BioHIMA:
         # striatum TD learning
         predicted_sr, generated_sr, td_error = self.td_update_sr()
 
-        self.td_error = td_error
-        self.td_error_ma = lin_sum(self.td_error_ma, 0.2, self.td_error)
+        self.ss_td_error.update(td_error)
+        self.ss_surprise.update(self.cortical_column.surprise)
 
         return predicted_sr, generated_sr
 
@@ -301,7 +300,7 @@ class BioHIMA:
         return ActionValueEstimate.PREDICT
 
     def _should_plan(self):
-        p = 1 - np.exp(-np.sqrt(self.td_error_ma) / .4)
+        p = np.clip(self.ss_td_error.norm_value, 0, 1)
         return self._rng.random() < p
 
     def _make_state_snapshot(self):
@@ -314,8 +313,27 @@ class BioHIMA:
         self.cortical_column.restore_last_snapshot(snapshot)
 
     @property
+    def striatum_lr(self):
+        return self.max_striatum_lr * (1 - np.clip(self.ss_surprise.norm_value, 0, 1))
+
+    @property
+    def sr_steps(self):
+        return 1 + np.round(
+            (self.max_sr_steps - 1) * np.clip(self.ss_td_error.norm_value, 0, 1) *
+            (1 - np.clip(self.ss_surprise.norm_value, 0, 1))
+        ).astype(np.int32)
+
+    @property
     def n_actions(self):
         return self.cortical_column.layer.external_input_size
+
+    @property
+    def surprise(self):
+        return self.ss_surprise.current_value
+
+    @property
+    def td_error(self):
+        return self.ss_td_error.current_value
 
 
 class FCHMMBioHima(BioHIMA):

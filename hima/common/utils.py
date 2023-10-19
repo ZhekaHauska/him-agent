@@ -146,3 +146,7 @@ def to_gray_img(img: np.ndarray, like: tuple[int, int] | np.ndarray = None):
         img = img.reshape(shape)
 
     return img.astype(np.uint8)
+
+
+def standardize(value, mean, std):
+    return (value - mean) / std
