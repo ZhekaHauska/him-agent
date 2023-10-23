@@ -52,7 +52,9 @@ class BioHIMA:
             action_value_estimate: str = 'plan',
             sr_estimate_planning: str = 'uniform',
             lr_surprise=(0.2, 0.01),
-            lr_td_error=(0.2, 0.01)
+            lr_td_error=(0.2, 0.01),
+            adaptive_sr: bool = True,
+            adaptive_lr: bool = True
     ):
         self.observation_reward_lr = observation_reward_lr
         self.max_striatum_lr = striatum_lr
@@ -61,6 +63,8 @@ class BioHIMA:
         self.max_sr_steps = sr_steps
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
+        self.adaptive_sr = adaptive_sr
+        self.adaptive_lr = adaptive_lr
 
         if exploration_eps < 0:
             self.exploration_policy = ExplorationPolicy.SOFTMAX
@@ -159,7 +163,7 @@ class BioHIMA:
 
         for action in range(n_actions):
             # hacky way to clean previous one-hot, for 0-th does nothing
-            dense_action[action-1] = 0
+            dense_action[action - 1] = 0
             # set current one-hot
             dense_action[action] = 1
 
@@ -314,14 +318,22 @@ class BioHIMA:
 
     @property
     def striatum_lr(self):
-        return self.max_striatum_lr * (1 - np.clip(self.ss_surprise.norm_value, 0, 1))
+        if self.adaptive_lr:
+            lr = self.max_striatum_lr * (1 - np.clip(self.ss_surprise.norm_value, 0, 1))
+        else:
+            lr = self.max_striatum_lr
+        return lr
 
     @property
     def sr_steps(self):
-        return 1 + np.round(
-            (self.max_sr_steps - 1) * np.clip(self.ss_td_error.norm_value, 0, 1) *
-            (1 - np.clip(self.ss_surprise.norm_value, 0, 1))
-        ).astype(np.int32)
+        if self.adaptive_sr:
+            sr_steps = 1 + np.round(
+                (self.max_sr_steps - 1) * np.clip(self.ss_td_error.norm_value, 0, 1) *
+                (1 - np.clip(self.ss_surprise.norm_value, 0, 1))
+            ).astype(np.int32)
+        else:
+            sr_steps = self.max_sr_steps
+        return sr_steps
 
     @property
     def n_actions(self):
