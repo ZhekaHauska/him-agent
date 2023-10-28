@@ -104,7 +104,7 @@ class ImageMetrics:
         self.metrics = {metric: [] for metric in self.metrics.keys()}
 
 
-class SRStack:
+class SRStackSurprise:
     def __init__(self, name, logger, srs_size, history_length=5, normalize=True):
         self.name = name
         self.logger = logger
@@ -158,6 +158,50 @@ class SRStack:
             surprise = 0
 
         return surprise
+
+
+class PredictionsStackSurprise:
+    def __init__(self, name, logger, prediction_steps=5, normalize=True, mode='categorical'):
+        self.name = name
+        self.logger = logger
+        self.prediction_steps = prediction_steps
+        self.normalize = normalize
+        self.mode = mode
+        self.predictions = []
+        self.surprises = [list() for _ in range(self.prediction_steps)]
+
+    def update(self, predictions, events):
+        self.predictions.append(predictions)
+
+        # remove empty lists
+        predictions = [x for x in self.predictions if len(x) > 0]
+
+        pred_horizon = [self.prediction_steps - len(x) for x in predictions]
+        current_predictions = [x.pop(0) for x in predictions]
+
+        if len(events) > 0:
+            for p, s in zip(current_predictions, pred_horizon):
+                surp = get_surprise(
+                    p.flatten(),
+                    events,
+                    mode=self.mode,
+                    normalize=self.normalize
+                )
+                self.surprises[s].append(surp)
+
+    def log(self, step):
+        self.logger.log(
+            {
+                f'{self.name}_step_{s+1}': np.mean(x) for s, x in enumerate(self.surprises)
+                if len(x) > 0
+            },
+            step=step
+        )
+        self.reset()
+
+    def reset(self):
+        self.predictions = []
+        self.surprises = [list() for t in range(self.prediction_steps)]
 
 
 def get_surprise(probs, obs, mode='bernoulli', normalize=True):

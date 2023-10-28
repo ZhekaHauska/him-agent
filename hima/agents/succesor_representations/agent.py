@@ -16,6 +16,7 @@ from hima.common.smooth_values import SSValue
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.baselines.srtd import SRTD
 from hima.modules.baselines.lstm import to_numpy, TLstmLayerHiddenState
+from copy import copy
 import torch
 
 
@@ -198,12 +199,15 @@ class BioHIMA:
             initial_messages,
             initial_prediction,
             approximate_tail=True,
-            save_state=True
+            save_state=True,
+            return_predictions=False
     ):
         """
             n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
             then this function is equivalent to predict_sr.
         """
+        predictions = []
+
         if save_state:
             self._make_state_snapshot()
 
@@ -233,13 +237,19 @@ class BioHIMA:
             predicted_observation = self.cortical_column.layer.prediction_columns
             discount *= self.gamma
 
+            if return_predictions:
+                predictions.append(copy(predicted_observation))
+
         if approximate_tail:
             sr += self.predict_sr(context_messages) * discount
 
         if save_state:
             self._restore_last_snapshot()
 
-        return sr
+        if return_predictions:
+            return sr, predictions
+        else:
+            return sr
 
     def predict_sr(self, hidden_vars_dist):
         sr = np.dot(hidden_vars_dist, self.striatum_weights)

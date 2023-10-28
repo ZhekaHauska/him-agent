@@ -99,7 +99,7 @@ class PinballTest:
             self.initial_external_message = None
 
         if self.logger is not None:
-            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStackSurprise, PredictionsStackSurprise
             # define metrics
             self.logger.define_metric("main_metrics/steps", summary="mean")
             self.logger.define_metric("main_metrics/reward", summary="mean")
@@ -146,38 +146,45 @@ class PinballTest:
             )
 
             if self.test_srs:
-                self.predicted_sr_stack = SRStack(
+                self.predicted_sr_stack = SRStackSurprise(
                     'sr/pred/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,
                     history_length=self.test_sr_steps
                 )
 
-                self.generated_sr_stack = SRStack(
+                self.generated_sr_stack = SRStackSurprise(
                     'sr/gen/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,
                     history_length=self.test_sr_steps
                 )
 
-                self.predicted_sr_stack_raw = SRStack(
+                self.predicted_sr_stack_raw = SRStackSurprise(
                     'sr/pred/raw/surprise',
                     self.logger,
                     self.raw_obs_shape[0] * self.raw_obs_shape[1],
                     history_length=self.test_sr_steps,
                 )
 
-                self.generated_sr_stack_raw = SRStack(
+                self.generated_sr_stack_raw = SRStackSurprise(
                     'sr/gen/raw/surprise',
                     self.logger,
                     self.raw_obs_shape[0] * self.raw_obs_shape[1],
                     history_length=self.test_sr_steps,
+                )
+
+                self.prediction_stack = PredictionsStackSurprise(
+                    'layer_n_step/hidden_surprise',
+                    self.logger,
+                    self.test_sr_steps + 1
                 )
             else:
                 self.predicted_sr_stack = None
                 self.predicted_sr_stack_raw = None
                 self.generated_sr_stack = None
                 self.generated_sr_stack_raw = None
+                self.prediction_stack = None
 
     def run(self):
         decoder = self.agent.cortical_column.decoder
@@ -259,7 +266,8 @@ class PinballTest:
                             _,
                             gen_sr_test_tail,
                             _,
-                            gen_sr_test_tail_raw
+                            gen_sr_test_tail_raw,
+                            predictions
                         ) = self.compare_srs(
                             self.test_sr_steps,
                             True
@@ -269,7 +277,8 @@ class PinballTest:
                             pred_sr_test,
                             gen_sr_test,
                             pred_sr_test_raw,
-                            gen_sr_test_raw
+                            gen_sr_test_raw,
+                            _
                         ) = self.compare_srs(
                             self.test_sr_steps,
                             False
@@ -296,6 +305,13 @@ class PinballTest:
                         self.generated_sr_stack_raw.update(
                             gen_sr_test_raw,
                             self.agent.cortical_column.input_sdr.sparse
+                        )
+
+                        preds = [self.agent.cortical_column.layer.prediction_columns.copy()]
+                        preds.extend(predictions)
+                        self.prediction_stack.update(
+                            preds,
+                            self.agent.cortical_column.output_sdr.sparse
                         )
                     else:
                         pred_sr_test_raw = None
@@ -393,6 +409,7 @@ class PinballTest:
                     self.predicted_sr_stack_raw.log(i)
                     self.generated_sr_stack.log(i)
                     self.generated_sr_stack_raw.log(i)
+                    self.prediction_stack.log(i)
 
                 if (i >= self.update_start) and (i % self.update_period) == 0:
                     obs_rewards = decoder.decode(
@@ -524,11 +541,12 @@ class PinballTest:
                 )
             ).flatten()
 
-        gen_sr = self.agent.generate_sr(
+        gen_sr, predictions = self.agent.generate_sr(
             sr_steps,
             initial_messages=current_state,
             initial_prediction=self.agent.observation_messages,
             approximate_tail=approximate_tail,
+            return_predictions=True
         )
         gen_sr = normalize(
                 gen_sr.reshape(
@@ -545,7 +563,7 @@ class PinballTest:
 
         mse = np.mean(np.power(pred_sr_raw - gen_sr_raw, 2))
 
-        return mse, pred_sr, gen_sr, pred_sr_raw, gen_sr_raw
+        return mse, pred_sr, gen_sr, pred_sr_raw, gen_sr_raw, predictions
 
     @staticmethod
     def get_setup_path(setup):
@@ -631,7 +649,7 @@ class AnimalAITest:
             self.initial_external_message = None
 
         if self.logger is not None:
-            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStackSurprise
             # define metrics
             basic_scalar_metrics = {
                     'main_metrics/reward': np.sum,
@@ -675,28 +693,28 @@ class AnimalAITest:
             )
 
             if self.test_srs:
-                self.predicted_sr_stack = SRStack(
+                self.predicted_sr_stack = SRStackSurprise(
                     'sr/pred/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,
                     history_length=self.test_sr_steps
                 )
 
-                self.generated_sr_stack = SRStack(
+                self.generated_sr_stack = SRStackSurprise(
                     'sr/gen/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,
                     history_length=self.test_sr_steps
                 )
 
-                self.predicted_sr_stack_raw = SRStack(
+                self.predicted_sr_stack_raw = SRStackSurprise(
                     'sr/pred/raw/surprise',
                     self.logger,
                     self.raw_obs_shape[0] * self.raw_obs_shape[1],
                     history_length=self.test_sr_steps,
                 )
 
-                self.generated_sr_stack_raw = SRStack(
+                self.generated_sr_stack_raw = SRStackSurprise(
                     'sr/gen/raw/surprise',
                     self.logger,
                     self.raw_obs_shape[0] * self.raw_obs_shape[1],
@@ -1194,7 +1212,7 @@ class GridWorldTest:
             self.initial_external_message = None
 
         if self.logger is not None:
-            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStackSurprise
             # define metrics
             basic_scalar_metrics = {
                 'main_metrics/reward': np.sum,
@@ -1234,14 +1252,14 @@ class GridWorldTest:
             )
 
             if self.test_srs:
-                self.predicted_sr_stack = SRStack(
+                self.predicted_sr_stack = SRStackSurprise(
                     'sr/pred/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,
                     history_length=self.test_sr_steps
                 )
 
-                self.generated_sr_stack = SRStack(
+                self.generated_sr_stack = SRStackSurprise(
                     'sr/gen/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,

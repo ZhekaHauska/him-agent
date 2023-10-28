@@ -63,7 +63,7 @@ class PinballTest:
         self.initial_context = np.empty(0)
 
         if self.logger is not None:
-            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStackSurprise
             # define metrics
             self.scalar_metrics = ScalarMetrics(
                 {
@@ -97,28 +97,28 @@ class PinballTest:
             )
 
             if self.test_srs:
-                self.predicted_sr_stack = SRStack(
+                self.predicted_sr_stack = SRStackSurprise(
                     'sr/pred/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,
                     history_length=self.test_sr_steps
                 )
 
-                self.generated_sr_stack = SRStack(
+                self.generated_sr_stack = SRStackSurprise(
                     'sr/gen/hid/surprise',
                     self.logger,
                     self.agent.observation_messages.size,
                     history_length=self.test_sr_steps
                 )
 
-                self.predicted_sr_stack_raw = SRStack(
+                self.predicted_sr_stack_raw = SRStackSurprise(
                     'sr/pred/raw/surprise',
                     self.logger,
                     self.raw_obs_shape[0] * self.raw_obs_shape[1],
                     history_length=self.test_sr_steps,
                 )
 
-                self.generated_sr_stack_raw = SRStack(
+                self.generated_sr_stack_raw = SRStackSurprise(
                     'sr/gen/raw/surprise',
                     self.logger,
                     self.raw_obs_shape[0] * self.raw_obs_shape[1],

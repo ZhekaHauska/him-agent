@@ -95,7 +95,7 @@ class PinballTest:
             self.initial_external_message = None
 
         if self.logger is not None:
-            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStack
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStackSurprise
             # define metrics
             basic_scalar_metrics = {
                 'layer/surprise_hidden': np.mean
