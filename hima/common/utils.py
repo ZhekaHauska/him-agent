@@ -109,6 +109,16 @@ def softmax(
     return e_x / np.sum(e_x, axis=axis, keepdims=True)
 
 
+def symlog(x: np.ndarray) -> np.ndarray:
+    """Compute symlog values for a vector `x`. It's an inverse operation for symexp."""
+    return np.sign(x) * np.log(np.abs(x) + 1)
+
+
+def symexp(x: np.ndarray) -> np.ndarray:
+    """Compute symexp values for a vector `x`. It's an inverse operation for symlog."""
+    return np.sign(x) * (np.exp(np.abs(x)) - 1.0)
+
+
 def clip(x: Any, low=None, high=None) -> Any:
     """Clip the value with the provided thresholds. NB: doesn't support vectorization."""
 
