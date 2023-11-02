@@ -3,3 +3,4 @@ n_hidden_states: 100
 lr: 0.001
 srtd_tau: 0.01
 srtd_batch_size: 256
+loss_propagation_schedule: 10

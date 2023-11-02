@@ -42,8 +42,9 @@ class LstmLayer:
 
     # value particularly for the last step
     last_loss_value: float
-    accumulated_loss: torch.Tensor | None
+    accumulated_loss: float | torch.Tensor
     accumulated_loss_steps: int | None
+    loss_propagation_schedule: int
 
     def __init__(
             self,
@@ -56,6 +57,7 @@ class LstmLayer:
             lr=2e-3,
             srtd_tau=0.01,
             srtd_batch_size=32,
+            loss_propagation_schedule: int = 5,
             seed=None,
     ):
         torch.set_num_threads(1)
@@ -122,11 +124,18 @@ class LstmLayer:
         self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr)
         # self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
 
+        self.loss_propagation_schedule = loss_propagation_schedule
+        self._reinit_lstm_state(reset_loss=True)
         self._reinit_messages_and_states()
 
-    def _reinit_messages_and_states(self):
-        # layer state
+    def _reinit_lstm_state(self, reset_loss: bool):
         self.internal_state = self.get_init_state()
+        self.last_loss_value = 0.
+        if reset_loss:
+            self.accumulated_loss = 0
+            self.accumulated_loss_steps = 0
+
+    def _reinit_messages_and_states(self):
         self.internal_forward_messages = self.internal_state
         self.context_messages = self.internal_forward_messages
         self.external_messages = np.zeros(self.external_input_size)
@@ -134,10 +143,6 @@ class LstmLayer:
         self.predicted_obs_logits = None
         self.prediction_cells = None
         self.prediction_columns = None
-
-        self.accumulated_loss = None
-        self.accumulated_loss_steps = None
-        self.last_loss_value = 0.
 
     def get_init_state(self):
         return [
@@ -156,7 +161,8 @@ class LstmLayer:
         return self.model.decode_obs(state_out)
 
     def reset(self):
-        self.backpropagate_loss()
+        # should preserve loss from the previous episode
+        self._reinit_lstm_state(reset_loss=False)
         self._reinit_messages_and_states()
 
     def observe(self, observation, learn: bool = True):
@@ -167,25 +173,17 @@ class LstmLayer:
         dense_obs = torch.from_numpy(dense_obs).float().to(self.device)
 
         if learn:
-            if self.accumulated_loss is None:
-                self.accumulated_loss = 0
-                self.accumulated_loss_steps = 0
             loss = self.get_loss(self.predicted_obs_logits, dense_obs)
             self.last_loss_value = loss.item()
             self.accumulated_loss += loss
             self.accumulated_loss_steps += 1
-            # if self.accumulated_loss_steps % 5 == 0:
-            #     self.backpropagate_loss()
+            self.backpropagate_loss()
 
         _, state = self.internal_state
         with torch.set_grad_enabled(learn):
             state = self.transition_with_observation(dense_obs, state)
 
         self.internal_state = [True, state]
-        # self.internal_state = [
-        #     self.internal_state[0],
-        #     (self.internal_state[1][0].detach(), self.internal_state[1][1].detach())
-        # ]
         self.internal_forward_messages = self.internal_state
 
     def predict(self, learn: bool = False):
@@ -222,19 +220,19 @@ class LstmLayer:
             return self.loss_function(logits, target) / self.n_obs_vars
 
     def backpropagate_loss(self):
-        if self.accumulated_loss is None:
+        if self.accumulated_loss_steps % self.loss_propagation_schedule != 0:
             return
 
-        self.optimizer.zero_grad()
-        mean_loss = self.accumulated_loss / self.accumulated_loss_steps
-        mean_loss.backward()
-        self.optimizer.step()
+        if self.accumulated_loss_steps > 0:
+            self.optimizer.zero_grad()
+            mean_loss = self.accumulated_loss / self.accumulated_loss_steps
+            mean_loss.backward()
+            self.optimizer.step()
 
-        self.accumulated_loss = None
-        self.internal_state = [
-            self.internal_state[0],
-            (self.internal_state[1][0].detach(), self.internal_state[1][1].detach())
-        ]
+        self.accumulated_loss = 0
+        self.accumulated_loss_steps = 0
+        lstm_state = self.internal_state[1]
+        self.internal_state[1] = (lstm_state[0].detach(), lstm_state[1].detach())
 
     def set_external_messages(self, messages=None):
         # update external cells
@@ -286,8 +284,8 @@ class LstmLayer:
 
 
 class LstmWorldModel(nn.Module):
-    out_temp: float = 4.0
-    obs_temp: float = 4.0
+    out_temp: float = 3.0
+    obs_temp: float = 10.0
 
     def __init__(
             self,
@@ -336,15 +334,8 @@ class LstmWorldModel(nn.Module):
             )
             encoded_input_size = 216
         else:
-            # self.encoder = None
-            # encoded_input_size = self.full_input_size
-            layers = [self.full_input_size, 3 * self.n_obs_states, self.hidden_size]
-            self.encoder = nn.Sequential(
-                nn.Linear(layers[0], layers[1], bias=False),
-                nn.SiLU(),
-                nn.Linear(layers[1], layers[2], bias=True),
-                nn.Tanh(),
-            )
+            layers = [self.full_input_size, 3 * self.n_obs_states]
+            self.encoder = nn.Linear(layers[0], layers[1], bias=True)
             encoded_input_size = layers[-1]
 
         self.lstm = nn.LSTMCell(
@@ -366,13 +357,10 @@ class LstmWorldModel(nn.Module):
                     nn.Linear(4000, self.input_size, bias=False),
                 )
             else:
-                self.decoder = nn.Sequential(
-                    nn.Linear(self.hidden_size, self.hidden_size, bias=False),
-                    nn.SiLU(),
-                    nn.Linear(self.hidden_size, self.input_size, bias=False),
-                )
+                self.decoder = nn.Linear(self.hidden_size, self.input_size, bias=False)
 
     def get_init_state(self) -> TLstmHiddenState:
+        # TODO: test fixed random state
         return (
             torch.zeros(self.hidden_size, device=self.device),
             torch.zeros(self.hidden_size, device=self.device)
