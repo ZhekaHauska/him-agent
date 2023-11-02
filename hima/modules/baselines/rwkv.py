@@ -13,7 +13,7 @@ import torch.optim as optim
 from hima.common.sdr import sparse_to_dense
 from hima.modules.baselines.lstm import (
     to_numpy, TLstmLayerHiddenState, TLstmHiddenState,
-    as_distributions
+    to_categorical_distributions
 )
 from hima.modules.baselines.rwkv_rnn import RwkvCell
 from hima.modules.belief.utils import normalize
@@ -204,7 +204,7 @@ class RwkvLayer:
         self.internal_forward_messages = self.internal_state
         self.prediction_cells = self.internal_forward_messages
         self.prediction_columns = to_numpy(
-            self.model.as_probabilistic_obs(self.predicted_obs_logits.detach())
+            self.model.to_probabilistic_obs(self.predicted_obs_logits.detach())
         )
 
     def get_loss(self, logits, target):
@@ -401,16 +401,16 @@ class RwkvWorldModel(nn.Module):
         if self.decoder is None:
             return state_out
 
-        state_probs_out = self.as_probabilistic_out(state_out)
+        state_probs_out = self.to_probabilistic_out_state(state_out)
         obs_logit = self.decoder(state_probs_out)
         return obs_logit
 
-    def as_probabilistic_out(self, state_out):
-        return as_distributions(
+    def to_probabilistic_out_state(self, state_out):
+        return to_categorical_distributions(
             logits=state_out, n_vars=self.n_hidden_vars, n_states=self.n_hidden_states
         )
 
-    def as_probabilistic_obs(self, obs_logits):
-        return as_distributions(
+    def to_probabilistic_obs(self, obs_logits):
+        return to_categorical_distributions(
             logits=obs_logits, n_vars=self.n_obs_vars, n_states=self.n_obs_states
         )

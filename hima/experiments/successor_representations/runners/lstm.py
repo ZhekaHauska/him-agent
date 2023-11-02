@@ -94,7 +94,7 @@ class LstmBioHima(BioHIMA):
 
         # convert model hidden state to probabilities
         # noinspection PyUnresolvedReferences
-        state_probs_out = self.cortical_column.layer.model.as_probabilistic_out(state_out)
+        state_probs_out = self.cortical_column.layer.model.to_probabilistic_out_state(state_out)
         return to_numpy(state_probs_out)
 
     def td_update_sr(self, target_sr, predicted_sr, prediction_cells: TLstmLayerHiddenState):

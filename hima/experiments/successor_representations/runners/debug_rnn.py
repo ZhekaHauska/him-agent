@@ -101,7 +101,7 @@ class PinballDebugTest:
         self.prev_image = self.initial_previous_image
         self.initial_context = self.layer.context_messages
 
-        from metrics import ScalarMetrics
+        from hima.common.metrics import ScalarMetrics
         self.scalar_metrics = ScalarMetrics(
             {
                 'main_metrics/steps': np.mean,

@@ -62,11 +62,11 @@ class LstmLayer:
     ):
         torch.set_num_threads(1)
 
-        # n_groups/vars: 6-10
+        # n_groups/vars
         self.n_obs_vars = n_obs_vars
         # num of states each obs var has
         self.n_obs_states = n_obs_states
-        # full number of obs states
+        # total number of obs states
         self.n_columns = self.n_obs_vars * self.n_obs_states
 
         # actions_dim: 1
@@ -121,8 +121,7 @@ class LstmLayer:
             # predicted values: logits for further vars-wise softmax application
             self.loss_function = nn.CrossEntropyLoss(reduction='sum')
 
-        self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr)
-        # self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
 
         self.loss_propagation_schedule = loss_propagation_schedule
         self._reinit_lstm_state(reset_loss=True)
@@ -204,7 +203,7 @@ class LstmLayer:
         self.internal_forward_messages = self.internal_state
         self.prediction_cells = self.internal_forward_messages
         self.prediction_columns = to_numpy(
-            self.model.as_probabilistic_obs(self.predicted_obs_logits.detach())
+            self.model.to_probabilistic_obs(self.predicted_obs_logits.detach())
         )
 
     def get_loss(self, logits, target):
@@ -284,8 +283,8 @@ class LstmLayer:
 
 
 class LstmWorldModel(nn.Module):
-    out_temp: float = 3.0
-    obs_temp: float = 10.0
+    out_temp: float = 1.0
+    obs_temp: float = 1.0
 
     def __init__(
             self,
@@ -335,13 +334,17 @@ class LstmWorldModel(nn.Module):
             encoded_input_size = 216
         else:
             layers = [self.full_input_size, 3 * self.n_obs_states]
-            self.encoder = nn.Linear(layers[0], layers[1], bias=True)
+            self.encoder = nn.Linear(layers[0], layers[1], bias=False)
             encoded_input_size = layers[-1]
 
         self.lstm = nn.LSTMCell(
             input_size=encoded_input_size,
             hidden_size=self.hidden_size,
-            bias=True
+            bias=False
+        )
+        self._initial_state = (
+            symexp(torch.randn(self.hidden_size, device=self.device) * self.out_temp),
+            torch.randn(self.hidden_size, device=self.device)
         )
 
         self.decoder = None
@@ -360,20 +363,17 @@ class LstmWorldModel(nn.Module):
                 self.decoder = nn.Linear(self.hidden_size, self.input_size, bias=False)
 
     def get_init_state(self) -> TLstmHiddenState:
-        # TODO: test fixed random state
-        return (
-            torch.zeros(self.hidden_size, device=self.device),
-            torch.zeros(self.hidden_size, device=self.device)
-        )
+        return self._initial_state
 
     def transition_with_observation(self, obs, state):
         if self.action_size > 0:
             obs = torch.cat((obs, self.empty_action.detach()))
         if self.encoder is not None:
             obs = self.encoder(obs)
+
         state_out, state_cell = self.lstm(obs, state)
-        # increase temperature for out state
-        return state_out * self.out_temp, state_cell
+        state_out = self.sharpen_out_state(state_out)
+        return state_out, state_cell
 
     def transition_with_action(self, action_probs, state):
         action_probs = action_probs.expand(self.action_repeat_k, -1).flatten()
@@ -381,25 +381,35 @@ class LstmWorldModel(nn.Module):
 
         if self.encoder is not None:
             obs = self.encoder(obs)
+
         state_out, state_cell = self.lstm(obs, state)
-        # increase temperature for out state
-        return state_out * self.out_temp, state_cell
+        state_out = self.sharpen_out_state(state_out)
+        return state_out, state_cell
 
     def decode_obs(self, state_out):
         if self.decoder is None:
             return state_out
 
-        state_probs_out = self.as_probabilistic_out(state_out)
-        obs_logit = self.decoder(state_probs_out)
-        return obs_logit * self.obs_temp
+        state_probs_out = self.to_probabilistic_out_state(state_out)
+        obs_logits = self.decoder(state_probs_out)
+        obs_logits = self.sharpen_obs_logits(obs_logits)
+        return obs_logits
 
-    def as_probabilistic_out(self, state_out):
-        return as_distributions(
+    def sharpen_out_state(self, state_out):
+        """Exponentially increase absolute magnitude to reach extreme probabilities."""
+        return symexp(state_out * self.out_temp)
+
+    def to_probabilistic_out_state(self, state_out):
+        return to_categorical_distributions(
             logits=state_out, n_vars=self.n_hidden_vars, n_states=self.n_hidden_states
         )
 
-    def as_probabilistic_obs(self, obs_logits):
-        return as_distributions(
+    def sharpen_obs_logits(self, obs_logits):
+        """Exponentially increase absolute magnitude to reach extreme probabilities."""
+        return symexp(obs_logits * self.obs_temp)
+
+    def to_probabilistic_obs(self, obs_logits):
+        return to_categorical_distributions(
             logits=obs_logits, n_vars=self.n_obs_vars, n_states=self.n_obs_states
         )
 
@@ -590,17 +600,25 @@ class LSTMWMLayer(nn.Module):
         return prediction
 
 
-def as_distributions(logits, n_vars, n_states):
+def to_categorical_distributions(logits, n_vars, n_states):
     if n_states == 1:
         # treat it like all vars have binary states --> should sigmoid each var to have prob
         # NB: however now sum(dim=states) != 1, as not(state) is implicit
         return torch.sigmoid(logits)
     else:
-        # each var has its own distribution of states obtained with softmax:
+        # each var has its own categorical distribution of states obtained with softmax:
         return torch.softmax(
             torch.reshape(logits, (n_vars, n_states)),
             dim=-1
         ).flatten()
+
+
+def symlog(x):
+    return torch.sign(x) * torch.log(torch.abs(x) + 1.0)
+
+
+def symexp(x):
+    return torch.sign(x) * (torch.exp(torch.abs(x)) - 1.0)
 
 
 def to_numpy(x):
