@@ -22,6 +22,8 @@ from hima.modules.htm.spatial_pooler import SPDecoder, HtmSpatialPooler, SPEnsem
 
 wandb = lazy_import('wandb')
 imageio = lazy_import('imageio')
+# TODO: probably should remove lazy matplotlib import as it doesn't support lazy loading :/
+# Also, see comments in `lazy_import` file.
 plt = lazy_import('matplotlib.pyplot')
 try:
     Pinball = lazy_import('pinball')

@@ -621,10 +621,10 @@ class AnimalAITest:
                         actual_state = self.agent.cortical_column.layer.internal_forward_messages
                         predicted_state = self.agent.cortical_column.layer.prediction_cells
                         if type(actual_state) is list:
-                            actual_state = self.agent._extract_collapse_message(
+                            actual_state = self.agent._extract_state_from_context(
                                 actual_state
                             ).cpu().numpy()
-                            predicted_state = self.agent._extract_collapse_message(
+                            predicted_state = self.agent._extract_state_from_context(
                                 predicted_state
                             ).cpu().numpy()
 
