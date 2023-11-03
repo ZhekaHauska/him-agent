@@ -13,12 +13,10 @@ import torch.optim as optim
 from hima.common.sdr import sparse_to_dense
 from hima.modules.baselines.lstm import (
     to_numpy, TLstmLayerHiddenState, TLstmHiddenState,
-    to_categorical_distributions
+    to_categorical_distributions, symexp
 )
 from hima.modules.baselines.rwkv_rnn import RwkvCell
 from hima.modules.belief.utils import normalize
-
-torch.autograd.set_detect_anomaly(True)
 
 
 class RwkvLayer:
@@ -44,8 +42,9 @@ class RwkvLayer:
 
     # value particularly for the last step
     last_loss_value: float
-    accumulated_loss: torch.Tensor | None
+    accumulated_loss: float | torch.Tensor
     accumulated_loss_steps: int | None
+    loss_propagation_schedule: int
 
     def __init__(
             self,
@@ -56,9 +55,15 @@ class RwkvLayer:
             n_external_vars: int = 0,
             n_external_states: int = 0,
             lr=2e-3,
+            srtd_tau=0.01,
+            srtd_batch_size=32,
+            loss_propagation_schedule: int = 5,
             seed=None,
     ):
         torch.set_num_threads(1)
+
+        self.srtd_tau = srtd_tau
+        self.srtd_batch_size = srtd_batch_size
 
         # n_groups/vars: 6-10
         self.n_obs_vars = n_obs_vars
@@ -117,14 +122,21 @@ class RwkvLayer:
             # predicted values: logits for further vars-wise softmax application
             self.loss_function = nn.CrossEntropyLoss(reduction='sum')
 
-        self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr)
-        # self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
+        # self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
 
+        self.loss_propagation_schedule = loss_propagation_schedule
+        self._reinit_model_state(reset_loss=True)
         self._reinit_messages_and_states()
 
-    def _reinit_messages_and_states(self):
-        # layer state
+    def _reinit_model_state(self, reset_loss: bool):
         self.internal_state = self.get_init_state()
+        self.last_loss_value = 0.
+        if reset_loss:
+            self.accumulated_loss = 0
+            self.accumulated_loss_steps = 0
+
+    def _reinit_messages_and_states(self):
         self.internal_forward_messages = self.internal_state
         self.context_messages = self.internal_forward_messages
         self.external_messages = np.zeros(self.external_input_size)
@@ -132,10 +144,6 @@ class RwkvLayer:
         self.predicted_obs_logits = None
         self.prediction_cells = None
         self.prediction_columns = None
-
-        self.accumulated_loss = None
-        self.accumulated_loss_steps = None
-        self.last_loss_value = 0.
 
     def get_init_state(self):
         return [
@@ -165,25 +173,17 @@ class RwkvLayer:
         dense_obs = torch.from_numpy(dense_obs).float().to(self.device)
 
         if learn:
-            if self.accumulated_loss is None:
-                self.accumulated_loss = 0
-                self.accumulated_loss_steps = 0
             loss = self.get_loss(self.predicted_obs_logits, dense_obs)
             self.last_loss_value = loss.item()
             self.accumulated_loss += loss
             self.accumulated_loss_steps += 1
-            # if self.accumulated_loss_steps % 5 == 0:
-            #     self.backpropagate_loss()
+            self.backpropagate_loss()
 
         _, state = self.internal_state
         with torch.set_grad_enabled(learn):
             state = self.transition_with_observation(dense_obs, state)
 
         self.internal_state = [True, state]
-        # self.internal_state = [
-        #     self.internal_state[0],
-        #     (self.internal_state[1][0].detach(), self.internal_state[1][1].detach())
-        # ]
         self.internal_forward_messages = self.internal_state
 
     def predict(self, learn: bool = False):
@@ -220,19 +220,19 @@ class RwkvLayer:
             return self.loss_function(logits, target) / self.n_obs_vars
 
     def backpropagate_loss(self):
-        if self.accumulated_loss is None:
+        if self.accumulated_loss_steps % self.loss_propagation_schedule != 0:
             return
 
-        self.optimizer.zero_grad()
-        mean_loss = self.accumulated_loss / self.accumulated_loss_steps
-        mean_loss.backward()
-        self.optimizer.step()
+        if self.accumulated_loss_steps > 0:
+            self.optimizer.zero_grad()
+            mean_loss = self.accumulated_loss / self.accumulated_loss_steps
+            mean_loss.backward()
+            self.optimizer.step()
 
-        self.accumulated_loss = None
-        self.internal_state = [
-            self.internal_state[0],
-            (self.internal_state[1][0].detach(), self.internal_state[1][1].detach())
-        ]
+        self.accumulated_loss = 0
+        self.accumulated_loss_steps = 0
+        model_state = self.internal_state[1]
+        self.internal_state[1] = (model_state[0].detach(), model_state[1].detach())
 
     def set_external_messages(self, messages=None):
         # update external cells
@@ -284,9 +284,6 @@ class RwkvLayer:
 
 
 class RwkvWorldModel(nn.Module):
-    out_temp: float = 1.0
-    obs_temp: float = 1.0
-
     def __init__(
             self,
             n_obs_vars: int,
@@ -334,22 +331,24 @@ class RwkvWorldModel(nn.Module):
             )
             encoded_input_size = 216
         else:
-            # self.encoder = None
-            # encoded_input_size = self.full_input_size
-            layers = [self.full_input_size, 3 * self.n_obs_states, self.hidden_size]
-            self.encoder = nn.Sequential(
-                nn.Linear(layers[0], layers[1], bias=False),
-                nn.SiLU(),
-                nn.Linear(layers[1], layers[2], bias=True),
-                nn.Tanh(),
-            )
-            encoded_input_size = layers[-1]
+            self.encoder = None
+            encoded_input_size = self.full_input_size
 
         self.input_projection = nn.Sequential(
             nn.Linear(encoded_input_size, self.hidden_size),
             nn.LayerNorm(self.hidden_size)
         )
         self.rwkv = RwkvCell(hidden_size=self.hidden_size)
+
+        rwkv_cell_initial_state = self.rwkv.get_initial_state().to(self.device)
+        rwkv_cell_initial_state = (
+            rwkv_cell_initial_state +
+            torch.randn_like(rwkv_cell_initial_state, device=self.device)
+        )
+        self._initial_state = (
+            self.sharpen_out_state(torch.randn(self.hidden_size, device=self.device)),
+            rwkv_cell_initial_state
+        )
 
         self.decoder = None
         if with_decoder:
@@ -364,27 +363,21 @@ class RwkvWorldModel(nn.Module):
                     nn.Linear(4000, self.input_size, bias=False),
                 )
             else:
-                self.decoder = nn.Sequential(
-                    nn.Linear(self.hidden_size, self.hidden_size, bias=False),
-                    nn.SiLU(),
-                    nn.Linear(self.hidden_size, self.input_size, bias=False),
-                )
+                self.decoder = nn.Linear(self.hidden_size, self.input_size, bias=False)
 
     def get_init_state(self) -> TLstmHiddenState:
-        return (
-            torch.zeros(self.hidden_size, device=self.device),
-            self.rwkv.get_initial_state().to(self.device)
-        )
+        return self._initial_state
 
     def transition_with_observation(self, obs, state):
         if self.action_size > 0:
             obs = torch.cat((obs, self.empty_action.detach()))
         if self.encoder is not None:
             obs = self.encoder(obs)
+
         x = self.input_projection(obs)
         state_out, state_cell = self.rwkv(x, state)
-        # increase temperature for out state
-        return state_out * self.out_temp, state_cell
+        state_out = self.sharpen_out_state(state_out)
+        return state_out, state_cell
 
     def transition_with_action(self, action_probs, state):
         action_probs = action_probs.expand(self.action_repeat_k, -1).flatten()
@@ -392,23 +385,35 @@ class RwkvWorldModel(nn.Module):
 
         if self.encoder is not None:
             obs = self.encoder(obs)
+
         x = self.input_projection(obs)
         state_out, state_cell = self.rwkv(x, state)
-        # increase temperature for out state
-        return state_out * self.out_temp, state_cell
+        state_out = self.sharpen_out_state(state_out)
+        return state_out, state_cell
 
     def decode_obs(self, state_out):
         if self.decoder is None:
             return state_out
 
         state_probs_out = self.to_probabilistic_out_state(state_out)
-        obs_logit = self.decoder(state_probs_out)
-        return obs_logit
+        obs_logits = self.decoder(state_probs_out)
+        obs_logits = self.sharpen_obs_logits(obs_logits)
+        return obs_logits
+
+    @staticmethod
+    def sharpen_out_state(state_out):
+        """Exponentially increase absolute magnitude to reach extreme probabilities."""
+        return state_out
 
     def to_probabilistic_out_state(self, state_out):
         return to_categorical_distributions(
             logits=state_out, n_vars=self.n_hidden_vars, n_states=self.n_hidden_states
         )
+
+    @staticmethod
+    def sharpen_obs_logits(obs_logits):
+        """Exponentially increase absolute magnitude to reach extreme probabilities."""
+        return symexp(obs_logits)
 
     def to_probabilistic_obs(self, obs_logits):
         return to_categorical_distributions(

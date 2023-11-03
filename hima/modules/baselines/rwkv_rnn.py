@@ -39,9 +39,6 @@ class RwkvChannelMix(nn.Module):
         xk = x * self.time_mix_k + state * (1 - self.time_mix_k)
         xr = x * self.time_mix_r + state * (1 - self.time_mix_r)
         next_state = x
-        # print('XK:', xk)
-        # print('XR:', xr)
-
         # print(f'{xk.shape=}')
 
         r = torch.sigmoid(self.receptance(xr))
@@ -50,7 +47,12 @@ class RwkvChannelMix(nn.Module):
 
         k = torch.square(torch.relu(self.key(xk)))  # square relu, primer paper
         # print(f'{k.shape=}')
-        # print('K:', k)
+
+        # print(
+        #     f'XK: {torch.max(torch.abs(xk)).item():.3f}',
+        #     f'XR: {torch.max(torch.abs(xr)).item():.3f}',
+        #     f'K: {torch.max(torch.abs(k)).item():.3f}'
+        # )
 
         return r * self.value(k), next_state
 
@@ -98,10 +100,7 @@ class RwkvTimeMix(nn.Module):
     def forward(self, x, state):
         # print(f'{x.shape=}')
 
-        alpha = state[0]
-        aa = state[1]
-        bb = state[2]
-        pp = state[3]
+        alpha, aa, bb, pp = state
 
         xk = x * self.time_mix_k + alpha * (1 - self.time_mix_k)
         xv = x * self.time_mix_v + alpha * (1 - self.time_mix_v)
@@ -112,9 +111,12 @@ class RwkvTimeMix(nn.Module):
         r = torch.sigmoid(self.receptance(xr))
         k = self.key(xk)
         v = self.value(xv)
-        # print(f'{r.shape=}')
-        # print(f'{k.shape=}')
-        # print(f'{v.shape=}')
+        # print(
+        #     f'R: {torch.max(torch.abs(r)).item():.3f}',
+        #     f'K: {torch.max(torch.abs(r)).item():.3f}',
+        #     f'V: {torch.max(torch.abs(r)).item():.3f}',
+        # )
+        # print(f'{r.shape=}', f'{k.shape=}', f'{v.shape=}')
 
         ww = self.time_first + k
         qq = torch.maximum(pp, ww)
@@ -123,11 +125,18 @@ class RwkvTimeMix(nn.Module):
         a = e1 * aa + e2 * v
         b = e1 * bb + e2
         wkv = a / b
+        # print(f'{wkv.shape=}')
+
         ww = pp + self.time_decay
         qq = torch.maximum(ww, k)
         e1 = torch.exp(ww - qq)
         e2 = torch.exp(k - qq)
-        # print(f'{wkv.shape=}')
+
+        # print(
+        #     f'e1: {torch.max(torch.abs(e1)).item():.3f}',
+        #     f'e2: {torch.max(torch.abs(e2)).item():.3f}',
+        #     f'bb: {torch.max(torch.abs(bb)).item():.3f}',
+        # )
 
         next_aa = e1 * aa + e2 * v
         next_bb = e1 * bb + e2
@@ -135,6 +144,11 @@ class RwkvTimeMix(nn.Module):
         # print(f'{next_aa.shape=}')
         # print(f'{next_bb.shape=}')
         # print(f'{next_pp.shape=}')
+        # print(
+        #     f'NextAA: {torch.max(torch.abs(next_aa)).item():.3f}',
+        #     f'NextBB: {torch.max(torch.abs(next_bb)).item():.3f}',
+        #     f'NextPP: {torch.max(torch.abs(next_pp)).item():.3f}',
+        # )
 
         next_state = (next_alpha, next_aa, next_bb, next_pp)
         return self.output(r * wkv), next_state
@@ -155,7 +169,7 @@ class RwkvCell(nn.Module):
     def get_initial_state(self):
         state = torch.zeros(5, self.hidden_size)
         # set `pp` param to -inf, as it defines the minimum threshold in max(pp, ww) oper
-        state[3] = -1e30  # -infinity
+        state[4] = -1e30  # -infinity
         return state
 
     def forward(self, x, state):

@@ -1,6 +1,11 @@
 n_hidden_vars: 5
 n_hidden_states: 100
-lr: 0.001
+
+#n_hidden_vars: 50
+#n_hidden_states: 4
+
+lr: 0.0006
+loss_propagation_schedule: 20
+
 srtd_tau: 0.01
 srtd_batch_size: 256
-loss_propagation_schedule: 20

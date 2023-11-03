@@ -16,6 +16,7 @@ use_cache: False
 cache_dir: ~/tmp/hima/debug_rnn
 
 n_rnn_updates: 10_000
+print_schedule: 5000
 
 # sp_ensemble | sp_grouped
 encoder: sp_grouped

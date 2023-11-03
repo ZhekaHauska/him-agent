@@ -62,6 +62,9 @@ class LstmLayer:
     ):
         torch.set_num_threads(1)
 
+        self.srtd_tau = srtd_tau
+        self.srtd_batch_size = srtd_batch_size
+
         # n_groups/vars
         self.n_obs_vars = n_obs_vars
         # num of states each obs var has
@@ -91,8 +94,6 @@ class LstmLayer:
 
         self.lr = lr
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.srtd_tau = srtd_tau
-        self.srtd_batch_size = srtd_batch_size
 
         if seed is not None:
             torch.manual_seed(seed)
@@ -124,10 +125,10 @@ class LstmLayer:
         self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
 
         self.loss_propagation_schedule = loss_propagation_schedule
-        self._reinit_lstm_state(reset_loss=True)
+        self._reinit_model_state(reset_loss=True)
         self._reinit_messages_and_states()
 
-    def _reinit_lstm_state(self, reset_loss: bool):
+    def _reinit_model_state(self, reset_loss: bool):
         self.internal_state = self.get_init_state()
         self.last_loss_value = 0.
         if reset_loss:
@@ -161,7 +162,7 @@ class LstmLayer:
 
     def reset(self):
         # should preserve loss from the previous episode
-        self._reinit_lstm_state(reset_loss=False)
+        self._reinit_model_state(reset_loss=False)
         self._reinit_messages_and_states()
 
     def observe(self, observation, learn: bool = True):
@@ -230,8 +231,8 @@ class LstmLayer:
 
         self.accumulated_loss = 0
         self.accumulated_loss_steps = 0
-        lstm_state = self.internal_state[1]
-        self.internal_state[1] = (lstm_state[0].detach(), lstm_state[1].detach())
+        model_state = self.internal_state[1]
+        self.internal_state[1] = (model_state[0].detach(), model_state[1].detach())
 
     def set_external_messages(self, messages=None):
         # update external cells
@@ -283,9 +284,6 @@ class LstmLayer:
 
 
 class LstmWorldModel(nn.Module):
-    out_temp: float = 1.0
-    obs_temp: float = 1.0
-
     def __init__(
             self,
             n_obs_vars: int,
@@ -343,7 +341,7 @@ class LstmWorldModel(nn.Module):
             bias=False
         )
         self._initial_state = (
-            symexp(torch.randn(self.hidden_size, device=self.device) * self.out_temp),
+            self.sharpen_out_state(torch.randn(self.hidden_size, device=self.device)),
             torch.randn(self.hidden_size, device=self.device)
         )
 
@@ -395,18 +393,20 @@ class LstmWorldModel(nn.Module):
         obs_logits = self.sharpen_obs_logits(obs_logits)
         return obs_logits
 
-    def sharpen_out_state(self, state_out):
+    @staticmethod
+    def sharpen_out_state(state_out):
         """Exponentially increase absolute magnitude to reach extreme probabilities."""
-        return symexp(state_out * self.out_temp)
+        return symexp(state_out)
 
     def to_probabilistic_out_state(self, state_out):
         return to_categorical_distributions(
             logits=state_out, n_vars=self.n_hidden_vars, n_states=self.n_hidden_states
         )
 
-    def sharpen_obs_logits(self, obs_logits):
+    @staticmethod
+    def sharpen_obs_logits(obs_logits):
         """Exponentially increase absolute magnitude to reach extreme probabilities."""
-        return symexp(obs_logits * self.obs_temp)
+        return symexp(obs_logits)
 
     def to_probabilistic_obs(self, obs_logits):
         return to_categorical_distributions(

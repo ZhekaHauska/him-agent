@@ -96,6 +96,7 @@ class PinballDebugTest:
 
         self.n_encoder_updates = conf['run']['n_encoder_updates']
         self.n_rnn_updates = conf['run']['n_rnn_updates']
+        self.print_schedule = conf['run']['print_schedule']
 
         self.initial_previous_image = np.zeros(self.raw_obs_shape)
         self.prev_image = self.initial_previous_image
@@ -136,7 +137,6 @@ class PinballDebugTest:
         self.train_encoder()
         self.encode_observations()
 
-        print_schedule = 5000
         n_steps = self.n_rnn_updates
         n_raw_obs = len(self.data.raw_observations)
 
@@ -144,7 +144,7 @@ class PinballDebugTest:
         action = None
 
         for step in range(n_steps):
-            if step % print_schedule == 0:
+            if step % self.print_schedule == 0:
                 self.scalar_metrics.update({'main_metrics/steps': step})
                 if self.logger is not None:
                     self.scalar_metrics.log(step)
