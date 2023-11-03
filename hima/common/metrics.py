@@ -10,7 +10,6 @@ import numpy as np
 from hima.common.lazy_imports import lazy_import
 
 wandb = lazy_import('wandb')
-plt = lazy_import('matplotlib.pyplot')
 sns = lazy_import('seaborn')
 imageio = lazy_import('imageio')
 
@@ -61,6 +60,7 @@ class HeatmapMetrics:
         self.metrics = {metric: [] for metric in self.metrics.keys()}
 
     def log(self, step):
+        from matplotlib import pyplot as plt
         average_metrics = self.summarize()
 
         log_dict = {}

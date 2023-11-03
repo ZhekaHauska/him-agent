@@ -9,9 +9,8 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from hima.common.lazy_imports import lazy_import
 from hima.common.config.base import TConfig
-from hima.common.utils import isnone
+from hima.common.lazy_imports import lazy_import
 
 wandb = lazy_import('wandb')
 if TYPE_CHECKING:
@@ -20,11 +19,12 @@ if TYPE_CHECKING:
 
 def turn_off_gui_for_matplotlib():
     """
-    Prevent matplotlib from using any GUI backend.
+    Set headless mode to prevent matplotlib from using any GUI backend.
+    It is expected to speed up execution of the PyPlot funcs.
     For example, it is prohibited for sub-processes as you will encounter kernel core errors.
     """
     from matplotlib import pyplot as plt
-    plt.switch_backend('Agg')
+    plt.switch_backend('agg')
 
 
 def set_wandb_sweep_threading():
