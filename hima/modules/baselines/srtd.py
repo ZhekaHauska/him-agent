@@ -49,7 +49,8 @@ class SRTD:
             activation_function=nn.SiLU,
             lr=0.01,
             tau=0.01,
-            batch_size=32
+            batch_size=32,
+            l2_regularization_weight=0
     ):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.lr = lr
@@ -73,7 +74,9 @@ class SRTD:
 
         self.accumulated_td_loss = None
         self.mse = nn.MSELoss()
-        self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr)
+        self.optimizer = optim.RMSprop(
+            self.model.parameters(), lr=self.lr, weight_decay=l2_regularization_weight
+        )
 
     def predict_sr(self, state, target=True):
         if target:

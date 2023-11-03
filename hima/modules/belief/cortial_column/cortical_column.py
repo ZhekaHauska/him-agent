@@ -8,11 +8,12 @@ from typing import Union, Optional
 import numpy as np
 from htm.bindings.sdr import SDR
 
-from hima.modules.belief.cortial_column.layer import Layer
-from hima.modules.baselines.hmm import FCHMMLayer
-from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
-from hima.modules.baselines.lstm import LstmLayer
 from hima.common.metrics import get_surprise
+from hima.modules.baselines.hmm import FCHMMLayer
+from hima.modules.baselines.lstm import LstmLayer
+from hima.modules.baselines.rwkv import RwkvLayer
+from hima.modules.belief.cortial_column.layer import Layer
+from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
 
 
 class CorticalColumn:
@@ -22,7 +23,7 @@ class CorticalColumn:
     """
     def __init__(
             self,
-            layer: Union[Layer, FCHMMLayer, LstmLayer],
+            layer: Union[Layer, FCHMMLayer, LstmLayer, RwkvLayer],
             encoder: Optional[SPEnsemble],
             decoder: Optional[SPDecoder]
     ):

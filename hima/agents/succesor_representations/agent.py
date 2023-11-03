@@ -359,7 +359,7 @@ class BioHIMA:
 
 
 class FCHMMBioHima(BioHIMA):
-    """Patch-like adaptation of BioHIMA to work with LSTM layer."""
+    """Patch-like adaptation of BioHIMA to work with Factorial CHMM layer."""
 
     def __init__(
             self, cortical_column: CorticalColumn,
@@ -418,9 +418,12 @@ class LstmBioHima(BioHIMA):
             self.cortical_column.layer.input_size,
             lr=self.striatum_lr,
             tau=self.cortical_column.layer.srtd_tau,
-            batch_size=self.cortical_column.layer.srtd_batch_size
+            batch_size=self.cortical_column.layer.srtd_batch_size,
+            n_hidden_layers=1,
+            l2_regularization_weight=0.2
         )
 
+    # noinspection PyMethodOverriding
     def generate_sr(
             self,
             n_steps,
@@ -481,17 +484,16 @@ class LstmBioHima(BioHIMA):
         sr /= self.cortical_column.layer.n_hidden_vars
         return sr
 
-    def _extract_collapse_message(self, context_messages: TLstmLayerHiddenState):
+    def _extract_state_from_context(self, context_messages: TLstmLayerHiddenState):
         # extract model state from layer state
-        _, (state_out, _) = context_messages
+        state_out, _ = context_messages[1]
 
         # convert model hidden state to probabilities
-        # noinspection PyUnresolvedReferences
         state_probs_out = self.cortical_column.layer.model.to_probabilistic_out_state(state_out)
         return state_probs_out.detach()
 
     def td_update_sr(self):
-        current_state = self._extract_collapse_message(
+        current_state = self._extract_state_from_context(
             self.cortical_column.layer.internal_forward_messages
         ).to(self.srtd.device)
 
@@ -514,5 +516,5 @@ class LstmBioHima(BioHIMA):
         return to_numpy(predicted_sr), to_numpy(target_sr), td_error
 
     def predict_sr(self, context_messages: TLstmLayerHiddenState):
-        msg = self._extract_collapse_message(context_messages).to(self.srtd.device)
+        msg = self._extract_state_from_context(context_messages).to(self.srtd.device)
         return to_numpy(self.srtd.predict_sr(msg, target=True))
