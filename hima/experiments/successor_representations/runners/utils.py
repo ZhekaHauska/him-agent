@@ -23,8 +23,8 @@ def print_digest(metrics: dict):
     if 'main_metrics/reward' in metrics:
         ep_return = metrics['main_metrics/reward']
         digest += f' R = {ep_return:5.2f}'
-    if 'agent/td_error' in metrics:
-        td_error = metrics['agent/td_error']
+    if 'sr/td_error' in metrics:
+        td_error = metrics['sr/td_error']
         digest += f' | TD = {td_error:12.8f}'
     if 'layer/surprise_hidden' in metrics:
         surprise = metrics['layer/surprise_hidden']

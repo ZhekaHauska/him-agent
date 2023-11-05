@@ -28,7 +28,7 @@ decoder: learned
 env_conf: 'configs/pinball/default.yaml'
 agent_conf: 'configs/agent/pinball.yaml'
 layer_conf: 'configs/rwkv/pinball.yaml'
-encoder_conf: 'configs/encoder/sp_grouped.yaml'
+encoder_conf: 'configs/encoder/sp_grouped_pinball.yaml'
 decoder_conf: 'configs/decoder/pinball.yaml'
 
 experiment: pinball
