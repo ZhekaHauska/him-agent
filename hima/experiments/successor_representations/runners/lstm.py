@@ -771,16 +771,17 @@ def main(config_path):
     config = dict()
 
     config['run'] = read_config(config_path)
-
     experiment = config['run']['experiment']
+
     if experiment == 'animalai':
-        config['run']['layer_conf'] = 'configs/lstm/animalai.yaml'
         runner = AnimalAITest
     elif experiment == 'pinball':
-        config['run']['layer_conf'] = 'configs/lstm/pinball.yaml'
         runner = PinballTest
     else:
         raise ValueError(f'There is no such {experiment=}!')
+
+    layer = config['run'].get('layer', 'lstm')
+    config['run']['layer_conf'] = f'configs/{layer}/{experiment}.yaml'
 
     config['env'] = read_config(config['run']['env_conf'])
     config['agent'] = read_config(config['run']['agent_conf'])
