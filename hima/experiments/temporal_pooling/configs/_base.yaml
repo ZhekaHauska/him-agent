@@ -268,7 +268,7 @@ spatial_pooler:
     seed: ???
     # input
     feedforward_sds: ???
-    initial_max_rf_sparsity: 0.6
+    initial_max_rf_sparsity: 0.5
     target_max_rf_sparsity: 0.25
     initial_rf_to_input_ratio: 10.0
     target_rf_to_input_ratio: 3.0

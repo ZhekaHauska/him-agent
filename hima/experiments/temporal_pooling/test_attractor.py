@@ -22,7 +22,6 @@ from hima.experiments.temporal_pooling.utils import resolve_random_seed, Schedul
 
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
-minisom = lazy_import('minisom')
 pd = lazy_import('pandas')
 
 
