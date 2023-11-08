@@ -18,6 +18,7 @@ from hima.modules.baselines.srtd import SRTD
 from hima.modules.baselines.lstm import to_numpy, TLstmLayerHiddenState
 from copy import copy
 import torch
+from hima.modules.belief.utils import EPS
 
 
 class ExplorationPolicy(Enum):
@@ -52,6 +53,7 @@ class BioHIMA:
             exploration_eps: float = -1,
             action_value_estimate: str = 'plan',
             sr_estimate_planning: str = 'uniform',
+            sr_early_stop: bool = True,
             lr_surprise=(0.2, 0.01),
             lr_td_error=(0.2, 0.01),
             adaptive_sr: bool = True,
@@ -62,6 +64,7 @@ class BioHIMA:
         self.cortical_column = cortical_column
         self.gamma = gamma
         self.max_sr_steps = sr_steps
+        self.sr_early_stop = sr_early_stop
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
         self.adaptive_sr = adaptive_sr
@@ -178,7 +181,8 @@ class BioHIMA:
                     self.sr_steps,
                     initial_messages=self.cortical_column.layer.prediction_cells,
                     initial_prediction=self.cortical_column.layer.prediction_columns,
-                    save_state=False
+                    save_state=False,
+                    early_stop=self.sr_early_stop
                 )
             else:
                 sr = self.predict_sr(self.cortical_column.layer.prediction_cells)
@@ -200,7 +204,8 @@ class BioHIMA:
             initial_prediction,
             approximate_tail=True,
             save_state=True,
-            return_predictions=False
+            return_predictions=False,
+            early_stop=False
     ):
         """
             n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
@@ -218,6 +223,21 @@ class BioHIMA:
 
         discount = 1.0
         for t in range(n_steps):
+            if early_stop:
+                uni_dkl = (
+                        np.log(self.cortical_column.layer.n_obs_states) +
+                        np.sum(
+                            predicted_observation * np.log(
+                                np.clip(
+                                    predicted_observation, EPS, None
+                                )
+                            )
+                        )
+                )
+
+                if uni_dkl < EPS:
+                    break
+
             sr += predicted_observation * discount
 
             if self.sr_estimate_planning == SrEstimatePlanning.UNIFORM:
@@ -235,6 +255,7 @@ class BioHIMA:
 
             context_messages = self.cortical_column.layer.internal_forward_messages.copy()
             predicted_observation = self.cortical_column.layer.prediction_columns
+
             discount *= self.gamma
 
             if return_predictions:
@@ -265,6 +286,7 @@ class BioHIMA:
             initial_messages=current_state,
             initial_prediction=self.observation_messages,
             approximate_tail=self.approximate_tail,
+            early_stop=self.sr_early_stop
         )
         prediction_cells = current_state
 
@@ -337,10 +359,22 @@ class BioHIMA:
     @property
     def sr_steps(self):
         if self.adaptive_sr:
-            sr_steps = 1 + np.round(
-                (self.max_sr_steps - 1) * np.clip(self.ss_td_error.norm_value, 0, 1) *
-                (1 - np.clip(self.ss_surprise.norm_value, 0, 1))
-            ).astype(np.int32)
+            s_base_log = np.log(np.log(self.cortical_column.layer.n_obs_states))
+            s_current = np.clip(self.ss_surprise.current_value, 1e-7, None)
+            s_min = np.clip(self.ss_surprise.mean - self.ss_surprise.std, 1e-7, None)
+
+            sr_steps = int(
+                max(
+                    1,
+                    np.round(
+                        self.max_sr_steps *
+                        np.clip(self.ss_td_error.norm_value, 0, 1) *
+                        s_base_log *
+                        (1 - np.log(s_current) / s_base_log) /
+                        (1 - np.log(s_min) / s_base_log)
+                    )
+                )
+            )
         else:
             sr_steps = self.max_sr_steps
         return sr_steps
@@ -386,7 +420,8 @@ class FCHMMBioHima(BioHIMA):
             self.sr_steps,
             initial_messages=self.cortical_column.layer.internal_forward_messages,
             initial_prediction=self.observation_messages,
-            approximate_tail=self.approximate_tail
+            approximate_tail=self.approximate_tail,
+            early_stop=self.sr_early_stop
         )
 
         target_sr = torch.tensor(target_sr)
