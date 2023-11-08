@@ -27,6 +27,40 @@ from typing import Literal
 wandb = lazy_import('wandb')
 
 
+def compare_srs(agent, sr_steps, approximate_tail):
+    current_state = agent.cortical_column.layer.internal_forward_messages
+    pred_sr = agent.predict_sr(current_state)
+    pred_sr = normalize(
+        pred_sr.reshape(
+            agent.cortical_column.layer.n_obs_vars, -1
+        )
+    ).flatten()
+
+    gen_sr, predictions = agent.generate_sr(
+        sr_steps,
+        initial_messages=current_state,
+        initial_prediction=agent.observation_messages,
+        approximate_tail=approximate_tail,
+        return_predictions=True
+    )
+    gen_sr = normalize(
+        gen_sr.reshape(
+            agent.cortical_column.layer.n_obs_vars, -1
+        )
+    ).flatten()
+
+    pred_sr_raw = agent.cortical_column.decoder.decode(
+        pred_sr
+    )
+    gen_sr_raw = agent.cortical_column.decoder.decode(
+        gen_sr
+    )
+
+    mse = np.mean(np.power(pred_sr_raw - gen_sr_raw, 2))
+
+    return mse, pred_sr, gen_sr, pred_sr_raw, gen_sr_raw, predictions
+
+
 class PinballTest:
     def __init__(self, logger, conf):
         from pinball import Pinball
@@ -268,7 +302,8 @@ class PinballTest:
                             _,
                             gen_sr_test_tail_raw,
                             predictions
-                        ) = self.compare_srs(
+                        ) = compare_srs(
+                            self.agent,
                             self.test_sr_steps,
                             True
                         )
@@ -279,7 +314,8 @@ class PinballTest:
                             pred_sr_test_raw,
                             gen_sr_test_raw,
                             _
-                        ) = self.compare_srs(
+                        ) = compare_srs(
+                            self.agent,
                             self.test_sr_steps,
                             False
                         )
@@ -532,39 +568,6 @@ class PinballTest:
 
         return agent
 
-    def compare_srs(self, sr_steps, approximate_tail):
-        current_state = self.agent.cortical_column.layer.internal_forward_messages
-        pred_sr = self.agent.predict_sr(current_state)
-        pred_sr = normalize(
-                pred_sr.reshape(
-                    self.agent.cortical_column.layer.n_obs_vars, -1
-                )
-            ).flatten()
-
-        gen_sr, predictions = self.agent.generate_sr(
-            sr_steps,
-            initial_messages=current_state,
-            initial_prediction=self.agent.observation_messages,
-            approximate_tail=approximate_tail,
-            return_predictions=True
-        )
-        gen_sr = normalize(
-                gen_sr.reshape(
-                    self.agent.cortical_column.layer.n_obs_vars, -1
-                )
-            ).flatten()
-
-        pred_sr_raw = self.agent.cortical_column.decoder.decode(
-            pred_sr
-        )
-        gen_sr_raw = self.agent.cortical_column.decoder.decode(
-            gen_sr
-        )
-
-        mse = np.mean(np.power(pred_sr_raw - gen_sr_raw, 2))
-
-        return mse, pred_sr, gen_sr, pred_sr_raw, gen_sr_raw, predictions
-
     @staticmethod
     def get_setup_path(setup):
         return os.path.join(
@@ -649,7 +652,7 @@ class AnimalAITest:
             self.initial_external_message = None
 
         if self.logger is not None:
-            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStackSurprise
+            from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStackSurprise, PredictionsStackSurprise
             # define metrics
             basic_scalar_metrics = {
                     'main_metrics/reward': np.sum,
@@ -719,6 +722,12 @@ class AnimalAITest:
                     self.logger,
                     self.raw_obs_shape[0] * self.raw_obs_shape[1],
                     history_length=self.test_sr_steps,
+                )
+
+                self.prediction_stack = PredictionsStackSurprise(
+                    'layer_n_step/hidden_surprise',
+                    self.logger,
+                    self.test_sr_steps + 1
                 )
             else:
                 self.predicted_sr_stack = None
@@ -825,8 +834,10 @@ class AnimalAITest:
                             _,
                             gen_sr_test_tail,
                             _,
-                            gen_sr_test_tail_raw
-                        ) = self.compare_srs(
+                            gen_sr_test_tail_raw,
+                            predictions
+                        ) = compare_srs(
+                            self.agent,
                             self.test_sr_steps,
                             True
                         )
@@ -835,8 +846,10 @@ class AnimalAITest:
                             pred_sr_test,
                             gen_sr_test,
                             pred_sr_test_raw,
-                            gen_sr_test_raw
-                        ) = self.compare_srs(
+                            gen_sr_test_raw,
+                            _
+                        ) = compare_srs(
+                            self.agent,
                             self.test_sr_steps,
                             False
                         )
@@ -862,6 +875,13 @@ class AnimalAITest:
                         self.generated_sr_stack_raw.update(
                             gen_sr_test_raw,
                             self.agent.cortical_column.input_sdr.sparse
+                        )
+
+                        preds = [self.agent.cortical_column.layer.prediction_columns.copy()]
+                        preds.extend(predictions)
+                        self.prediction_stack.update(
+                            preds,
+                            self.agent.cortical_column.output_sdr.sparse
                         )
                     else:
                         pred_sr_test_raw = None
@@ -959,6 +979,7 @@ class AnimalAITest:
                     self.predicted_sr_stack_raw.log(i)
                     self.generated_sr_stack.log(i)
                     self.generated_sr_stack_raw.log(i)
+                    self.prediction_stack.log(i)
 
                 if (i >= self.update_start) and (i % self.update_period) == 0:
                     obs_rewards = decoder.decode(
@@ -1113,38 +1134,6 @@ class AnimalAITest:
             raise ValueError
 
         return agent
-
-    def compare_srs(self, sr_steps, approximate_tail):
-        current_state = self.agent.cortical_column.layer.internal_forward_messages
-        pred_sr = self.agent.predict_sr(current_state)
-        pred_sr = normalize(
-                pred_sr.reshape(
-                    self.agent.cortical_column.layer.n_obs_vars, -1
-                )
-            ).flatten()
-
-        gen_sr = self.agent.generate_sr(
-            sr_steps,
-            initial_messages=current_state,
-            initial_prediction=self.agent.observation_messages,
-            approximate_tail=approximate_tail,
-        )
-        gen_sr = normalize(
-                gen_sr.reshape(
-                    self.agent.cortical_column.layer.n_obs_vars, -1
-                )
-            ).flatten()
-
-        pred_sr_raw = self.agent.cortical_column.decoder.decode(
-            pred_sr
-        )
-        gen_sr_raw = self.agent.cortical_column.decoder.decode(
-            gen_sr
-        )
-
-        mse = np.mean(np.power(pred_sr_raw - gen_sr_raw, 2))
-
-        return mse, pred_sr, gen_sr, pred_sr_raw, gen_sr_raw
 
     @staticmethod
     def get_setup_path(setup):
