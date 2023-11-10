@@ -1,0 +1,165 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: stp.neuroinformatics
+method: grid
+parameters:
+  seed.:
+    values: [500, 510, 520, 530, 540, 550, 560, 570, 580, 590] #, 700, 701, 702, 703, 704, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+    # values: [40, 41, 42, 43, 44] #, 45, 46] #, 47, 48, 49] #, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+
+  # FOR ALL LSTM TESTS
+  blocks..TM._type_:
+    value: block.lstm
+  blocks..TM.tm._base_:
+    value: TM.lstm
+  # model..pipeline:
+  #   value: models.LSTM
+
+  SE..sp.target_rf_to_input_ratio:
+    value: 1.75
+  model..pipeline:
+    value: models.LSTM+SE_DVS+SE
+
+  iterate.._base_:
+    values:
+      - iterate_setups.default_100k
+      # - iterate_setups.default_5x20k
+
+  data.:
+    values:
+      # - datas.synthetic_sequences
+      # - datas.text_sequences
+      - datas.dvc_sequences
+
+  ## ======= SYNTHETIC ========
+  # TM..tm.cells_per_column:
+  #   value: 12
+  # TM..tm.predicted_segment_decrement_basal:
+  #   value: 0.002
+  # AA..tm.predicted_segment_decrement_basal:
+  #   value: 0.003
+
+  # iterate.._base_:
+  #   values:
+  #     - iterate_setups.default_100k
+  #     - iterate_setups.default_5x20k
+  #     # - iterate_setups.large_400k
+  #     # - iterate_setups.large_5x80k
+
+  # data.:
+  #   value: datas.synthetic_sequences
+
+  # model..pipeline:
+  #   values:
+  #     # - models.Baseline TM
+  #     # - models.+SE
+  #     # - models.+SE+AA
+  #     - models.LSTM
+
+  # FOR STE+STA+AA test
+  # model..pipeline:
+  #   value: models.+SE+SA+AA
+  # TM..tm.cells_per_column:
+  #   value: 12
+  # blocks..SE.sp._base_:
+  #   value: SE.stp
+  # blocks..SA.sp._base_:
+  #   value: SA.stp
+  # TM..tm.predicted_segment_decrement_basal:
+  #   value: 0.004
+  # AA..tm.predicted_segment_decrement_basal:
+  #   value: 0.004
+
+
+  ## ======= TEXT ========
+  # TM..tm.cells_per_column:
+  #   value: 8
+  # TM..tm.predicted_segment_decrement_basal:
+  #   value: 0.002
+  # AA..tm.predicted_segment_decrement_basal:
+  #   value: 0.004
+
+  # iterate.._base_:
+  #   values:
+  #     - iterate_setups.default_100k
+  #     - iterate_setups.default_5x20k
+  #     # - iterate_setups.large_400k
+  #     # - iterate_setups.large_5x80k
+
+  # data.:
+  #   values:
+  #     # - datas.synthetic_sequences
+  #     - datas.text_sequences
+  #     - datas.dvc_sequences
+
+  # model..pipeline:
+  #   values:
+  #     - models.Baseline TM
+  #     # - models.+SE
+  #     - models.+SE+AA
+
+  # FOR STE+STA+AA test
+  # model..pipeline:
+  #   value: models.+SE+SA+AA
+  # TM..tm.cells_per_column:
+  #   value: 8
+  # blocks..SE.sp._base_:
+  #   value: SE.stp
+  # blocks..SA.sp._base_:
+  #   value: SA.stp
+  # TM..tm.predicted_segment_decrement_basal:
+  #   value: 0.004
+  # AA..tm.predicted_segment_decrement_basal:
+  #   value: 0.004
+
+  ## ======= DVS ========
+  # TM..tm.cells_per_column:
+  #   value: 12
+  # TM..tm.predicted_segment_decrement_basal:
+  #   value: 0.002
+  # AA..tm.predicted_segment_decrement_basal:
+  #   value: 0.003
+  # SE..sp.max_rf_to_input_ratio:
+  #   value: 1.75
+
+  # model..pipeline:
+  #   values:
+  #     - models.+SE_DVS+SE
+  #     #  - models.+SE_DVS+SE+AA
+
+  # iterate.._base_:
+  #   values:
+  #     - iterate_setups.default_100k
+  #     # - iterate_setups.default_5x20k
+  #     # - iterate_setups.large_400k
+  #     # - iterate_setups.large_5x80k
+
+  # data.:
+  #   value: datas.dvc_sequences
+
+  # # FOR STE+STA+AA test
+  # model..pipeline:
+  #   value: models.+SE_DVS+SE+SA+AA
+  # TM..tm.cells_per_column:
+  #   value: 10
+  # # blocks..SE.sp._base_:
+  # #   value: SE.stp
+  # # blocks..SA.sp._base_:
+  # #   value: SA.stp
+  # blocks..SA.sp.max_rf_to_input_ratio:
+  #   value: 2.01
+  # TM..tm.predicted_segment_decrement_basal:
+  #   value: 0.004
+  # AA..tm.predicted_segment_decrement_basal:
+  #   value: 0.004
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ../configs/stp.yaml
