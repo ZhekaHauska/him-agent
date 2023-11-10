@@ -107,6 +107,11 @@ class NewbornNeuron:
 
 
 class SpatialPooler:
+    """
+    Spatial Pooler implementation with receptive fields stored in lists.
+    Thus, this is a non-vectorized [over neurons] SP implementation.
+    """
+
     # input
     feedforward_sds: Sds
     rf_sparsity: float
