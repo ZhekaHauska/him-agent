@@ -16,13 +16,15 @@ import wandb
 from hima.common.config.base import read_config, extracted
 from hima.common.run.argparse import parse_arg_list
 from hima.common.run.entrypoint import RunParams, run_single_run_experiment
-from hima.common.run.wandb import turn_off_gui_for_matplotlib, set_wandb_sweep_threading
+from hima.common.run.wandb import turn_off_gui_backend_for_matplotlib, set_wandb_sweep_threading
 from hima.common.utils import isnone
 
 
 def run_sweep(
         sweep_id: str, n_agents: int, sweep_run_params: RunParams, run_arg_parser: ArgumentParser,
-        individual_cpu_cores: tuple[int, int | None] = None
+        # (Starting CPU core index available for workers, Cores per worker)
+        # None means all cores available, i.e. no worker per cpu separation
+        cpu_cores: tuple[int, int | None] = (0, None)
 ) -> None:
     """
     Manages a whole wandb sweep run.
@@ -65,7 +67,7 @@ def run_sweep(
                 'sweep_id': sweep_id,
                 'function': partial(
                     _wandb_agent_entry_point, run_params=run_params,
-                    cpu_affinity=(i, ) + individual_cpu_cores
+                    cpu_affinity=(i, ) + cpu_cores
                 ),
                 'project': wandb_project,
             }
@@ -93,14 +95,16 @@ def _wandb_agent_entry_point(
     # BE CAREFUL: this method is expected to run in parallel
     try:
         # we tell matplotlib to not touch GUI at all in each of the spawned sub-processes
-        turn_off_gui_for_matplotlib()
+        turn_off_gui_backend_for_matplotlib()
 
         i_agent, start_core, n_cores_per_agent = cpu_affinity
         if n_cores_per_agent is not None:
             # If setting cpu affinity via Math libs env variables doesn't work, use this
-            # It works only on linux, win, bsd, not on macos. But it won't raise any exception.
+            # It works only on linux, win, bsd, not on macOS, but it won't raise any exception.
             import os
             start = start_core + i_agent * n_cores_per_agent
+            # NB: it's a user responsibility to guarantee that start:end maps to real cores.
+            # Dunno, what will be in an out-of-range scenario — needs testing.
             end = start + n_cores_per_agent - 1
             cpu_list = f'{start}-{end}' if end > start else f'{start}'
             os.system(f"taskset -p --cpu-list {cpu_list} {os.getpid()}")
@@ -129,7 +133,7 @@ def _wandb_agent_entry_point(
         print(traceback.print_exc(), file=sys.stderr)
         # finish explicitly with error code (NB: I tend to think it's not necessary here)
         wandb.finish(1)
-        # re-raise after printing so wandb catch it
+        # re-raise after printing so wandb can catch it
         raise
 
 

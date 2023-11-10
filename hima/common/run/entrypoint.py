@@ -47,12 +47,14 @@ def run_experiment(
     if args.wandb_entity:
         set_wandb_entity(args.wandb_entity)
 
+    start_core = 0
     if args.math_threads > 0:
         # manually set math parallelization as it usually only slows things down for us
         set_number_cpu_threads_for_math(
             num_threads=args.math_threads, cpu_affinity=args.cpu_affinity,
             with_torch=args.with_torch
         )
+        # format: "{n_from:n_to}"
         start_core = int(args.cpu_affinity.split(':')[0][1:])
 
     config_path = Path(args.config_filepath)
@@ -66,17 +68,21 @@ def run_experiment(
     )
 
     if args.wandb_sweep:
+        # sweep run
         from hima.common.run.sweep import run_sweep
         run_sweep(
             sweep_id=args.wandb_sweep_id,
             n_agents=args.n_sweep_agents,
             sweep_run_params=run_params,
             run_arg_parser=arg_parser,
-            individual_cpu_cores=(start_core, args.ind_cpu_affinity)
+            cpu_cores=(start_core, args.ind_cpu_affinity)
         )
+        return None
     else:
         # single run
-        run_single_run_experiment(run_params)
+        # NB: additionally return the runner object in case it is needed for post-processing.
+        # E.g. I use it for post-analysis in Jupyter notebooks — there, the runner obj is useful.
+        return run_single_run_experiment(run_params)
 
 
 def run_single_run_experiment(run_params: RunParams) -> None:
@@ -106,12 +112,13 @@ def run_single_run_experiment(run_params: RunParams) -> None:
     runner = global_config.resolve_object(runner_args)
     if runner is not None:
         runner.run()
+    return runner
 
 
 def set_number_cpu_threads_for_math(
         num_threads: int, cpu_affinity: str, with_torch: bool = False
 ):
-    # Set cpu threads for math libraries
+    # Set cpu threads for math libraries: affects math operations parallelization capability
     os.environ['OMP_NUM_THREADS'] = f'{num_threads}'
     os.environ['OPENBLAS_NUM_THREADS'] = f'{num_threads}'
     os.environ['MKL_NUM_THREADS'] = f'{num_threads}'
@@ -119,8 +126,8 @@ def set_number_cpu_threads_for_math(
         import torch
         torch.set_num_threads(num_threads)
 
-    # Math libraries also loves to set cpu affinity, restricting
-    # on which CPU cores your sub-processes can run... tell them explicitly to shut up
+    # Math libraries also love to set cpu affinity, restricting
+    # which CPU cores your sub-processes can run on... So, tell them explicitly to shut up :)
     # Setting these variables doesn't affect the number of threads, btw
     os.environ['OMP_PLACES'] = cpu_affinity
     # duplicates OMP_PLACES
@@ -146,6 +153,6 @@ def default_run_arg_parser() -> ArgumentParser:
     parser.add_argument('--math_threads', dest='math_threads', type=int, default=1)
     parser.add_argument('--with_torch', dest='with_torch', action='store_true', default=False)
     parser.add_argument('--cpu_affinity', dest='cpu_affinity', default='{0:63}')
-    # set how many cores to fix after each process
+    # set how many cores each process should use
     parser.add_argument('--icpu_affinity', dest='ind_cpu_affinity', type=int, default=None)
     return parser

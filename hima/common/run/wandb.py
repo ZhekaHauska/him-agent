@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run
 
 
-def turn_off_gui_for_matplotlib():
+def turn_off_gui_backend_for_matplotlib():
     """
     Set headless mode to prevent matplotlib from using any GUI backend.
     It is expected to speed up execution of the PyPlot funcs.

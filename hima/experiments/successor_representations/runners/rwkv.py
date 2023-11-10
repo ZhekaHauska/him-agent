@@ -13,7 +13,7 @@ from hima.agents.succesor_representations.agent import LstmBioHima
 from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
-from hima.common.run.wandb import turn_off_gui_for_matplotlib
+from hima.common.run.wandb import turn_off_gui_backend_for_matplotlib
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import to_gray_img, isnone
 from hima.experiments.successor_representations.runners.utils import print_digest, make_decoder
@@ -800,7 +800,7 @@ def main(config_path):
         config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
 
     if config['run']['log']:
-        turn_off_gui_for_matplotlib()
+        turn_off_gui_backend_for_matplotlib()
         logger = wandb.init(
             project=config['run']['project_name'], entity=os.environ.get('WANDB_ENTITY', None),
             config=config
