@@ -16,6 +16,7 @@ class MnistDataset:
 
     dense_sdrs: np.ndarray
     sdrs: list[SparseSdr]
+    classes: list[np.ndarray]
 
     output_sds: Sds
 

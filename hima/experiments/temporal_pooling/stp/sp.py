@@ -119,8 +119,8 @@ class SpatialPooler:
 
     @timed
     def _compute(self, input_sdr: SparseSdr, learn: bool) -> SparseSdr:
-        self.n_computes += 1
-        self.feedforward_trace[input_sdr] += 1
+        self.n_computes += learn
+        self.feedforward_trace[input_sdr] += learn
 
         if self.is_newborn_phase:
             if self.n_computes % self.newborn_pruning_schedule == 0:
@@ -139,7 +139,7 @@ class SpatialPooler:
             overlaps=overlaps, rf_match_mask=rf_match_mask, learn=learn
         )
 
-        if winners.shape[0] > 0:
+        if learn and winners.shape[0] > 0:
             # update winners activation stats
             self.output_trace[winners] += 1
             self.recognition_strength_trace += overlaps[winners].mean()
