@@ -17,6 +17,7 @@ from hima.modules.belief.utils import EPS, UINT_DTYPE, REAL64_DTYPE
 
 L_MODE = Literal['bw', 'bw_base', 'bw_iter', 'htm']
 INI_MODE = Literal['dirichlet', 'normal', 'uniform']
+P_MODE = Literal['modulate', 'replace', 'boost', 'none']
 
 
 class CHMMBasic:
@@ -31,6 +32,8 @@ class CHMMBasic:
             batch_size: int = 1,
             learning_mode: L_MODE = 'htm',
             initialization: INI_MODE = 'uniform',
+            external_prior_mode: P_MODE = 'none',
+            boost_factor: float = 1.0,
             sigma: float = 1.0,
             alpha: float = 1.0,
             seed: Optional[int] = None
@@ -46,6 +49,8 @@ class CHMMBasic:
         self.batch_size = batch_size
         self.learning_mode = learning_mode
         self.initialization = initialization
+        self.external_prior_mode = external_prior_mode
+        self.boost_factor = boost_factor
         self.is_first = True
         self.seed = seed
 
@@ -78,12 +83,14 @@ class CHMMBasic:
             self.log_state_prior = np.log(self.state_prior)
 
         self.forward_message = None
+        self.external_hidden_state_prior = None
 
         self.stats_trans_mat = self.transition_probs
         self.stats_state_prior = self.state_prior
 
         self.active_state = None
         self.prediction = None
+        self.prediction_columns = None
         self.observations = list()
         self.obs_sequences = list()
         self.fm_sequences = list()
@@ -110,6 +117,9 @@ class CHMMBasic:
         else:
             self.model = None
 
+    def set_external_hidden_state_prior(self, probs):
+        self.external_hidden_state_prior = probs
+
     def observe(self, observation_state: int, learn: bool = True) -> None:
         assert 0 <= observation_state < self.n_columns, "Invalid observation state."
         assert self.prediction is not None, "Run predict_columns() first."
@@ -118,6 +128,14 @@ class CHMMBasic:
 
         obs_factor = np.zeros(self.n_states)
         obs_factor[states_for_obs] = 1
+
+        if self.external_hidden_state_prior is not None:
+            if self.external_prior_mode == 'modulate':
+                self.prediction *= self.external_hidden_state_prior
+            elif self.external_prior_mode == 'replace':
+                self.prediction = self.external_hidden_state_prior
+            elif self.external_prior_mode == 'boost':
+                self.prediction += self.boost_factor * self.external_hidden_state_prior
 
         new_forward_message = self.prediction * obs_factor
 
@@ -159,13 +177,15 @@ class CHMMBasic:
             self.prediction = np.dot(self.forward_message, self.transition_probs)
         prediction = self.prediction / self.prediction.sum()
         prediction = np.reshape(prediction, (self.n_columns, self.cells_per_column))
-        prediction = prediction.sum(axis=-1)
-        return prediction
+        self.prediction_columns = prediction.sum(axis=-1)
+        return self.prediction_columns
 
     def reset(self):
+        self.external_hidden_state_prior = None
         self.forward_message = None
         self.active_state = None
         self.prediction = None
+        self.prediction_columns = None
         self.is_first = True
 
     def _obs_state_to_hidden(self, obs_state):
