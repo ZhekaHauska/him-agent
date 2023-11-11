@@ -357,21 +357,22 @@ class BioHIMA:
         return lr
 
     @property
+    def relative_log_surprise(self):
+        s_base_log = np.log(np.log(self.cortical_column.layer.n_obs_states))
+        s_current = np.clip(self.ss_surprise.current_value, 1e-7, None)
+        s_min = np.clip(self.ss_surprise.mean - self.ss_surprise.std, 1e-7, None)
+        return (1 - np.log(s_current) / s_base_log) / (1 - np.log(s_min) / s_base_log)
+
+    @property
     def sr_steps(self):
         if self.adaptive_sr:
-            s_base_log = np.log(np.log(self.cortical_column.layer.n_obs_states))
-            s_current = np.clip(self.ss_surprise.current_value, 1e-7, None)
-            s_min = np.clip(self.ss_surprise.mean - self.ss_surprise.std, 1e-7, None)
-
             sr_steps = int(
                 max(
                     1,
                     np.round(
                         self.max_sr_steps *
                         np.clip(self.ss_td_error.norm_value, 0, 1) *
-                        s_base_log *
-                        (1 - np.log(s_current) / s_base_log) /
-                        (1 - np.log(s_min) / s_base_log)
+                        self.relative_log_surprise
                     )
                 )
             )
