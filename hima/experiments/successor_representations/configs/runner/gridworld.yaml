@@ -1,16 +1,16 @@
 log: True
 save_model: False
-project_name: 'sr_gridworld_all'
+project_name: 'sr_gridworld_all_reward'
 run_tag: null
 
 n_episodes: 501
-update_rate: 50
+update_rate: 52
 max_steps: 50
 log_gif_fps: 5
-start_position: [5, 0]
+start_position: [4, 0]
 
 # if True then use random strategy
-reward_free: True
+reward_free: False
 
 # model based sr testing
 test_srs: True
@@ -20,14 +20,12 @@ test_sr_steps: 5
 encoder: sp_grouped
 # makes sense only for grouped: naive | learned
 decoder: learned
-# fchmm | dhtm | lstm | rwkv
-layer: rwkv
 
 agent_conf: 'configs/agent/gridworld.yaml'
-layer_conf: 'configs/rwkv/gridworld.yaml'
+layer_conf: 'configs/fchmm/gridworld.yaml'
 
 experiment: gridworld
-setups: [room1, room2]
-setup_period: 250
+setups: [room3, room4]
+setup_period: 251
 
 seed: null

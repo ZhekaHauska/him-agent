@@ -1,15 +1,19 @@
 log: True
 save_model: False
-project_name: 'layer_test'
+project_name: 'dhtm_sequence_test'
 run_tag: null
 
 n_episodes: 501
-update_rate: 50
+update_period: 50
+update_start: 0
 max_steps: 15
 log_gif_fps: 5
+camera_mode: clip
 prediction_steps: 5
+
 start_actions: [[ 3.14, 5 ], [0, 3]]
 start_positions: [[0, -9], [0, 0]]
+noise: [1, 1]  # sigma for action and position noise
 
 internal_dependence_1step: False
 
@@ -18,15 +22,19 @@ internal_dependence_1step: False
 #action_delay: 5  # frames to wait before acting
 #action_observable: True
 
-# input_layer | sp_ensemble | one_sp | null
+# sp_ensemble | sp_grouped
 encoder: sp_ensemble
+# makes sense only for grouped: naive | learned
+decoder: learned
 
 experiment: pinball
-# input_layer_conf: 'configs/input_layer/pinball.yaml'
-# decoder_conf: 'configs/decoder/pinball.yaml'
-sp_conf: 'configs/sp/ensemble.yaml'
-hmm_conf: 'configs/layer/pinball.yaml'
+setup: [fork_rew1, fork_rew2]
+setup_period: [199, 403]
+
+# config paths
 env_conf: 'configs/pinball/default.yaml'
-setup: 'fork'
+layer_conf: 'configs/dhtm/pinball.yaml'
+encoder_conf: 'configs/encoder/sp_grouped_pinball.yaml'
+decoder_conf: 'configs/decoder/pinball.yaml'
 
 seed: null
