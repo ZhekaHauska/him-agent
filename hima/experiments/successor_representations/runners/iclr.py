@@ -659,6 +659,7 @@ class AnimalAITest:
                     'main_metrics/steps': np.mean,
                     'layer/surprise_hidden': np.mean,
                     'layer/norm_surprise_hidden': np.mean,
+                    'layer/relative_surprise': np.mean,
                     'sr/td_error': np.mean,
                     'sr/norm_td_error': np.mean,
                     'sr/test_mse_approx_tail': np.mean,
@@ -814,6 +815,7 @@ class AnimalAITest:
                         'main_metrics/reward': reward,
                         'layer/surprise_hidden': self.agent.surprise,
                         'layer/norm_surprise_hidden': self.agent.ss_surprise.norm_value,
+                        'layer/relative_surprise': self.agent.relative_log_surprise,
                         'sr/td_error': self.agent.td_error,
                         'sr/norm_td_error': self.agent.ss_td_error.norm_value,
                         'agent/sr_steps': self.agent.sr_steps,
@@ -986,7 +988,7 @@ class AnimalAITest:
                         normalize(
                             self.agent.observation_rewards.reshape(
                                 self.agent.cortical_column.layer.n_obs_vars, -1
-                            )
+                            ) - self.agent.observation_rewards.min()
                         ).flatten()
                     ).reshape(self.raw_obs_shape)
                     self.heatmap_metrics.update(
