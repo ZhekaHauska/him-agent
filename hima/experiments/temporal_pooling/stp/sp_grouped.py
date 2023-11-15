@@ -28,6 +28,7 @@ class SpatialPoolerGrouped(SpatialPooler):
             boosting_k: float, seed: int,
             adapt_to_ff_sparsity: bool = True,
             newborn_pruning_mode: str = 'powerlaw',
+            output_mode: str = 'binary',
             cross_group_inhibition_scale: float = 0.1
     ):
         super().__init__(
@@ -38,7 +39,7 @@ class SpatialPoolerGrouped(SpatialPooler):
             learning_rate=learning_rate, newborn_pruning_cycle=newborn_pruning_cycle,
             newborn_pruning_stages=newborn_pruning_stages, prune_grow_cycle=prune_grow_cycle,
             boosting_k=boosting_k, seed=seed, adapt_to_ff_sparsity=adapt_to_ff_sparsity,
-            newborn_pruning_mode=newborn_pruning_mode
+            newborn_pruning_mode=newborn_pruning_mode, output_mode=output_mode
         )
         assert self.output_size % self.n_groups == 0, f'Non-divisible groups {self.output_sds}'
         self.group_size = self.output_sds.size // self.n_groups
