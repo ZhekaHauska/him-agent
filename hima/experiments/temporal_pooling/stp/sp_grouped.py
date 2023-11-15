@@ -5,9 +5,9 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
 
+from hima.common.float_sdr import FloatSparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
-from hima.experiments.temporal_pooling.stp.sp_utils import boosting
+from hima.experiments.temporal_pooling.stp.sp import SpatialPooler, SpOutputMode
 
 
 class SpatialPoolerGrouped(SpatialPooler):
@@ -45,15 +45,10 @@ class SpatialPoolerGrouped(SpatialPooler):
         self.group_size = self.output_sds.size // self.n_groups
         self.group_shifts = np.arange(self.n_groups) * self.group_size
         self.cross_group_inhibition_scale = cross_group_inhibition_scale
+        self.sub_winners = []
 
-    def compute_winners(self, overlaps, rf_match_mask, learn):
-        if self.is_newborn_phase and self.boosting_k > 0.:
-            # boosting
-            boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
-            # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
-            overlaps = overlaps * boosting_alpha ** np.sign(overlaps)
-
-        overlaps_grouped = overlaps.reshape(self.n_groups, -1)
+    def select_winners(self, learn=False):
+        overlaps_grouped = self.potentials.reshape(self.n_groups, -1)
 
         if learn:
             # find sub winners too
@@ -62,23 +57,25 @@ class SpatialPoolerGrouped(SpatialPooler):
             sub_winners = winners_grouped[:, -2].flatten() + self.group_shifts
 
             # keep only sub_winners stronger than others
-            weakest_overlap = overlaps[winners].min()
-            sub_winners = sub_winners[overlaps[sub_winners] > weakest_overlap]
+            weakest_overlap = self.potentials[winners].min()
+            self.sub_winners = sub_winners[self.potentials[sub_winners] > weakest_overlap]
         else:
             # regular grouped winners
             winners_grouped = np.argpartition(overlaps_grouped, -1, axis=-1)[:, -1:]
             winners = winners_grouped.flatten() + self.group_shifts
+            self.sub_winners = []
 
-        winners = winners[overlaps[winners] > 0]
+        self.winners = winners[self.potentials[winners] > 0]
 
-        if learn:
-            self.learn(winners, rf_match_mask[winners])
-            self.learn(
-                sub_winners, rf_match_mask[sub_winners],
-                modulation=-self.cross_group_inhibition_scale
-            )
+    def reinforce_winners(self, learn: bool):
+        if not learn:
+            return
 
-        return winners
+        self.stdp(self.winners, self.potentials[self.winners])
+        self.stdp(
+            self.sub_winners, self.potentials[self.sub_winners],
+            modulation=-self.cross_group_inhibition_scale
+        )
 
     @property
     def n_groups(self):

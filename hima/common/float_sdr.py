@@ -20,7 +20,7 @@ class FloatSparseSdr:
         - values stores the corresponding non-zero values
     """
     sdr: SparseSdr
-    values: np.ndarray = None
+    values: np.ndarray | list[int | float] = None
 
     # NB: doubtful decision to implement it as it could be misused
     # due to approx equality check or could be unintentionally overused

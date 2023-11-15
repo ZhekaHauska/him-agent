@@ -3,14 +3,9 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from __future__ import annotations
-
-from enum import Enum, auto
-
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.float_sdr import FloatSparseSdr
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
@@ -20,65 +15,49 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
     sample_for_each_neuron
 )
 
-
-class SpOutputMode(Enum):
-    BINARY = 1
-    NON_BINARY = auto()
+# DEPRECATED: old version of the SpatialPooler to check against the
+# new generalized float/binary-SP.
+# It is scheduled for removal soon after the latter is stabilized/tested.
 
 
 class SpatialPooler:
     rng: Generator
 
-    # I/O settings
+    # input
     feedforward_sds: Sds
-    adapt_to_ff_sparsity: bool
-
-    output_sds: Sds
-    output_mode: SpOutputMode
 
     initial_rf_sparsity: float
     target_max_rf_sparsity: float
     target_rf_to_input_ratio: float
-    rf: np.ndarray
-    weights: np.ndarray
 
-    # newborn stage
-    newborn_pruning_mode: str
-    newborn_pruning_cycle: float
-    newborn_pruning_stages: int
-    newborn_pruning_schedule: int
-    newborn_pruning_stage: int
-    prune_grow_cycle: float
-    #   boosting. It is active only during newborn stage
-    base_boosting_k: float
-    boosting_k: float
+    # output
+    output_sds: Sds
 
-    initial_learning_rate: float
+    # learning
     learning_rate: float
 
-    # cache
-    sparse_input: SparseSdr
-    dense_input: np.ndarray
-
-    winners: SparseSdr
-    potentials: np.ndarray
+    # connections
+    newborn_pruning_cycle: float
+    newborn_pruning_stages: int
+    newborn_pruning_mode: str
+    newborn_pruning_stage: int
+    prune_grow_cycle: float
 
     # stats
     n_computes: int
-    run_time: float
-    #   input values accumulator
     feedforward_trace: np.ndarray
-    #   input size accumulator
-    feedforward_size_trace: float
-    #   output values accumulator
     output_trace: np.ndarray
-    #   recognition strength is an avg winners' overlap (potential)
-    recognition_strength_trace: float
+
+    # vectorized fields
+    rf: np.ndarray
+    weights: np.ndarray
+    base_boosting_k: float
+    output_trace: np.ndarray
 
     def __init__(
             self, *,
             feedforward_sds: Sds,
-            # initial — newborn; target — mature
+            # newborn / mature
             initial_max_rf_sparsity: float, target_max_rf_sparsity: float,
             initial_rf_to_input_ratio: float, target_rf_to_input_ratio: float,
             output_sds: Sds,
@@ -87,13 +66,11 @@ class SpatialPooler:
             prune_grow_cycle: float,
             boosting_k: float, seed: int,
             adapt_to_ff_sparsity: bool = True,
-            newborn_pruning_mode: str = 'powerlaw',
-            output_mode: str = 'binary'
+            newborn_pruning_mode: str = 'powerlaw'
     ):
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.output_sds = Sds.make(output_sds)
-        self.output_mode = SpOutputMode[output_mode.upper()]
 
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
@@ -113,9 +90,18 @@ class SpatialPooler:
             set_size=self.ff_size, sample_size=rf_size
         )
         print(f'SP vec init shape: {self.rf.shape}')
-        self.weights = normalize_weights(
+
+        self.weights = self.normalize_weights(
             self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
         )
+
+        self.sparse_input = []
+        self.dense_input = np.zeros(self.ff_size, dtype=int)
+
+        self.n_computes = 1
+        self.feedforward_trace = np.full(self.ff_size, self.feedforward_sds.sparsity)
+        self.output_trace = np.full(self.output_size, self.output_sds.sparsity)
+        self.recognition_strength_trace = 0
 
         self.base_boosting_k = boosting_k
         self.boosting_k = self.base_boosting_k
@@ -127,23 +113,9 @@ class SpatialPooler:
         self.prune_grow_cycle = prune_grow_cycle
         self.prune_grow_schedule = int(self.prune_grow_cycle / self.output_sds.sparsity)
 
-        self.sparse_input = []
-        # use float not only to generalize to float-SDR, but also to eliminate
-        # inevitable int-to-float converting when we multiply it by weights
-        self.dense_input = np.zeros(self.ff_size, dtype=float)
-        self.winners = []
-        self.potentials = np.zeros(self.output_size)
-
-        self.n_computes = 1
-        self.feedforward_trace = np.full(self.ff_size, self.feedforward_sds.sparsity)
-        self.feedforward_size_trace = 0.
-        self.output_trace = np.full(self.output_size, self.output_sds.sparsity)
-        self.recognition_strength_trace = 0
         self.run_time = 0
 
-    def compute(
-            self, input_sdr: SparseSdr | FloatSparseSdr, learn: bool = False
-    ) -> SparseSdr | FloatSparseSdr:
+    def compute(self, input_sdr: SparseSdr, learn: bool = False) -> SparseSdr:
         """Compute the output SDR."""
         output_sdr, run_time = self._compute(input_sdr, learn)
         self.run_time += run_time
@@ -151,45 +123,9 @@ class SpatialPooler:
 
     @timed
     def _compute(self, input_sdr: SparseSdr, learn: bool) -> SparseSdr:
-        self.accept_input(input_sdr, learn=learn)
-        self.try_activate_neurogenesis()
+        self.n_computes += learn
+        self.feedforward_trace[input_sdr] += learn
 
-        matched_input_activity = self.match_current_input()
-        delta_potentials = (matched_input_activity * self.weights).sum(axis=1)
-        self.potentials += self.apply_boosting(delta_potentials)
-
-        self.select_winners(learn)
-        self.reinforce_winners(learn)
-
-        output_sdr = self.select_output()
-        self.accept_output(output_sdr, learn)
-
-        return output_sdr
-
-    def accept_input(self, sdr: SparseSdr | FloatSparseSdr, *, learn: bool):
-        """Accept new input and move to the next time step"""
-        if isinstance(sdr, FloatSparseSdr):
-            values = sdr.values
-            sdr = sdr.sdr
-        else:
-            values = 1.0
-
-        # forget prev SDR
-        self.dense_input[self.sparse_input] = 0
-        # apply timed decay to neurons' potential
-        self.potentials[:] = 0
-
-        # set new SDR
-        self.sparse_input = sdr
-        self.dense_input[self.sparse_input] = values
-
-        # For SP, an online learning is THE MOST natural operation mode.
-        # We treat the opposite case as the special mode, which only partly affects SP state.
-        if learn:
-            self.n_computes += 1
-            self.feedforward_trace[sdr] += values
-
-    def try_activate_neurogenesis(self):
         if self.is_newborn_phase:
             if self.n_computes % self.newborn_pruning_schedule == 0:
                 self.shrink_receptive_field()
@@ -197,91 +133,57 @@ class SpatialPooler:
             if self.n_computes % self.prune_grow_schedule == 0:
                 self.prune_grow_synapses()
 
-    def match_current_input(self, with_neurons: np.ndarray = None):
-        rf = self.rf if with_neurons is None else self.rf[with_neurons]
-        return self.dense_input[rf]
+        self.update_input(input_sdr)
 
-    def apply_boosting(self, overlaps):
+        rf_match_mask = self.match_input(self.dense_input)
+        overlaps = (rf_match_mask * self.weights).sum(axis=1)
+
+        # move most to the compute winners
+        winners = self.compute_winners(
+            overlaps=overlaps, rf_match_mask=rf_match_mask, learn=learn
+        )
+
+        if learn and winners.shape[0] > 0:
+            # update winners activation stats
+            self.output_trace[winners] += 1
+            self.recognition_strength_trace += overlaps[winners].mean()
+
+        return winners
+
+    def compute_winners(self, overlaps, rf_match_mask, learn):
         if self.is_newborn_phase and self.boosting_k > 1e-2:
             # boosting
             boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
-            # FIXME: normalize boosting alpha over neurons
-            overlaps = overlaps * boosting_alpha
-        return overlaps
+            # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
+            overlaps = overlaps * boosting_alpha ** np.sign(overlaps)
 
-    def select_winners(self, learn = False):
         n_winners = self.output_sds.active_size
         winners = np.sort(
-            np.argpartition(self.potentials, -n_winners)[-n_winners:]
+            np.argpartition(overlaps, -n_winners)[-n_winners:]
         )
-        self.winners = winners[self.potentials[winners] > 0]
+        winners = winners[overlaps[winners] > 0]
 
-    def reinforce_winners(self, learn: bool):
-        if not learn:
-            return
-        self.stdp(self.winners, self.potentials[self.winners])
+        if learn:
+            self.learn(winners, rf_match_mask[winners])
 
-    def stdp(
-            self,
-            neurons: SparseSdr, synaptic_activity: np.ndarray,
-            modulation: float = 1.0
-    ):
-        """
-        Apply learning rule.
+        return winners
 
-        Parameters
-        ----------
-        neurons: array of neurons affected with learning
-        synaptic_activity: dense array n_neurons x RF_size with their synaptic activations
-        modulation: a modulation coefficient for the update step
-        """
+    def learn(self, neurons: np.ndarray, rf_match_input_mask: np.ndarray, modulation: float = 1.0):
         if len(neurons) == 0:
             return
 
-        synaptic_activity = np.expand_dims(synaptic_activity, -1)
-
-        # NB: everything further on is individual for each learning neuron
-        # recognition strength — how good the input pattern is recognized
-        # recognition_strength = synaptic_activity.sum(axis=1, keepdims=True)
-        recognition_strength = synaptic_activity
-        # FIXME: consider using input normalization; do we need weighting by recognition str?
-        # normalized_recognition_strength = recognition_strength / total_input_activity
-        normalized_recognition_strength = recognition_strength
-
-        # the weaker recognition, the less sure the neuron that it should
-        # specialize to the pattern (NB: doubtful decision)
-        lr = modulation * self.learning_rate * normalized_recognition_strength
-
         w = self.weights[neurons]
-        dw = synaptic_activity * lr
+        n_matched = rf_match_input_mask.sum(axis=1, keepdims=True) + .1
+        lr = modulation * self.learning_rate / n_matched
 
-        self.weights[neurons] = normalize_weights(w + dw)
+        dw_matched = rf_match_input_mask * lr
 
-    def select_output(self):
-        output_sdr = self.winners
-        if self.output_mode == SpOutputMode.NON_BINARY:
-            output_sdr = FloatSparseSdr(self.winners, values=self.potentials[self.winners])
-        return output_sdr
-
-    def accept_output(self, sdr: SparseSdr, learn: bool):
-        if isinstance(sdr, FloatSparseSdr):
-            values = sdr.values
-            sdr = sdr.sdr
-        else:
-            values = 1.0
-
-        if not learn or sdr.shape[0] <= 0:
-            return
-
-        # update winners activation stats
-        self.output_trace[sdr] += values
-        # FIXME: make two metrics: for pre-weighting, post weighting delta
-        self.recognition_strength_trace += self.potentials[sdr].mean()
+        self.weights[neurons] = self.normalize_weights(w + dw_matched)
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         # feedback SDR is the SP neurons that should be reinforced or punished
-        fb_match_mask = self.match_current_input(with_neurons=feedback_sdr)
-        self.stdp(feedback_sdr, fb_match_mask, modulation=modulation)
+        fb_match_mask = self.match_input(self.dense_input, neurons=feedback_sdr)
+        self.learn(feedback_sdr, fb_match_mask, modulation=modulation)
 
     def shrink_receptive_field(self):
         self.newborn_pruning_stage += 1
@@ -315,7 +217,7 @@ class SpatialPooler:
         )
 
         self.rf = gather_rows(self.rf, keep_connections_i)
-        self.weights = normalize_weights(
+        self.weights = self.normalize_weights(
             gather_rows(self.weights, keep_connections_i)
         )
         self.learning_rate = self.newborn_linear_progress(
@@ -333,17 +235,45 @@ class SpatialPooler:
         self.prune_grow_synapses()
 
     def prune_grow_synapses(self):
-        print(
-            f'{self.output_entropy():.3f}'
-            f' | {self.recognition_strength:.1f}'
-        )
-        # FIXME: implement prune/grow
+        print(f'Force neurogenesis: {self.output_entropy():.3f} | {self.recognition_strength:.1f}')
+        # FIXME: rework prune/grow
         return
+        # prune-grow operation combined results to resample of a part of
+        # the most inactive or just randomly selected synapses;
+        # new synapses are distributed according to the feedforward distribution
+        synapse_sample_prob = self.feedforward_rate
+        synapse_sample_prob /= synapse_sample_prob.sum()
+
+        for neuron in range(self.output_size):
+            if self.output_relative_rate[neuron] > .1:
+                continue
+
+            self.rf[neuron] = self.rng.choice(
+                self.ff_size, size=self.rf_size, replace=False,
+                p=synapse_sample_prob
+            )
+            self.weights[neuron] = 1 / self.rf_size
 
     def on_end_newborn_phase(self):
         # self.learning_rate /= 2
         self.boosting_k = 0.
         print(f'Become adult: {self._state_str()}')
+
+    def update_input(self, sdr: SparseSdr):
+        # erase prev SDR
+        self.dense_input[self.sparse_input] = 0
+        # set new SDR
+        self.sparse_input = sdr
+        self.dense_input[self.sparse_input] = 1
+
+    def match_input(self, dense_input, neurons: np.ndarray = None):
+        rf = self.rf if neurons is None else self.rf[neurons]
+        return dense_input[rf]
+
+    @staticmethod
+    def normalize_weights(weights):
+        normalizer = np.abs(weights).sum(axis=1, keepdims=True)
+        return np.clip(weights / normalizer, 0., 1)
 
     def get_active_rf(self, weights):
         w_thr = 1 / self.rf_size
@@ -423,8 +353,3 @@ class SpatialPooler:
     @property
     def recognition_strength(self):
         return self.recognition_strength_trace / self.n_computes
-
-
-def normalize_weights(weights):
-    normalizer = np.abs(weights).sum(axis=1, keepdims=True)
-    return np.clip(weights / normalizer, 0., 1)

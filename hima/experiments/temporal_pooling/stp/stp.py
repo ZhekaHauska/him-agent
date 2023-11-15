@@ -248,7 +248,7 @@ class SpatialTemporalPooler:
         # feedback SDR is the SP neurons that should be reinforced
         fb_match_mask, _ = self.match_input(self.dense_input, neurons=feedback_sdr)
 
-        self.learn(feedback_sdr, fb_match_mask, modulation=feedback_strength)
+        self.stdp(feedback_sdr, fb_match_mask, modulation=feedback_strength)
         self.no_feedback_count = 0
 
     def shrink_receptive_field(self):
