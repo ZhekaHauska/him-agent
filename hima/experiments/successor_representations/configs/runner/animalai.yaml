@@ -7,13 +7,19 @@ n_episodes: 901
 update_period: 50
 update_start: 0
 max_steps: 50
-log_gif_fps: 5
+log_gif_fps: 3
 action_inertia: 1
 frame_skip: 10
 camera_mode: clip
 
 # if True then use random strategy
 reward_free: False
+
+# fixed strategies
+strategies:
+  - [0, 1, 1, 2, 1]
+  - [1, 0, 2, 0, 2]
+  - [2, 1, 1, 0, 1]
 
 # model based sr testing
 test_srs: False
@@ -34,7 +40,7 @@ experiment: animalai
 # list of setups
 setup:
   # ['competition/01-01-01.yaml', 'competition/01-01-01_wall.yaml']
-  ['custom/two_ways_both.yaml', 'custom/two_ways_left.yaml', 'custom/two_ways_right.yaml']
-setup_period: [99, 299, 600]
+  ['custom/two_ways_left.yaml', 'custom/two_ways_right.yaml']
+setup_period: [299, 600]
 
 seed: null

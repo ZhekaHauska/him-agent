@@ -594,6 +594,7 @@ class AnimalAITest:
         self.layer_type = conf['run']['layer']
         self.action_inertia = conf['run'].get('action_inertia', 1)
         self.frame_skip = conf['run'].get('frame_skip', 0)
+        self.strategies = conf['run'].get('strategies', None)
 
         assert self.frame_skip >= 0
 
@@ -766,6 +767,9 @@ class AnimalAITest:
             self.environment.reset()
             self.agent.reset(self.initial_context, self.initial_external_message)
 
+            strategy = None
+            action_step = 0
+
             while running:
                 if (self.reset_context_period > 0) and (steps > 0):
                     if (steps % self.reset_context_period) == 0:
@@ -803,11 +807,22 @@ class AnimalAITest:
                 total_reward[events] += reward
 
                 if running:
-                    if (steps % self.action_inertia) == 0:
-                        if self.reward_free:
-                            action = self._rng.integers(self.n_actions)
-                        else:
-                            action = self.agent.sample_action()
+                    if self.strategies is not None:
+                        if steps == 0:
+                            strategy = self.strategies[self.agent.sample_action()]
+
+                        if (steps % self.action_inertia) == 0:
+                            if action_step < len(strategy):
+                                action = strategy[action_step]
+                            else:
+                                running = False
+                            action_step += 1
+                    else:
+                        if (steps % self.action_inertia) == 0:
+                            if self.reward_free:
+                                action = self._rng.integers(self.n_actions)
+                            else:
+                                action = self.agent.sample_action()
 
                 # >>> logging
                 if self.logger is not None:
