@@ -3,12 +3,15 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
 
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
+from hima.common.float_sdr import FloatSparseSdr
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
 from hima.common.sdr import SparseSdr
@@ -55,7 +58,7 @@ class SpAttractorExperiment:
 
     def __init__(
             self, config: TConfig, config_path: Path,
-            log: bool, seed: int,
+            log: bool, seed: int, binary: bool,
             train: TConfig, test: TConfig, attraction: TConfig,
             encoder: TConfig, attractor: TConfig,
             project: str = None,
@@ -77,6 +80,7 @@ class SpAttractorExperiment:
         self.rng = np.random.default_rng(self.seed)
 
         self.data = MnistDataset()
+        self.binary = binary
 
         input_sds = self.data.output_sds
         self.encoder = self.config.resolve_object(encoder, feedforward_sds=input_sds)
@@ -109,8 +113,7 @@ class SpAttractorExperiment:
         sample_indices = self.rng.choice(self.data.n_images, size=self.training.n_steps)
         for step in range(1, self.training.n_steps + 1):
             sample_ind = sample_indices[step - 1]
-
-            sample = self.data.sdrs[sample_ind]
+            sample = self.data.get_sdr(sample_ind, binary=self.binary)
             self.process_sample(sample, learn=True)
 
     def test_epoch(self):
@@ -120,7 +123,10 @@ class SpAttractorExperiment:
             sample_indices = self.rng.choice(subset, size=self.testing.items_per_class)
 
             intra_cls_trajectories = [
-                self.process_sample(self.data.sdrs[sample_ind], learn=False)
+                self.process_sample(
+                    self.data.get_sdr(sample_ind, binary=self.binary),
+                    learn=False
+                )
                 for sample_ind in sample_indices
             ]
             trajectories.append(intra_cls_trajectories)
@@ -236,7 +242,10 @@ class SpAttractorExperiment:
         )
 
     @staticmethod
-    def similarity(x1, x2):
+    def similarity(x1: SparseSdr | FloatSparseSdr, x2: SparseSdr | FloatSparseSdr):
+        if isinstance(x1, FloatSparseSdr):
+            x1 = x1.sdr
+            x2 = x2.sdr
         return safe_divide(np.count_nonzero(np.isin(x1, x2)), x2.size)
 
     def print_with_timestamp(self, *args, cond: bool = True):
