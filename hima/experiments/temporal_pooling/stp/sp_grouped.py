@@ -5,9 +5,8 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
 
-from hima.common.float_sdr import FloatSparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.stp.sp import SpatialPooler, SpOutputMode
+from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
 
 
 class SpatialPoolerGrouped(SpatialPooler):
