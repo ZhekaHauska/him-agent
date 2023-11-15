@@ -19,6 +19,8 @@ reward_free: True
 # model based sr testing
 test_srs: True
 test_sr_steps: 5
+log_value_function: True
+value_func_sigma: 2
 
 # sp_ensemble | sp_grouped
 encoder: sp_grouped

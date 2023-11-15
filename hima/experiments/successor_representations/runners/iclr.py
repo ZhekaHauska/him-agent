@@ -8,6 +8,7 @@ import os
 import sys
 
 import numpy as np
+from scipy.ndimage import gaussian_filter
 
 from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima, FCHMMBioHima
 from hima.common.config.base import read_config, override_config
@@ -79,6 +80,8 @@ class PinballTest:
         self.test_sr_steps = conf['run'].get('test_sr_steps', 0)
         self.layer_type = conf['run']['layer']
         self.action_inertia = conf['run'].get('action_inertia', 1)
+        self.log_value_function = conf['run'].get('log_value_function', False)
+        self.value_func_sigma = conf['run'].get('value_func_sigma', 2)
 
         self.setups = conf['run']['setup']
         self.setup_period = conf['run'].get('setup_period', None)
@@ -98,7 +101,7 @@ class PinballTest:
         self.environment = Pinball(**conf['env'])
         obs, _, _ = self.environment.obs()
         self.raw_obs_shape = (obs.shape[0], obs.shape[1])
-        self.start_position = conf['run']['start_position']
+        self.start_position = conf['run'].get('start_position', None)
         self.actions = conf['run']['actions']
         self.n_actions = len(self.actions)
 
@@ -163,7 +166,8 @@ class PinballTest:
                 {
                     'agent/obs_rewards': np.mean,
                     'agent/striatum_weights': np.mean,
-                    'agent/real_rewards': np.mean
+                    'agent/real_rewards': np.mean,
+                    'agent/value_function': np.mean
                 },
                 self.logger
             )
@@ -223,8 +227,17 @@ class PinballTest:
     def run(self):
         decoder = self.agent.cortical_column.decoder
         total_reward = np.zeros(self.raw_obs_shape).flatten()
+        value_function = np.zeros(self.raw_obs_shape).flatten()
+        obs_counts = np.zeros(self.raw_obs_shape).flatten()
         setup_episodes = 0
         current_setup_id = 0
+
+        # get setup image
+        self.environment.reset(self.start_position)
+        setup_im, _, _ = self.environment.obs()
+
+        if self.logger is not None:
+            self.logger.log({'setup': wandb.Image(setup_im)}, step=0)
 
         for i in range(self.n_episodes):
             steps = 0
@@ -241,6 +254,13 @@ class PinballTest:
                     current_setup_id
                 ]))
                 setup_episodes = 0
+
+                # get setup image
+                self.environment.reset(self.start_position)
+                setup_im, _, _ = self.environment.obs()
+
+                if self.logger is not None:
+                    self.logger.log({'setup': wandb.Image(setup_im)}, step=i)
 
             self.environment.reset(self.start_position)
             self.agent.reset(self.initial_context, self.initial_external_message)
@@ -354,6 +374,11 @@ class PinballTest:
                         gen_sr_test_raw = None
                         gen_sr_test_tail_raw = None
 
+                    if self.log_value_function and (i >= self.update_start):
+                        value = np.sum(self.agent.evaluate_actions(with_planning=True))
+                        value_function[events] += value
+                        obs_counts[events] += 1
+
                     if (i >= self.update_start) and (i % self.update_period) == 0:
                         raw_beh = self.to_img(self.prev_image)
                         proc_beh = self.to_img(sparse_to_dense(events, like=self.prev_image))
@@ -455,11 +480,26 @@ class PinballTest:
                             )
                         ).flatten()
                     ).reshape(self.raw_obs_shape)
+                    value_function_im = gaussian_filter(
+                                np.divide(
+                                        value_function,
+                                        obs_counts,
+                                        where=obs_counts > 0,
+                                        out=np.zeros_like(value_function)
+                                ).reshape(self.raw_obs_shape),
+                                sigma=self.value_func_sigma
+                            )
+                    setup_im_gray = setup_im.sum(axis=-1)
+                    setup_im_bin = np.flatnonzero(setup_im_gray > setup_im_gray.mean())
+                    value_function_im = value_function_im.flatten()
+                    value_function_im[setup_im_bin] = np.nan
+
                     self.heatmap_metrics.update(
                         {
                             'agent/obs_rewards': obs_rewards,
                             'agent/striatum_weights': self.agent.striatum_weights,
-                            'agent/real_rewards': total_reward.reshape(self.raw_obs_shape)
+                            'agent/real_rewards': total_reward.reshape(self.raw_obs_shape),
+                            'agent/value_function': value_function_im.reshape(self.raw_obs_shape)
                         }
                     )
                     self.heatmap_metrics.log(i)
