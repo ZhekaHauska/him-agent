@@ -234,6 +234,7 @@ class PinballTest:
 
         # get setup image
         self.environment.reset(self.start_position)
+        self.environment.step()
         setup_im, _, _ = self.environment.obs()
 
         if self.logger is not None:
@@ -257,6 +258,7 @@ class PinballTest:
 
                 # get setup image
                 self.environment.reset(self.start_position)
+                self.environment.step()
                 setup_im, _, _ = self.environment.obs()
 
                 if self.logger is not None:
