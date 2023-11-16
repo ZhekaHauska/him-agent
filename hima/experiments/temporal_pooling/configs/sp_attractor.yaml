@@ -24,7 +24,6 @@ envs:
 sp:
   encoder:
     _base_: $_base.spatial_pooler.default
-    _type_: sp.depr
     # input
     target_rf_to_input_ratio: 1.5
     # output
@@ -36,11 +35,9 @@ sp:
     prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: True
     boosting_k: 0.5
-#    output_mode: non_binary
 
   attractor:
     _base_: $_base.spatial_pooler.default
-    _type_: sp.depr
     # input
     target_rf_to_input_ratio: 1.5
     # output
@@ -51,7 +48,6 @@ sp:
     newborn_pruning_stages: 10
     prune_grow_cycle: 100.0
     boosting_k: 0.5
-#    output_mode: non_binary
 
 train_setups:
   full:

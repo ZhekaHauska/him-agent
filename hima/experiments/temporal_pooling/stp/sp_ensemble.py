@@ -7,7 +7,7 @@ import numpy as np
 from htm.bindings.sdr import SDR
 
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
+from hima.experiments.temporal_pooling.stp.sp_depr import SpatialPooler
 from hima.experiments.temporal_pooling.stp.sp_grouped import SpatialPoolerGrouped
 
 

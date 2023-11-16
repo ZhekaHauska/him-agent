@@ -69,10 +69,10 @@ def _resolve_temporal_memory(type_tag: str):
 
 def _resolve_spatial_pooler(type_tag: str):
     if type_tag == 'sp.vectorized':
-        from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
-        return SpatialPooler
-    if type_tag == 'sp.depr':
         from hima.experiments.temporal_pooling.stp.sp_depr import SpatialPooler
+        return SpatialPooler
+    if type_tag == 'sp.float':
+        from hima.experiments.temporal_pooling.stp.sp_float import SpatialPooler
         return SpatialPooler
     if type_tag == 'sp.list':
         from hima.experiments.temporal_pooling.stp.sp_list import SpatialPooler
