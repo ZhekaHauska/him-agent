@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.stp.sp_depr import SpatialPooler
+from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
 from hima.experiments.temporal_pooling.stp.sp_ensemble import SpatialPoolerEnsemble
 
 

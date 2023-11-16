@@ -6,7 +6,7 @@
 import numpy as np
 
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.stp.sp_depr import SpatialPooler
+from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
 
 
 class SpatialPoolerGrouped(SpatialPooler):
