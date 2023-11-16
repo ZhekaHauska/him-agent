@@ -451,7 +451,7 @@ class FCHMMLayer:
         self.external_input_size = self.n_external_vars * self.n_external_states
         self.context_input_size = self.n_context_vars * self.n_context_states
 
-        self.input_sdr_size = n_obs_states
+        self.input_sdr_size = n_obs_states * n_obs_vars
 
         # trainable parameters
         self.transition_probs = np.zeros(
