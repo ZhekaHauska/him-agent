@@ -91,11 +91,12 @@ class SpatialPooler:
             output_mode: str = 'binary'
     ):
         self.rng = np.random.default_rng(seed)
+
         self.feedforward_sds = Sds.make(feedforward_sds)
+        self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
+
         self.output_sds = Sds.make(output_sds)
         self.output_mode = SpOutputMode[output_mode.upper()]
-
-        self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
         self.initial_rf_sparsity = min(
             initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
@@ -162,7 +163,7 @@ class SpatialPooler:
         self.reinforce_winners(learn)
 
         output_sdr = self.select_output()
-        self.accept_output(output_sdr, learn)
+        self.accept_output(output_sdr, learn=learn)
 
         return output_sdr
 
@@ -175,9 +176,9 @@ class SpatialPooler:
             values = 1.0
 
         # forget prev SDR
-        self.dense_input[self.sparse_input] = 0
+        self.dense_input[self.sparse_input] = 0.
         # apply timed decay to neurons' potential
-        self.potentials[:] = 0
+        self.potentials.fill(0.)
 
         # set new SDR
         self.sparse_input = sdr
@@ -188,6 +189,7 @@ class SpatialPooler:
         if learn:
             self.n_computes += 1
             self.feedforward_trace[sdr] += values
+            self.feedforward_size_trace += len(sdr)
 
     def try_activate_neurogenesis(self):
         if self.is_newborn_phase:
@@ -263,7 +265,7 @@ class SpatialPooler:
             output_sdr = FloatSparseSdr(self.winners, values=self.potentials[self.winners])
         return output_sdr
 
-    def accept_output(self, sdr: SparseSdr, learn: bool):
+    def accept_output(self, sdr: SparseSdr, *, learn: bool):
         if isinstance(sdr, FloatSparseSdr):
             values = sdr.values
             sdr = sdr.sdr
@@ -333,12 +335,11 @@ class SpatialPooler:
         self.prune_grow_synapses()
 
     def prune_grow_synapses(self):
+        # FIXME: implement prune/grow
         print(
             f'{self.output_entropy():.3f}'
             f' | {self.recognition_strength:.1f}'
         )
-        # FIXME: implement prune/grow
-        return
 
     def on_end_newborn_phase(self):
         # self.learning_rate /= 2
@@ -374,7 +375,7 @@ class SpatialPooler:
 
     @property
     def ff_avg_active_size(self):
-        return self.feedforward_trace.sum() // self.n_computes
+        return self.feedforward_size_trace // self.n_computes
 
     @property
     def ff_avg_sparsity(self):
