@@ -466,12 +466,16 @@ class LstmBioHima(BioHIMA):
             initial_messages,
             initial_prediction,
             approximate_tail=True,
-            save_state=True
+            save_state=True,
+            return_predictions=False,
+            early_stop=False
     ):
         """
             n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
             then this function is equivalent to predict_sr.
         """
+        predictions = []
+
         if save_state:
             self._make_state_snapshot()
 
@@ -484,6 +488,21 @@ class LstmBioHima(BioHIMA):
 
         discount = 1.0
         for t in range(n_steps):
+            if early_stop:
+                uni_dkl = (
+                        np.log(self.cortical_column.layer.n_obs_states) +
+                        np.sum(
+                            predicted_observation * np.log(
+                                np.clip(
+                                    predicted_observation, EPS, None
+                                )
+                            )
+                        )
+                )
+
+                if uni_dkl < EPS:
+                    break
+
             sr += predicted_observation * discount
 
             if self.sr_estimate_planning == SrEstimatePlanning.UNIFORM:
@@ -511,6 +530,9 @@ class LstmBioHima(BioHIMA):
             context_messages = self.cortical_column.layer.internal_forward_messages.copy()
             discount *= self.gamma
 
+            if return_predictions:
+                predictions.append(copy(predicted_observation))
+
         if approximate_tail:
             sr += self.predict_sr(context_messages) * discount
 
@@ -518,7 +540,11 @@ class LstmBioHima(BioHIMA):
             self._restore_last_snapshot()
 
         sr /= self.cortical_column.layer.n_hidden_vars
-        return sr
+
+        if return_predictions:
+            return sr, predictions
+        else:
+            return sr
 
     def _extract_state_from_context(self, context_messages: TLstmLayerHiddenState):
         # extract model state from layer state
