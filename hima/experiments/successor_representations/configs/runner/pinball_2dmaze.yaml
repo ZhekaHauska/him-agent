@@ -1,20 +1,20 @@
-log: True
+log: False
 save_model: False
-project_name: 'sr_pinball_iclr_final_test'
+project_name: 'sr_pinball_wall_test'
 run_tag: null
 
-n_episodes: 601
-update_period: 50
-update_start: 0
-max_steps: 15
+n_episodes: 351
+update_period: 10
+update_start: 250
+max_steps: 30
 log_gif_fps: 5
 # start_position: [0, 0]
-actions: [[0, 3], [0.5, 3], [-0.5, 3]]
+actions: [[-0.1, 3], [1.5, 3], [-1.6, 3], [3.0, 3]]
 action_inertia: 3
 camera_mode: clip
 
 # if True then use random strategy
-reward_free: False
+reward_free: True
 
 # model based sr testing
 test_srs: True
@@ -27,15 +27,15 @@ encoder: sp_grouped
 # makes sense only for grouped: naive | learned
 decoder: learned
 
-env_conf: 'configs/pinball/default.yaml'
+env_conf: 'configs/pinball/debug.yaml'
 agent_conf: 'configs/agent/pinball.yaml'
-layer_conf: 'configs/dhtm/pinball.yaml'
+layer_conf: 'configs/rwkv/pinball.yaml'
 encoder_conf: 'configs/encoder/sp_grouped_pinball.yaml'
 decoder_conf: 'configs/decoder/pinball.yaml'
 
 experiment: pinball
 # list of setups
-setup: [fork_rew1, fork_rew2]
-setup_period: [200, 402]
+setup: [wall_rew1]
+setup_period: 352
 
 seed: null
