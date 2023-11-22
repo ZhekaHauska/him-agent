@@ -320,12 +320,15 @@ class PinballTest:
                     'main_metrics/reward': reward,
                     'layer/surprise_hidden': self.agent.surprise,
                     'layer/norm_surprise_hidden': self.agent.ss_surprise.norm_value,
-                    'layer/loss': self.agent.cortical_column.layer.last_loss_value,
                     'sr/td_error': self.agent.td_error,
                     'sr/norm_td_error': self.agent.ss_td_error.norm_value,
                     'agent/sr_steps': self.agent.sr_steps,
                     'agent/striatum_lr': self.agent.striatum_lr
                 }
+                if isinstance(self.agent, LstmBioHima):
+                    scalar_metrics_update['layer/loss'] = (
+                        self.agent.cortical_column.layer.last_loss_value
+                    )
                 if self.logger is not None:
                     if self.layer_type == 'dhtm':
                         scalar_metrics_update['layer/n_segments'] = (
@@ -926,6 +929,10 @@ class AnimalAITest:
                     'agent/sr_steps': self.agent.sr_steps,
                     'agent/striatum_lr': self.agent.striatum_lr
                 }
+                if isinstance(self.agent, LstmBioHima):
+                    scalar_metrics_update['layer/loss'] = (
+                        self.agent.cortical_column.layer.last_loss_value
+                    )
                 if self.logger is not None:
                     if self.layer_type == 'dhtm':
                         scalar_metrics_update['layer/n_segments'] = (
