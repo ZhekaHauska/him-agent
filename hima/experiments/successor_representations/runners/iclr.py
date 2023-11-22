@@ -15,11 +15,11 @@ from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
-from hima.modules.baselines.lstm import LstmLayer
+from hima.modules.baselines.lstm import LstmLayer, to_numpy
 from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.belief.utils import normalize
 from hima.modules.baselines.hmm import FCHMMLayer
-from hima.experiments.successor_representations.runners.utils import make_decoder
+from hima.experiments.successor_representations.runners.utils import make_decoder, print_digest
 from hima.common.utils import to_gray_img, isnone
 from hima.common.sdr import sparse_to_dense
 
@@ -146,6 +146,7 @@ class PinballTest:
                 'main_metrics/steps': np.mean,
                 'layer/surprise_hidden': np.mean,
                 'layer/norm_surprise_hidden': np.mean,
+                'layer/loss': np.mean,
                 'sr/td_error': np.mean,
                 'sr/norm_td_error': np.mean,
                 'sr/test_mse_approx_tail': np.mean,
@@ -223,6 +224,24 @@ class PinballTest:
                 self.generated_sr_stack = None
                 self.generated_sr_stack_raw = None
                 self.prediction_stack = None
+        else:
+            from hima.common.metrics import ScalarMetrics
+            self.scalar_metrics = ScalarMetrics(
+                {
+                    'main_metrics/reward': np.sum,
+                    'main_metrics/steps': np.mean,
+                    'layer/surprise_hidden': np.mean,
+                    'layer/norm_surprise_hidden': np.mean,
+                    'layer/loss': np.mean,
+                    'sr/td_error': np.mean,
+                    'sr/norm_td_error': np.mean,
+                    'sr/test_mse_approx_tail': np.mean,
+                    'sr/test_mse': np.mean,
+                    'agent/sr_steps': np.mean,
+                    'agent/striatum_lr': np.mean
+                },
+                self.logger
+            )
 
     def run(self):
         decoder = self.agent.cortical_column.decoder
@@ -297,16 +316,17 @@ class PinballTest:
                     self.environment.act(pinball_action)
 
                 # >>> logging
+                scalar_metrics_update = {
+                    'main_metrics/reward': reward,
+                    'layer/surprise_hidden': self.agent.surprise,
+                    'layer/norm_surprise_hidden': self.agent.ss_surprise.norm_value,
+                    'layer/loss': self.agent.cortical_column.layer.last_loss_value,
+                    'sr/td_error': self.agent.td_error,
+                    'sr/norm_td_error': self.agent.ss_td_error.norm_value,
+                    'agent/sr_steps': self.agent.sr_steps,
+                    'agent/striatum_lr': self.agent.striatum_lr
+                }
                 if self.logger is not None:
-                    scalar_metrics_update = {
-                        'main_metrics/reward': reward,
-                        'layer/surprise_hidden': self.agent.surprise,
-                        'layer/norm_surprise_hidden': self.agent.ss_surprise.norm_value,
-                        'sr/td_error': self.agent.td_error,
-                        'sr/norm_td_error': self.agent.ss_td_error.norm_value,
-                        'agent/sr_steps': self.agent.sr_steps,
-                        'agent/striatum_lr': self.agent.striatum_lr
-                    }
                     if self.layer_type == 'dhtm':
                         scalar_metrics_update['layer/n_segments'] = (
                             self.agent.cortical_column.layer.
@@ -389,21 +409,22 @@ class PinballTest:
                         actual_state = self.agent.cortical_column.layer.internal_forward_messages
                         predicted_state = self.agent.cortical_column.layer.prediction_cells
                         if type(actual_state) is list:
-                            actual_state = self.agent._extract_state_from_context(
-                                actual_state
-                            ).cpu().numpy()
-                            predicted_state = self.agent._extract_state_from_context(
-                                predicted_state
-                            ).cpu().numpy()
+                            actual_state = to_numpy(
+                                self.agent._extract_state_from_context(actual_state)
+                            )
+                            predicted_state = to_numpy(
+                                self.agent._extract_state_from_context(predicted_state)
+                            )
 
-                        hid_beh = self.to_img(
-                            actual_state,
-                            shape=(self.agent.cortical_column.layer.n_columns, -1)
-                        )
-                        hid_pred_beh = self.to_img(
-                            predicted_state,
-                            shape=(self.agent.cortical_column.layer.n_columns, -1)
-                        )
+                        n_rows = self.agent.cortical_column.layer.n_columns
+                        if isinstance(self.agent, LstmBioHima):
+                            n_rows = self.agent.cortical_column.layer.n_hidden_vars
+                        hid_beh = self.to_img(actual_state, shape=(n_rows, -1))
+                        hid_pred_beh = self.to_img(predicted_state, shape=(n_rows, -1))
+                        # hid_diff_beh = self.to_img(
+                        #     np.abs(actual_state - predicted_state),
+                        #     shape=(n_rows, -1)
+                        # )
 
                         if pred_sr is not None:
                             pred_sr = self.to_img(
@@ -436,7 +457,10 @@ class PinballTest:
                                 'agent/behavior': np.hstack(
                                     [raw_beh, proc_beh, pred_beh, pred_sr, gen_sr]),
                                 'agent/hidden': np.hstack(
-                                    [hid_beh, hid_pred_beh]
+                                    [
+                                        hid_beh, hid_pred_beh,
+                                        # hid_diff_beh
+                                    ]
                                 )
                             }
                         )
@@ -455,6 +479,8 @@ class PinballTest:
                                     )
                                 }
                             )
+                else:
+                    self.scalar_metrics.update(scalar_metrics_update)
                 # <<< logging
 
                 steps += 1
@@ -463,8 +489,8 @@ class PinballTest:
                     running = False
 
             # >>> logging
+            self.scalar_metrics.update({'main_metrics/steps': steps})
             if self.logger is not None:
-                self.scalar_metrics.update({'main_metrics/steps': steps})
                 self.scalar_metrics.log(i)
 
                 if self.test_srs:
@@ -506,6 +532,9 @@ class PinballTest:
                     )
                     self.heatmap_metrics.log(i)
                     self.image_metrics.log(i)
+            else:
+                print_digest(self.scalar_metrics.summarize())
+                self.scalar_metrics.reset()
             # <<< logging
             setup_episodes += 1
         else:
@@ -698,18 +727,19 @@ class AnimalAITest:
             from hima.common.metrics import ScalarMetrics, HeatmapMetrics, ImageMetrics, SRStackSurprise, PredictionsStackSurprise
             # define metrics
             basic_scalar_metrics = {
-                    'main_metrics/reward': np.sum,
-                    'main_metrics/steps': np.mean,
-                    'layer/surprise_hidden': np.mean,
-                    'layer/norm_surprise_hidden': np.mean,
-                    'layer/relative_surprise': np.mean,
-                    'sr/td_error': np.mean,
-                    'sr/norm_td_error': np.mean,
-                    'sr/test_mse_approx_tail': np.mean,
-                    'sr/test_mse': np.mean,
-                    'agent/sr_steps': np.mean,
-                    'agent/striatum_lr': np.mean
-                }
+                'main_metrics/reward': np.sum,
+                'main_metrics/steps': np.mean,
+                'layer/surprise_hidden': np.mean,
+                'layer/norm_surprise_hidden': np.mean,
+                'layer/relative_surprise': np.mean,
+                'layer/loss': np.mean,
+                'sr/td_error': np.mean,
+                'sr/norm_td_error': np.mean,
+                'sr/test_mse_approx_tail': np.mean,
+                'sr/test_mse': np.mean,
+                'agent/sr_steps': np.mean,
+                'agent/striatum_lr': np.mean
+            }
 
             if self.layer_type == 'dhtm':
                 basic_scalar_metrics['layer/n_segments'] = np.mean
@@ -778,6 +808,25 @@ class AnimalAITest:
                 self.predicted_sr_stack_raw = None
                 self.generated_sr_stack = None
                 self.generated_sr_stack_raw = None
+        else:
+            from hima.common.metrics import ScalarMetrics
+            self.scalar_metrics = ScalarMetrics(
+                {
+                    'main_metrics/reward': np.sum,
+                    'main_metrics/steps': np.mean,
+                    'layer/surprise_hidden': np.mean,
+                    'layer/norm_surprise_hidden': np.mean,
+                    'layer/relative_surprise': np.mean,
+                    'layer/loss': np.mean,
+                    'sr/td_error': np.mean,
+                    'sr/norm_td_error': np.mean,
+                    'sr/test_mse_approx_tail': np.mean,
+                    'sr/test_mse': np.mean,
+                    'agent/sr_steps': np.mean,
+                    'agent/striatum_lr': np.mean
+                },
+                self.logger
+            )
 
     def run(self):
         decoder = self.agent.cortical_column.decoder
@@ -867,17 +916,17 @@ class AnimalAITest:
                                 action = self.agent.sample_action()
 
                 # >>> logging
+                scalar_metrics_update = {
+                    'main_metrics/reward': reward,
+                    'layer/surprise_hidden': self.agent.surprise,
+                    'layer/norm_surprise_hidden': self.agent.ss_surprise.norm_value,
+                    'layer/relative_surprise': self.agent.relative_log_surprise,
+                    'sr/td_error': self.agent.td_error,
+                    'sr/norm_td_error': self.agent.ss_td_error.norm_value,
+                    'agent/sr_steps': self.agent.sr_steps,
+                    'agent/striatum_lr': self.agent.striatum_lr
+                }
                 if self.logger is not None:
-                    scalar_metrics_update = {
-                        'main_metrics/reward': reward,
-                        'layer/surprise_hidden': self.agent.surprise,
-                        'layer/norm_surprise_hidden': self.agent.ss_surprise.norm_value,
-                        'layer/relative_surprise': self.agent.relative_log_surprise,
-                        'sr/td_error': self.agent.td_error,
-                        'sr/norm_td_error': self.agent.ss_td_error.norm_value,
-                        'agent/sr_steps': self.agent.sr_steps,
-                        'agent/striatum_lr': self.agent.striatum_lr
-                    }
                     if self.layer_type == 'dhtm':
                         scalar_metrics_update['layer/n_segments'] = (
                             self.agent.cortical_column.layer.
@@ -955,44 +1004,41 @@ class AnimalAITest:
                         actual_state = self.agent.cortical_column.layer.internal_forward_messages
                         predicted_state = self.agent.cortical_column.layer.prediction_cells
                         if type(actual_state) is list:
-                            actual_state = self.agent._extract_state_from_context(
-                                actual_state
-                            ).cpu().numpy()
-                            predicted_state = self.agent._extract_state_from_context(
-                                predicted_state
-                            ).cpu().numpy()
+                            actual_state = to_numpy(
+                                self.agent._extract_state_from_context(actual_state)
+                            )
+                            predicted_state = to_numpy(
+                                self.agent._extract_state_from_context(predicted_state)
+                            )
 
-                        hid_beh = self.to_img(
-                            actual_state,
-                            shape=(self.agent.cortical_column.layer.n_columns, -1)
-                        )
-                        hid_pred_beh = self.to_img(
-                            predicted_state,
-                            shape=(self.agent.cortical_column.layer.n_columns, -1)
-                        )
+                        n_rows = self.agent.cortical_column.layer.n_columns
+                        if isinstance(self.agent, LstmBioHima):
+                            n_rows = self.agent.cortical_column.layer.n_hidden_vars
+                        hid_beh = self.to_img(actual_state, shape=(n_rows, -1))
+                        hid_pred_beh = self.to_img(predicted_state, shape=(n_rows, -1))
 
                         if pred_sr is not None:
                             pred_sr = self.to_img(
-                                    decoder.decode(
-                                        normalize(
-                                            pred_sr.reshape(
-                                                self.agent.cortical_column.layer.n_obs_vars, -1
-                                            )
-                                        ).flatten()
-                                    )
+                                decoder.decode(
+                                    normalize(
+                                        pred_sr.reshape(
+                                            self.agent.cortical_column.layer.n_obs_vars, -1
+                                        )
+                                    ).flatten()
+                                )
                             )
                         else:
                             pred_sr = np.zeros(self.raw_obs_shape).astype('uint8')
 
                         if gen_sr is not None:
                             gen_sr = self.to_img(
-                                    decoder.decode(
-                                        normalize(
-                                            gen_sr.reshape(
-                                                self.agent.cortical_column.layer.n_obs_vars, -1
-                                            )
-                                        ).flatten()
-                                    )
+                                decoder.decode(
+                                    normalize(
+                                        gen_sr.reshape(
+                                            self.agent.cortical_column.layer.n_obs_vars, -1
+                                        )
+                                    ).flatten()
+                                )
                             )
                         else:
                             gen_sr = np.zeros(self.raw_obs_shape).astype('uint8')
@@ -1021,6 +1067,8 @@ class AnimalAITest:
                                     )
                                 }
                             )
+                else:
+                    self.scalar_metrics.update(scalar_metrics_update)
                 # <<< logging
 
                 steps += 1
@@ -1029,8 +1077,8 @@ class AnimalAITest:
                     running = False
 
             # >>> logging
+            self.scalar_metrics.update({'main_metrics/steps': steps})
             if self.logger is not None:
-                self.scalar_metrics.update({'main_metrics/steps': steps})
                 self.scalar_metrics.log(i)
 
                 if self.test_srs:
@@ -1057,6 +1105,9 @@ class AnimalAITest:
                     )
                     self.heatmap_metrics.log(i)
                     self.image_metrics.log(i)
+            else:
+                print_digest(self.scalar_metrics.summarize())
+                self.scalar_metrics.reset()
             # <<< logging
             setup_episodes += 1
         else:
