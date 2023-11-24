@@ -136,8 +136,14 @@ class AnimalAITest:
                     'main_metrics/reward': np.sum,
                     'main_metrics/steps': np.mean,
                     'layer/surprise_hidden': np.mean,
+                    'layer/norm_surprise_hidden': np.mean,
                     'layer/loss': np.mean,
-                    'agent/td_error': np.mean
+                    'sr/td_error': np.mean,
+                    'sr/norm_td_error': np.mean,
+                    'sr/test_mse_approx_tail': np.mean,
+                    'sr/test_mse': np.mean,
+                    'agent/sr_steps': np.mean,
+                    'agent/striatum_lr': np.mean
                 },
                 self.logger
             )
@@ -164,8 +170,14 @@ class AnimalAITest:
                     'main_metrics/reward': np.sum,
                     'main_metrics/steps': np.mean,
                     'layer/surprise_hidden': np.mean,
+                    'layer/norm_surprise_hidden': np.mean,
                     'layer/loss': np.mean,
-                    'agent/td_error': np.mean
+                    'sr/td_error': np.mean,
+                    'sr/norm_td_error': np.mean,
+                    'sr/test_mse_approx_tail': np.mean,
+                    'sr/test_mse': np.mean,
+                    'agent/sr_steps': np.mean,
+                    'agent/striatum_lr': np.mean
                 },
                 self.logger
             )
@@ -224,8 +236,12 @@ class AnimalAITest:
                 self.scalar_metrics.update({
                     'main_metrics/reward': reward,
                     'layer/surprise_hidden': self.agent.surprise,
+                    'layer/norm_surprise_hidden': self.agent.ss_surprise.norm_value,
                     'layer/loss': self.agent.cortical_column.layer.last_loss_value,
-                    'agent/td_error': self.agent.td_error
+                    'sr/td_error': self.agent.td_error,
+                    'sr/norm_td_error': self.agent.ss_td_error.norm_value,
+                    'agent/sr_steps': self.agent.sr_steps,
+                    'agent/striatum_lr': self.agent.striatum_lr
                 })
                 if self.logger is not None:
                     if (episode % self.update_rate) == 0:
