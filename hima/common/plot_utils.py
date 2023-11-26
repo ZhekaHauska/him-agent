@@ -24,7 +24,8 @@ def plot_grid_images(
         show: bool = True,
         save_path: Optional[Path] = None,
         with_value_text_flags: list[bool] = None,
-        cols_per_row: int = 5
+        cols_per_row: int = 5,
+        fig_size_scale: int = 5
 ):
     images = ensure_list(images)
     titles = ensure_list(titles)
@@ -35,7 +36,7 @@ def plot_grid_images(
 
     fig, axes = plt.subplots(
         n_rows, n_cols,
-        figsize=(5 * n_cols, 5 * n_rows)
+        figsize=(fig_size_scale * n_cols, fig_size_scale * n_rows)
     )
     if n_images == 1:
         axes = [axes]
