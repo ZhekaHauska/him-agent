@@ -11,14 +11,14 @@ import numpy as np
 
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
-from hima.common.float_sdr import FloatSparseSdr
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
 from hima.common.sdr import SparseSdr
 from hima.common.timer import timer, print_with_timestamp
-from hima.common.utils import isnone, safe_divide, prepend_dict_keys
+from hima.common.utils import isnone, prepend_dict_keys
 from hima.experiments.temporal_pooling.data.mnist import MnistDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
+from hima.experiments.temporal_pooling.stats.metrics import sdr_similarity
 from hima.experiments.temporal_pooling.utils import resolve_random_seed
 
 wandb = lazy_import('wandb')
@@ -145,7 +145,7 @@ class SpAttractorExperiment:
             sdrs.append(
                 self.attractor.compute(sdrs[-1], learn=_learn)
             )
-        return sdrs
+        return [set(sdr) for sdr in sdrs]
 
     def analyse_trajectories(self, trajectories):
         n_cls = len(trajectories)
@@ -165,7 +165,7 @@ class SpAttractorExperiment:
                 j_trajectory = trajectories[j_cls][j_sample]
 
                 for step in range(n_attractor_steps):
-                    sim = self.similarity(i_trajectory[step], j_trajectory[step])
+                    sim = sdr_similarity(i_trajectory[step], j_trajectory[step])
                     sim_mx[step, i_cls, j_cls] += sim
                     sim_mx[step, j_cls, i_cls] += sim
                     sim_mx_counts[i_cls, j_cls] += 1
@@ -240,13 +240,6 @@ class SpAttractorExperiment:
             main_metrics | convergence_metrics | step_metrics | rel_step_metrics,
             step=epoch
         )
-
-    @staticmethod
-    def similarity(x1: SparseSdr | FloatSparseSdr, x2: SparseSdr | FloatSparseSdr):
-        if isinstance(x1, FloatSparseSdr):
-            x1 = x1.sdr
-            x2 = x2.sdr
-        return safe_divide(np.count_nonzero(np.isin(x1, x2)), x2.size)
 
     def print_with_timestamp(self, *args, cond: bool = True):
         if not cond:
