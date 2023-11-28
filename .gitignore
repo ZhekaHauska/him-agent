@@ -9,6 +9,9 @@
 /hima/**/*.pkl
 /hima/**/*.csv.tar.gz
 
+# build folder
+/build/
+
 # wandb folders
 wandb/
 
