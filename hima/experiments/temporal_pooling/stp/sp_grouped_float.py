@@ -68,13 +68,13 @@ class SpatialPoolerGrouped(SpatialPooler):
 
         self.winners = winners[self.potentials[winners] > 0]
 
-    def reinforce_winners(self, learn: bool):
+    def reinforce_winners(self, matched_input_activity, learn: bool):
         if not learn:
             return
 
-        self.stdp(self.winners, self.potentials[self.winners])
+        self.stdp(self.winners, matched_input_activity[self.winners])
         self.stdp(
-            self.sub_winners, self.potentials[self.sub_winners],
+            self.sub_winners, matched_input_activity[self.sub_winners],
             modulation=-self.cross_group_inhibition_scale
         )
 

@@ -65,6 +65,8 @@ class SpatialPooler:
     feedforward_size_trace: float
     #   output values accumulator
     output_trace: np.ndarray
+    #   recognition strength is an avg winners' overlap (potential)
+    recognition_strength_trace: float
 
     def __init__(
             self, *,

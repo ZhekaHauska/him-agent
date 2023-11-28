@@ -151,7 +151,9 @@ class SpatialPooler:
         return output_sdr
 
     @timed
-    def _compute(self, input_sdr: SparseSdr, learn: bool) -> SparseSdr:
+    def _compute(
+            self, input_sdr: SparseSdr | FloatSparseSdr, learn: bool
+    ) -> SparseSdr | FloatSparseSdr:
         self.accept_input(input_sdr, learn=learn)
         self.try_activate_neurogenesis()
 
@@ -159,8 +161,8 @@ class SpatialPooler:
         delta_potentials = (matched_input_activity * self.weights).sum(axis=1)
         self.potentials += self.apply_boosting(delta_potentials)
 
-        self.select_winners(learn)
-        self.reinforce_winners(learn)
+        self.select_winners()
+        self.reinforce_winners(matched_input_activity, learn)
 
         output_sdr = self.select_output()
         self.accept_output(output_sdr, learn=learn)
@@ -211,21 +213,35 @@ class SpatialPooler:
             overlaps = overlaps * boosting_alpha
         return overlaps
 
-    def select_winners(self, learn = False):
+    def select_winners(self):
         n_winners = self.output_sds.active_size
         winners = np.sort(
             np.argpartition(self.potentials, -n_winners)[-n_winners:]
         )
         self.winners = winners[self.potentials[winners] > 0]
 
-    def reinforce_winners(self, learn: bool):
+    def reinforce_winners(self, matched_input_activity, learn: bool):
         if not learn:
             return
-        self.stdp(self.winners, self.potentials[self.winners])
+        self.stdp(self.winners, matched_input_activity[self.winners])
 
     def stdp(
-            self,
-            neurons: SparseSdr, synaptic_activity: np.ndarray,
+            self, neurons: SparseSdr, rf_match_input_mask: np.ndarray,
+            modulation: float = 1.0
+    ):
+        if len(neurons) == 0:
+            return
+
+        w = self.weights[neurons]
+        n_matched = rf_match_input_mask.sum(axis=1, keepdims=True) + .1
+        lr = modulation * self.learning_rate / n_matched
+
+        dw_matched = rf_match_input_mask * lr
+
+        self.weights[neurons] = normalize_weights(w + dw_matched)
+
+    def alt_stdp(
+            self, neurons: SparseSdr, synaptic_activity: np.ndarray,
             modulation: float = 1.0
     ):
         """
