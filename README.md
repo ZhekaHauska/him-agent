@@ -30,7 +30,7 @@ The Hierarchical Intrinsically Motivated Agent (HIMA) is an algorithm that is in
 
 A detailed description of HIMA model is provided in the [supporting paper](http://dx.doi.org/10.1186/s40708-022-00156-6).
 
-![HIMA Architecture](assets/hima_arch.png)
+<!-- ![HIMA Architecture](assets/hima_arch.svg) -->
 
 ## Links
 

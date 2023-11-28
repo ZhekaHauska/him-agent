@@ -1,7 +1,7 @@
 # media
 *.png filter=lfs diff=lfs merge=lfs -text
 *.jpg filter=lfs diff=lfs merge=lfs -text
-*.svg filter=lfs diff=lfs merge=lfs -texts -text
+# *.svg filter=lfs diff=lfs merge=lfs -texts -text
 *.gif filter=lfs diff=lfs merge=lfs -text
 *.eps filter=lfs diff=lfs merge=lfs -text
 
