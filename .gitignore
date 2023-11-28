@@ -9,9 +9,6 @@
 /hima/**/*.pkl
 /hima/**/*.csv.tar.gz
 
-# config auto-backups
-/hima/**/_*.yml
-
 # wandb folders
 wandb/
 
