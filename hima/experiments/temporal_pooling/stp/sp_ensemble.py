@@ -9,6 +9,9 @@ from htm.bindings.sdr import SDR
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.stp.sp import SpatialPooler
 from hima.experiments.temporal_pooling.stp.sp_grouped import SpatialPoolerGrouped
+from hima.experiments.temporal_pooling.stp.sp_grouped_float import (
+    SpatialPoolerGrouped as FloatSpatialPoolerGrouped
+)
 
 
 class SpatialPoolerEnsemble:
@@ -72,6 +75,41 @@ class SpatialPoolerEnsemble:
 
 
 class SpatialPoolerGroupedWrapper(SpatialPoolerGrouped):
+
+    def __init__(self, seed, **kwargs):
+        super().__init__(seed=seed, **kwargs)
+        _, self.single_output_sds = to_single_sds(self.output_sds)
+
+    def compute(self, input_sdr: SDR, learn: bool, output_sdr: SDR = None):
+        if isinstance(input_sdr, SDR):
+            input_sdr = input_sdr.sparse.copy()
+
+        result = super().compute(input_sdr, learn=learn)
+
+        if output_sdr is not None:
+            output_sdr.sparse = result
+        return result
+
+    def getSingleNumColumns(self):
+        return self.single_output_sds.size
+
+    def getSingleColumnsDimensions(self):
+        return self.single_output_sds.shape
+
+    def getColumnsDimensions(self):
+        return self.output_sds.shape
+
+    def getNumColumns(self):
+        return self.output_sds.size
+
+    def getInputDimensions(self):
+        return self.feedforward_sds.shape
+
+    def getNumInputs(self):
+        return self.feedforward_sds.size
+
+
+class FloatSpatialPoolerGroupedWrapper(FloatSpatialPoolerGrouped):
 
     def __init__(self, seed, **kwargs):
         super().__init__(seed=seed, **kwargs)

@@ -22,7 +22,7 @@ test_sr_steps: 5
 log_value_function: True
 value_func_sigma: 2
 
-# sp_ensemble | sp_grouped
+# sp_ensemble | sp_grouped | sp_grouped_float
 encoder: sp_grouped
 # makes sense only for grouped: naive | learned
 decoder: learned

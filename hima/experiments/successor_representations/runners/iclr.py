@@ -594,6 +594,25 @@ class PinballTest:
 
                 encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
                 decoder = make_decoder(encoder, decoder_type, decoder_conf)
+            elif encoder_type == 'sp_grouped_float':
+                from hima.experiments.temporal_pooling.stp.sp_ensemble import (
+                    FloatSpatialPoolerGroupedWrapper
+                )
+                encoder_conf['seed'] = seed
+                encoder_conf['feedforward_sds'] = [self.raw_obs_shape, 0.1]
+
+                decoder_type = conf['run'].get('decoder', None)
+                decoder_conf = conf['decoder']
+
+                # FIXME: либо перенеси в конфиг, либо пока можно оставить такое разделение:
+                #   - sp_grouped для бинарной обработки (вход и выход)
+                #   - sp_grouped_float для флоатов на входе и выходе -> тогда оставь
+                #       жесткое задание флага `output_mode`. Вход ему явно не нужно говорить
+                #       какой — просто подавай FloatSparseSdr.
+                encoder_conf['output_mode'] = 'float'
+
+                encoder = FloatSpatialPoolerGroupedWrapper(**encoder_conf)
+                decoder = make_decoder(encoder, decoder_type, decoder_conf)
             else:
                 raise ValueError(f'Encoder type {encoder_type} is not supported')
 
