@@ -34,7 +34,7 @@ class MnistDataset:
         self.dense_sdrs = (flatten_images >= image_thresholds).astype(float)
         self.sdrs = [np.flatnonzero(img) for img in self.dense_sdrs]
         self.sparse_values = [flatten_images[i][self.sdrs[i]] for i in range(self.n_images)]
-        self.output_sds = Sds(size=self.dense_sdrs.shape[-1], sparsity=self.dense_sdrs.mean())
+        self.output_sds = Sds(shape=self.image_shape, sparsity=self.dense_sdrs.mean())
 
         self.classes = [
             np.flatnonzero(self.target == cls)

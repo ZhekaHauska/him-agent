@@ -24,8 +24,10 @@ envs:
 sp:
   encoder:
     _base_: $_base.spatial_pooler.default
+    _type_: sp.vectorized
+#    _type_: sp.float
     # input
-    target_rf_to_input_ratio: 1.5
+    target_rf_to_input_ratio: 0.25
     # output
     output_sds: [500, 16]
     # learning
@@ -38,8 +40,10 @@ sp:
 
   attractor:
     _base_: $_base.spatial_pooler.default
+    _type_: sp.vectorized
+#    _type_: sp.float
     # input
-    target_rf_to_input_ratio: 1.5
+    target_rf_to_input_ratio: 0.75
     # output
     output_sds: [500, 16]
     # learning

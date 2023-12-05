@@ -11,6 +11,7 @@ import numpy as np
 
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
+from hima.common.float_sdr import FloatSparseSdr
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
 from hima.common.sdr import SparseSdr
@@ -55,6 +56,9 @@ class SpAttractorExperiment:
     training: TrainConfig
     attraction: AttractionConfig
     testing: TestConfig
+
+    data: MnistDataset
+    binary: bool
 
     def __init__(
             self, config: TConfig, config_path: Path,
@@ -111,10 +115,12 @@ class SpAttractorExperiment:
 
     def train_epoch(self):
         sample_indices = self.rng.choice(self.data.n_images, size=self.training.n_steps)
-        for step in range(1, self.training.n_steps + 1):
-            sample_ind = sample_indices[step - 1]
+        for step in range(self.training.n_steps):
+            sample_ind = sample_indices[step]
+            # noinspection PyTypeChecker
             sample = self.data.get_sdr(sample_ind, binary=self.binary)
             self.process_sample(sample, learn=True)
+
 
     def test_epoch(self):
         trajectories = []
@@ -133,7 +139,9 @@ class SpAttractorExperiment:
 
         return self.analyse_trajectories(trajectories)
 
-    def process_sample(self, sample: SparseSdr, learn: bool) -> list[SparseSdr]:
+    def process_sample(
+            self, sample: SparseSdr | FloatSparseSdr, learn: bool
+    ) -> list[SparseSdr]:
         sdrs = [sample]
         if self.encoder is not None:
             sdrs.append(
@@ -145,7 +153,10 @@ class SpAttractorExperiment:
             sdrs.append(
                 self.attractor.compute(sdrs[-1], learn=_learn)
             )
-        return [set(sdr) for sdr in sdrs]
+        return [
+            set(sdr.sdr) if isinstance(sdr, FloatSparseSdr) else set(sdr)
+            for sdr in sdrs
+        ]
 
     def analyse_trajectories(self, trajectories):
         n_cls = len(trajectories)
