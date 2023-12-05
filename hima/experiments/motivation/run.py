@@ -12,7 +12,7 @@ from hima.experiments.motivation.test_td_lambda import GwTDLambdaTest
 
 if __name__ == '__main__':
     run_experiment(
-        run_command_parser=default_run_arg_parser(),
+        arg_parser=default_run_arg_parser(),
         experiment_runner_registry={
             'motivation.emp': GwEmpowermentTest,
             'motivation.str': GwStriatumTest,

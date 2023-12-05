@@ -37,8 +37,8 @@ class Agent:
                 for i in range(self.action_dim)
             ]
         )
-        self.p = softmax(actions, self.temperature)
-        a = self._rng.choice(self.action_dim, 1, p=self.p)[0]
+        self.p = softmax(actions, temp=self.temperature)
+        a = self._rng.choice(self.action_dim, p=self.p)
         self.action = np.intersect1d(self.full_action, np.arange(size * a, size * (a+1)))
         return a
 
