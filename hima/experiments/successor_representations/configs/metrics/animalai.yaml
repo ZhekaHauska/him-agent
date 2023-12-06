@@ -1,0 +1,29 @@
+scalar_metrics:
+  class: ScalarMetrics
+  params:
+    metrics:
+      main_metrics/reward:
+        agg: np.sum
+        att: reward
+      main_metrics/steps:
+        agg: np.mean
+        att: steps
+    update_step: step
+    update_period: 1
+    log_step: episode
+    log_period: 1
+
+heatmap_metrics:
+  class: HeatmapMetrics
+  params:
+    metrics:
+      agent/obs_reward:
+        agg: np.mean
+        att: obs_reward
+      agent/real_reward:
+        agg: np.mean
+        att: real_reward
+    update_step: episode
+    update_period: 1
+    log_step: episode
+    log_period: 50

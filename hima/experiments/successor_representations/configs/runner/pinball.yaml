@@ -1,41 +1,21 @@
 log: True
-save_model: False
-project_name: 'sr_pinball_iclr_final_test'
+project_name: 'pinball_test_new_runner'
 run_tag: null
 
-n_episodes: 601
-update_period: 50
+n_episodes: 11
 update_start: 0
 max_steps: 15
-log_gif_fps: 5
-# start_position: [0, 0]
-actions: [[0, 3], [0.5, 3], [-0.5, 3]]
-action_inertia: 3
-camera_mode: clip
+reward_free: False  # random strategy
+action_inertia: 3  # how many steps repeat action
+frame_skip: 0  # force frame skipping
+strategies: null
 
-# if True then use random strategy
-reward_free: False
-
-# model based sr testing
-test_srs: True
-test_sr_steps: 5
-log_value_function: True
-value_func_sigma: 2
-
-# sp_ensemble | sp_grouped | sp_grouped_float
-encoder: sp_grouped
-# makes sense only for grouped: naive | learned
-decoder: learned
-
-env_conf: 'configs/pinball/default.yaml'
-agent_conf: 'configs/agent/pinball.yaml'
-layer_conf: 'configs/dhtm/pinball.yaml'
-encoder_conf: 'configs/encoder/sp_grouped_pinball.yaml'
-decoder_conf: 'configs/decoder/pinball.yaml'
-
-experiment: pinball
 # list of setups
-setup: [fork_rew1, fork_rew2]
-setup_period: [200, 402]
+setups: [fork_rew1, fork_rew2]
+setup_period: [5, 7]
+
+env_conf: 'configs/environment/pinball/default.yaml'
+agent_conf: 'configs/agent/bio/pinball.yaml'
+metrics_conf: 'configs/metrics/pinball.yaml'
 
 seed: null

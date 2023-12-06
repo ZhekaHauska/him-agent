@@ -1,0 +1,22 @@
+layer_conf: configs/agent/bio/layer/dhtm/pinball.yaml
+encoder_conf: configs/agent/bio/encoder/sp_grouped/pinball.yaml
+decoder_conf: configs/agent/bio/decoder/learned/pinball.yaml
+camera_mode: clip
+agent:
+  gamma: 0.9
+  observation_reward_lr: 0.1
+  striatum_lr: 1.0
+  adaptive_lr: False
+  sr_steps: 1  # 0 means model free TD (on policy)
+  adaptive_sr: False
+  approximate_tail: True
+  inverse_temp: 7.0
+  lr_surprise: [0.2, 0.01]
+  lr_td_error: [0.2, 0.01]
+
+  # p \in [0, 1]: eps-greedy | otherwise (use -1): softmax
+  exploration_eps: -1
+  # predict | plan | balance === 0-step | n-step | td-error based probability to use n-step
+  action_value_estimate: predict
+  # uniform | on_policy | off_policy
+  sr_estimate_planning: on_policy

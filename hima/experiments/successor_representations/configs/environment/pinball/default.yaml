@@ -1,0 +1,5 @@
+actions: [[0, 3], [0.5, 3], [-0.5, 3]]
+start_position: [0, 0]
+sync: true
+framerate: 5
+headless: true
