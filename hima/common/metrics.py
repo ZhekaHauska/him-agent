@@ -8,84 +8,174 @@ import os
 import numpy as np
 
 from hima.common.lazy_imports import lazy_import
+from typing import Dict
 
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
 imageio = lazy_import('imageio')
 
 
-class ScalarMetrics:
-    def __init__(self, metrics, logger):
+class BaseMetric:
+    def __init__(self, logger, runner,
+                 update_step, log_step, update_period, log_period):
         self.logger = logger
+        self.runner = runner
+        self.update_step = update_step
+        self.log_step = log_step
+        self.update_period = update_period
+        self.log_period = log_period
+
+        self.last_update_step = None
+        self.last_log_step = None
+
+    def step(self):
+        update_step = self.get_attr(self.update_step)
+        log_step = self.get_attr(self.log_step)
+
+        if (self.last_update_step is None) or (self.last_update_step != update_step):
+            if (update_step % self.update_period) == 0:
+                self.update()
+
+        if (self.last_log_step is None) or (self.last_log_step != log_step):
+            if (log_step % self.log_period) == 0:
+                self.log(log_step)
+
+        self.last_update_step = update_step
+        self.last_log_step = log_step
+
+    def update(self):
+        raise NotImplementedError
+
+    def log(self, step):
+        raise NotImplementedError
+
+    def get_attr(self, attr):
+        obj = self.runner
+        for a in attr.split('.'):
+            obj = getattr(obj, a)
+        return obj
+
+
+class MetricsRack:
+    metrics: Dict[str, BaseMetric]
+
+    def __init__(self, logger, runner, **kwargs):
+        self.metrics = dict()
+
+        for name, params in kwargs.items():
+            cls = params['class']
+            params = params['params']
+            self.metrics[name] = eval(cls)(**params, logger=logger, runner=runner)
+
+    def step(self):
+        for name in self.metrics.keys():
+            self.metrics[name].step()
+
+
+class ScalarMetrics(BaseMetric):
+    def __init__(self, metrics, logger, runner,
+                 update_step, log_step, update_period, log_period):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+
         self.metrics = {metric: [] for metric in metrics.keys()}
-        self.agg_func = {metric: func for metric, func in metrics.items()}
+        self.agg_func = {
+            metric: eval(params['agg']) if type(params['agg']) is str else params['agg']
+            for metric, params in metrics.items()
+        }
+        self.att_to_log = {
+            metric: params['att']
+            for metric, params in metrics.items()
+        }
 
-    def update(self, metric_values):
-        for key, value in metric_values.items():
-            self.metrics[key].append(value)
+    def update(self):
+        for name in self.metrics.keys():
+            value = self.get_attr(self.att_to_log[name])
+            self.metrics[name].append(value)
 
-    def summarize(self):
+    def log(self, step):
+        log_dict = {self.log_step: step}
+        log_dict.update(self._summarize())
+        self.logger.log(log_dict)
+        self._reset()
+
+    def _reset(self):
+        self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+    def _summarize(self):
         return {
             key: self.agg_func[key](values)
             for key, values in self.metrics.items()
             if len(values) > 0
         }
 
-    def reset(self):
-        self.metrics = {metric: [] for metric in self.metrics.keys()}
 
-    def log(self, step):
-        self.logger.log(self.summarize(), step=step)
-        self.reset()
-
-
-class HeatmapMetrics:
-    def __init__(self, metrics, logger):
+class HeatmapMetrics(BaseMetric):
+    def __init__(self, metrics, logger, runner,
+                 update_step, log_step, update_period, log_period):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
         self.logger = logger
         self.metrics = {metric: [] for metric in metrics.keys()}
-        self.agg_func = {metric: func for metric, func in metrics.items()}
+        self.agg_func = {
+            metric: eval(params['agg']) if type(params['agg']) is str else params['agg']
+            for metric, params in metrics.items()
+        }
+        self.att_to_log = {
+            metric: params['att']
+            for metric, params in metrics.items()
+        }
 
-    def update(self, metric_values):
-        for key, value in metric_values.items():
-            self.metrics[key].append(value)
+    def update(self):
+        for name in self.metrics.keys():
+            value = self.get_attr(self.att_to_log[name])
+            self.metrics[name].append(value)
 
-    def summarize(self):
+    def log(self, step):
+        from matplotlib import pyplot as plt
+        average_metrics = self._summarize()
+
+        log_dict = {self.log_step: step}
+        for key, value in average_metrics.items():
+            plt.figure()
+            log_dict[key] = wandb.Image(sns.heatmap(value))
+
+        self.logger.log(log_dict)
+        plt.close('all')
+
+        self._reset()
+
+    def _reset(self):
+        self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+    def _summarize(self):
         return {
             key: self.agg_func[key](values, axis=0)
             for key, values in self.metrics.items()
             if len(values) > 0
         }
 
-    def reset(self):
-        self.metrics = {metric: [] for metric in self.metrics.keys()}
 
-    def log(self, step):
-        from matplotlib import pyplot as plt
-        average_metrics = self.summarize()
+class ImageMetrics(BaseMetric):
+    def __init__(self, metrics, logger, runner,
+                 update_step, log_step, update_period, log_period,
+                 log_fps, log_dir='/tmp'):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
 
-        log_dict = {}
-        for key, value in average_metrics.items():
-            plt.figure()
-            log_dict[key] = wandb.Image(sns.heatmap(value))
-
-        self.logger.log(log_dict, step=step)
-        plt.close('all')
-
-        self.reset()
-
-
-class ImageMetrics:
-    def __init__(self, metrics, logger, log_fps, log_dir='/tmp'):
         self.metrics = {metric: [] for metric in metrics}
+        self.att_to_log = {
+            metric: params['att']
+            for metric, params in metrics.items()
+        }
         self.logger = logger
         self.log_fps = log_fps
         self.log_dir = log_dir
 
-    def update(self, metric_values):
-        for key, value in metric_values.items():
-            self.metrics[key].append(value)
+    def update(self):
+        for name in self.metrics.keys():
+            value = self.get_attr(self.att_to_log[name])
+            self.metrics[name].append(value)
 
     def log(self, step):
+        log_dict = {self.log_step: step}
         for metric, values in self.metrics.items():
             if len(values) > 1:
                 gif_path = os.path.join(
@@ -97,17 +187,25 @@ class ImageMetrics:
                     # mode 'L': gray 8-bit ints; duration = 1000 / fps; loop == 0: infinitely
                     gif_path, values, mode='L', duration=1000/self.log_fps, loop=0
                 )
-                self.logger.log({metric: wandb.Video(gif_path)}, step=step)
+                log_dict[metric] = wandb.Video(gif_path)
             elif len(values) == 1:
-                self.logger.log({metric: wandb.Image(values[0])}, step=step)
+                log_dict[metric] = wandb.Image(values[0])
 
+        self.logger.log(log_dict)
+        self._reset()
+
+    def _reset(self):
         self.metrics = {metric: [] for metric in self.metrics.keys()}
 
 
-class SRStackSurprise:
-    def __init__(self, name, logger, srs_size, history_length=5, normalize=True):
+class SRStackSurprise(BaseMetric):
+    def __init__(self, name, att, logger, runner,
+                 update_step, log_step, update_period, log_period,
+                 srs_size, history_length=5, normalize=True):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+
         self.name = name
-        self.logger = logger
+        self.att = att
         self.srs_size = srs_size
         self.history_length = history_length + 1
         self.normalize = normalize
@@ -116,13 +214,17 @@ class SRStackSurprise:
         self.ages = np.arange(self.history_length)[::-1]
         self.surprises = np.zeros(self.history_length)
 
-    def update(self, sr, events):
+    def update(self):
+        value = self.get_attr(self.att)
+        sr = value['sr']
+        events = value['events']
+
         self.srs[self.timestep % self.history_length] = sr
         self.ages += 1
         self.ages %= self.history_length
         self.timestep += 1
 
-        surprises = self.get_surprise(events)
+        surprises = self._get_surprise(events)
         self.surprises[self.ages] += surprises
 
     def log(self, step):
@@ -135,15 +237,15 @@ class SRStackSurprise:
             },
             step=step
         )
-        self.reset()
+        self._reset()
 
-    def reset(self):
+    def _reset(self):
         self.srs = np.ones((self.history_length, self.srs_size))
         self.timestep = 0
         self.ages = np.arange(self.history_length)[::-1]
         self.surprises = np.zeros(self.history_length)
 
-    def get_surprise(self, events):
+    def _get_surprise(self, events):
         if len(events) > 0:
             surprise = - np.sum(
                 np.log(
@@ -160,17 +262,25 @@ class SRStackSurprise:
         return surprise
 
 
-class PredictionsStackSurprise:
-    def __init__(self, name, logger, prediction_steps=5, normalize=True, mode='categorical'):
+class PredictionsStackSurprise(BaseMetric):
+    def __init__(self, name, att, logger, runner,
+                 update_step, log_step, update_period, log_period,
+                 prediction_steps=5, normalize=True, mode='categorical'):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+
         self.name = name
-        self.logger = logger
+        self.att = att
         self.prediction_steps = prediction_steps
         self.normalize = normalize
         self.mode = mode
         self.predictions = []
         self.surprises = [list() for _ in range(self.prediction_steps)]
 
-    def update(self, predictions, events):
+    def update(self):
+        value = self.get_attr(self.att)
+        predictions = value['predictions']
+        events = value['events']
+
         self.predictions.append(predictions)
 
         # remove empty lists
@@ -197,9 +307,9 @@ class PredictionsStackSurprise:
             },
             step=step
         )
-        self.reset()
+        self._reset()
 
-    def reset(self):
+    def _reset(self):
         self.predictions = []
         self.surprises = [list() for t in range(self.prediction_steps)]
 
