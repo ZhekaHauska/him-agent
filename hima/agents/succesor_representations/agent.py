@@ -96,6 +96,9 @@ class BioHIMA:
 
         self.state_snapshot_stack = deque()
 
+        self.predicted_sr = None
+        self.generated_sr = None
+
         # metrics
         self.ss_td_error = SSValue(*lr_td_error)
         self.ss_surprise = SSValue(*lr_surprise)
@@ -138,12 +141,12 @@ class BioHIMA:
             return
 
         # striatum TD learning
-        predicted_sr, generated_sr, td_error = self.td_update_sr()
+        self.predicted_sr, self.generated_sr, td_error = self.td_update_sr()
 
         self.ss_td_error.update(td_error)
         self.ss_surprise.update(self.cortical_column.surprise)
 
-        return predicted_sr, generated_sr
+        return self.predicted_sr, self.generated_sr
 
     def reinforce(self, reward):
         """
