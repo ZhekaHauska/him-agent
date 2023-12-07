@@ -106,7 +106,7 @@ class BaseRunner:
         agent_conf = conf['agent']
         agent_conf['seed'] = self.seed
 
-        self.environment = self.make_environment(conf['env_type'], env_conf)
+        self.environment = self.make_environment(conf['env_type'], env_conf, self.setups[0])
 
         agent_conf['raw_obs_shape'] = self.environment.raw_obs_shape
         agent_conf['n_actions'] = self.environment.n_actions
@@ -134,7 +134,7 @@ class BaseRunner:
         self.obs = None
 
     @staticmethod
-    def make_environment(env_type, conf):
+    def make_environment(env_type, conf, setup):
         raise NotImplementedError
 
     @staticmethod
@@ -150,7 +150,7 @@ class BaseRunner:
         if self.setup_episodes >= self.setup_period[self.current_setup_id]:
             self.current_setup_id += 1
             current_setup_id = self.current_setup_id % len(self.setups)
-            self.environment = self.environment.change_setup(self.setups[current_setup_id])
+            self.environment.change_setup(self.setups[current_setup_id])
             self.setup_episodes = 0
 
         self.environment.reset()

@@ -5,7 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import sys
 import os
-from typing import Dict, Union, Any, List
+from typing import Union, Any
 
 import numpy as np
 from hima.common.config.base import read_config, override_config
@@ -26,10 +26,13 @@ class ICLRunner(BaseRunner):
         return agent
 
     @staticmethod
-    def make_environment(env_type, conf):
-        from hima.experiments.successor_representations.runners.envs import PinballWrapper
+    def make_environment(env_type, conf, setup):
         if env_type == 'pinball':
-            env = PinballWrapper(conf)
+            from hima.experiments.successor_representations.runners.envs import PinballWrapper
+            env = PinballWrapper(conf, setup)
+        elif env_type == 'animalai':
+            from hima.experiments.successor_representations.runners.envs import AnimalAIWrapper
+            env = AnimalAIWrapper(conf, setup)
         else:
             raise NotImplementedError
         return env

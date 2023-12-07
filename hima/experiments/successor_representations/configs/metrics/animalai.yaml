@@ -8,9 +8,12 @@ scalar_metrics:
       main_metrics/steps:
         agg: np.mean
         att: steps
-    update_step: step
+      layer/surprise_hidden:
+        agg: np.mean
+        att: agent.agent.surprise
+    update_step: steps
     update_period: 1
-    log_step: episode
+    log_step: episodes
     log_period: 1
 
 heatmap_metrics:
@@ -20,10 +23,7 @@ heatmap_metrics:
       agent/obs_reward:
         agg: np.mean
         att: obs_reward
-      agent/real_reward:
-        agg: np.mean
-        att: real_reward
-    update_step: episode
+    update_step: episodes
     update_period: 1
-    log_step: episode
-    log_period: 50
+    log_step: episodes
+    log_period: 5

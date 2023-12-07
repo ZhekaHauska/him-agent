@@ -25,4 +25,4 @@ context_factors_conf:
   fraction_of_segments_to_prune: 0.3
   max_segments_per_cell: 255
 
-reset_context_period: 10
+# reset_context_period: 10
