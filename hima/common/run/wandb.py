@@ -61,7 +61,7 @@ def get_logger(
         # noinspection PyTypeChecker
         return DryWandbLogger()
 
-    logger = wandb.init(project=project, **wandb_init)
+    logger = wandb.init(project=project, save_code=False, **wandb_init)
 
     # we have to pass the config with update instead of init because for sweep runs
     # it is already initialized with the sweep run config
