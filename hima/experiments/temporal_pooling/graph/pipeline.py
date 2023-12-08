@@ -9,7 +9,7 @@ from hima.experiments.temporal_pooling.graph.node import Node
 
 
 ListIndentFirst = '  * '
-ListIndentRest = '    '
+ListIndentRest = '  '
 
 
 class Pipeline(Node):
@@ -30,7 +30,15 @@ class Pipeline(Node):
             node.forward()
 
     def __repr__(self):
-        k = len(ListIndentFirst)
+        k = len(ListIndentRest)
+        if len(self._pipeline) == 1:
+            # for a single item list: do not print list
+            node = self._pipeline[0]
+            return '\n'.join([
+                f'{self.name}:',
+                indent(str(node), ListIndentRest)
+            ])
+
         return '\n'.join([
             f'{self.name}:',
             '\n'.join([
