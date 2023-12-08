@@ -168,13 +168,16 @@ models:
       - TM.active_cells.sdr -> AA.feedforward.sdr
       - AA.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
-  +SE+SA+AA:
+  +SE+SA+AA|W:
     - input.sdr -> SE.feedforward.sdr
     - SE.compute()
     - TM.predict()
-    - single SA step:
-      - TM.winner_cells.sdr -> SA.feedforward.sdr
-      - SA.compute()
+    - apply SA for K iterations:
+      - TM.winner_cells.sdr -> SA.output.sdr
+      - repeat: 1
+        do:
+          - SA.output.sdr -> SA.feedforward.sdr
+          - SA.compute()
     - activate + predict by AA:
       - SA.output.sdr -> AA.feedforward.sdr
       - AA.set_active_columns()
@@ -183,6 +186,50 @@ models:
     - correct TM predicted cells:
       - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
       - TM.union_predicted_cells()
+    - learn TM:
+      - SE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.winner_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE+AA|W:
+    - input.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - TM.predict()
+    - activate + predict by AA:
+      - TM.winner_cells.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.union_predicted_cells()
+    - learn TM:
+      - SE.output.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - learn AA:
+      - TM.active_cells.sdr -> AA.feedforward.sdr
+      - AA.activate()
+    - TM.correctly_predicted_cells.sdr -> output.sdr
+  +SE+SA+AA:
+    - input.sdr -> SE.feedforward.sdr
+    - SE.compute()
+    - TM.predict()
+    - apply SA for K iterations:
+      - TM.predicted_cells.sdr -> SA.output.sdr
+      - repeat: 1
+        do:
+          - SA.output.sdr -> SA.feedforward.sdr
+          - SA.compute()
+    - activate + predict by AA:
+      - SA.output.sdr -> AA.feedforward.sdr
+      - AA.set_active_columns()
+      - AA.predict()
+      - AA.set_predicted_cells()
+    - correct TM predicted cells:
+      - AA.predicted_cells.sdr -> TM.predicted_cells.sdr
+      - TM.set_predicted_cells()
     - learn TM:
       - SE.output.sdr -> TM.feedforward.sdr
       - TM.activate()

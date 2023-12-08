@@ -63,11 +63,6 @@ class ExperimentStats:
         self.loss_items = (loss[0], loss[1]) if loss else []
         self.model = model
 
-        if self.logger:
-            import wandb
-            from matplotlib import pyplot as plt
-            import seaborn as sns
-
         self.stream_trackers = self._make_stream_trackers(
             track_streams=track_streams, stats_config=stats_config, n_sequences=n_sequences
         )

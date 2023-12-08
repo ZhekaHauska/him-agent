@@ -124,12 +124,19 @@ models:
   +SE_DVS+SE+SA+AA: $_base.models.+SE_DVS+SE+SA+AA
   +SE_DVS+SE+AA: $_base.models.+SE_DVS+SE+AA
   +SE_DVS+SE: $_base.models.+SE_DVS+SE
+
+  # use winners instead of predicted cells
+  +SE+SA+AA|W: $_base.models.+SE+SA+AA|W
+  +SE+AA|W: $_base.models.+SE+AA|W
+
   +SE+SA+AA: $_base.models.+SE+SA+AA
   +SE+AA: $_base.models.+SE+AA
   +AA: $_base.models.+AA
   +SE: $_base.models.+SE
+
   LSTM+SE_DVS+SE: $_base.models.LSTM+SE_DVS+SE
   LSTM: $_base.models.LSTM
+
   Baseline TM: $_base.models.Baseline TM
 
 SE:
