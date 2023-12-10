@@ -1,31 +1,20 @@
 log: True
-save_model: False
-project_name: 'sr_gridworld_all_reward'
+project_name: gridworld_test_new_runner
 run_tag: null
 
-n_episodes: 501
-update_rate: 52
-max_steps: 50
-log_gif_fps: 5
-start_position: [4, 0]
-
-# if True then use random strategy
+n_episodes: 11
+update_start: 0
+max_steps: 10
 reward_free: False
+action_inertia: 1
+frame_skip: 10
+strategies: null
 
-# model based sr testing
-test_srs: True
-test_sr_steps: 5
-
-# sp_ensemble | sp_grouped
-encoder: sp_grouped
-# makes sense only for grouped: naive | learned
-decoder: learned
-
-agent_conf: 'configs/agent/gridworld.yaml'
-layer_conf: 'configs/fchmm/gridworld.yaml'
-
-experiment: gridworld
 setups: [room3, room4]
-setup_period: 251
+setup_period: 5
+
+env_conf: 'configs/environment/gridworld/default.yaml'
+agent_conf: 'configs/agent/bio/gridworld.yaml'
+metrics_conf: 'configs/metrics/gridworld.yaml'
 
 seed: null

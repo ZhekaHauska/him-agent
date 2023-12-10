@@ -5,6 +5,8 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from hima.experiments.successor_representations.runners.base import BaseEnvironment
 import os
+import numpy as np
+from hima.common.config.base import read_config
 
 
 class PinballWrapper(BaseEnvironment):
@@ -143,3 +145,59 @@ class AnimalAIWrapper(BaseEnvironment):
     @staticmethod
     def _get_exe_path():
         return os.environ.get('ANIMALAI_EXE', None)
+
+
+class GridWorldWrapper(BaseEnvironment):
+    def __init__(self, conf, setup):
+        if 'start_position' in conf:
+            self.start_position = conf.pop('start_position')
+        else:
+            self.start_position = (None, None)
+
+        self.conf = conf
+        self.environment = self._start_env(setup)
+
+        self.raw_obs_shape = (np.max(self.environment.colors) + 1, 1)
+        self.actions = tuple(self.environment.actions)
+        self.n_actions = len(self.actions)
+
+    def obs(self):
+        return self.environment.obs()
+
+    def act(self, action):
+        if action is not None:
+            gridworld_action = self.actions[action]
+            self.environment.act(gridworld_action)
+
+    def step(self):
+        self.environment.step()
+
+    def reset(self):
+        self.environment.reset(*self.start_position)
+
+    def change_setup(self, setup):
+        self.environment = self._start_env(setup)
+
+    def close(self):
+        self.environment = None
+
+    def _start_env(self, setup):
+        from hima.envs.gridworld import GridWorld
+        config = read_config(
+            self._get_setup_path(setup)
+        )
+
+        env = GridWorld(
+                room=np.array(config['room']),
+                default_reward=config['default_reward'],
+                **self.conf
+        )
+
+        return env
+
+    @staticmethod
+    def _get_setup_path(setup):
+        return os.path.join(
+                os.environ.get('GRIDWORLD_ROOT', None),
+                f"{setup}.yaml"
+            )

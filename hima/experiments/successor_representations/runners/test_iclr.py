@@ -33,6 +33,9 @@ class ICLRunner(BaseRunner):
         elif env_type == 'animalai':
             from hima.experiments.successor_representations.runners.envs import AnimalAIWrapper
             env = AnimalAIWrapper(conf, setup)
+        elif env_type == 'gridworld':
+            from hima.experiments.successor_representations.runners.envs import GridWorldWrapper
+            env = GridWorldWrapper(conf, setup)
         else:
             raise NotImplementedError
         return env
@@ -40,13 +43,19 @@ class ICLRunner(BaseRunner):
     @property
     def obs_reward(self):
         agent = self.agent.agent
-        obs_rewards = agent.cortical_column.decoder.decode(
-            normalize(
-                agent.observation_rewards.reshape(
-                    agent.cortical_column.layer.n_obs_vars, -1
-                )
-            ).flatten()
-        ).reshape(self.environment.raw_obs_shape)
+        decoder = agent.cortical_column.decoder
+        if decoder is not None:
+            obs_rewards = decoder.decode(
+                normalize(
+                    agent.observation_rewards.reshape(
+                        agent.cortical_column.layer.n_obs_vars, -1
+                    )
+                ).flatten()
+            ).reshape(self.environment.raw_obs_shape)
+        else:
+            obs_rewards = agent.observation_rewards.reshape(
+                agent.cortical_column.layer.n_obs_vars, -1
+            )
         return obs_rewards
 
 
@@ -76,13 +85,19 @@ def main(config_path):
     config['agent']['layer_type'] = layer_conf_path.split('/')[-2]
     config['agent']['layer'] = read_config(layer_conf_path)
 
-    encoder_conf_path = config['agent'].pop('encoder_conf')
-    config['agent']['encoder_type'] = encoder_conf_path.split('/')[-2]
-    config['agent']['encoder'] = read_config(encoder_conf_path)
+    if 'encoder_conf' in config['agent']:
+        encoder_conf_path = config['agent'].pop('encoder_conf')
+        config['agent']['encoder_type'] = encoder_conf_path.split('/')[-2]
+        config['agent']['encoder'] = read_config(encoder_conf_path)
+    else:
+        config['agent']['encoder_type'] = None
 
-    decoder_conf_path = config['agent'].pop('decoder_conf')
-    config['agent']['decoder_type'] = decoder_conf_path.split('/')[-2]
-    config['agent']['decoder'] = read_config(decoder_conf_path)
+    if 'decoder_conf' in config['agent']:
+        decoder_conf_path = config['agent'].pop('decoder_conf')
+        config['agent']['decoder_type'] = decoder_conf_path.split('/')[-2]
+        config['agent']['decoder'] = read_config(decoder_conf_path)
+    else:
+        config['agent']['decoder_type'] = None
 
     # override some values
     overrides = parse_arg_list(sys.argv[2:])
