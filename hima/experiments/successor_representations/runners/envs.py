@@ -157,12 +157,28 @@ class GridWorldWrapper(BaseEnvironment):
         self.conf = conf
         self.environment = self._start_env(setup)
 
-        self.raw_obs_shape = (np.max(self.environment.colors) + 1, 1)
+        self.n_colors = (
+            np.max(self.environment.colors) + 1 +
+            int(self.environment.observation_radius > 0)
+        )
+        self.n_cells = (
+            (self.environment.observation_radius * 2 + 1) ** 2
+        )
+        self.raw_obs_shape = (
+            self.n_cells,
+            self.n_colors
+        )
         self.actions = tuple(self.environment.actions)
         self.n_actions = len(self.actions)
 
     def obs(self):
-        return self.environment.obs()
+        obs, reward, is_terminal = self.environment.obs()
+        obs = obs.flatten()
+        obs += (
+            int(self.environment.observation_radius > 0) +
+            np.arange(self.n_cells)*self.n_colors
+        )
+        return obs, reward, is_terminal
 
     def act(self, action):
         if action is not None:

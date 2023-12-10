@@ -164,7 +164,7 @@ class BioAgentWrapper(BaseAgent):
         elif self.encoder_type is None:
             encoder = None
             decoder = None
-            n_states, n_groups = self.conf['raw_obs_shape']
+            n_groups, n_states = self.conf['raw_obs_shape']
         else:
             raise ValueError(f'Encoder type {self.encoder_type} is not supported')
 

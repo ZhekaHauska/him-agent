@@ -11,6 +11,7 @@ class GridWorld:
             self,
             room,
             default_reward=0,
+            observation_radius=0,
             seed=None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -20,6 +21,15 @@ class GridWorld:
         )
 
         self.h, self.w = self.colors.shape
+
+        self.observation_radius = observation_radius
+        # pad colors
+        self.colors = np.pad(
+            self.colors,
+            self.observation_radius,
+            mode='constant',
+            constant_values=-1
+        )
 
         self.start_r = None
         self.start_c = None
@@ -41,8 +51,13 @@ class GridWorld:
     def obs(self):
         assert self.r is not None
         assert self.c is not None
+        shift = self.observation_radius
+
+        start_r, start_c = self.r, self.c
+        end_r, end_c = self.r + 2*shift+1, self.c + 2*shift+1
+        colors = self.colors[start_r:end_r, start_c:end_c]
         return (
-            [self.colors[self.r, self.c]],
+            colors,
             self.rewards[self.r, self.c] + self.default_reward,
             bool(self.terminals[self.r, self.c])
         )
@@ -69,7 +84,8 @@ class GridWorld:
                 self.r += 1
 
             # Check whether action is taking to inaccessible states.
-            temp_x = self.colors[self.r, self.c]
+            shift = self.observation_radius
+            temp_x = self.colors[self.r+shift, self.c+shift]
             if temp_x == -1:
                 self.r = prev_r
                 self.c = prev_c
