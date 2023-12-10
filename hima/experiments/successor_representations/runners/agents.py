@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from hima.experiments.successor_representations.runners.base import BaseAgent
-from hima.experiments.successor_representations.runners.utils import make_decoder
 from hima.common.sdr import sparse_to_dense
 from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima, FCHMMBioHima
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
@@ -40,6 +39,7 @@ class BioAgentWrapper(BaseAgent):
             decoder:
                 ...
         """
+        self.conf = conf
         self.layer_type = conf['layer_type']
         self.encoder_type = conf['encoder_type']
         self.seed = conf['seed']
@@ -51,34 +51,11 @@ class BioAgentWrapper(BaseAgent):
         else:
             self.camera = None
 
-        layer_conf = conf['layer']
-        encoder_conf = conf['encoder']
+        encoder, n_obs_vars, n_obs_states, decoder = self._make_encoder()
 
-        if self.encoder_type == 'sp_ensemble':
-            from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
-
-            encoder_conf['seed'] = self.seed
-            encoder_conf['inputDimensions'] = list(conf['raw_obs_shape'])
-
-            encoder = SPEnsemble(**encoder_conf)
-            decoder = SPDecoder(encoder)
-        elif self.encoder_type == 'sp_grouped':
-            from hima.experiments.temporal_pooling.stp.sp_ensemble import (
-                SpatialPoolerGroupedWrapper
-            )
-            encoder_conf['seed'] = self.seed
-            encoder_conf['feedforward_sds'] = [conf['raw_obs_shape'], 0.1]
-
-            decoder_type = conf['decoder_type']
-            decoder_conf = conf['decoder']
-
-            encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
-            decoder = make_decoder(encoder, decoder_type, decoder_conf)
-        else:
-            raise ValueError(f'Encoder type {self.encoder_type} is not supported')
-
-        layer_conf['n_obs_vars'] = encoder.n_groups
-        layer_conf['n_obs_states'] = encoder.getSingleNumColumns()
+        layer_conf = self.conf['layer']
+        layer_conf['n_obs_vars'] = n_obs_vars
+        layer_conf['n_obs_states'] = n_obs_states
         layer_conf['n_external_states'] = conf['n_actions']
         layer_conf['seed'] = self.seed
 
@@ -86,9 +63,9 @@ class BioAgentWrapper(BaseAgent):
             layer = FCHMMLayer(**layer_conf)
         elif self.layer_type == 'dhtm':
             layer_conf['n_context_states'] = (
-                    encoder.getSingleNumColumns() * layer_conf['cells_per_column']
+                    n_obs_states * layer_conf['cells_per_column']
             )
-            layer_conf['n_context_vars'] = encoder.n_groups
+            layer_conf['n_context_vars'] = n_obs_vars
             layer_conf['n_external_vars'] = 1
             layer = Layer(**layer_conf)
         elif self.layer_type == 'lstm':
@@ -155,3 +132,54 @@ class BioAgentWrapper(BaseAgent):
             self.camera.reset()
 
         return self.agent.reset(self.initial_context, self.initial_external_message)
+
+    def _make_encoder(self):
+        if self.encoder_type == 'sp_ensemble':
+            from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
+
+            encoder_conf = self.conf['encoder']
+            encoder_conf['seed'] = self.seed
+            encoder_conf['inputDimensions'] = list(self.conf['raw_obs_shape'])
+
+            encoder = SPEnsemble(**encoder_conf)
+            decoder = SPDecoder(encoder)
+            n_groups = encoder.n_groups
+            n_states = encoder.getSingleNumColumns()
+        elif self.encoder_type == 'sp_grouped':
+            from hima.experiments.temporal_pooling.stp.sp_ensemble import (
+                SpatialPoolerGroupedWrapper
+            )
+
+            encoder_conf = self.conf['encoder']
+            encoder_conf['seed'] = self.seed
+            encoder_conf['feedforward_sds'] = [self.conf['raw_obs_shape'], 0.1]
+
+            decoder_type = self.conf['decoder_type']
+            decoder_conf = self.conf['decoder']
+
+            encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
+            decoder = self._make_decoder(encoder, decoder_type, decoder_conf)
+            n_groups = encoder.n_groups
+            n_states = encoder.getSingleNumColumns()
+        elif self.encoder_type is None:
+            encoder = None
+            decoder = None
+            n_states, n_groups = self.conf['raw_obs_shape']
+        else:
+            raise ValueError(f'Encoder type {self.encoder_type} is not supported')
+
+        return encoder, n_groups, n_states, decoder
+
+    @staticmethod
+    def _make_decoder(encoder, decoder_type, decoder_conf):
+        if decoder_type == 'naive':
+            from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
+            return SpatialPoolerDecoder(encoder)
+        elif decoder_type == 'learned':
+            from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerLearnedDecoder
+            return SpatialPoolerLearnedDecoder(encoder, **decoder_conf)
+        elif decoder_type is None:
+            return None
+        else:
+            raise ValueError(f'Decoder {decoder_type} is not supported')
+
