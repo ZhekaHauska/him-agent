@@ -42,7 +42,7 @@ class GridWorld:
         assert self.r is not None
         assert self.c is not None
         return (
-            self.colors[self.r, self.c],
+            [self.colors[self.r, self.c]],
             self.rewards[self.r, self.c] + self.default_reward,
             bool(self.terminals[self.r, self.c])
         )
