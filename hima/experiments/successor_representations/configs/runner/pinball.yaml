@@ -1,5 +1,5 @@
-log: True
-project_name: 'pinball_test_new_runner'
+log: False
+project_name: pinball_test_new_runner
 run_tag: null
 
 n_episodes: 11
@@ -10,12 +10,11 @@ action_inertia: 3  # how many steps repeat action
 frame_skip: 0  # force frame skipping
 strategies: null
 
-# list of setups
 setups: [fork_rew1, fork_rew2]
 setup_period: [5, 7]
 
 env_conf: 'configs/environment/pinball/default.yaml'
 agent_conf: 'configs/agent/bio/pinball.yaml'
-metrics_conf: 'configs/metrics/pinball.yaml'
+metrics_conf: 'configs/metrics/bio/pinball.yaml'
 
 seed: null

@@ -17,9 +17,12 @@ from hima.modules.belief.utils import normalize
 class ICLRunner(BaseRunner):
     @staticmethod
     def make_agent(agent_type, conf):
-        from hima.experiments.successor_representations.runners.agents import BioAgentWrapper
         if agent_type == 'bio':
+            from hima.experiments.successor_representations.runners.agents import BioAgentWrapper
             agent = BioAgentWrapper(conf)
+        elif agent_type == 'q':
+            from hima.experiments.successor_representations.runners.agents import QTableAgentWrapper
+            agent = QTableAgentWrapper(conf)
         else:
             raise NotImplementedError
 
@@ -81,23 +84,36 @@ def main(config_path):
         config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
 
     # unfolding subconfigs
-    layer_conf_path = config['agent'].pop('layer_conf')
-    config['agent']['layer_type'] = layer_conf_path.split('/')[-2]
-    config['agent']['layer'] = read_config(layer_conf_path)
+    if config['agent_type'] == 'bio':
+        def load_subconfig(entity, conf):
+            conf_path = config['agent'].pop(f'{entity}_conf')
+            conf['agent'][f'{entity}_type'] = conf_path.split('/')[-2]
+            conf['agent'][entity] = read_config(conf_path)
 
-    if 'encoder_conf' in config['agent']:
-        encoder_conf_path = config['agent'].pop('encoder_conf')
-        config['agent']['encoder_type'] = encoder_conf_path.split('/')[-2]
-        config['agent']['encoder'] = read_config(encoder_conf_path)
-    else:
-        config['agent']['encoder_type'] = None
+        load_subconfig('layer', config)
 
-    if 'decoder_conf' in config['agent']:
-        decoder_conf_path = config['agent'].pop('decoder_conf')
-        config['agent']['decoder_type'] = decoder_conf_path.split('/')[-2]
-        config['agent']['decoder'] = read_config(decoder_conf_path)
-    else:
-        config['agent']['decoder_type'] = None
+        if 'encoder_conf' in config['agent']:
+            load_subconfig('encoder', config)
+        else:
+            config['agent']['encoder_type'] = None
+
+        if 'decoder_conf' in config['agent']:
+            load_subconfig('decoder', config)
+        else:
+            config['agent']['decoder_type'] = None
+    elif config['agent_type'] == 'q':
+        config['agent']['qvn'] = read_config(config['agent'].pop('qvn_conf'))
+
+        if 'ucb_estimate_conf' in config['agent']:
+            config['agent']['ucb_estimate'] = read_config(config['agent'].pop('ucb_estimate_conf'))
+        else:
+            config['agent']['ucb_estimate'] = None
+
+        if 'eligibility_traces' in config['agent']:
+            config['agent']['eligibility_traces'] = read_config(
+                config['agent'].pop('eligibility_traces_conf'))
+        else:
+            config['agent']['eligibility_traces'] = None
 
     # override some values
     overrides = parse_arg_list(sys.argv[2:])

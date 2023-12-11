@@ -15,6 +15,6 @@ setup_period: 5
 
 env_conf: 'configs/environment/gridworld/default.yaml'
 agent_conf: 'configs/agent/bio/gridworld.yaml'
-metrics_conf: 'configs/metrics/gridworld.yaml'
+metrics_conf: 'configs/metrics/bio/gridworld.yaml'
 
 seed: null

@@ -13,6 +13,7 @@ from hima.modules.baselines.lstm import LstmLayer
 from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.baselines.hmm import FCHMMLayer
 from hima.modules.dvs import DVS
+from hima.agents.q.agent import QAgent
 
 import numpy as np
 from typing import Literal
@@ -183,3 +184,44 @@ class BioAgentWrapper(BaseAgent):
         else:
             raise ValueError(f'Decoder {decoder_type} is not supported')
 
+
+class QTableAgentWrapper(BaseAgent):
+    agent: QAgent
+
+    def __init__(self, conf):
+        self.seed = conf['seed']
+        self.initial_action = None
+        ucb_estimate_conf = conf['ucb_estimate']
+        eligibility_traces_conf = conf['eligibility_traces']
+        qvn_conf = conf['qvn']
+        agent_conf = conf['agent']
+        agent_conf['seed'] = self.seed
+        raw_obs_shape = conf['raw_obs_shape']
+        # TODO add SP encoder
+        assert raw_obs_shape[0] == 1
+        agent_conf['n_states'] = raw_obs_shape[1]
+        agent_conf['n_actions'] = conf['n_actions']
+
+        self.agent = QAgent(
+            qvn=qvn_conf,
+            eligibility_traces=eligibility_traces_conf,
+            ucb_estimate=ucb_estimate_conf,
+            **agent_conf
+        )
+
+        self.observation = None
+        self.reward = None
+        self.is_first = True
+
+    def observe(self, events, action):
+        self.observation = events
+
+    def sample_action(self):
+        return self.agent.act(self.reward, self.observation, self.is_first)
+
+    def reinforce(self, reward):
+        self.reward = reward
+
+    def reset(self):
+        self.is_first = True
+        self.agent.on_new_episode()
