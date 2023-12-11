@@ -13,7 +13,7 @@ strategies: null
 setups: [room3, room4]
 setup_period: 5
 
-env_conf: 'configs/environment/gridworld/default.yaml'
+env_conf: 'configs/environment/gridworld/mdp.yaml'
 agent_conf: 'configs/agent/bio/gridworld.yaml'
 metrics_conf: 'configs/metrics/bio/gridworld.yaml'
 
