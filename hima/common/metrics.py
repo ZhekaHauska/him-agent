@@ -78,6 +78,10 @@ class ScalarMetrics(BaseMetric):
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
 
         self.metrics = {metric: [] for metric in metrics.keys()}
+
+        for metric in metrics.keys():
+            self.logger.define_metric(metric, step_metric=self.log_step)
+
         self.agg_func = {
             metric: eval(params['agg']) if type(params['agg']) is str else params['agg']
             for metric, params in metrics.items()
@@ -214,6 +218,8 @@ class SRStackSurprise(BaseMetric):
         self.ages = np.arange(self.history_length)[::-1]
         self.surprises = np.zeros(self.history_length)
 
+        self.logger.define_metric(self.name, step_metric=self.log_step)
+
     def update(self):
         value = self.get_attr(self.att)
         sr = value['sr']
@@ -275,6 +281,8 @@ class PredictionsStackSurprise(BaseMetric):
         self.mode = mode
         self.predictions = []
         self.surprises = [list() for _ in range(self.prediction_steps)]
+
+        self.logger.define_metric(self.name, step_metric=self.log_step)
 
     def update(self):
         value = self.get_attr(self.att)
