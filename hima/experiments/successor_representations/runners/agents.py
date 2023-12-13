@@ -217,7 +217,9 @@ class QTableAgentWrapper(BaseAgent):
         self.observation = events
 
     def sample_action(self):
-        return self.agent.act(self.reward, self.observation, self.is_first)
+        action = self.agent.act(self.reward, self.observation, self.is_first)
+        self.is_first = False
+        return action
 
     def reinforce(self, reward):
         self.reward = reward
