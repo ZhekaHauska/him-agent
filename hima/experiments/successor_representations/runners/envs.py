@@ -7,6 +7,7 @@ from hima.experiments.successor_representations.runners.base import BaseEnvironm
 import os
 import numpy as np
 from hima.common.config.base import read_config
+import io
 
 
 class PinballWrapper(BaseEnvironment):
@@ -202,6 +203,25 @@ class GridWorldWrapper(BaseEnvironment):
 
     def close(self):
         self.environment = None
+
+    @property
+    def render(self):
+        import matplotlib.pyplot as plt
+        from PIL import Image
+        shift = self.environment.observation_radius
+        im = self.environment.colors.copy()
+        if shift > 0:
+            im = im[shift:-shift, shift:-shift]
+        im += self.environment.terminals
+        im += self.environment.rewards
+        plt.figure()
+        plt.imshow(im, cmap='Pastel1', aspect=1)
+        plt.axis('off')
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches="tight")
+        buf.seek(0)
+        im = Image.open(buf)
+        return im
 
     def _start_env(self, setup):
         from hima.envs.gridworld import GridWorld
