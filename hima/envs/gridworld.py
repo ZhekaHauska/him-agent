@@ -34,6 +34,10 @@ class GridWorld:
                 constant_values=-1
             )
 
+            self.shift = self.observation_radius
+        else:
+            self.shift = 0
+
         self.start_r = None
         self.start_c = None
         self.r = None
@@ -57,10 +61,8 @@ class GridWorld:
         if self.return_state:
             obs = (self.r, self.c)
         else:
-            shift = self.observation_radius
-
             start_r, start_c = self.r, self.c
-            end_r, end_c = self.r + 2*shift+1, self.c + 2*shift+1
+            end_r, end_c = self.r + 2*self.shift+1, self.c + 2*self.shift+1
             obs = self.colors[start_r:end_r, start_c:end_c]
         return (
             obs,
@@ -90,8 +92,7 @@ class GridWorld:
                 self.r += 1
 
             # Check whether action is taking to inaccessible states.
-            shift = self.observation_radius
-            temp_x = self.colors[self.r+shift, self.c+shift]
+            temp_x = self.colors[self.r+self.shift, self.c+self.shift]
             if temp_x == -1:
                 self.r = prev_r
                 self.c = prev_c
