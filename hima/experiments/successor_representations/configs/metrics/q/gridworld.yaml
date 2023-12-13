@@ -1,14 +1,34 @@
-scalar_metrics:
+step_scalar_metrics:
   class: ScalarMetrics
   params:
     metrics:
       main_metrics/reward:
         agg: np.sum
         att: reward
-      main_metrics/steps:
-        agg: np.mean
-        att: steps
     update_step: steps
     update_period: 1
     log_step: episodes
     log_period: 1
+
+episodic_scalar_metrics:
+  class: ScalarMetrics
+  params:
+    metrics:
+      main_metrics/steps:
+        agg: np.mean
+        att: steps
+    update_step: episodes
+    update_period: 1
+    log_step: episodes
+    log_period: 1
+
+trajectory:
+  class: Histogram
+  params:
+    name: agent/trajectory
+    att: state_visited
+    normalized: true
+    update_step: steps
+    update_period: 1
+    log_step: episodes
+    log_period: 50

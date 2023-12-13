@@ -61,6 +61,15 @@ class ICLRunner(BaseRunner):
             )
         return obs_rewards
 
+    @property
+    def state_visited(self):
+        env = self.environment.environment
+        r, c = env.r, env.c
+        values = np.zeros((env.h, env.w))
+        values[r, c] = 1
+
+        return values, 1
+
 
 def main(config_path):
     if len(sys.argv) > 1:
