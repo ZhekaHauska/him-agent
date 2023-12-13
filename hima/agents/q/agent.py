@@ -143,6 +143,6 @@ class QAgent:
 
     def _encode_s_actions(self, s: SparseSdr) -> list[SparseSdr]:
         return [
-            s + self.n_states*action
+            [s[0] + self.n_states*action]
             for action in range(self.n_actions)
         ]
