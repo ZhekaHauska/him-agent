@@ -36,7 +36,7 @@ class BaseMetric:
             if (update_step % self.update_period) == 0:
                 self.update()
 
-        if (self.last_log_step is None) or (self.last_log_step != log_step):
+        if (self.last_log_step is not None) and (self.last_log_step != log_step):
             if (log_step % self.log_period) == 0:
                 self.log(log_step)
 
@@ -390,3 +390,58 @@ def get_surprise_2(probs, obs, mode='bernoulli', normalize=True):
         raise ValueError(f'There is no such mode "{mode}"')
 
     return surprise
+
+
+class Histogram(BaseMetric):
+    def __init__(
+            self, name, att, normalized,
+            logger, runner,
+            update_step, log_step, update_period, log_period
+    ):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.normalized = normalized
+        self.att_to_log = att
+
+        self.hist = None
+        self.counts = None
+
+    def update(self):
+        value, counts = self.get_attr(self.att_to_log)
+
+        if self.hist is None:
+            self.hist = np.zeros_like(value)
+
+        self.hist += value
+
+        if self.normalized:
+            if self.counts is None:
+                self.counts = np.zeros_like(counts)
+
+            self.counts += counts
+
+    def log(self, step):
+        from matplotlib import pyplot as plt
+        if self.normalized:
+            hist = np.divide(
+                        self.hist, self.counts,
+                        where=self.counts > 0,
+                        out=np.zeros_like(self.hist)
+                    )
+        else:
+            hist = self.hist
+
+        plt.figure()
+        self.logger.log(
+            {
+                self.name: wandb.Image(sns.heatmap(hist)),
+                self.log_step: step
+            }
+        )
+        plt.close('all')
+        self._reset()
+
+    def _reset(self):
+        self.hist = np.zeros_like(self.hist)
+        if self.normalized:
+            self.counts = np.zeros_like(self.hist)
