@@ -215,7 +215,7 @@ class GridWorldWrapper(BaseEnvironment):
         im += self.environment.terminals
         im += self.environment.rewards
         plt.figure()
-        plt.imshow(im, cmap='Pastel1', aspect=1)
+        plt.imshow(im, cmap='Pastel1', aspect=1, vmin=-1)
         plt.axis('off')
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches="tight")
