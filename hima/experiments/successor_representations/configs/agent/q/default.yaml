@@ -1,4 +1,4 @@
 qvn_conf: 'configs/agent/q/qvn/default.yaml'
 agent:
   # softmax_temp: [10, 0.95]
-  exploration_eps: [0.1, 0.95]
+  exploration_eps: [0.05, 1.0]
