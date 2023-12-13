@@ -168,9 +168,6 @@ class BaseRunner:
             self.prepare_episode()
 
             while self.running:
-                if (self.metrics_rack is not None) and (self.steps >= self.update_start):
-                    self.metrics_rack.step()
-
                 self.reward = 0
                 self.obs = None
                 for frame in range(self.frame_skip + 1):
@@ -212,7 +209,11 @@ class BaseRunner:
                 if self.steps >= self.max_steps:
                     self.running = False
 
-            self.episodes += 1
-            self.setup_episodes += 1
+                if not self.running:
+                    self.episodes += 1
+                    self.setup_episodes += 1
+
+                if (self.metrics_rack is not None) and (self.steps >= self.update_start):
+                    self.metrics_rack.step()
         else:
             self.environment.close()
