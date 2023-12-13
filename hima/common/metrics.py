@@ -32,7 +32,7 @@ class BaseMetric:
         update_step = self.get_attr(self.update_step)
         log_step = self.get_attr(self.log_step)
 
-        if (self.last_update_step is None) or (self.last_update_step != update_step):
+        if (self.last_update_step is not None) and (self.last_update_step != update_step):
             if (update_step % self.update_period) == 0:
                 self.update()
 
