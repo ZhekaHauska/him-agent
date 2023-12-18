@@ -12,6 +12,7 @@ import numpy as np
 from hima.common.sdr import SparseSdr
 
 
+# TODO: Consider renaming to Sparse Distributed Rate Representation
 @dataclass
 class FloatSparseSdr:
     """
@@ -23,7 +24,8 @@ class FloatSparseSdr:
     values: np.ndarray | list[int | float] = None
 
     # NB: doubtful decision to implement it as it could be misused
-    # due to approx equality check or could be unintentionally overused
+    # due to non-exact (=approx) equality check, or it could be
+    # unintentionally overused slowing down the performance.
     def __eq__(self, other: FloatSparseSdr) -> bool:
         if self is other:
             return True
