@@ -59,3 +59,15 @@ trajectory:
     update_period: 1
     log_step: episodes
     log_period: 50
+
+
+value_function:
+  class: Histogram
+  params:
+    name: agent/value_function
+    att: state_value
+    normalized: true
+    update_step: steps
+    update_period: 1
+    log_step: episodes
+    log_period: 50

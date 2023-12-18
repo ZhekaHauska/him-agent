@@ -1,3 +1,15 @@
+setup:
+  class: ImageMetrics
+  params:
+    metrics:
+      agent/setup:
+        att: environment.render
+    update_step: current_setup_id
+    update_period: 1
+    log_step: current_setup_id
+    log_period: 1
+    log_fps: 5
+
 step_scalar_metrics:
   class: ScalarMetrics
   params:
@@ -27,6 +39,17 @@ trajectory:
   params:
     name: agent/trajectory
     att: state_visited
+    normalized: true
+    update_step: steps
+    update_period: 1
+    log_step: episodes
+    log_period: 50
+
+value_function:
+  class: Histogram
+  params:
+    name: agent/value_function
+    att: state_value
     normalized: true
     update_step: steps
     update_period: 1

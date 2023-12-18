@@ -70,6 +70,19 @@ class ICLRunner(BaseRunner):
 
         return values, 1
 
+    @property
+    def state_value(self):
+        env = self.environment.environment
+
+        r, c = env.r, env.c
+        values = np.zeros((env.h, env.w))
+        state_value = self.agent.state_value
+        values[r, c] = state_value
+
+        counts = np.zeros_like(values)
+        counts[r, c] = 1
+        return values, counts
+
 
 def main(config_path):
     if len(sys.argv) > 1:

@@ -134,6 +134,12 @@ class BioAgentWrapper(BaseAgent):
 
         return self.agent.reset(self.initial_context, self.initial_external_message)
 
+    @property
+    def state_value(self):
+        action_values = self.agent.evaluate_actions(with_planning=True)
+        state_value = np.sum(action_values)
+        return state_value
+
     def _make_encoder(self):
         if self.encoder_type == 'sp_ensemble':
             from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
@@ -227,3 +233,9 @@ class QTableAgentWrapper(BaseAgent):
     def reset(self):
         self.is_first = True
         self.agent.on_new_episode()
+
+    @property
+    def state_value(self):
+        actions_sa_sdr = self.agent._encode_s_actions(self.observation)
+        action_values = self.agent.Q.values(actions_sa_sdr)
+        return np.sum(action_values)

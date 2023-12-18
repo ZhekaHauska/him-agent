@@ -11,6 +11,7 @@ from hima.common.metrics import MetricsRack
 
 class BaseAgent:
     initial_action: int | None
+    state_value: float
 
     def observe(self, events, action):
         raise NotImplementedError
