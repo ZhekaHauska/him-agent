@@ -434,7 +434,7 @@ class Histogram(BaseMetric):
             hist = np.divide(
                         self.hist, self.counts,
                         where=self.counts > 0,
-                        out=np.zeros_like(self.hist)
+                        out=np.full_like(self.hist, fill_value=np.nan)
                     )
         else:
             hist = self.hist
