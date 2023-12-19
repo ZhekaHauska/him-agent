@@ -26,6 +26,7 @@ sp:
     _base_: $_base.spatial_pooler.default
     _type_: sp.vectorized
 #    _type_: sp.float
+#    _type_: sp.sdrr
     # input
     target_rf_to_input_ratio: 0.25
     # output

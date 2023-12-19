@@ -5,16 +5,19 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from collections import deque
 from functools import reduce
-from math import exp
 
 import numpy as np
 from htm.advanced.support.numpy_helpers import getAllCellsInColumns, argmaxMulti, setCompare
 from htm.bindings.math import Random
 from htm.bindings.sdr import SDR
 
+from hima.common.sdrr import RateSdr
 from hima.common.utils import safe_divide
 from hima.modules.htm.connections import Connections
 from hima.modules.htm.temporal_memory import UINT_DTYPE, REAL64_DTYPE, EPS
+
+
+# WARNING: this is development version of GeneralFeedbackTM from stp/general_feedback_tm.py
 
 
 class TemporalMemory:
@@ -167,6 +170,9 @@ class TemporalMemory:
 
     # input
     def set_active_columns(self, columns_id):
+        if isinstance(columns_id, RateSdr):
+            columns_id = columns_id.sdr
+
         self.active_columns.sparse = np.array(columns_id)
 
     def set_active_context_cells(self, cells_id):
@@ -199,9 +205,6 @@ class TemporalMemory:
 
     def get_correctly_predicted_cells(self):
         return self.correct_predicted_cells.sparse - self.local_range[0]
-
-    def get_correctly_predicted_winner_cells(self):
-        return self.correct_predicted_winner_cells.sparse - self.local_range[0]
 
     # processing
     def activate_basal_dendrites(self, learn):
@@ -396,19 +399,28 @@ class TemporalMemory:
         self.anomaly_threshold += (anomaly - self.anomaly.popleft()) / self.anomaly_window
         self.anomaly.append(anomaly)
 
-        n_tp_fn_cells = n_tp_fn_columns = n_active_columns
+        # positive (P) = tp + fn
+        n_tp_fn_columns = n_active_columns
+        # predicted positive (PP) = tp + fp
         n_tp_fp_columns = self.n_predicted_columns
+        # false negative (FN)
         n_fn_columns = len(bursting_columns)
+        # true positive (TP)
         n_tp_columns = n_tp_fn_columns - n_fn_columns
-        # recall: tp / tp+fp
-        # anomaly, miss rate: 1 - recall = fp / tp+fp
+
+        # recall, hit rate: tp / p = tp / tp+fn
+        # FNR, miss rate: 1 - recall = fn / tp+fn
         self.column_miss_rate = safe_divide(n_fn_columns, n_tp_fn_columns)
-        # precision
+        # precision: tp / pp = tp / tp+fp
         self.column_precision = safe_divide(n_tp_columns, n_tp_fp_columns)
+        # false discovery rate: 1 - precision = fp / tp+fp
         self.column_imprecision = 1 - self.column_precision
         # predicted / actual == prediction relative sparsity
         self.column_prediction_volume = safe_divide(n_tp_fp_columns, n_tp_fn_columns)
 
+        # positive (P) = tp + fn
+        n_tp_fn_cells = len(self.winner_cells.sparse)
+        # predicted positive (PP) = tp + fp
         n_tp_fp_cells = self.n_predicted_cells
         n_tp_cells = len(self.correct_predicted_cells.sparse)
         self.cell_imprecision = 1 - safe_divide(n_tp_cells, n_tp_fp_cells)
@@ -634,13 +646,11 @@ class TemporalMemory:
         tiebreaker = np.zeros_like(candidate_basal_segments)
         # WARNING, lazy realization of tiebreaking! May be slow!
         # TODO make optimized tiebreaking
-        tiebreaker[intersection_mask] = np.array([
-            exp(
-                self.num_potential_apical[
-                    candidate_apical_segments[cells_for_apical_segments == x]
-                ].sum()
-            ) for x
-            in cells_for_basal_segments
+        tiebreaker[intersection_mask] = np.exp([
+            self.num_potential_apical[
+                candidate_apical_segments[cells_for_apical_segments == x]
+            ].sum()
+            for x in cells_for_basal_segments
         ])
 
         #

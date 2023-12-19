@@ -11,10 +11,14 @@ from htm.advanced.support.numpy_helpers import getAllCellsInColumns, argmaxMulti
 from htm.bindings.math import Random
 from htm.bindings.sdr import SDR
 
+from hima.common.sdrr import RateSdr
 from hima.common.utils import safe_divide
 from hima.modules.htm.connections import Connections
 from hima.modules.htm.temporal_memory import UINT_DTYPE, REAL64_DTYPE, EPS
 
+
+# WARNING: it is frozen baseline version of the general feedback TM.
+# For experiments, use TM in stp/temporal_memory.py instead.
 
 class GeneralFeedbackTM:
     def __init__(self,
@@ -166,6 +170,9 @@ class GeneralFeedbackTM:
 
     # input
     def set_active_columns(self, columns_id):
+        if isinstance(columns_id, RateSdr):
+            columns_id = columns_id.sdr
+
         self.active_columns.sparse = np.array(columns_id)
 
     def set_active_context_cells(self, cells_id):

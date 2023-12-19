@@ -7,6 +7,7 @@
 import numpy as np
 
 from hima.common.sdr import SparseSdr
+from hima.common.sdrr import RateSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import entropy, SetSdrSequence, TMetrics
@@ -54,6 +55,9 @@ class SdrTracker:
         if reset:
             self._reset()
             return {}
+
+        if isinstance(sdr, RateSdr):
+            sdr = sdr.sdr
 
         list_sdr = sdr
         self.sequence.append(set(sdr))

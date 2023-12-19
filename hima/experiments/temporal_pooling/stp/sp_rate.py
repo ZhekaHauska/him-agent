@@ -268,7 +268,7 @@ class SpatialPooler:
 
     def select_output(self):
         output_sdr = self.winners
-        if self.output_mode == SpOutputMode.FLOAT:
+        if self.output_mode == SpOutputMode.RATE:
             output_sdr = RateSdr(self.winners, values=self.potentials[self.winners])
         return output_sdr
 

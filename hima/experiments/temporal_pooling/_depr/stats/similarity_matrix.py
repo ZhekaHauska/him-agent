@@ -9,6 +9,7 @@ from typing import Optional, Union
 import numpy as np
 
 from hima.common.sdr import SparseSdr
+from hima.common.sdrr import RateSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, safe_divide
 from hima.experiments.temporal_pooling._depr.stats.metrics import (
@@ -72,10 +73,13 @@ class SimilarityMatrix(Tracker):
         pass
 
     def on_step(self, sdr: SparseSdr):
-        # NB: both online and offline similarity calculation goes on seq finish
-        # because similarity matrix isn't published at each time step
+        if isinstance(sdr, RateSdr):
+            sdr = sdr.sdr
         if self._transform_sdr_to_set:
             sdr = set(sdr)
+
+        # NB: both online and offline similarity calculation goes on seq finish
+        # because similarity matrix isn't published at each time step
         self.current_seq.append(sdr)
 
     def on_sequence_finished(self):
