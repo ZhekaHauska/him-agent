@@ -71,9 +71,9 @@ class SimilarityMatrix(Tracker):
         pass
 
     def on_step(self, sdr: SparseSdr):
-        if isinstance(sdr, RateSdr):
-            sdr = sdr.sdr
         if self._transform_sdr_to_set:
+            if isinstance(sdr, RateSdr):
+                sdr = sdr.sdr
             sdr = set(sdr)
 
         # NB: both online and offline similarity calculation goes on seq finish
@@ -183,13 +183,15 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
         super(OnlineElementwiseSimilarityMatrix, self).__init__(
             tag='on_el', n_sequences=n_sequences, sds=sds,
             normalization=normalization, symmetrical=symmetrical,
-            transform_sdr_to_set=True
+            transform_sdr_to_set=False
         )
 
     def on_sequence_finished(self):
         n_seq_elements = len(self.current_seq)
 
         similarity_sum = np.zeros(self.n_sequences)
+        dense_cache = np.zeros(self.sds.size)
+
         for step in range(n_seq_elements):
             prefix_size = step + 1
             for j in range(self.n_sequences):
@@ -200,7 +202,8 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
                     s1=self.current_seq[:prefix_size],
                     s2=self.sequences[j][:prefix_size],
                     discount=self.online_similarity_decay,
-                    symmetrical=self.symmetrical
+                    symmetrical=self.symmetrical,
+                    dense_cache=dense_cache
                 )
 
         # store mean similarity

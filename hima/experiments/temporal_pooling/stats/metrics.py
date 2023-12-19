@@ -3,7 +3,6 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-
 from typing import Any
 
 import numpy as np
@@ -125,7 +124,7 @@ def _sdrr_similarity(
 
 # ==================== Sdr [sequence] similarity ====================
 def sequence_similarity(
-        s1: list, s2: list,
+        s1: SdrSequence, s2: SdrSequence,
         algorithm: str, discount: float = None, symmetrical: bool = False,
         sds: Sds = None
 ) -> float:
@@ -208,8 +207,9 @@ def similarity_matrix(
 
 
 def sequence_similarity_elementwise(
-        s1: list, s2: list,
-        discount: float = None, symmetrical: bool = False
+        s1: SdrSequence, s2: SdrSequence,
+        discount: float = None, symmetrical: bool = False,
+        sds: Sds = None, dense_cache: np.ndarray = None
 ) -> float:
     n = len(s1)
     assert n == len(s2)
@@ -217,12 +217,20 @@ def sequence_similarity_elementwise(
         # arguable: empty sequences are equal
         return 1.
 
-    # TODO: support RateSDR
-    sim_func = _sdr_similarity_for_sets if isinstance(s1[0], set) else _sdr_similarity
-    sims = np.array([
-        sim_func(s1[i], s2[i], symmetrical=symmetrical)
-        for i in range(n)
-    ])
+    if isinstance(s1[0], set):
+        sims = np.array([
+            _sdr_similarity_for_sets(s1[i], s2[i], symmetrical=symmetrical)
+            for i in range(n)
+        ])
+    else:
+        if dense_cache is None:
+            dense_cache = np.zeros(sds.size)
+        sim_func = _sdrr_similarity if isinstance(s1[0], RateSdr) else _sdr_similarity
+
+        sims = np.array([
+            sim_func(s1[i], s2[i], symmetrical=symmetrical, dense_cache=dense_cache)
+            for i in range(n)
+        ])
     return discounted_mean(sims, gamma=discount)
 
 
