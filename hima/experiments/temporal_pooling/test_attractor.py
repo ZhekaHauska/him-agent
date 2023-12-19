@@ -11,7 +11,7 @@ import numpy as np
 
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
-from hima.common.float_sdr import RateSdr
+from hima.common.sdrr import RateSdr
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
 from hima.common.sdr import SparseSdr

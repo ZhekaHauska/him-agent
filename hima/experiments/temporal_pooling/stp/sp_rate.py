@@ -5,8 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from enum import Enum, auto
-
 import numpy as np
 from numpy.random import Generator
 
@@ -15,17 +13,14 @@ from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.sp_float import SpOutputMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
     sample_for_each_neuron
 )
 
 
-class SpOutputMode(Enum):
-    BINARY = 1
-    FLOAT = auto()
-
-
+# To-be-general Competitive network (as meant by Rolls)
 class SpatialPooler:
     rng: Generator
 
