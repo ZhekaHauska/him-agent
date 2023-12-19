@@ -218,7 +218,7 @@ models:
     - TM.predict()
     - apply SA for K iterations:
       - TM.predicted_cells.sdr -> SA.output.sdr
-      - repeat: 1
+      - repeat: 3
         do:
           - SA.output.sdr -> SA.feedforward.sdr
           - SA.compute()

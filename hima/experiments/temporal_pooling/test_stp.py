@@ -118,7 +118,11 @@ class StpExperiment:
                 print(np.round(np.histogram(ws, bins=20)[0] / stp.output_size, 1))
 
         if self.logger:
-            self.logger.config.update(self.config.config, allow_val_change=True)
+            try:
+                self.logger.config.update(self.config.config, allow_val_change=True)
+            except:
+                # quick-n-dirty hack to remedy DryWandbLogger's inability to do this :)
+                pass
         self.print_with_timestamp('<==')
 
     @timed
