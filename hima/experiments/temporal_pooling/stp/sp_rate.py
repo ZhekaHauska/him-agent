@@ -8,8 +8,8 @@ from __future__ import annotations
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdrr import RateSdr
-from hima.common.sdr import SparseSdr
+from hima.common.sdrr import RateSdr, AnySparseSdr
+from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
@@ -20,8 +20,8 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 )
 
 
-# To-be-general Competitive network (as meant by Rolls)
 class SpatialPooler:
+    """A competitive network (as meant by Rolls)."""
     rng: Generator
 
     # I/O settings
@@ -53,7 +53,7 @@ class SpatialPooler:
 
     # cache
     sparse_input: SparseSdr
-    dense_input: np.ndarray
+    dense_input: DenseSdr
 
     winners: SparseSdr
     potentials: np.ndarray
@@ -137,18 +137,14 @@ class SpatialPooler:
         self.recognition_strength_trace = 0
         self.run_time = 0
 
-    def compute(
-            self, input_sdr: SparseSdr | RateSdr, learn: bool = False
-    ) -> SparseSdr | RateSdr:
+    def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
         output_sdr, run_time = self._compute(input_sdr, learn)
         self.run_time += run_time
         return output_sdr
 
     @timed
-    def _compute(
-            self, input_sdr: SparseSdr | RateSdr, learn: bool
-    ) -> SparseSdr | RateSdr:
+    def _compute(self, input_sdr: AnySparseSdr, learn: bool) -> AnySparseSdr:
         self.accept_input(input_sdr, learn=learn)
         self.try_activate_neurogenesis()
 
@@ -164,7 +160,7 @@ class SpatialPooler:
 
         return output_sdr
 
-    def accept_input(self, sdr: SparseSdr | RateSdr, *, learn: bool):
+    def accept_input(self, sdr: AnySparseSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
         if isinstance(sdr, RateSdr):
             values = sdr.values

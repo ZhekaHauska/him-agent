@@ -29,6 +29,20 @@ class RateSdr:
     SDR-related int/float statistics. Therefore, the structure itself
     does NOT restrict the type or range of values.
 
+    IMPORTANT: rates have a bit of obscure nature!
+        - each rate is a value in [0, 1] representing independent rate of the neuron
+        - it is relative to the neuron's maximum possible rate
+        - we employ rate normalization: the output of a layer is always re-normalized in
+            such way, that the most successful neuron will have a rate of 1. And the other
+            winners will have their rates relative to the 1st.
+        - therefore the following properties of RateSdr should be expected:
+            - the absolute bit rate does not mean absolute strength of the recognition. Instead,
+                it means how relatively good it recognizes the input pattern.
+            - there is no way ATM to represent the certainty of recognition. In the future,
+                it will be modelled with the size of RateSdr, such that the bigger size will
+                mean less certainty and vice versa.
+        TODO: draft; to be finalized after testing.
+
     NB: Be careful mutating values. By default, consider RateSdr objects as immutable.
     """
     sdr: SparseSdr
@@ -58,4 +72,5 @@ class RateSdr:
         )
 
 
+# Aggregate type for functions that support both representations.
 AnySparseSdr = Union[SparseSdr, RateSdr]

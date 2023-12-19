@@ -5,14 +5,22 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from typing import Iterable, Union, Sequence
+from typing import Union
 
 import numpy as np
+import numpy.typing as npt
 
 from hima.common.utils import isnone
 
-SparseSdr = Union[Iterable[int], Sequence[int], np.ndarray]
-DenseSdr = np.ndarray
+# SDR representation optimized for set operations. It is segregated to
+# clarify, when a function work with this exact representation.
+SetSdr = set[int]
+
+# General sparse form SDR. In most cases, list or ndarray is expected.
+SparseSdr = Union[list[int], npt.NDArray[int], SetSdr]
+
+# Dense SDR form. Could be a list too, but in general it's ndarray.
+DenseSdr = npt.NDArray[Union[int, float]]
 
 
 def sparse_to_dense(

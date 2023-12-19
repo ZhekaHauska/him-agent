@@ -4,19 +4,19 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Union, Any
+from typing import Any
 
 import numpy as np
 
-from hima.common.sdr import SparseSdr, DenseSdr
+from hima.common.sdr import SparseSdr, DenseSdr, SetSdr
+from hima.common.sdrr import AnySparseSdr, RateSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide, isnone
 
-
 TMetrics = dict[str, Any]
 
-SdrSequence = list[SparseSdr]
-SetSdrSequence = list[set[int]]
+SdrSequence = list[AnySparseSdr]
+SetSdrSequence = list[SetSdr]
 SeqHistogram = np.ndarray
 
 SEQ_SIM_ELEMENTWISE = 'elementwise'
@@ -28,34 +28,102 @@ MIN_MINMAX_NORMALIZATION = 'min-minmax'
 NO_NORMALIZATION = 'no'
 
 
-# ==================== Sdr [sequence] similarity ====================
-def dense_similarity(x1: DenseSdr, x2: DenseSdr, symmetrical: bool = False) -> float:
-    overlap = np.count_nonzero(x1 == x2)
-    if symmetrical:
-        union_size = np.count_nonzero(np.logical_or(x1, x2))
-        return safe_divide(overlap, union_size)
-
-    return safe_divide(overlap, np.count_nonzero(x2))
+# TODO: CLEAN UP, SIMPLIFY, AND REWRITE
 
 
-def sdr_similarity(x1: set, x2: set, symmetrical: bool = False) -> float:
-    assert isinstance(x1, set) and isinstance(x2, set)
-    overlap = len(x1 & x2)
-    if symmetrical:
-        return safe_divide(overlap, len(x1 | x2))
-    return safe_divide(overlap, len(x2))
-
-
-def tuple_similarity(
-        t1: tuple[SparseSdr, ...], t2: tuple[SparseSdr, ...], symmetrical=False
+def dense_similarity(
+        x1: DenseSdr, x2: DenseSdr, binary: bool = True, symmetrical: bool = False
 ) -> float:
-    # noinspection PyTypeChecker
-    return np.prod([
-        sdr_similarity(t1[i], t2[i], symmetrical=symmetrical)
-        for i in range(len(t1))
-    ])
+    if binary:
+        return sdr_similarity(
+            x1=set(np.flatnonzero(x1)), x2=set(np.flatnonzero(x2)),
+            symmetrical=symmetrical
+        )
+    ...
 
 
+def sdr_similarity(x1: SetSdr, x2: SetSdr, symmetrical: bool = False) -> float:
+    assert isinstance(x1, set) and isinstance(x2, set)
+    return _sdr_similarity_for_sets(x1, x2, symmetrical=symmetrical)
+
+
+# ==================== SDR similarity ====================
+# HOW TO USE: for a single-time it's convenient to use the most abstract function.
+#   It will induce a suited implementation itself.
+#
+#   NB: there are different implementations that are suited for different SDR storage
+#       representations having different computational optimizations.
+#   NB: if you need to compute many pairwise similarities, use sequential variants from the next
+#       group of methods.
+
+def _sdr_similarity_for_sets(x1: SetSdr, x2: SetSdr, symmetrical: bool = False) -> float:
+    """Optimized for SDRs represented with sets."""
+    overlap = len(x1 & x2)
+
+    # sim is a fraction of their union or x2. For the former, len(x1 | x2) = x1 + x2 - overlap
+    norm = len(x1) + len(x2) - overlap if symmetrical else len(x2)
+    return safe_divide(overlap, norm)
+
+
+def _sdr_similarity(
+        x1: SparseSdr, x2: SparseSdr, dense_cache: DenseSdr, symmetrical: bool = False
+) -> float:
+    """
+    Optimized for SDRs represented with arrays. For fast computations, it utilizes
+    a zeroed-out dense SDR array (will be cleared after using before returning the result).
+    """
+    dense_cache[x2] = 1
+    overlap = dense_cache[x1].sum()
+    # clear it
+    dense_cache[x2] = 0
+
+    # sim is a fraction of their union or x2. For the former, len(x1 | x2) = x1 + x2 - overlap
+    norm = len(x1) + len(x2) - overlap if symmetrical else len(x2)
+    return safe_divide(overlap, norm)
+
+
+# ==================== SDRR similarity ====================
+# HOW TO USE: for a single-time it's convenient to use the most abstract function.
+#   It will induce a suited implementation itself.
+#
+#   NB: there are different implementations that are suited for different Rate SDR storage
+#       representations having different computational optimizations.
+#   NB: if you need to compute many pairwise similarities, use sequential variants from the next
+#       group of methods.
+
+def _sdrr_similarity(
+        x1: RateSdr, x2: RateSdr, dense_cache: DenseSdr, symmetrical: bool = False
+) -> float:
+    """
+    Optimized for SDRs represented with arrays. For fast computations, it utilizes
+    a zeroed-out dense SDR array (will be cleared after using before returning the result).
+
+    NB: Both x1 and x2 are expected to have their sdr bits to have non-zero rates.
+        Otherwise, supp(...) calculation will be incorrect.
+    """
+    dense_cache[x2.sdr] = x2.values
+    dense_cache[x1.sdr] -= x1.values
+
+    # similarity is 1 minus an average L1 distance from x1 to x2 over supp(x2)
+    raw_distance = np.sum(np.abs(dense_cache[x2.sdr]))
+    norm = len(x2.sdr)
+
+    # clear cache
+    dense_cache[x2.sdr] = 0
+
+    if symmetrical:
+        # similarity is 1 minus an average L1 distance from x1 to x2 over supp(x1 | x2)
+        # so, we also need to add (x1 \ x2) part
+        raw_distance += np.sum(np.abs(dense_cache[x1.sdr]))
+        norm += np.count_nonzero(dense_cache[x1.sdr])
+
+    # finish clearing cache
+    dense_cache[x1.sdr] = 0
+
+    return 1 - safe_divide(raw_distance, norm)
+
+
+# ==================== Sdr [sequence] similarity ====================
 def sequence_similarity(
         s1: list, s2: list,
         algorithm: str, discount: float = None, symmetrical: bool = False,
@@ -86,8 +154,8 @@ def distribution_similarity(
         p: np.ndarray, q: np.ndarray, algorithm: str, sds: Sds = None, symmetrical: bool = False
 ) -> float:
     if algorithm == 'kl-divergence':
-        # We take 1 - KL to make it similarity metric. NB: normalized KL div for SDS can be > 1
-        return 1 - kl_divergence(p, q, sds, symmetrical=symmetrical)
+        # We take |1 - KL| to make it similarity metric. NB: normalized KL div for SDS can be > 1
+        return np.abs(1 - kl_divergence(p, q, sds, symmetrical=symmetrical))
     elif algorithm == 'pmf_pointwise':
         return point_pmf_similarity(p, q, sds=sds)
     elif algorithm == 'wasserstein':
@@ -97,7 +165,7 @@ def distribution_similarity(
 
 
 def similarity_matrix(
-        a: Union[list[set[int]], list[np.ndarray], list[list]],
+        a: list[AnySparseSdr],
         algorithm: str = None, discount: float = None, symmetrical: bool = False,
         sds: Sds = None
 ) -> np.ndarray:
@@ -105,7 +173,7 @@ def similarity_matrix(
     diagonal_mask = np.identity(n, dtype=bool)
     sm = np.empty((n, n))
 
-    if isinstance(a[0], set):
+    if isinstance(a[0], set) or isinstance(a[0], RateSdr):
         # SDR representations
         regime = 0
     elif isinstance(a[0], np.ndarray):
@@ -124,7 +192,7 @@ def similarity_matrix(
             x, y = a[i], a[j]
 
             if regime == 0:
-                sim = sdr_similarity(x, y, symmetrical=symmetrical)
+                sim = _sdr_similarity_for_sets(x, y, symmetrical=symmetrical)
             elif regime == 1:
                 # noinspection PyTypeChecker
                 sim = distribution_similarity(
@@ -139,27 +207,9 @@ def similarity_matrix(
     return np.ma.array(sm, mask=diagonal_mask)
 
 
-# FIXME:
-# def rank_matrix(sim_matrix: np.ndarray) -> np.ndarray:
-#     n = sim_matrix.shape[0]
-#     rm = np.ma.argsort(sim_matrix, axis=None)
-#
-#
-# def normalised_kendall_tau_distance(ranking1, ranking2):
-#     """Compute the Kendall tau distance."""
-#     n = len(ranking1)
-#     i, j = np.meshgrid(np.arange(n), np.arange(n))
-#     a = np.ma.argsort(ranking1)
-#     b = np.argsort(ranking2)
-#     n_disordered = np.logical_or(
-#         np.logical_and(a[i] < a[j], b[i] > b[j]),
-#         np.logical_and(a[i] > a[j], b[i] < b[j])
-#     ).sum()
-#     return n_disordered / (n * (n - 1))
-
-
 def sequence_similarity_elementwise(
-        s1: list, s2: list, discount: float = None, symmetrical: bool = False
+        s1: list, s2: list,
+        discount: float = None, symmetrical: bool = False
 ) -> float:
     n = len(s1)
     assert n == len(s2)
@@ -167,7 +217,8 @@ def sequence_similarity_elementwise(
         # arguable: empty sequences are equal
         return 1.
 
-    sim_func = tuple_similarity if isinstance(s1[0], tuple) else sdr_similarity
+    # TODO: support RateSDR
+    sim_func = _sdr_similarity_for_sets if isinstance(s1[0], set) else _sdr_similarity
     sims = np.array([
         sim_func(s1[i], s2[i], symmetrical=symmetrical)
         for i in range(n)
@@ -191,12 +242,22 @@ def sequence_similarity_as_union(
 
 
 def sequence_similarity_by_prefixes(
-        seq1: list, seq2: list, sds: Sds, algorithm: str,
+        seq1: list[AnySparseSdr], seq2: list[AnySparseSdr],
+        sds: Sds, algorithm: str,
         discount: float = None, symmetrical=False,
 ) -> float:
+    """
+    Compute similarity between two SDR sequences using their prefixes.
+    It is averaged-by-time online version of sequence similarity, as it
+    computes similarity at each timestep (hence using prefixes) and then averages them.
+
+    It supports different algorithms of similarity computation, e.g.:
+        - elementwise SDR similarity
+        - similarity based on aggregate distributions (see `distribution_similarity`)
+    """
     n = len(seq1)
     assert n == len(seq2)
-    if not n:
+    if n == 0:
         # arguable: empty sequences are equal
         return 1.
 
@@ -207,17 +268,23 @@ def sequence_similarity_by_prefixes(
             )
             for i in range(n)
         ]
-    else:   # distribution (with specified `algorithm`)
+    else:
+        # distribution specified by `algorithm`
+
+        # TODO: rewrite it using incremental histogram update
+        # TODO: support RateSDR
         sims = []
         histogram1, histogram2 = np.zeros(sds.size), np.zeros(sds.size)
-        for i in range(n):
-            s1, s2 = seq1[i], seq2[i]
+        for t in range(n):
+            s1, s2 = seq1[t], seq2[t]
             if isinstance(s1, set):
                 s1, s2 = list(s1), list(s2)
-            if i == 0:
+            if t == 0:
+                # init histograms at t=0
                 histogram1[s1] = 1
                 histogram2[s2] = 1
             else:
+                # each timestep we discount previous histograms and add new elements
                 histogram1 *= discount
                 histogram2 *= discount
                 histogram1[s1] += 1 - discount
@@ -228,33 +295,54 @@ def sequence_similarity_by_prefixes(
                     histogram1, histogram2, algorithm=algorithm, sds=sds, symmetrical=symmetrical
                 )
             )
-
-    # noinspection PyTypeChecker
     return np.mean(sims)
 
 
 # ==================== Distributions or cluster distribution similarity ====================
-def aggregate_pmf(seq: list, sds: Sds, decay: float = 1.0) -> np.ndarray:
-    """Return empirical probability-mass-like function for a sequence."""
-    is_tuple = isinstance(seq[0], tuple)
+def aggregate_pmf(seq: list[AnySparseSdr], sds: Sds, decay: float = 1.0) -> np.ndarray:
+    """
+    Return empirical probability-mass-like function for a sequence.
+    Decay is used to weight the contribution of past elements in the sequence.
+    """
     histogram = np.zeros(sds.size)
+    if not seq:
+        return histogram
+
+    s = seq[0]
+    is_rate_sdr = isinstance(s, RateSdr)
+    s = s.sdr if is_rate_sdr else s
+    is_set = isinstance(s, set)
+    is_decaying = decay < 1.
+
+    # TODO: extract incremental histogram update into a separate function
+
     cnt = 0
+    val = 1.
+
     for s in seq:
-        if is_tuple:
-            s = s[0]
-        if isinstance(s, set):
+        if is_rate_sdr:
+            # extract rate SDR
+            val = s.values
+            s = s.sdr
+        if is_set:
+            # convert to list so that we can use it as slicing indices
             s = list(s)
-        if decay < 1.:
+        if is_decaying:
             histogram *= decay
             cnt *= decay
 
-        histogram[s] += 1.
+        histogram[s] += val
         cnt += 1.
     return histogram / cnt
 
 
 def representation_from_pmf(pmf: np.ndarray, sds: Sds) -> SparseSdr:
+    """
+    Return an SDR representative from a probability-mass-like function, i.e.
+    `active_size` the most probable elements.
+    """
     representative_sdr = np.argpartition(pmf, -sds.active_size)[-sds.active_size:]
+    # indices are ordered by probability, reorder them by index
     representative_sdr.sort()
     return representative_sdr
 
@@ -320,6 +408,25 @@ def point_pmf_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
         # -> [0, 1]
         similarity /= sds.active_size
     return similarity
+
+
+# FIXME:
+# def rank_matrix(sim_matrix: np.ndarray) -> np.ndarray:
+#     n = sim_matrix.shape[0]
+#     rm = np.ma.argsort(sim_matrix, axis=None)
+#
+#
+# def normalised_kendall_tau_distance(ranking1, ranking2):
+#     """Compute the Kendall tau distance."""
+#     n = len(ranking1)
+#     i, j = np.meshgrid(np.arange(n), np.arange(n))
+#     a = np.ma.argsort(ranking1)
+#     b = np.argsort(ranking2)
+#     n_disordered = np.logical_or(
+#         np.logical_and(a[i] < a[j], b[i] > b[j]),
+#         np.logical_and(a[i] > a[j], b[i] < b[j])
+#     ).sum()
+#     return n_disordered / (n * (n - 1))
 
 
 # ==================== Errors ====================
