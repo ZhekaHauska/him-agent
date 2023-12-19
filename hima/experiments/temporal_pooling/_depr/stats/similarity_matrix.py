@@ -3,8 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-
-from typing import Optional, Union
+from __future__ import annotations
 
 import numpy as np
 
@@ -12,12 +11,11 @@ from hima.common.sdr import SparseSdr
 from hima.common.sdrr import RateSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, safe_divide
-from hima.experiments.temporal_pooling._depr.stats.metrics import (
+from hima.experiments.temporal_pooling.stats.metrics import (
     standardize_sample_distribution,
     sequence_similarity_elementwise, distribution_similarity, DISTR_SIM_PMF,
-    DISTR_SIM_KL, NO_NORMALIZATION, aggregate_pmf
+    DISTR_SIM_KL, NO_NORMALIZATION, aggregate_pmf, SeqHistogram, SdrSequence
 )
-from hima.experiments.temporal_pooling._depr.stats.sdr_tracker import SdrSequence, SeqHistogram
 from hima.experiments.temporal_pooling._depr.stats.tracker import Tracker, TMetrics
 
 
@@ -33,13 +31,13 @@ class SimilarityMatrix(Tracker):
 
     n_sequences: int
     sds: Sds
-    mx: Union[np.ndarray, np.ma.MaskedArray]
+    mx: np.ndarray | np.ma.MaskedArray
 
     # mean: mean/std; min: min/max-min; no: no normalization
     normalization: str
     symmetrical: bool
 
-    current_seq_id: Optional[int]
+    current_seq_id: int | None
     current_seq: SdrSequence
     _transform_sdr_to_set: bool
 
@@ -104,7 +102,7 @@ class SimilarityMatrix(Tracker):
 
 
 class OfflineElementwiseSimilarityMatrix(SimilarityMatrix):
-    sequences: list[Optional[SdrSequence]]
+    sequences: list[SdrSequence | None]
 
     def __init__(self, n_sequences: int, sds: Sds, *, normalization: str, symmetrical: bool):
         self.sequences = [None] * n_sequences
@@ -135,7 +133,7 @@ class OfflineElementwiseSimilarityMatrix(SimilarityMatrix):
 class OfflinePmfSimilarityMatrix(SimilarityMatrix):
     distribution_metrics: str
     pmf_decay: float
-    pmfs: list[Optional[SeqHistogram]]
+    pmfs: list[SeqHistogram | None]
 
     def __init__(
             self, n_sequences: int, sds: Sds, *, normalization: str, symmetrical: bool,
@@ -173,7 +171,7 @@ class OfflinePmfSimilarityMatrix(SimilarityMatrix):
 
 
 class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
-    sequences: list[Optional[SdrSequence]]
+    sequences: list[SdrSequence | None]
     online_similarity_decay: float
 
     def __init__(
@@ -220,7 +218,7 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
     distribution_metrics: str
     online_similarity_decay: float
     pmf_decay: float
-    pmfs: list[Optional[SeqHistogram]]
+    pmfs: list[SeqHistogram | None]
 
     def __init__(
             self, n_sequences: int, sds: Sds, normalization: str, symmetrical: bool,
