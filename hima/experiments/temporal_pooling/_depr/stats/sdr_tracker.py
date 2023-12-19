@@ -9,8 +9,8 @@ import numpy as np
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling._depr.stats.metrics import entropy
 from hima.experiments.temporal_pooling._depr.stats.tracker import Tracker, TMetrics
+from hima.experiments.temporal_pooling.stats.metrics import entropy
 
 SdrSequence = list[SparseSdr]
 SetSdrSequence = list[set[int]]
