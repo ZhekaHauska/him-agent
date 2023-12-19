@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run
 
 
+# This is a generalised sequential test.
+# It tests sequential memory on different sequential datasets.
 class StpExperiment:
     config: GlobalConfig
     logger: Run | None

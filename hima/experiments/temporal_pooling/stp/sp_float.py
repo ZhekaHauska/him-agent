@@ -10,7 +10,7 @@ from enum import Enum, auto
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.float_sdr import FloatSparseSdr
+from hima.common.float_sdr import RateSdr
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
@@ -143,8 +143,8 @@ class SpatialPooler:
         self.run_time = 0
 
     def compute(
-            self, input_sdr: SparseSdr | FloatSparseSdr, learn: bool = False
-    ) -> SparseSdr | FloatSparseSdr:
+            self, input_sdr: SparseSdr | RateSdr, learn: bool = False
+    ) -> SparseSdr | RateSdr:
         """Compute the output SDR."""
         output_sdr, run_time = self._compute(input_sdr, learn)
         self.run_time += run_time
@@ -152,8 +152,8 @@ class SpatialPooler:
 
     @timed
     def _compute(
-            self, input_sdr: SparseSdr | FloatSparseSdr, learn: bool
-    ) -> SparseSdr | FloatSparseSdr:
+            self, input_sdr: SparseSdr | RateSdr, learn: bool
+    ) -> SparseSdr | RateSdr:
         self.accept_input(input_sdr, learn=learn)
         self.try_activate_neurogenesis()
 
@@ -169,9 +169,9 @@ class SpatialPooler:
 
         return output_sdr
 
-    def accept_input(self, sdr: SparseSdr | FloatSparseSdr, *, learn: bool):
+    def accept_input(self, sdr: SparseSdr | RateSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
-        if isinstance(sdr, FloatSparseSdr):
+        if isinstance(sdr, RateSdr):
             values = sdr.values
             sdr = sdr.sdr
         else:
@@ -278,11 +278,11 @@ class SpatialPooler:
     def select_output(self):
         output_sdr = self.winners
         if self.output_mode == SpOutputMode.FLOAT:
-            output_sdr = FloatSparseSdr(self.winners, values=self.potentials[self.winners])
+            output_sdr = RateSdr(self.winners, values=self.potentials[self.winners])
         return output_sdr
 
     def accept_output(self, sdr: SparseSdr, *, learn: bool):
-        if isinstance(sdr, FloatSparseSdr):
+        if isinstance(sdr, RateSdr):
             values = sdr.values
             sdr = sdr.sdr
         else:

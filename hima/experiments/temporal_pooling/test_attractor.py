@@ -11,7 +11,7 @@ import numpy as np
 
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
-from hima.common.float_sdr import FloatSparseSdr
+from hima.common.float_sdr import RateSdr
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
 from hima.common.sdr import SparseSdr
@@ -52,6 +52,7 @@ class AttractionConfig:
         self.learn_in_attraction = learn_in_attraction
 
 
+# This is an attractor experiment on MNIST dataset.
 class SpAttractorExperiment:
     training: TrainConfig
     attraction: AttractionConfig
@@ -140,7 +141,7 @@ class SpAttractorExperiment:
         return self.analyse_trajectories(trajectories)
 
     def process_sample(
-            self, sample: SparseSdr | FloatSparseSdr, learn: bool
+            self, sample: SparseSdr | RateSdr, learn: bool
     ) -> list[SparseSdr]:
         sdrs = [sample]
         if self.encoder is not None:
@@ -154,7 +155,7 @@ class SpAttractorExperiment:
                 self.attractor.compute(sdrs[-1], learn=_learn)
             )
         return [
-            set(sdr.sdr) if isinstance(sdr, FloatSparseSdr) else set(sdr)
+            set(sdr.sdr) if isinstance(sdr, RateSdr) else set(sdr)
             for sdr in sdrs
         ]
 

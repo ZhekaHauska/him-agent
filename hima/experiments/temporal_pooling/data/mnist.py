@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 from sklearn.datasets import load_digits
 
-from hima.common.float_sdr import FloatSparseSdr
+from hima.common.float_sdr import RateSdr
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 
@@ -41,10 +41,10 @@ class MnistDataset:
             for cls in range(self.n_classes)
         ]
 
-    def get_sdr(self, ind: int, binary: bool = True) -> SparseSdr | FloatSparseSdr:
+    def get_sdr(self, ind: int, binary: bool = True) -> SparseSdr | RateSdr:
         if binary:
             return self.sdrs[ind]
-        return FloatSparseSdr(self.sdrs[ind], values=self.sparse_values[ind])
+        return RateSdr(self.sdrs[ind], values=self.sparse_values[ind])
 
     @property
     def n_images(self):
