@@ -66,12 +66,14 @@ def sequence_similarity(
         return sequence_similarity_elementwise(s1, s2, discount=discount, symmetrical=symmetrical)
     elif algorithm.startswith('union'):
         # reflects unordered (=set) similarity
+        # "union.xxx" -> "xxx", where "xxx" — from `distribution_similarity`
         algorithm = algorithm[6:]
         return sequence_similarity_as_union(
             s1, s2, sds=sds, algorithm=algorithm, symmetrical=symmetrical
         )
     elif algorithm.startswith('prefix'):
         # reflects balance between the other two
+        # "prefix.xxx" -> "xxx", where "xxx" — from `distribution_similarity`
         algorithm = algorithm[7:]
         return sequence_similarity_by_prefixes(
             s1, s2, sds=sds, algorithm=algorithm, discount=discount, symmetrical=symmetrical
