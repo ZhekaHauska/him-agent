@@ -5,13 +5,15 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 from numpy.random import Generator
 
 from hima.common.sdrr import RateSdr, AnySparseSdr
 from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed
+from hima.common.utils import timed, safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_float import SpOutputMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
@@ -56,6 +58,7 @@ class SpatialPooler:
     dense_input: DenseSdr
 
     winners: SparseSdr
+    strongest_winner: int | None
     potentials: np.ndarray
 
     # stats
@@ -128,6 +131,7 @@ class SpatialPooler:
         # inevitable int-to-float converting when we multiply it by weights
         self.dense_input = np.zeros(self.ff_size, dtype=float)
         self.winners = []
+        self.strongest_winner = None
         self.potentials = np.zeros(self.output_size)
 
         self.n_computes = 1
@@ -206,9 +210,11 @@ class SpatialPooler:
 
     def select_winners(self):
         n_winners = self.output_sds.active_size
-        winners = np.sort(
-            np.argpartition(self.potentials, -n_winners)[-n_winners:]
-        )
+
+        winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
+        self.strongest_winner = cast(int, winners[0])
+        winners.sort()
+
         self.winners = winners[self.potentials[winners] > 0]
 
     def reinforce_winners(self, matched_input_activity, learn: bool):
@@ -269,7 +275,11 @@ class SpatialPooler:
     def select_output(self):
         output_sdr = self.winners
         if self.output_mode == SpOutputMode.RATE:
-            output_sdr = RateSdr(self.winners, values=self.potentials[self.winners])
+            values = safe_divide(
+                self.potentials[self.winners],
+                cast(float, self.potentials[self.strongest_winner])
+            )
+            output_sdr = RateSdr(self.winners, values=values)
         return output_sdr
 
     def accept_output(self, sdr: SparseSdr, *, learn: bool):

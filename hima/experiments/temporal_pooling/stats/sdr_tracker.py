@@ -56,12 +56,15 @@ class SdrTracker:
             self._reset()
             return {}
 
+        # TODO: support better handling of RateSdr
+        value = 1.0
         if isinstance(sdr, RateSdr):
+            value = sdr.values
             sdr = sdr.sdr
 
         list_sdr = sdr
         self.sequence.append(set(sdr))
-        self.aggregate_histogram[list_sdr] += 1.0
+        self.aggregate_histogram[list_sdr] += value
 
         # step metrics
         sdr: set = self.sequence[-1]
