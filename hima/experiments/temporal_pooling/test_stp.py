@@ -187,7 +187,6 @@ class StpExperiment:
         self.model.streams['sequence_id'].set(sequence.id)
 
         for _, input_sdr in enumerate(sequence):
-            self.reset_blocks('spatial_pooler', 'custom_sp')
             for _ in range(self.iterate.element_repeats):
                 self.progress.next_step()
                 self.model.streams['step'].set(self.progress.step)

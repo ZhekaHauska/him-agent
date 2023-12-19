@@ -46,7 +46,7 @@ class SdrTracker:
         self.pmf_coverage_history.clear()
         self.aggregate_histogram[:] = 0.
 
-    def on_sequence_started(self, *_) -> TMetrics:
+    def on_sequence_started(self, *_, **__) -> TMetrics:
         self._reset()
         return {}
 

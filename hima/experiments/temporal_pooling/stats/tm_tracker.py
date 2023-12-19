@@ -14,7 +14,10 @@ class TmTracker:
     def __init__(self, tm: TemporalMemory):
         self.tm = tm
 
-    def on_activate(self, *_) -> TMetrics:
+    def on_activate(self, _, reset: bool) -> TMetrics:
+        if reset:
+            return {}
+
         tm = self.tm
         return {
             'column/prediction_volume': tm.column_prediction_volume,

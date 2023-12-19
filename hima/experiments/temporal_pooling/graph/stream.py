@@ -40,7 +40,7 @@ class Stream:
     def get(self):
         return self._value
 
-    def set(self, value = None, reset=False):
+    def set(self, value=None, reset=False):
         self._value = value
 
         for tracker in self._trackers:

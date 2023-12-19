@@ -88,6 +88,8 @@ model:
 track_streams:
   input.sdr:
     - cross.online.el
+  SE.output.sdr:
+    - cross.online.el
   SA.output.sdr:
     - cross.online.el
   TM.correctly_predicted_cells.sdr:

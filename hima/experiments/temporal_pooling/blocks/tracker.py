@@ -49,7 +49,7 @@ class TrackerBlock:
         if not self.enabled.get():
             return
 
-        metrics = self.track[stream.name](new_value, reset)
+        metrics = self.track[stream.name](new_value, reset=reset)
         metrics = self.personalize_metrics(metrics)
         if metrics:
             self.model.metrics |= metrics
