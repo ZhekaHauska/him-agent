@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from hima.experiments.successor_representations.runners.base import BaseAgent
 from hima.common.sdr import sparse_to_dense
-from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima, FCHMMBioHima
+from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
 from hima.modules.baselines.lstm import LstmLayer
 from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.baselines.hmm import FCHMMLayer
+from hima.modules.baselines.srtd import SRTD
 from hima.modules.dvs import DVS
 from hima.agents.q.agent import QAgent
 
@@ -20,7 +21,7 @@ from typing import Literal
 
 
 class BioAgentWrapper(BaseAgent):
-    agent: BioHIMA | LstmBioHima | FCHMMBioHima
+    agent: BioHIMA | LstmBioHima
     camera: DVS | None
     layer_type: Literal['fchmm', 'dhtm', 'lstm', 'rwkv']
     encoder_type: Literal['sp_ensemble', 'sp_grouped']
@@ -84,15 +85,27 @@ class BioAgentWrapper(BaseAgent):
             decoder
         )
 
+        if conf['srtd_type'] is None:
+            srtd = None
+        else:
+            srtd = SRTD(
+                cortical_column.layer.context_input_size,
+                cortical_column.layer.input_sdr_size,
+                **conf['srtd']
+            )
+
         conf['agent']['seed'] = self.seed
 
         if self.layer_type in {'lstm', 'rwkv'}:
-            self.agent = LstmBioHima(cortical_column, **conf['agent'])
-        elif self.layer_type == 'fchmm':
-            self.agent = FCHMMBioHima(cortical_column, **conf['agent'])
+            self.agent = LstmBioHima(
+                cortical_column,
+                srtd=srtd,
+                **conf['agent']
+            )
         else:
             self.agent = BioHIMA(
                 cortical_column,
+                srtd=srtd,
                 **conf['agent']
             )
 

@@ -49,7 +49,6 @@ class BioHIMA:
             sr_steps: int = 5,
             approximate_tail: bool = True,
             inverse_temp: float = 1.0,
-            seed: int = None,
             exploration_eps: float = -1,
             action_value_estimate: str = 'plan',
             sr_estimate_planning: str = 'uniform',
@@ -57,11 +56,14 @@ class BioHIMA:
             lr_surprise=(0.2, 0.01),
             lr_td_error=(0.2, 0.01),
             adaptive_sr: bool = True,
-            adaptive_lr: bool = True
+            adaptive_lr: bool = True,
+            srtd: SRTD | None,
+            seed: int | None,
     ):
         self.observation_reward_lr = observation_reward_lr
         self.max_striatum_lr = striatum_lr
         self.cortical_column = cortical_column
+        self.srtd = srtd
         self.gamma = gamma
         self.max_sr_steps = sr_steps
         self.sr_early_stop = sr_early_stop
@@ -276,14 +278,17 @@ class BioHIMA:
             return sr
 
     def predict_sr(self, hidden_vars_dist):
-        sr = np.dot(hidden_vars_dist, self.striatum_weights)
-        sr /= self.cortical_column.layer.n_hidden_vars
+        if self.srtd is None:
+            sr = np.dot(hidden_vars_dist, self.striatum_weights)
+            sr /= self.cortical_column.layer.n_hidden_vars
+        else:
+            msg = torch.tensor(hidden_vars_dist).float().to(self.srtd.device)
+            sr = to_numpy(self.srtd.predict_sr(msg, target=True))
         return sr
 
     def td_update_sr(self):
         current_state = self.cortical_column.layer.internal_forward_messages
 
-        predicted_sr = self.predict_sr(current_state)
         target_sr = self.generate_sr(
             self.sr_steps,
             initial_messages=current_state,
@@ -291,17 +296,31 @@ class BioHIMA:
             approximate_tail=self.approximate_tail,
             early_stop=self.sr_early_stop
         )
-        prediction_cells = current_state
 
-        error_sr = target_sr - predicted_sr
+        if self.srtd is None:
+            predicted_sr = self.predict_sr(current_state)
+            prediction_cells = current_state
+            error_sr = target_sr - predicted_sr
 
-        # dSR / dW for linear model
-        delta_w = np.outer(prediction_cells, error_sr)
+            # dSR / dW for linear model
+            delta_w = np.outer(prediction_cells, error_sr)
 
-        self.striatum_weights += self.striatum_lr * delta_w
-        self.striatum_weights = np.clip(self.striatum_weights, 0, None)
+            self.striatum_weights += self.striatum_lr * delta_w
+            self.striatum_weights = np.clip(self.striatum_weights, 0, None)
 
-        td_error = np.mean(np.power(error_sr, 2))
+            td_error = np.mean(np.power(error_sr, 2))
+        else:
+            current_state = torch.tensor(current_state).float().to(self.srtd.device)
+            predicted_sr = self.srtd.predict_sr(current_state, target=False)
+            target_sr = torch.tensor(target_sr)
+            target_sr = target_sr.float().to(self.srtd.device)
+
+            td_error = self.srtd.compute_td_loss(
+                target_sr,
+                predicted_sr
+            )
+            predicted_sr = to_numpy(predicted_sr)
+            target_sr = to_numpy(target_sr)
 
         return predicted_sr, target_sr, td_error
 
@@ -396,53 +415,6 @@ class BioHIMA:
         return self.ss_td_error.current_value
 
 
-class FCHMMBioHima(BioHIMA):
-    """Patch-like adaptation of BioHIMA to work with Factorial CHMM layer."""
-
-    def __init__(
-            self, cortical_column: CorticalColumn,
-            **kwargs
-    ):
-        super().__init__(cortical_column, **kwargs)
-
-        self.srtd = SRTD(
-            self.cortical_column.layer.context_input_size,
-            self.cortical_column.layer.input_sdr_size,
-            lr=self.striatum_lr,
-            tau=self.cortical_column.layer.srtd_tau,
-            batch_size=self.cortical_column.layer.srtd_batch_size,
-            hidden_size=self.cortical_column.layer.srtd_hidden_size,
-            n_hidden_layers=self.cortical_column.layer.srtd_n_hidden_layers
-        )
-
-    def td_update_sr(self):
-        current_state = self.cortical_column.layer.internal_forward_messages
-        current_state = torch.tensor(current_state).float().to(self.srtd.device)
-
-        predicted_sr = self.srtd.predict_sr(current_state, target=False)
-        target_sr = self.generate_sr(
-            self.sr_steps,
-            initial_messages=self.cortical_column.layer.internal_forward_messages,
-            initial_prediction=self.observation_messages,
-            approximate_tail=self.approximate_tail,
-            early_stop=self.sr_early_stop
-        )
-
-        target_sr = torch.tensor(target_sr)
-        target_sr = target_sr.float().to(self.srtd.device)
-
-        td_error = self.srtd.compute_td_loss(
-            target_sr,
-            predicted_sr
-        )
-
-        return to_numpy(predicted_sr), to_numpy(target_sr), td_error
-
-    def predict_sr(self, context_messages):
-        msg = torch.tensor(context_messages).float().to(self.srtd.device)
-        return to_numpy(self.srtd.predict_sr(msg, target=True))
-
-
 class LstmBioHima(BioHIMA):
     """Patch-like adaptation of BioHIMA to work with LSTM layer."""
 
@@ -451,16 +423,6 @@ class LstmBioHima(BioHIMA):
             **kwargs
     ):
         super().__init__(cortical_column, **kwargs)
-
-        self.srtd = SRTD(
-            self.cortical_column.layer.hidden_size,
-            self.cortical_column.layer.input_size,
-            lr=self.striatum_lr,
-            tau=self.cortical_column.layer.srtd_tau,
-            batch_size=self.cortical_column.layer.srtd_batch_size,
-            n_hidden_layers=1,
-            l2_regularization_weight=0.2
-        )
 
     # noinspection PyMethodOverriding
     def generate_sr(

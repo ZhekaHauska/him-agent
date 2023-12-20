@@ -9,7 +9,7 @@ import sys
 
 import numpy as np
 
-from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima, FCHMMBioHima
+from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima
 from hima.common.config.base import read_config, override_config
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.argparse import parse_arg_list
