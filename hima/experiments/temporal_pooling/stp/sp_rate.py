@@ -214,6 +214,7 @@ class SpatialPooler:
         winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
         self.strongest_winner = cast(int, winners[0])
         winners.sort()
+        print(winners, self.potentials[winners])
 
         self.winners = winners[self.potentials[winners] > 0]
 
@@ -275,6 +276,7 @@ class SpatialPooler:
     def select_output(self):
         output_sdr = self.winners
         if self.output_mode == SpOutputMode.RATE:
+            assert False, 'fix me'
             values = safe_divide(
                 self.potentials[self.winners],
                 cast(float, self.potentials[self.strongest_winner])

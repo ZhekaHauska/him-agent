@@ -6,14 +6,15 @@
 from __future__ import annotations
 
 from enum import Enum, auto
+from typing import cast
 
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdrr import RateSdr
+from hima.common.sdrr import RateSdr, AnySparseSdr
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed
+from hima.common.utils import timed, safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
@@ -61,6 +62,7 @@ class SpatialPooler:
     dense_input: np.ndarray
 
     winners: SparseSdr
+    strongest_winner: int | None
     potentials: np.ndarray
 
     # stats
@@ -133,6 +135,7 @@ class SpatialPooler:
         # inevitable int-to-float converting when we multiply it by weights
         self.dense_input = np.zeros(self.ff_size, dtype=float)
         self.winners = []
+        self.strongest_winner = None
         self.potentials = np.zeros(self.output_size)
 
         self.n_computes = 1
@@ -142,18 +145,14 @@ class SpatialPooler:
         self.recognition_strength_trace = 0
         self.run_time = 0
 
-    def compute(
-            self, input_sdr: SparseSdr | RateSdr, learn: bool = False
-    ) -> SparseSdr | RateSdr:
+    def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
         output_sdr, run_time = self._compute(input_sdr, learn)
         self.run_time += run_time
         return output_sdr
 
     @timed
-    def _compute(
-            self, input_sdr: SparseSdr | RateSdr, learn: bool
-    ) -> SparseSdr | RateSdr:
+    def _compute(self, input_sdr: AnySparseSdr, learn: bool) -> AnySparseSdr:
         self.accept_input(input_sdr, learn=learn)
         self.try_activate_neurogenesis()
 
@@ -215,9 +214,12 @@ class SpatialPooler:
 
     def select_winners(self):
         n_winners = self.output_sds.active_size
-        winners = np.sort(
-            np.argpartition(self.potentials, -n_winners)[-n_winners:]
-        )
+
+        winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
+        self.strongest_winner = cast(int, winners[np.argmax(self.potentials[winners])])
+        winners.sort()
+        # print(winners, self.potentials[winners])
+
         self.winners = winners[self.potentials[winners] > 0]
 
     def reinforce_winners(self, matched_input_activity, learn: bool):
@@ -278,7 +280,12 @@ class SpatialPooler:
     def select_output(self):
         output_sdr = self.winners
         if self.output_mode == SpOutputMode.RATE:
-            output_sdr = RateSdr(self.winners, values=self.potentials[self.winners])
+            values = safe_divide(
+                self.potentials[self.winners],
+                cast(float, self.potentials[self.strongest_winner])
+            )
+            output_sdr = RateSdr(self.winners, values=values)
+            # print(output_sdr)
         return output_sdr
 
     def accept_output(self, sdr: SparseSdr, *, learn: bool):
