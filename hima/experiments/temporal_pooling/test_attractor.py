@@ -84,8 +84,8 @@ class SpAttractorExperiment:
         self.seed = resolve_random_seed(seed)
         self.rng = np.random.default_rng(self.seed)
 
-        self.data = MnistDataset()
         self.binary = binary
+        self.data = MnistDataset(binary=self.binary)
 
         input_sds = self.data.output_sds
         self.encoder = self.config.resolve_object(encoder, feedforward_sds=input_sds)
@@ -119,9 +119,8 @@ class SpAttractorExperiment:
         for step in range(self.training.n_steps):
             sample_ind = sample_indices[step]
             # noinspection PyTypeChecker
-            sample = self.data.get_sdr(sample_ind, binary=self.binary)
+            sample = self.data.get_sdr(sample_ind)
             self.process_sample(sample, learn=True)
-
 
     def test_epoch(self):
         trajectories = []
@@ -131,7 +130,7 @@ class SpAttractorExperiment:
 
             intra_cls_trajectories = [
                 self.process_sample(
-                    self.data.get_sdr(sample_ind, binary=self.binary),
+                    self.data.get_sdr(sample_ind),
                     learn=False
                 )
                 for sample_ind in sample_indices
@@ -199,9 +198,9 @@ class SpAttractorExperiment:
 
         import matplotlib.pyplot as plt
 
-        main_metrics = dict(attractor_entropy=self.attractor.output_entropy)
+        main_metrics = dict(attractor_entropy=self.attractor.output_entropy())
         if self.encoder is not None:
-            main_metrics |= dict(encoder_entropy=self.encoder.output_entropy)
+            main_metrics |= dict(encoder_entropy=self.encoder.output_entropy())
 
         main_metrics = personalize_metrics(main_metrics, 'main')
 

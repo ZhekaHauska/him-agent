@@ -22,8 +22,10 @@ class MnistDataset:
     classes: list[np.ndarray]
 
     output_sds: Sds
+    binary: bool
 
-    def __init__(self):
+    def __init__(self, binary: bool = True):
+        self.binary = binary
         self.digits = load_digits()
         self.images = self.digits.images
         self.target = self.digits.target
@@ -41,8 +43,8 @@ class MnistDataset:
             for cls in range(self.n_classes)
         ]
 
-    def get_sdr(self, ind: int, binary: bool = True) -> SparseSdr | RateSdr:
-        if binary:
+    def get_sdr(self, ind: int) -> SparseSdr | RateSdr:
+        if self.binary:
             return self.sdrs[ind]
         return RateSdr(self.sdrs[ind], values=self.sparse_values[ind])
 
