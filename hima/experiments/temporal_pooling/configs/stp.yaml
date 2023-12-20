@@ -58,23 +58,35 @@ model:
     - TM.correctly_predicted_cells.sdr -> output.sdr
 #  track_smoothing:
   track:
-    - name: input_all
+#    - name: input_all
+#      tracker: trackers.sdr
+#      on:
+#        sequence_started: epoch
+#        sdr_updated: input.sdr
+#        sequence_finished: epoch_finished
+#    - name: input_seq
+#      tracker: trackers.sdr
+#      on:
+#        sequence_started: sequence_id
+#        sdr_updated: input.sdr
+#        sequence_finished: sequence_finished
+#    - name: SE
+#      tracker: trackers.sdr
+#      on:
+#        sequence_started: epoch
+#        sdr_updated: SE.output.sdr
+#        sequence_finished: epoch_finished
+#    - name: SA
+#      tracker: trackers.sdr
+#      on:
+#        sequence_started: epoch
+#        sdr_updated: SA.output.sdr
+#        sequence_finished: epoch_finished
+    - name: AA-FF
       tracker: trackers.sdr
       on:
         sequence_started: epoch
-        sdr_updated: input.sdr
-        sequence_finished: epoch_finished
-    - name: input_seq
-      tracker: trackers.sdr
-      on:
-        sequence_started: sequence_id
-        sdr_updated: input.sdr
-        sequence_finished: sequence_finished
-    - name: SE
-      tracker: trackers.sdr
-      on:
-        sequence_started: epoch
-        sdr_updated: SE.output.sdr
+        sdr_updated: AA.feedforward.sdr
         sequence_finished: epoch_finished
     - name: TM
       tracker: trackers.tm
@@ -90,7 +102,8 @@ track_streams:
     - cross.online.el
   SE.output.sdr:
     - cross.online.el
-  SA.output.sdr:
+#  SA.output.sdr:
+  AA.feedforward.sdr:
     - cross.online.el
   TM.correctly_predicted_cells.sdr:
     - cross.online.el
@@ -99,7 +112,7 @@ diff_stats:
   online_el:
     - input.sdr/epoch/sim_mx_on_el
     - SE.output.sdr/epoch/sim_mx_on_el
-    - SA.output.sdr/epoch/sim_mx_on_el
+    - AA.feedforward.sdr/epoch/sim_mx_on_el
     - TM.correctly_predicted_cells.sdr/epoch/sim_mx_on_el
 
 data: datas.text_sequences
@@ -210,22 +223,27 @@ AA:
     predicted_segment_decrement_basal: 0.006
     activation_threshold_basal: .8
     learning_threshold_basal: .6
-    max_synapses_per_segment_basal: 4.2
-    max_segments_per_cell_basal: 32
+#    max_synapses_per_segment_basal: 4.2
+#    max_segments_per_cell_basal: 32
+    max_synapses_per_segment_basal: 1.5
+    max_segments_per_cell_basal: 16
 
 SA:
   sp:
     _base_: $_base.spatial_pooler.default
-    initial_max_rf_sparsity: 0.25
-    initial_rf_to_input_ratio: 40.0
-    target_rf_to_input_ratio: 0.75
-    learning_rate: 0.02
-    newborn_pruning_cycle: 3.0
+#    _type_: sp.vectorized
+    _type_: sp.float
+#    _type_: sp.sdrr
+    initial_max_rf_sparsity: 0.33
+    initial_rf_to_input_ratio: 60.0
+    target_rf_to_input_ratio: 0.4
+    learning_rate: 0.005
+    newborn_pruning_cycle: 6.0
     newborn_pruning_stages: 16
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: False
-    boosting_k: 0.25
+    boosting_k: 0.4
   stp:
     _base_: $_base.spatial_temporal_pooler.default
     initial_rf_to_input_ratio: 4.0  #12?
