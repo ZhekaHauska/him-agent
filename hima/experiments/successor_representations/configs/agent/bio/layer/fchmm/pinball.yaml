@@ -3,8 +3,3 @@ batch_size: 500
 em_iterations: 1000
 lr: 0.2
 alpha: 1.0  # dirichlet initialization dist parameter
-# srtd parameters
-srtd_tau: 0.1
-srtd_batch_size: 32
-srtd_hidden_size: 256
-srtd_n_hidden_layers: 1

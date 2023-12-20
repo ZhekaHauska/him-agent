@@ -55,16 +55,10 @@ class RwkvLayer:
             n_external_vars: int = 0,
             n_external_states: int = 0,
             lr=2e-3,
-            srtd_tau=0.01,
-            srtd_batch_size=32,
             loss_propagation_schedule: int = 5,
             seed=None,
     ):
         torch.set_num_threads(1)
-
-        self.srtd_tau = srtd_tau
-        self.srtd_batch_size = srtd_batch_size
-
         # n_groups/vars: 6-10
         self.n_obs_vars = n_obs_vars
         # num of states each obs var has
