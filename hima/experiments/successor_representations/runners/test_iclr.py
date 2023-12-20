@@ -83,6 +83,25 @@ class ICLRunner(BaseRunner):
         counts[r, c] = 1
         return values, counts
 
+    @property
+    def q_value(self):
+        env = self.environment.environment
+        # left, right, up, down
+        actions = self.environment.actions
+        shifts = np.array([[0, 0], [0, env.w], [env.h, 0], [env.h, env.w]])
+
+        r, c = env.r, env.c
+        values = np.zeros((env.h * 2, env.w * 2))
+        action_values = self.agent.action_values
+        counts = np.zeros_like(values)
+
+        for value, shift in zip(action_values, shifts):
+            x, y = r + shift[0], c + shift[1]
+            values[x, y] = value
+            counts[x, y] = 1
+
+        return values, counts
+
 
 def main(config_path):
     if len(sys.argv) > 1:

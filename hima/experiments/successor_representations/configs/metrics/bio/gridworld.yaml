@@ -32,6 +32,9 @@ step_scalar_metrics:
       layer/surprise_hidden:
         agg: np.mean
         att: agent.agent.surprise
+      sr/td_error:
+        agg: np.mean
+        att: agent.agent.td_error
     update_step: steps
     update_period: 1
     log_step: episodes
@@ -58,7 +61,7 @@ trajectory:
     update_step: steps
     update_period: 1
     log_step: episodes
-    log_period: 50
+    log_period: 100
 
 
 value_function:
@@ -70,4 +73,16 @@ value_function:
     update_step: steps
     update_period: 1
     log_step: episodes
-    log_period: 50
+    log_period: 100
+
+
+q_function:
+  class: Histogram
+  params:
+    name: agent/q_function
+    att: q_value
+    normalized: true
+    update_step: steps
+    update_period: 1
+    log_step: episodes
+    log_period: 100

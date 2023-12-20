@@ -153,6 +153,10 @@ class BioAgentWrapper(BaseAgent):
         state_value = np.sum(action_values)
         return state_value
 
+    @property
+    def action_values(self):
+        return self.agent.evaluate_actions(with_planning=True)
+
     def _make_encoder(self):
         if self.encoder_type == 'sp_ensemble':
             from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble
