@@ -43,6 +43,7 @@ class GridWorld:
         self.r = None
         self.c = None
         self.action = None
+        # left, right, up, down
         self.actions = {0, 1, 2, 3}
         self.default_reward = default_reward
 
