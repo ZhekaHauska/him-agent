@@ -15,6 +15,7 @@ from hima.common.sdrr import RateSdr
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
 from hima.common.sdr import SparseSdr
+from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, prepend_dict_keys
 from hima.experiments.temporal_pooling.data.mnist import MnistDataset
@@ -137,7 +138,8 @@ class SpAttractorExperiment:
             ]
             trajectories.append(intra_cls_trajectories)
 
-        return self.analyse_trajectories(trajectories)
+        sds_trajectory = self.get_sds_trajectory()
+        return self.analyse_trajectories(trajectories, sds_trajectory)
 
     def process_sample(
             self, sample: SparseSdr | RateSdr, learn: bool
@@ -153,16 +155,15 @@ class SpAttractorExperiment:
             sdrs.append(
                 self.attractor.compute(sdrs[-1], learn=_learn)
             )
-        return [
-            set(sdr.sdr) if isinstance(sdr, RateSdr) else set(sdr)
-            for sdr in sdrs
-        ]
+        return sdrs
 
-    def analyse_trajectories(self, trajectories):
+    def analyse_trajectories(self, trajectories, sds_trajectory):
         n_cls = len(trajectories)
         n_cls_samples = len(trajectories[0])
         n_total_samples = n_cls * n_cls_samples
         n_attractor_steps = len(trajectories[0][0])
+
+        dense_caches = [np.zeros(sds.size) for sds in sds_trajectory]
 
         sim_mx = np.zeros((n_attractor_steps, n_cls, n_cls))
         sim_mx_counts = np.zeros((n_cls, n_cls))
@@ -176,7 +177,10 @@ class SpAttractorExperiment:
                 j_trajectory = trajectories[j_cls][j_sample]
 
                 for step in range(n_attractor_steps):
-                    sim = sdr_similarity(i_trajectory[step], j_trajectory[step])
+                    sim = sdr_similarity(
+                        i_trajectory[step], j_trajectory[step],
+                        symmetrical=True, dense_cache=dense_caches[step]
+                    )
                     sim_mx[step, i_cls, j_cls] += sim
                     sim_mx[step, j_cls, i_cls] += sim
                     sim_mx_counts[i_cls, j_cls] += 1
@@ -251,6 +255,15 @@ class SpAttractorExperiment:
             main_metrics | convergence_metrics | step_metrics | rel_step_metrics,
             step=epoch
         )
+
+    def get_sds_trajectory(self) -> list[Sds]:
+        sds_trajectory = [self.data.output_sds]
+        if self.encoder is not None:
+            sds_trajectory.append(self.encoder.output_sds)
+
+        for attractor_steps in range(self.attraction.n_steps):
+            sds_trajectory.append(self.attractor.output_sds)
+        return sds_trajectory
 
     def print_with_timestamp(self, *args, cond: bool = True):
         if not cond:

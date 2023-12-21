@@ -30,7 +30,8 @@ class MnistDataset:
         self.images = self.digits.images
         self.target = self.digits.target
 
-        flatten_images: np.ndarray = self.images.reshape(self.n_images, -1)
+        # values are in [0.0, 16.0] -> flatten and normalize them
+        flatten_images: np.ndarray = self.images.reshape(self.n_images, -1) / 16.0
         image_thresholds = np.mean(flatten_images, axis=-1, keepdims=True)
         # noinspection PyUnresolvedReferences
         self.dense_sdrs = (flatten_images >= image_thresholds).astype(float)

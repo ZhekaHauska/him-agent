@@ -29,21 +29,27 @@ NO_NORMALIZATION = 'no'
 
 # TODO: CLEAN UP, SIMPLIFY, AND REWRITE
 
-
-def dense_similarity(
-        x1: DenseSdr, x2: DenseSdr, binary: bool = True, symmetrical: bool = False
+def sdr_similarity(
+        x1: AnySparseSdr, x2: AnySparseSdr, symmetrical: bool = False,
+        sds: Sds = None, dense_cache: DenseSdr = None
 ) -> float:
-    if binary:
-        return sdr_similarity(
-            x1=set(np.flatnonzero(x1)), x2=set(np.flatnonzero(x2)),
-            symmetrical=symmetrical
-        )
-    ...
+    """
+    Compute similarity between two SDRs (both Sdr or RateSdr).
+    This is the most abstract function that will induce a suited implementation itself.
 
+    It is useful for a single-time computation. If you need to compute many pairwise
+    similarities, use sequential variants from the next group of methods. Otherwise,
+    it will be much less efficient.
+    """
+    if isinstance(x1, set):
+        assert isinstance(x2, set)
+        return _sdr_similarity_for_sets(x1, x2, symmetrical=symmetrical)
 
-def sdr_similarity(x1: SetSdr, x2: SetSdr, symmetrical: bool = False) -> float:
-    assert isinstance(x1, set) and isinstance(x2, set)
-    return _sdr_similarity_for_sets(x1, x2, symmetrical=symmetrical)
+    if dense_cache is None:
+        dense_cache = np.zeros(sds.size)
+
+    sim_func = _sdrr_similarity if isinstance(x1, RateSdr) else _sdr_similarity
+    return sim_func(x1, x2, dense_cache=dense_cache, symmetrical=symmetrical)
 
 
 # ==================== SDR similarity ====================

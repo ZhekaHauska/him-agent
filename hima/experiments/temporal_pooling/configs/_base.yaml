@@ -385,4 +385,3 @@ wandb_init:
   resume: never
   # Below are params that prevent wandb doing unnecessary actions. Alter 'em when needed
   save_code: false
-  log_artifacts: false
