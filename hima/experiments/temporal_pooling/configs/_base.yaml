@@ -381,3 +381,8 @@ wandb_init:
   config: ???
   name: ...
   group: ...
+  # We never use resume previous run wandb option. This setting prevents warnings.
+  resume: never
+  # Below are params that prevent wandb doing unnecessary actions. Alter 'em when needed
+  save_code: false
+  log_artifacts: false

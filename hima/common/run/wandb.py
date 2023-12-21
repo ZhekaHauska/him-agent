@@ -51,7 +51,7 @@ class DryWandbLogger:
 
 
 def get_logger(
-        *, config: TConfig, log: bool | str | None, project: str = None, **wandb_init
+        *, config: TConfig, log: bool | str | None, **wandb_init
 ) -> Run | None:
     if log is None or not log:
         return None
@@ -61,7 +61,7 @@ def get_logger(
         # noinspection PyTypeChecker
         return DryWandbLogger()
 
-    logger = wandb.init(project=project, save_code=False, resume='never', **wandb_init)
+    logger = wandb.init(**wandb_init)
 
     # we have to pass the config with update instead of init because for sweep runs
     # it is already initialized with the sweep run config
