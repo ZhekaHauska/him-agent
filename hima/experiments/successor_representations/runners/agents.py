@@ -256,3 +256,9 @@ class QTableAgentWrapper(BaseAgent):
         actions_sa_sdr = self.agent._encode_s_actions(self.observation)
         action_values = self.agent.Q.values(actions_sa_sdr)
         return np.sum(action_values)
+
+    @property
+    def action_values(self):
+        actions_sa_sdr = self.agent._encode_s_actions(self.observation)
+        action_values = self.agent.Q.values(actions_sa_sdr)
+        return action_values
