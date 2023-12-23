@@ -83,7 +83,7 @@ class BaseRunner:
         self.max_steps = conf['run']['max_steps']
 
         self.update_start = conf['run'].get('update_start', 0)
-        self.reward_free = conf['run'].get('reward_free', False)
+        self.reward_free = conf['run'].get('reward_free', 0)
         self.action_inertia = conf['run'].get('action_inertia', 1)
         self.frame_skip = conf['run'].get('frame_skip', 0)
         self.strategies = conf['run'].get('strategies', None)
@@ -200,7 +200,7 @@ class BaseRunner:
                             self.action_step += 1
                     else:
                         if (self.steps % self.action_inertia) == 0:
-                            if self.reward_free:
+                            if self.setup_episodes < self.reward_free:
                                 self.action = self._rng.integers(self.environment.n_actions)
                             else:
                                 self.action = self.agent.sample_action()
