@@ -287,19 +287,17 @@ class BioHIMA:
         return sr
 
     def td_update_sr(self):
-        current_state = self.cortical_column.layer.internal_forward_messages
-
         target_sr = self.generate_sr(
             self.sr_steps,
-            initial_messages=current_state,
+            initial_messages=self.cortical_column.layer.internal_forward_messages,
             initial_prediction=self.observation_messages,
             approximate_tail=self.approximate_tail,
             early_stop=self.sr_early_stop
         )
 
         if self.srtd is None:
-            predicted_sr = self.predict_sr(current_state)
-            prediction_cells = current_state
+            predicted_sr = self.predict_sr(self.cortical_column.layer.internal_forward_messages)
+            prediction_cells = self.current_state
             error_sr = target_sr - predicted_sr
 
             # dSR / dW for linear model
@@ -310,7 +308,7 @@ class BioHIMA:
 
             td_error = np.mean(np.power(error_sr, 2))
         else:
-            current_state = torch.tensor(current_state).float().to(self.srtd.device)
+            current_state = torch.tensor(self.current_state).float().to(self.srtd.device)
             predicted_sr = self.srtd.predict_sr(current_state, target=False)
             target_sr = torch.tensor(target_sr)
             target_sr = target_sr.float().to(self.srtd.device)
@@ -323,6 +321,10 @@ class BioHIMA:
             target_sr = to_numpy(target_sr)
 
         return predicted_sr, target_sr, td_error
+
+    @property
+    def current_state(self):
+        return self.cortical_column.layer.internal_forward_messages
 
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True
@@ -519,29 +521,12 @@ class LstmBioHima(BioHIMA):
         state_probs_out = self.cortical_column.layer.model.to_probabilistic_out_state(state_out)
         return state_probs_out.detach()
 
-    def td_update_sr(self):
-        current_state = self._extract_state_from_context(
-            self.cortical_column.layer.internal_forward_messages
-        ).to(self.srtd.device)
-
-        predicted_sr = self.srtd.predict_sr(current_state, target=False)
-        target_sr = self.generate_sr(
-            self.sr_steps,
-            initial_messages=self.cortical_column.layer.internal_forward_messages,
-            initial_prediction=self.observation_messages,
-            approximate_tail=self.approximate_tail
-        )
-
-        target_sr = torch.tensor(target_sr)
-        target_sr = target_sr.float().to(self.srtd.device)
-
-        td_error = self.srtd.compute_td_loss(
-            target_sr,
-            predicted_sr
-        )
-
-        return to_numpy(predicted_sr), to_numpy(target_sr), td_error
-
     def predict_sr(self, context_messages: TLstmLayerHiddenState):
-        msg = self._extract_state_from_context(context_messages).to(self.srtd.device)
-        return to_numpy(self.srtd.predict_sr(msg, target=True))
+        msg = to_numpy(self._extract_state_from_context(context_messages))
+        return super().predict_sr(msg)
+
+    @property
+    def current_state(self):
+        return to_numpy(self._extract_state_from_context(
+            self.cortical_column.layer.internal_forward_messages
+        ))
