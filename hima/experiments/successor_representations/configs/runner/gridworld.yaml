@@ -1,18 +1,14 @@
 log: True
-project_name: gridworld_test_new_runner
+project_name: gridworld_debug_bio
 run_tag: null
 
-n_episodes: 501
-update_start: 0
-max_steps: 50
-reward_free: 100  # random strategy pretrain for each setup
 action_inertia: 1
 frame_skip: 0
 strategies: null
 
-setups: [two_rooms]
-setup_period: [501]
+setup: two_rooms
 
+scenario: 'configs/scenario/gridworld.yaml'
 env_conf: 'configs/environment/gridworld/mdp.yaml'
 agent_conf: 'configs/agent/bio/gridworld.yaml'
 metrics_conf: 'configs/metrics/bio/gridworld.yaml'

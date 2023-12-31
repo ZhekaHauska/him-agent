@@ -2,10 +2,6 @@ log: True
 project_name: animalai_test_new_runner
 run_tag: null
 
-n_episodes: 11
-update_start: 0
-max_steps: 10
-reward_free: False
 action_inertia: 1
 frame_skip: 10
 strategies:
@@ -13,11 +9,9 @@ strategies:
   - [1, 0, 2, 0, 2]
   - [2, 1, 1, 0, 1]
 
-setups:
-  # ['competition/01-01-01.yaml', 'competition/01-01-01_wall.yaml']
-  ['custom/two_ways_left.yaml', 'custom/two_ways_right.yaml']
-setup_period: [5, 7]
+setup: custom/two_ways_left.yaml
 
+scenario: 'configs/scenario/animalai.yaml'
 env_conf: 'configs/environment/animalai/default.yaml'
 agent_conf: 'configs/agent/bio/animalai.yaml'
 metrics_conf: 'configs/metrics/bio/animalai.yaml'

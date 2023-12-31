@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 from hima.common.metrics import MetricsRack
+from hima.common.scenario import Scenario
 
 
 class BaseAgent:
@@ -79,35 +80,22 @@ class BaseRunner:
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
 
-        self.n_episodes = conf['run']['n_episodes']
-        self.max_steps = conf['run']['max_steps']
-
-        self.update_start = conf['run'].get('update_start', 0)
-        self.reward_free = conf['run'].get('reward_free', 0)
+        self.reward_free = False
         self.action_inertia = conf['run'].get('action_inertia', 1)
         self.frame_skip = conf['run'].get('frame_skip', 0)
         self.strategies = conf['run'].get('strategies', None)
 
         assert self.frame_skip >= 0
 
-        self.setups = conf['run']['setups']
-        self.setup_period = conf['run'].get('setup_period', None)
-        self.current_setup_id = 0
-
-        if self.setup_period is None:
-            self.setup_period = [self.n_episodes // len(self.setups)] * len(self.setups)
-        elif type(self.setup_period) is int:
-            period = self.setup_period
-            self.setup_period = [period] * len(self.setups)
-
-        assert len(self.setups) == len(self.setup_period)
+        self.current_setup_id = -1
+        self.setup = conf['run']['setup']
 
         env_conf = conf['env']
         env_conf['seed'] = self.seed
         agent_conf = conf['agent']
         agent_conf['seed'] = self.seed
 
-        self.environment = self.make_environment(conf['env_type'], env_conf, self.setups[0])
+        self.environment = self.make_environment(conf['env_type'], env_conf, self.setup)
 
         agent_conf['raw_obs_shape'] = self.environment.raw_obs_shape
         agent_conf['n_actions'] = self.environment.n_actions
@@ -123,6 +111,12 @@ class BaseRunner:
         else:
             self.metrics_rack = None
 
+        scenario_path = conf['run'].get('scenario', None)
+        if scenario_path is not None:
+            self.scenario = Scenario(scenario_path, self)
+        else:
+            self.scenario = None
+
         self.steps = 0
         self.episodes = 0
         self.setup_episodes = 0
@@ -133,6 +127,9 @@ class BaseRunner:
         self.reward = 0
         self.events = None
         self.obs = None
+        self.logging = False
+        self.is_terminal = False
+        self.end_of_episode = False
 
     @staticmethod
     def make_environment(env_type, conf, setup):
@@ -144,15 +141,9 @@ class BaseRunner:
 
     def prepare_episode(self):
         self.steps = 0
-        self.running = True
+        self.is_terminal = False
+        self.end_of_episode = False
         self.action = self.agent.initial_action
-
-        # change setup
-        if self.setup_episodes >= self.setup_period[self.current_setup_id]:
-            self.current_setup_id += 1
-            self.current_setup_id = self.current_setup_id % len(self.setups)
-            self.environment.change_setup(self.setups[self.current_setup_id])
-            self.setup_episodes = 0
 
         self.environment.reset()
         self.agent.reset()
@@ -163,21 +154,23 @@ class BaseRunner:
     def run(self):
         self.episodes = 0
         self.setup_episodes = 0
-        self.current_setup_id = 0
 
-        for i in range(self.n_episodes):
+        while self.running:
             self.prepare_episode()
 
-            while self.running:
+            while not self.end_of_episode:
+                if self.scenario is not None:
+                    self.scenario.check_conditions()
+
                 self.reward = 0
                 self.obs = None
                 for frame in range(self.frame_skip + 1):
                     self.environment.act(self.action)
                     self.environment.step()
-                    self.obs, self.reward, is_terminal = self.environment.obs()
+                    self.obs, self.reward, self.is_terminal = self.environment.obs()
 
-                    self.running = not is_terminal
-                    if is_terminal:
+                    if self.is_terminal:
+                        self.end_of_episode = True
                         break
 
                     if self.action is None:
@@ -187,7 +180,7 @@ class BaseRunner:
                 self.agent.observe(self.obs, self.action)
                 self.agent.reinforce(self.reward)
 
-                if self.running:
+                if not self.end_of_episode:
                     if self.strategies is not None:
                         if self.steps == 0:
                             self.strategy = self.strategies[self.agent.sample_action()]
@@ -196,25 +189,39 @@ class BaseRunner:
                             if self.action_step < len(self.strategy):
                                 self.action = self.strategy[self.action_step]
                             else:
-                                self.running = False
+                                self.end_of_episode = True
                             self.action_step += 1
                     else:
                         if (self.steps % self.action_inertia) == 0:
-                            if self.setup_episodes < self.reward_free:
+                            if self.reward_free:
                                 self.action = self._rng.integers(self.environment.n_actions)
                             else:
                                 self.action = self.agent.sample_action()
 
                 self.steps += 1
 
-                if self.steps >= self.max_steps:
-                    self.running = False
-
-                if not self.running:
+                if self.end_of_episode:
                     self.episodes += 1
                     self.setup_episodes += 1
 
-                if (self.metrics_rack is not None) and (self.steps >= self.update_start):
+                if (self.metrics_rack is not None) and self.logging:
                     self.metrics_rack.step()
         else:
             self.environment.close()
+
+    def switch_logging(self):
+        self.logging = not self.logging
+
+    def stop_episode(self):
+        self.end_of_episode = True
+
+    def stop_runner(self):
+        self.running = False
+
+    def change_setup(self, setup, setup_id):
+        self.environment.change_setup(setup)
+        self.environment.reset()
+
+        self.setup = setup
+        self.current_setup_id = setup_id
+        self.setup_episodes = 0
