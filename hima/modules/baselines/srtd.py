@@ -14,7 +14,9 @@ class MLP(nn.Module):
             input_size,
             output_size,
             hidden_sizes,
-            activation_function
+            activation_function,
+            initialization_function=None,
+            bias=False
     ):
         super(MLP, self).__init__()
 
@@ -26,10 +28,24 @@ class MLP(nn.Module):
 
         stack = list()
         for i, h_size in enumerate(hidden_sizes):
-            stack.append(nn.Linear(all_sizes[i], all_sizes[i+1]))
+            layer = nn.Linear(all_sizes[i], all_sizes[i+1], bias=bias)
+
+            if initialization_function is not None:
+                initialization_function(layer.weight.data)
+                if bias:
+                    initialization_function(layer.bias.data)
+
+            stack.append(layer)
             stack.append(activation_function())
         # output layer
-        stack.append(nn.Linear(all_sizes[-2], all_sizes[-1]))
+        layer = nn.Linear(all_sizes[-2], all_sizes[-1], bias=bias)
+
+        if initialization_function is not None:
+            initialization_function(layer.weight.data)
+            if bias:
+                initialization_function(layer.bias.data)
+
+        stack.append(layer)
 
         self.fcnn = nn.Sequential(
             *stack
@@ -62,15 +78,19 @@ class SRTD:
             input_size,
             output_size,
             [hidden_size]*n_hidden_layers,
-            activation_function
+            activation_function,
+            bias=False
         ).to(self.device)
+
         self.model_target = MLP(
             input_size,
             output_size,
             [hidden_size]*n_hidden_layers,
-            activation_function
+            activation_function,
+            nn.init.zeros_,
+            bias=False
         ).to(self.device)
-        self.model_target.load_state_dict(self.model.state_dict())
+        # self.model_target.load_state_dict(self.model.state_dict())
 
         self.accumulated_td_loss = None
         self.mse = nn.MSELoss()
