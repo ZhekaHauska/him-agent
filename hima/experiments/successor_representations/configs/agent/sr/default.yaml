@@ -1,0 +1,5 @@
+gamma: 0.99
+sr_lr: 0.1
+rew_lr: 0.1
+exploration_eps: 0.05
+sr_estimate: uniform

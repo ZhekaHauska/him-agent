@@ -18,11 +18,17 @@ class ICLRunner(BaseRunner):
     @staticmethod
     def make_agent(agent_type, conf):
         if agent_type == 'bio':
-            from hima.experiments.successor_representations.runners.agents import BioAgentWrapper
+            from hima.experiments.successor_representations.runners.agents\
+                import BioAgentWrapper
             agent = BioAgentWrapper(conf)
         elif agent_type == 'q':
-            from hima.experiments.successor_representations.runners.agents import QTableAgentWrapper
+            from hima.experiments.successor_representations.runners.agents\
+                import QTableAgentWrapper
             agent = QTableAgentWrapper(conf)
+        elif agent_type == 'sr':
+            from hima.experiments.successor_representations.runners.agents\
+                import SRTableAgentWrapper
+            agent = SRTableAgentWrapper(conf)
         else:
             raise NotImplementedError
 
@@ -124,6 +130,27 @@ class ICLRunner(BaseRunner):
             counts[x, y] = 1
 
         return values, counts
+
+    @property
+    def sr(self):
+        agent = self.agent.agent
+        env = self.environment.environment
+
+        t = np.mean(agent.sr, axis=0)
+        all_srs = list()
+        for r in range(env.h):
+            srs = list()
+            for c in range(env.w):
+                sr = t[r*env.w + c].reshape(env.h, env.w)
+                srs.append(sr)
+            all_srs.append(srs)
+
+        return np.block(all_srs)
+
+    @property
+    def rewards(self):
+        agent = self.agent.agent
+        return agent.rewards.reshape(1, -1)
 
 
 def main(config_path):

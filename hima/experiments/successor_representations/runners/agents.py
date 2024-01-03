@@ -15,6 +15,7 @@ from hima.modules.baselines.hmm import FCHMMLayer
 from hima.modules.baselines.srtd import SRTD
 from hima.modules.dvs import DVS
 from hima.agents.q.agent import QAgent
+from hima.agents.sr.table import SRAgent
 
 import numpy as np
 from typing import Literal
@@ -261,4 +262,71 @@ class QTableAgentWrapper(BaseAgent):
     def action_values(self):
         actions_sa_sdr = self.agent._encode_s_actions(self.observation)
         action_values = self.agent.Q.values(actions_sa_sdr)
+        return action_values
+
+
+class SRTableAgentWrapper(BaseAgent):
+    agent: SRAgent
+
+    def __init__(self, conf):
+        self.seed = conf['seed']
+        self.initial_action = None
+        agent_conf = conf
+        agent_conf['seed'] = self.seed
+        raw_obs_shape = conf.pop('raw_obs_shape')
+        assert raw_obs_shape[0] == 1
+        agent_conf['n_states'] = raw_obs_shape[1]
+        agent_conf['n_actions'] = conf['n_actions']
+
+        self.agent = SRAgent(**agent_conf)
+        self.current_state = None
+        self.previous_state = None
+        self.previous_action = None
+        self.current_reward = None
+        self.previous_reward = None
+
+    def observe(self, events, action):
+        self.previous_action = action
+        self.previous_state = self.current_state
+        self.current_state = events[0]
+
+        if self.previous_state is not None:
+            self.agent.observe(self.previous_state, self.previous_action)
+
+    def sample_action(self):
+        return self.agent.act(self.current_state)
+
+    def reinforce(self, reward):
+        self.previous_reward = self.current_reward
+        self.current_reward = reward
+        if self.previous_reward is not None:
+            self.agent.reinforce(self.previous_reward)
+
+    def reset(self):
+        if self.current_state is not None:
+            self.agent.observe(self.current_state, None)
+            self.agent.reinforce(self.current_reward)
+
+        self.current_state = None
+        self.previous_state = None
+        self.previous_action = None
+        self.current_reward = None
+        self.previous_reward = None
+
+        self.agent.reset()
+
+    @property
+    def state_value(self):
+        action_values = np.dot(
+            self.agent.sr[:, self.current_state],
+            self.agent.rewards
+        )
+        return np.sum(action_values)
+
+    @property
+    def action_values(self):
+        action_values = np.dot(
+            self.agent.sr[:, self.current_state],
+            self.agent.rewards
+        )
         return action_values
