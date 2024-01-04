@@ -330,3 +330,7 @@ class SRTableAgentWrapper(BaseAgent):
             self.agent.rewards
         )
         return action_values
+
+    @property
+    def sr(self):
+        return self.agent.sr

@@ -133,7 +133,7 @@ class ICLRunner(BaseRunner):
 
     @property
     def sr(self):
-        agent = self.agent.agent
+        agent = self.agent
         env = self.environment.environment
 
         t = np.mean(agent.sr, axis=0)
