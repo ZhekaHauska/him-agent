@@ -20,6 +20,9 @@ heatmap_metrics:
       agent/striatum:
         agg: np.mean
         att: agent.agent.striatum_weights
+      agent/sr:
+        agg: np.mean
+        att: sr
     update_step: episodes
     update_period: 100
     log_step: episodes

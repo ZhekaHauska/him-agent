@@ -158,6 +158,10 @@ class BioAgentWrapper(BaseAgent):
     def action_values(self):
         return self.agent.evaluate_actions(with_planning=True)
 
+    @property
+    def sr(self):
+        return self.agent.striatum_weights
+
     def _make_encoder(self):
         if self.encoder_type == 'sp_ensemble':
             from hima.modules.htm.spatial_pooler import SPDecoder, SPEnsemble

@@ -136,7 +136,10 @@ class ICLRunner(BaseRunner):
         agent = self.agent
         env = self.environment.environment
 
-        t = np.mean(agent.sr, axis=0)
+        t = agent.sr
+        if len(t.shape) > 2:
+            t = np.mean(t, axis=0)
+
         all_srs = list()
         for r in range(env.h):
             srs = list()
