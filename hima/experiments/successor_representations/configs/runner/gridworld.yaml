@@ -1,6 +1,6 @@
 log: True
-project_name: gridworld_debug_bio
-run_tag: null
+project_name: gridworld_mdp_compare_sr
+run_tag: stationary
 
 action_inertia: 1
 frame_skip: 0
@@ -8,9 +8,9 @@ strategies: null
 
 setup: two_rooms
 
-scenario: 'configs/scenario/gridworld.yaml'
+scenario: 'configs/scenario/gridworld_mdp.yaml'
 env_conf: 'configs/environment/gridworld/mdp.yaml'
-agent_conf: 'configs/agent/bio/gridworld.yaml'
-metrics_conf: 'configs/metrics/bio/gridworld.yaml'
+agent_conf: 'configs/agent/bio/gridworld_mdp.yaml'
+metrics_conf: 'configs/metrics/bio/gridworld_mdp.yaml'
 
 seed: null
