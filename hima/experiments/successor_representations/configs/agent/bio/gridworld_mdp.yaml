@@ -1,22 +1,22 @@
-layer_conf: configs/agent/bio/layer/dhtm/gridworld.yaml
-srtd_conf: configs/agent/bio/srtd/gridworld.yaml
+layer_conf: configs/agent/bio/layer/fchmm/gridworld.yaml
+# srtd_conf: configs/agent/bio/srtd/gridworld.yaml
 # encoder_conf: configs/agent/bio/encoder/sp_grouped/gridworld.yaml
 # decoder_conf: configs/agent/bio/decoder/learned/gridworld.yaml
 camera_mode: null
 agent:
   gamma: 0.99
-  observation_reward_lr: 0.05
+  observation_reward_lr: 0.1
   striatum_lr: 0.1
-  sr_steps: 1
+  sr_steps: 10
   approximate_tail: True
   inverse_temp: 10
 
   # p \in [0, 1]: eps-greedy | otherwise (use -1): softmax
-  exploration_eps: 0.25
+  exploration_eps: 0.05
   # predict | plan | balance === 0-step | n-step | td-error based probability to use n-step
-  action_value_estimate: predict
+  action_value_estimate: plan
   # uniform | on_policy | off_policy
-  sr_estimate_planning: uniform
+  sr_estimate_planning: on_policy
 
   adaptive_sr: false
   adaptive_lr: false
