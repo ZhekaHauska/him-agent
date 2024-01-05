@@ -48,6 +48,7 @@ class BioAgentWrapper(BaseAgent):
         self.seed = conf['seed']
         self.camera_mode = conf['camera_mode']
         self.events = None
+        self.steps = 0
 
         if self.camera_mode is not None:
             self.camera = DVS(conf['raw_obs_shape'], self.camera_mode, self.seed)
@@ -57,6 +58,11 @@ class BioAgentWrapper(BaseAgent):
         encoder, n_obs_vars, n_obs_states, decoder = self._make_encoder()
 
         layer_conf = self.conf['layer']
+        if 'reset_context_period' in layer_conf:
+            self.reset_context_period = layer_conf.pop('reset_context_period')
+        else:
+            self.reset_context_period = None
+
         layer_conf['n_obs_vars'] = n_obs_vars
         layer_conf['n_obs_states'] = n_obs_states
         layer_conf['n_external_states'] = conf['n_actions']
@@ -129,6 +135,12 @@ class BioAgentWrapper(BaseAgent):
             self.initial_external_message = None
 
     def observe(self, obs, action):
+        if self.reset_context_period is not None:
+            if self.steps % self.reset_context_period == 0:
+                self.agent.cortical_column.layer.context_messages = self.initial_context
+
+        self.steps += 1
+
         if self.camera is not None:
             self.events = self.camera.capture(obs)
         else:
@@ -143,6 +155,8 @@ class BioAgentWrapper(BaseAgent):
         return self.agent.reinforce(reward)
 
     def reset(self):
+        self.steps = 0
+
         if self.camera is not None:
             self.camera.reset()
 
@@ -161,6 +175,10 @@ class BioAgentWrapper(BaseAgent):
     @property
     def sr(self):
         return self.agent.striatum_weights
+
+    @property
+    def num_segments(self):
+        return self.agent.cortical_column.layer.context_factors.connections.numSegments()
 
     def _make_encoder(self):
         if self.encoder_type == 'sp_ensemble':
