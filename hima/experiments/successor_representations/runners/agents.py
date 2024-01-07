@@ -192,7 +192,10 @@ class BioAgentWrapper(BaseAgent):
 
     @property
     def num_segments(self):
-        return self.agent.cortical_column.layer.context_factors.connections.numSegments()
+        if isinstance(self.agent.cortical_column.layer, Layer):
+            return self.agent.cortical_column.layer.context_factors.connections.numSegments()
+        else:
+            return 0
 
     def _make_encoder(self):
         if self.encoder_type == 'sp_ensemble':
