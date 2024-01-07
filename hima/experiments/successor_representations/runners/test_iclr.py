@@ -131,6 +131,65 @@ class ICLRunner(BaseRunner):
 
         return values, counts
 
+    def get_true_sr(self, path=None, observation_radius=-1):
+        """
+            Save SR/SF formed by table-sr agent
+
+            observation_radius: if greater than -1, converts SR to SF
+            for corresponding observation window
+
+            Feature indexing for observation radius=1:
+
+            0 1 2
+            3 4 5 - center
+            6 7 8
+        """
+        agent = self.agent
+        env = self.environment.environment
+
+        t = agent.sr
+        t = np.mean(t, axis=0)
+
+        if observation_radius >= 0:
+            # convert sr to sf
+            n_features = (2*observation_radius + 1)**2
+            colors = list(range(np.max(env.colors) + 1))
+            colors_map = np.pad(
+                env.colors,
+                observation_radius,
+                mode='constant',
+                constant_values=-1
+            )
+
+            if observation_radius > 0:
+                colors.append(-1)
+
+            sfs = list()
+
+            for feature in range(n_features):
+                # form transformation matrix
+                row_shift = feature // (2*observation_radius + 1)
+                col_shift = feature % (2*observation_radius + 1)
+                state_to_color = colors_map[
+                    row_shift:row_shift+env.h,
+                    col_shift:col_shift+env.w
+                ].flatten()
+
+                masks = list()
+                for color in colors:
+                    masks.append(state_to_color == color)
+
+                masks = np.vstack(masks).T
+                # (n_states, colors)
+                sfs.append(np.dot(t, masks))
+
+            t = np.hstack(sfs)
+
+        if path is not None:
+            np.save(path, t)
+
+        return t
+
     @property
     def sr(self):
         agent = self.agent
