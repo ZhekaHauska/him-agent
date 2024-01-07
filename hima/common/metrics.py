@@ -8,7 +8,9 @@ import os
 import numpy as np
 
 from hima.common.lazy_imports import lazy_import
-from typing import Dict
+from typing import Dict, Literal, Optional
+from hima.modules.belief.utils import normalize
+from scipy.special import rel_entr
 
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
@@ -453,3 +455,75 @@ class Histogram(BaseMetric):
         self.hist = np.zeros_like(self.hist)
         if self.normalized:
             self.counts = np.zeros_like(self.hist)
+
+
+class SFDiff(BaseMetric):
+    def __init__(
+            self, name, att, state_att,
+            difference_mode: Literal['dkl', 'mse'],
+            normalization_mode: Optional[Literal['bernoulli', 'categorical']],
+            base_sf: Literal['uniform', 'load'],
+            base_sf_path: Optional[str],
+            logger, runner,
+            update_step, log_step, update_period, log_period
+    ):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.att_to_log = att
+        self.state_att = state_att
+
+        if base_sf == 'uniform':
+            self.base_sf = None
+        elif base_sf == 'load':
+            # (n_true_states, sf_size)
+            self.base_sf = np.load(base_sf_path)
+        else:
+            raise ValueError(f'No such baseline: "{base_sf}"!')
+
+        self.difference_mode = difference_mode
+        self.normalization_mode = normalization_mode
+
+        self.values = list()
+
+    def update(self):
+        # sf: (n_vars, n_states)
+        # value: (n_vars,)
+        sf = self.get_attr(self.att_to_log)
+        true_state = self.get_attr(self.state_att)
+
+        if self.base_sf is None:
+            base_sf = np.ones_like(sf)
+        else:
+            base_sf = self.base_sf[true_state].reshape(sf.shape)
+
+        if self.normalization_mode == 'bernoulli':
+            base_sf /= base_sf.max()
+            sf /= sf.max()
+        elif self.normalization_mode == 'categorical':
+            base_sf = normalize(base_sf)
+            sf = normalize(sf)
+
+        if self.difference_mode == 'mse':
+            value = np.mean(np.power(base_sf - sf, 2), axis=-1).flatten()
+        elif self.difference_mode == 'dkl':
+            value = np.array([rel_entr(sf[i], base_sf[i]) for i in range(sf.shape[0])])
+        else:
+            raise ValueError(f'Unknown difference mode: {self.difference_mode}!')
+
+        self.values.append(value)
+
+    def log(self, step):
+        values = np.array(self.values).mean(axis=0)
+        average = np.mean(values)
+
+        log_dict = {
+                f"{self.name}_feature{i}": values[i] for i in range(len(values))
+            }
+        log_dict[f"{self.name}_average"] = average
+        log_dict[self.log_step] = step
+
+        self.logger.log(
+            log_dict
+        )
+
+        self.values.clear()

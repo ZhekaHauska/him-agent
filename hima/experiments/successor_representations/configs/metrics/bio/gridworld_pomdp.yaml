@@ -35,9 +35,9 @@ step_scalar_metrics:
       layer/surprise_hidden:
         agg: np.mean
         att: agent.agent.surprise
-      layer/segments:
-        agg: np.mean
-        att: agent.num_segments
+#      layer/segments:
+#        agg: np.mean
+#        att: agent.num_segments
       sr/td_error:
         agg: np.mean
         att: agent.agent.td_error
@@ -92,3 +92,18 @@ q_function:
     update_period: 1
     log_step: episodes
     log_period: 100
+
+sf_dkl:
+  class: SFDiff
+  params:
+    name: sr/dkl_table_sr
+    att: agent.generated_sf
+    state_att: environment.current_state
+    difference_mode: dkl
+    normalization_mode: categorical
+    base_sf: load
+    base_sf_path: logs/true_sf_empty_gridworld_radius_0.npy
+    update_step: steps
+    update_period: 1
+    log_step: episodes
+    log_period: 1

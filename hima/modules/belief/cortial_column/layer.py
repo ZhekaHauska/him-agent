@@ -264,6 +264,7 @@ class Layer:
             developmental_period: int = 10000,
             enable_context_connections: bool = True,
             enable_internal_connections: bool = True,
+            cells_activity_lr: float = 0.1,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -273,6 +274,7 @@ class Layer:
         else:
             self._legacy_rng = Random()
 
+        self.lr = 1.0
         self.timestep = 1
         self.developmental_period = developmental_period
         self.n_obs_vars = n_obs_vars
@@ -284,6 +286,7 @@ class Layer:
         self.n_context_states = n_context_states
         self.external_vars_boost = external_vars_boost
         self.unused_vars_boost = unused_vars_boost
+        self.cells_activity_lr = cells_activity_lr
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -328,6 +331,10 @@ class Layer:
         self.context_messages = np.zeros(
             self.context_input_size,
             dtype=REAL64_DTYPE
+        )
+
+        self.internal_cells_activity = np.zeros_like(
+            self.internal_forward_messages
         )
 
         self.prediction_cells = None
@@ -509,10 +516,15 @@ class Layer:
             ).flatten()
 
         # update connections
-        if learn:
+        if learn and self.lr > 0:
             # sample cells from messages (1-step Monte-Carlo learning)
+            # internal cells cooldown to avoid self-loops
+            internal_messages = self.internal_forward_messages.copy()
+            internal_messages *= (1 - self.internal_cells_activity)
+            internal_messages = normalize(internal_messages.reshape((self.n_hidden_vars, -1)))
+
             self.internal_active_cells.sparse = self._sample_cells(
-                self.internal_forward_messages.reshape((self.n_hidden_vars, -1))
+                internal_messages
             )
             self.context_active_cells.sparse = self._sample_cells(
                 self.context_messages.reshape((self.n_context_vars, -1))
@@ -551,6 +563,10 @@ class Layer:
                     self.internal_factors,
                     prune_segments=(self.timestep % self.developmental_period) == 0
                 )
+
+            self.internal_cells_activity += self.cells_activity_lr * (
+                    self.internal_active_cells.dense - self.internal_cells_activity
+            )
 
         self.timestep += 1
 

@@ -205,6 +205,10 @@ class GridWorldWrapper(BaseEnvironment):
         self.environment = None
 
     @property
+    def current_state(self):
+        return self.environment.c + self.environment.r*self.environment.w
+
+    @property
     def render(self):
         import matplotlib.pyplot as plt
         from PIL import Image

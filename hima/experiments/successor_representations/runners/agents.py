@@ -177,6 +177,20 @@ class BioAgentWrapper(BaseAgent):
         return self.agent.striatum_weights
 
     @property
+    def generated_sf(self):
+        return self.agent.generated_sr.reshape(
+            self.agent.cortical_column.layer.n_obs_vars,
+            -1
+        )
+
+    @property
+    def predicted_sf(self):
+        return self.agent.predicted_sr.reshape(
+            self.agent.cortical_column.layer.n_obs_vars,
+            -1
+        )
+
+    @property
     def num_segments(self):
         return self.agent.cortical_column.layer.context_factors.connections.numSegments()
 
