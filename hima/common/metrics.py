@@ -485,6 +485,8 @@ class SFDiff(BaseMetric):
 
         self.values = list()
 
+        self.logger.define_metric(self.name, step_metric=self.log_step)
+
     def update(self):
         # sf: (n_vars, n_states)
         # value: (n_vars,)
