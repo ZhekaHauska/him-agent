@@ -43,7 +43,7 @@ class CorticalColumn:
 
     def observe(self, local_input, external_input, learn=True):
         # predict current local input step
-        if external_input is not None:
+        if external_input is not None and (self.layer.external_input_size > 0):
             external_messages = np.zeros(self.layer.external_input_size)
             if external_input >= 0:
                 external_messages[external_input] = 1

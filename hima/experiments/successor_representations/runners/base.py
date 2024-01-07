@@ -80,10 +80,11 @@ class BaseRunner:
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
 
-        self.reward_free = False
+        self.reward_free = conf['run'].get('reward_free', False)
         self.action_inertia = conf['run'].get('action_inertia', 1)
         self.frame_skip = conf['run'].get('frame_skip', 0)
         self.strategies = conf['run'].get('strategies', None)
+        self.observe_actions = conf['run'].get('observe_actions', True)
 
         assert self.frame_skip >= 0
 
@@ -98,7 +99,11 @@ class BaseRunner:
         self.environment = self.make_environment(conf['env_type'], env_conf, self.setup)
 
         agent_conf['raw_obs_shape'] = self.environment.raw_obs_shape
-        agent_conf['n_actions'] = self.environment.n_actions
+        if self.observe_actions:
+            agent_conf['n_actions'] = self.environment.n_actions
+        else:
+            agent_conf['n_actions'] = 0
+
         self.agent = self.make_agent(conf['agent_type'], agent_conf)
 
         metrics_conf = conf.get('metrics', None)
