@@ -1,2 +1,3 @@
 start_position: [4, 0]
 observation_radius: 0
+collision_hint: False
