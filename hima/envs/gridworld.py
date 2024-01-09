@@ -4,6 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
+from copy import copy
 
 
 class GridWorld:
@@ -12,6 +13,7 @@ class GridWorld:
             room,
             default_reward=0,
             observation_radius=0,
+            collision_hint=False,
             seed=None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -24,25 +26,30 @@ class GridWorld:
 
         self.return_state = observation_radius < 0
         self.observation_radius = observation_radius
+        self.collision_hint = collision_hint
+
+        self.shift = max(self.observation_radius, 1)
+
+        self.colors = np.pad(
+            self.colors,
+            self.shift,
+            mode='constant',
+            constant_values=-1
+        )
+
+        self.n_colors = len(np.unique(self.colors))
 
         if not self.return_state:
-            # pad colors
-            self.colors = np.pad(
-                self.colors,
-                self.observation_radius,
-                mode='constant',
-                constant_values=-1
-            )
-
-            self.shift = self.observation_radius
+            self.observation_shape = (2*self.observation_radius + 1, 2*self.observation_radius + 1)
         else:
-            self.shift = 0
+            self.observation_shape = (2,)
 
         self.start_r = None
         self.start_c = None
         self.r = None
         self.c = None
         self.action = None
+        self.temp_obs = None
         # left, right, up, down
         self.actions = {0, 1, 2, 3}
         self.default_reward = default_reward
@@ -55,6 +62,7 @@ class GridWorld:
 
         self.start_r, self.start_c = start_r, start_c
         self.r, self.c = start_r, start_c
+        self.temp_obs = None
 
     def obs(self):
         assert self.r is not None
@@ -62,9 +70,11 @@ class GridWorld:
         if self.return_state:
             obs = (self.r, self.c)
         else:
-            start_r, start_c = self.r, self.c
-            end_r, end_c = self.r + 2*self.shift+1, self.c + 2*self.shift+1
-            obs = self.colors[start_r:end_r, start_c:end_c]
+            if self.temp_obs is not None:
+                obs = copy(self.temp_obs)
+                self.temp_obs = None
+            else:
+                obs = self._get_obs(self.r, self.c)
         return (
             obs,
             self.rewards[self.r, self.c] + self.default_reward,
@@ -83,17 +93,28 @@ class GridWorld:
             prev_r = self.r
             prev_c = self.c
 
-            if self.action == 0 and 0 < self.c:
+            if self.action == 0:
                 self.c -= 1
-            elif self.action == 1 and self.c < self.w - 1:
+            elif self.action == 1:
                 self.c += 1
-            elif self.action == 2 and 0 < self.r:
+            elif self.action == 2:
                 self.r -= 1
-            elif self.action == 3 and self.r < self.h - 1:
+            elif self.action == 3:
                 self.r += 1
 
             # Check whether action is taking to inaccessible states.
             temp_x = self.colors[self.r+self.shift, self.c+self.shift]
-            if temp_x == -1:
+            if temp_x < 0:
                 self.r = prev_r
                 self.c = prev_c
+
+                if (not self.return_state) and self.collision_hint:
+                    self.temp_obs = np.full(self.observation_shape, fill_value=temp_x)
+
+    def _get_obs(self, r, c):
+        r += self.shift
+        c += self.shift
+        start_r, start_c = r - self.observation_radius, c - self.observation_radius
+        end_r, end_c = r + self.observation_radius + 1, c + self.observation_radius + 1
+        obs = self.colors[start_r:end_r, start_c:end_c]
+        return obs

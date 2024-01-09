@@ -161,10 +161,8 @@ class GridWorldWrapper(BaseEnvironment):
         if self.environment.return_state:
             self.raw_obs_shape = (1, self.environment.h * self.environment.w)
         else:
-            self.n_colors = (
-                np.max(self.environment.colors) + 1 +
-                int(self.environment.observation_radius > 0)
-            )
+            self.n_colors = self.environment.n_colors
+            self.min_color = np.min(self.environment.colors)
             self.n_cells = (
                 (self.environment.observation_radius * 2 + 1) ** 2
             )
@@ -182,8 +180,7 @@ class GridWorldWrapper(BaseEnvironment):
         else:
             obs = obs.flatten()
             obs += (
-                int(self.environment.observation_radius > 0) +
-                np.arange(self.n_cells)*self.n_colors
+                np.arange(self.n_cells)*self.n_colors - self.min_color
             )
         return obs, reward, is_terminal
 
@@ -212,14 +209,14 @@ class GridWorldWrapper(BaseEnvironment):
     def render(self):
         import matplotlib.pyplot as plt
         from PIL import Image
-        shift = self.environment.observation_radius
+        shift = self.environment.shift
         im = self.environment.colors.copy()
         if shift > 0:
             im = im[shift:-shift, shift:-shift]
         im += self.environment.terminals
         im += self.environment.rewards
         plt.figure()
-        plt.imshow(im, cmap='Pastel1', aspect=1, vmin=-1)
+        plt.imshow(im, cmap='Pastel1', aspect=1, vmin=self.min_color)
         plt.axis('off')
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches="tight")
