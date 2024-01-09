@@ -230,3 +230,17 @@ class BaseRunner:
         self.setup = setup
         self.current_setup_id = setup_id
         self.setup_episodes = 0
+
+    def set_parameters(self, **kwargs):
+        def get_obj(path):
+            obj = self
+            for a in path:
+                obj = getattr(obj, a)
+            return obj
+
+        for path, value in kwargs.items():
+            path = path.split('.')
+            att = path[-1]
+            path = path[:-1]
+            obj = get_obj(path)
+            setattr(obj, att, value)
