@@ -128,6 +128,9 @@ def _resolve_runner(type_tag: str):
     if type_tag == 'stp_experiment.synthetic_sequences':
         from hima.experiments.temporal_pooling.test_stp import StpExperiment
         return StpExperiment
+    if type_tag == 'stp_experiment.tm_sequence_learning':
+        from hima.experiments.temporal_pooling.test_new_tm import NewTmExperiment
+        return NewTmExperiment
     if type_tag == 'stp_experiment.sp_attractor.mnist':
         from hima.experiments.temporal_pooling.test_attractor_mnist import (
             SpAttractorMnistExperiment

@@ -3,8 +3,6 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-import pickle
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -29,9 +27,10 @@ class TextSequences:
             encoder: TConfig,
             seed: int,
             sequential: bool = True,
+            max_size_hint: int = None
     ):
         self.n_sequences = n_sequences
-        dataset, alphabet_size = self._read_dataset(filepath)
+        dataset, alphabet_size = self._read_dataset(filepath, max_size_hint)
         ds_size = len(dataset)
         print(f'Text dataset size: {ds_size} | Alphabet size: {alphabet_size}')
 
@@ -46,6 +45,7 @@ class TextSequences:
                 start = i_sequence*sequence_length % ds_size
             else:
                 start = rng.integers(ds_size - sequence_length)
+
             end = start + sequence_length
             i_sequence += 1
             if end >= ds_size:
@@ -59,11 +59,11 @@ class TextSequences:
         return iter(self.sequences)
 
     @staticmethod
-    def _read_dataset(filepath: str):
+    def _read_dataset(filepath: str, max_size_hint: int = None):
         filepath = Path(filepath)
         filepath = filepath.expanduser()
-        with open(filepath, mode='r') as f:
-            text = str.join('\n', f.readlines())
+        with open(filepath, mode='r', encoding='utf-8') as f:
+            text = f.read(max_size_hint)
 
         text = list(text)
         chars = set(text)

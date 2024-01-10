@@ -48,6 +48,8 @@ dataset:
     sequence_length: ???
     encoder: ???
     sequential: ???
+    # hint to limit the total size while reading the dataset file in bytes/chars: 10MB
+    max_size_hint: 10_000_000
 
 encoder:
   bucket:
