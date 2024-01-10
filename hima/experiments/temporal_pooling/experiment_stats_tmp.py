@@ -66,10 +66,15 @@ class ExperimentStats:
         self.stream_trackers = self._make_stream_trackers(
             track_streams=track_streams, stats_config=stats_config, n_sequences=n_sequences
         )
+
+        from hima.experiments.temporal_pooling.blocks.tm_new import NewTemporalMemoryBlock
         self.tms = [
             (self.model.blocks[block_name], AnomalyTracker())
             for block_name in self.model.blocks
-            if self.model.blocks[block_name].family in 'temporal_memory'
+            if (
+                self.model.blocks[block_name].family in 'temporal_memory'
+                and not isinstance(self.model.blocks[block_name], NewTemporalMemoryBlock)
+            )
         ]
 
     def _make_stream_trackers(

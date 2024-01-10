@@ -15,8 +15,8 @@ from hima.common.config.global_config import GlobalConfig
 from hima.common.run.wandb import get_logger
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import timed, isnone
-from hima.experiments.temporal_pooling.blocks.tracker import TRACKING_ENABLED
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
+from hima.experiments.temporal_pooling.graph.global_vars import VARS_TRACKING_ENABLED
 from hima.experiments.temporal_pooling.graph.model import Model
 from hima.experiments.temporal_pooling.iteration import IterationConfig
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
@@ -93,7 +93,7 @@ class StpExperiment:
     def run(self):
         self.print_with_timestamp('==> Run')
         self.stats.define_metrics()
-        self.model.streams[TRACKING_ENABLED].set(self.logger is not None)
+        self.model.streams[VARS_TRACKING_ENABLED].set(self.logger is not None)
 
         from hima.experiments.temporal_pooling.stp.stp import SpatialTemporalPooler
         import numpy as np

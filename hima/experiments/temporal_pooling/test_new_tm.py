@@ -15,8 +15,12 @@ from hima.common.config.global_config import GlobalConfig
 from hima.common.run.wandb import get_logger
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import timed, isnone
-from hima.experiments.temporal_pooling.blocks.tracker import TRACKING_ENABLED
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
+from hima.experiments.temporal_pooling.graph.global_vars import (
+    VARS_TRACKING_ENABLED, VARS_LEARN,
+    VARS_EPOCH, VARS_SEQUENCE_FINISHED, VARS_EPOCH_FINISHED, VARS_STEP, VARS_INPUT,
+    VARS_STEP_FINISHED
+)
 from hima.experiments.temporal_pooling.graph.model import Model
 from hima.experiments.temporal_pooling.iteration import IterationConfig
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
@@ -38,11 +42,12 @@ class NewTmExperiment:
 
     model: Model
     iterate: IterationConfig
+    reset_tm: bool
 
     def __init__(
             self, config: TConfig, config_path: Path,
             log: bool, seed: int,
-            iterate: TConfig, data: TConfig,
+            iterate: TConfig, reset_tm: bool, data: TConfig,
             model: TConfig,
             track_streams: TConfig, stats_and_metrics: TConfig, diff_stats: TConfig,
             log_schedule: TConfig,
@@ -64,6 +69,7 @@ class NewTmExperiment:
         self.seed = resolve_random_seed(seed)
 
         self.iterate = self.config.resolve_object(iterate, object_type_or_factory=IterationConfig)
+        self.reset_tm = reset_tm
         self.data = self.config.resolve_object(
             data,
             n_sequences=self.iterate.total_sequences,
@@ -93,7 +99,8 @@ class NewTmExperiment:
     def run(self):
         self.print_with_timestamp('==> Run')
         self.stats.define_metrics()
-        self.model.streams[TRACKING_ENABLED].set(self.logger is not None)
+        self.model.streams[VARS_LEARN].set(True)
+        self.model.streams[VARS_TRACKING_ENABLED].set(self.logger is not None)
 
         from hima.experiments.temporal_pooling.stp.stp import SpatialTemporalPooler
         import numpy as np
@@ -128,7 +135,7 @@ class NewTmExperiment:
     @timed
     def train_epoch(self):
         self.progress.next_epoch()
-        self.model.streams['epoch'].set(self.progress.epoch)
+        self.model.streams[VARS_EPOCH].set(self.progress.epoch)
         self.stats.on_epoch_started()
 
         # TODO: FINISH
@@ -139,15 +146,15 @@ class NewTmExperiment:
         # noinspection PyTypeChecker
         for sequence in self.data:
             for i_repeat in range(self.iterate.sequence_repeats):
-                self.run_sequence(sequence, i_repeat, learn=True)
-            self.model.streams['sequence_finished'].set()
+                self.run_sequence(sequence, i_repeat)
+            self.model.streams[VARS_SEQUENCE_FINISHED].set()
             self.stats.on_sequence_finished()
 
         epoch_final_log_scheduled = scheduled(
             i=self.progress.epoch, schedule=self.log_schedule['epoch'],
             always_report_first=True, always_report_last=True, i_max=self.iterate.epochs
         )
-        self.model.streams['epoch_finished'].set()
+        self.model.streams[VARS_EPOCH_FINISHED].set()
         self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
         # blocks = self.pipeline.blocks
@@ -167,7 +174,7 @@ class NewTmExperiment:
             sequence.id = sequence.id % self.iterate.sequences
 
             for i_repeat in range(self.iterate.sequence_repeats):
-                self.run_sequence(sequence, i_repeat, learn=True)
+                self.run_sequence(sequence, i_repeat)
             self.stats.on_sequence_finished()
 
         epoch_final_log_scheduled = scheduled(
@@ -176,8 +183,9 @@ class NewTmExperiment:
         )
         self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
-    def run_sequence(self, sequence: Sequence, i_repeat: int = 0, learn=True):
-        self.reset_blocks('temporal_memory', 'temporal_pooler')
+    def run_sequence(self, sequence: Sequence, i_repeat: int = 0):
+        if self.reset_tm:
+            self.reset_blocks('temporal_memory', 'temporal_pooler')
 
         log_scheduled = scheduled(
             i=i_repeat, schedule=self.log_schedule['repeat'],
@@ -189,13 +197,13 @@ class NewTmExperiment:
         for _, input_sdr in enumerate(sequence):
             for _ in range(self.iterate.element_repeats):
                 self.progress.next_step()
-                self.model.streams['step'].set(self.progress.step)
+                self.model.streams[VARS_STEP].set(self.progress.step)
                 self.model.metrics.clear()
-                self.model.streams['input.sdr'].set(input_sdr)
+                self.model.streams[VARS_INPUT].set(input_sdr)
 
                 self.model.forward()
 
-                self.model.streams['step_finished'].set()
+                self.model.streams[VARS_STEP_FINISHED].set()
                 self.stats.on_step()
 
     def reset_blocks(self, *blocks_family):
