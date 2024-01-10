@@ -167,7 +167,7 @@ class SdrConcatenator:
             sdr_spaces = [Sds(size=size, sparsity=1.0) for size in sdr_spaces]
 
         cumulative_sizes = np.cumsum([sds.size for sds in sdr_spaces])
-        total_size = cast(cumulative_sizes[-1], int)
+        total_size = cast(int, cumulative_sizes[-1])
         total_active_size = sum([sds.active_size for sds in sdr_spaces])
 
         # NB: note that zero shift at the beginning is omitted

@@ -90,6 +90,7 @@ blocks:
   tm_like:
     active_cells_sds: ???
     predicted_cells_sds: ???
+    correctly_predicted_cells_sds: ???
     tm: ???
 
 models:

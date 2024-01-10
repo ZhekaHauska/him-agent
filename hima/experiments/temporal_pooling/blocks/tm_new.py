@@ -38,17 +38,16 @@ class NewTemporalMemoryBlock(Block):
         self.tm = self.model.config.config_resolver.resolve(tm, config_type=dict)
 
     def fit_dimensions(self) -> bool:
-        output, state = self[OUTPUT], self[STATE]
-        active_cells, predicted_cells = self[ACTIVE_CELLS], self[PREDICTED_CELLS]
+        active_cells, state = self[ACTIVE_CELLS], self[STATE]
+        predicted_cells = self[PREDICTED_CELLS]
         correctly_predicted_cells = self[CORRECTLY_PREDICTED_CELLS]
 
-        if output.valid_sds:
-            state.set_sds(output.sds)
-            active_cells.set_sds(output.sds)
-            predicted_cells.set_sds(output.sds)
-            correctly_predicted_cells.set_sds(output.sds)
+        if active_cells.valid_sds:
+            state.set_sds(active_cells.sds)
+            predicted_cells.set_sds(active_cells.sds)
+            correctly_predicted_cells.set_sds(active_cells.sds)
 
-        return output.valid_sds
+        return active_cells.valid_sds
 
     def compile(self):
         feedforward_sds, state_sds = self[FEEDFORWARD].sds, self[STATE].sds
@@ -71,7 +70,6 @@ class NewTemporalMemoryBlock(Block):
         full_ff_sdr = self.sdr_concatenator.concatenate(ff_sdr, state_sdr)
 
         output_sdr = self.tm.compute(full_ff_sdr, learn=learn)
-        self[OUTPUT].set(output_sdr)
         self[ACTIVE_CELLS].set(output_sdr)
 
     def predict(self):
@@ -80,7 +78,6 @@ class NewTemporalMemoryBlock(Block):
         full_ff_sdr = self.sdr_concatenator.concatenate([], state)
 
         output_sdr = self.tm.compute(full_ff_sdr, learn=learn)
-        self[OUTPUT].set(output_sdr)
         self[PREDICTED_CELLS].set(output_sdr)
 
     def set_predicted_cells(self):
