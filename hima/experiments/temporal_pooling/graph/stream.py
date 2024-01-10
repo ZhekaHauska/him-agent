@@ -63,6 +63,7 @@ class SdrStream(Stream):
     def __init__(self, name: str, block: Block = None):
         super().__init__(name, block)
         self.sds = get_unresolved_value()
+        self._value = []
 
     @property
     def is_sdr(self):

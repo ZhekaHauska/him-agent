@@ -148,6 +148,8 @@ class TemporalMemory:
         else:
             self.rng = Random()
 
+        self.reset()
+
     def reset(self):
         self.active_cells = SDR(self.total_cells)
         self.winner_cells = SDR(self.total_cells)
