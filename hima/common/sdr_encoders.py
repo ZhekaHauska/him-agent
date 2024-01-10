@@ -5,8 +5,10 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
-from numpy.random import Generator
+import numpy.typing as npt
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds, TSdsShortNotation
@@ -155,7 +157,7 @@ class SdrConcatenator:
     """Concatenates sparse SDRs."""
     output_sds: Sds
 
-    _shifts: list[int]
+    _shifts: list[int] | npt.NDArray
 
     def __init__(self, sdr_spaces: list[Sds] | list[int]):
         if len(sdr_spaces) > 0 and isinstance(sdr_spaces[0], int):
@@ -165,7 +167,7 @@ class SdrConcatenator:
             sdr_spaces = [Sds(size=size, sparsity=1.0) for size in sdr_spaces]
 
         cumulative_sizes = np.cumsum([sds.size for sds in sdr_spaces])
-        total_size = cumulative_sizes[-1]
+        total_size = cast(cumulative_sizes[-1], int)
         total_active_size = sum([sds.active_size for sds in sdr_spaces])
 
         # NB: note that zero shift at the beginning is omitted

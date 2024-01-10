@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Callable, TYPE_CHECKING
 
 from hima.common.config.base import TConfig
+from hima.experiments.temporal_pooling.graph.global_vars import VARS_TRACKING_ENABLED
 from hima.experiments.temporal_pooling.graph.stream import Stream, SdrStream
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 
@@ -15,9 +16,6 @@ THandler = Callable[[Stream, Any, bool], None]
 
 if TYPE_CHECKING:
     from hima.experiments.temporal_pooling.graph.model import Model
-
-
-TRACKING_ENABLED = 'tracking_enabled'
 
 
 class TrackerBlock:
@@ -35,7 +33,7 @@ class TrackerBlock:
         self.model = model
         self.name = name
         self.tracker = self.model.config.resolve_object(tracker, on=on, model=self.model)
-        self.enabled = model.streams[TRACKING_ENABLED]
+        self.enabled = model.streams[VARS_TRACKING_ENABLED]
 
         self.track = {}
         for handler_name, stream in on.items():

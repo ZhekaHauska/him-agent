@@ -40,7 +40,7 @@ class SpatialPoolerBlock(Block):
         )
 
     def compute(self):
-        learn = self[VARS_LEARN].get()
+        learn = self.model.streams[VARS_LEARN].get()
         ff_sdr = self[FEEDFORWARD].get()
         output_sdr = self.sp.compute(ff_sdr, learn=learn)
         self[OUTPUT].set(output_sdr)
