@@ -66,5 +66,8 @@ class Block(Stretchable, Stateful):
                 continue
 
             short_name, sds = f'{key[:-4]}.sdr', value
-            stream_name = self.supported_streams[short_name]
-            self.model.register_stream(stream_name).set_sds(sds)
+            self.register_stream(short_name).set_sds(sds)
+
+    def register_stream(self, short_name: str):
+        stream_name = self.supported_streams[short_name]
+        return self.model.register_stream(stream_name)

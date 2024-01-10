@@ -285,7 +285,6 @@ class SpatialPooler:
                 cast(float, self.potentials[self.strongest_winner])
             )
             output_sdr = RateSdr(self.winners, values=values)
-            # print(output_sdr)
         return output_sdr
 
     def accept_output(self, sdr: SparseSdr, *, learn: bool):

@@ -226,7 +226,6 @@ class Model(Stretchable, Stateful, Node):
         #   - pipe forwarding
         #   - basic block computation
         #   - control block: repeat | if
-        # print(f'Parse node {node}')
         if isinstance(node, str):
             node = node.strip()
             # pipe or block call

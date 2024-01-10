@@ -377,6 +377,19 @@ temporal_memory:
     activation_threshold_apical: 1
     learning_threshold_apical: 1
 
+decoder:
+  mlp:
+    _type_: decoder.mlp
+    seed: ???
+    feedforward_sds: ???
+    output_sds: ???
+    weights_scale: 0.01
+    learning_rate: 0.1
+    power_t: 0.08
+    total_updates_required: 100_000
+    epoch_size: 4_000
+    collect_errors: False
+
 # additional params for wandb.init
 wandb_init:
   log: ???

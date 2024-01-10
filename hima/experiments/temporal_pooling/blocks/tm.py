@@ -29,7 +29,9 @@ class TemporalMemoryBlock(Block):
     def __init__(self, tm: TConfig, **kwargs):
         super().__init__(**kwargs)
         self.tm = self.model.config.config_resolver.resolve(tm, config_type=dict)
-        self.model.register_stream(self.supported_streams[WINNER_CELLS])
+
+        # register stream in case it's not auto-registered
+        self.register_stream(WINNER_CELLS)
 
     def fit_dimensions(self) -> bool:
         # TODO: fix required streams

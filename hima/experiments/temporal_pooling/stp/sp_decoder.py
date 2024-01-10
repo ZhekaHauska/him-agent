@@ -45,7 +45,8 @@ class SpatialPoolerLearnedDecoder:
     n_updates: int
 
     def __init__(
-            self, sp: SpatialPooler | SpatialPoolerEnsemble,
+            self,
+            sp: SpatialPooler | SpatialPoolerEnsemble,
             weights_scale: float = 0.01,
             learning_rate: float = 0.25, power_t: float = 0.05,
             total_updates_required: int = 100_000, epoch_size: int = 4_000,
@@ -58,6 +59,8 @@ class SpatialPoolerLearnedDecoder:
             self.sp.feedforward_sds.size,
             self.sp.output_sds.size
         )
+        self.output_sds = self.sp.output_sds
+
         self.weights = self.rng.normal(0., weights_scale, size=shape)
         self.lr = learning_rate
         self.power_t = power_t
@@ -83,6 +86,13 @@ class SpatialPoolerLearnedDecoder:
 
         input_probs = np.clip(input_probs, 0., 1.)
         return input_probs
+
+    def to_sdr(self, decoded_dense_sdr):
+        n_winners = self.output_sds.active_size
+        winners = np.argpartition(decoded_dense_sdr, -n_winners)[-n_winners:]
+        winners.sort()
+        winners = winners[decoded_dense_sdr[winners] > 0]
+        return winners
 
     def learn(self, output_probs, correct_obs, decoded_obs=None):
         if self.n_updates >= self.total_updates_required:

@@ -58,8 +58,13 @@ model:
       - TM.predict()
       - TM.compute()
       - TM.compare_with_prediction()
-    - TM.active_cells.sdr -> TM.state.sdr
-    - TM.correctly_predicted_cells.sdr -> output.sdr
+      - TM.active_cells.sdr -> TM.state.sdr
+    - learn & decode state:
+        - input.sdr -> decoder.feedback.sdr
+        - decoder.learn()
+        - TM.correctly_predicted_cells.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+    - decoder.output.sdr -> output.sdr
 #  track_smoothing:
   track:
 #    - name: input_all
@@ -80,26 +85,16 @@ model:
 #        sequence_started: epoch
 #        sdr_updated: SE.output.sdr
 #        sequence_finished: epoch_finished
-#    - name: SA
-#      tracker: trackers.sdr
-#      on:
-#        sequence_started: epoch
-#        sdr_updated: SA.output.sdr
-#        sequence_finished: epoch_finished
-    - name: AA-FF
-      tracker: trackers.sdr
-      on:
-        sequence_started: epoch
-        sdr_updated: AA.feedforward.sdr
-        sequence_finished: epoch_finished
 #    - name: TM
 #      tracker: trackers.tm
 #      on:
 #        activate: TM.active_cells.sdr
-    - name: AA
-      tracker: trackers.tm
+    - name: TM.correctly_predicted
+      tracker: trackers.sdr
       on:
-        activate: AA.active_cells.sdr
+        sequence_started: epoch
+        sdr_updated: TM.correctly_predicted_cells.sdr
+        sequence_finished: epoch_finished
     - name: output
       tracker: trackers.sdr
       on:
@@ -117,6 +112,8 @@ track_streams:
     - cross.online.el
   TM.correctly_predicted_cells.sdr:
     - cross.online.el
+  output.sdr:
+    - cross.online.el
 
 diff_stats:
   online_el:
@@ -124,6 +121,7 @@ diff_stats:
     - SE.output.sdr/epoch/sim_mx_on_el
     - AA.feedforward.sdr/epoch/sim_mx_on_el
     - TM.correctly_predicted_cells.sdr/epoch/sim_mx_on_el
+    - output.sdr/epoch/sim_mx_on_el
 
 data: datas.text_sequences
 
@@ -314,6 +312,10 @@ SE_DVS:
 blocks:
   concat:
     _type_: block.concatenator
+  decoder:
+    _type_: block.decoder
+    decoder:
+      _base_: $_base.decoder.mlp
   SE:
     _type_: block.sp
     _base_: $_base.blocks.sp_like
