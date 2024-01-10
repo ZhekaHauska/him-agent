@@ -4,6 +4,8 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
+# Global variable names that are external input to the model graph.
+
 VARS_INPUT = 'input.sdr'
 VARS_STEP = 'step'
 VARS_STEP_FINISHED = 'step_finished'
