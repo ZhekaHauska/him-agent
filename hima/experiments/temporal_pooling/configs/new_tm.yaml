@@ -62,6 +62,13 @@ model:
         sdr_predicted: TM.predicted_cells.sdr
         sdr_observed: TM.active_cells.sdr
         sequence_finished: epoch_finished
+    - name: state_L2.prediction
+      tracker: trackers.sdr_prediction
+      on:
+        sequence_started: epoch
+        sdr_predicted: TM2.predicted_cells.sdr
+        sdr_observed: TM2.active_cells.sdr
+        sequence_finished: epoch_finished
 
     - name: input.prediction.prior
       tracker: trackers.sdr_prediction
@@ -98,6 +105,8 @@ track_streams:
     - cross.online.el
   TM.predicted_cells.sdr:
     - cross.online.el
+  TM2.predicted_cells.sdr:
+    - cross.online.el
   input_prediction.sdr:
     - cross.online.el
   input_posterior_prediction.sdr:
@@ -108,6 +117,7 @@ diff_stats:
     - input.sdr/epoch/sim_mx_on_el
     - SE.output.sdr/epoch/sim_mx_on_el
     - TM.predicted_cells.sdr/epoch/sim_mx_on_el
+    - TM2.predicted_cells.sdr/epoch/sim_mx_on_el
     - input_prediction.sdr/epoch/sim_mx_on_el
     - input_posterior_prediction.sdr/epoch/sim_mx_on_el
 
@@ -157,6 +167,57 @@ models:
   LSTM: $_base.models.LSTM
 
   Baseline TM: $_base.models_new.Baseline TM
+
+  STM1:
+    - predict input w/ prior belief:
+        - TM.predict()
+        - TM.predicted_cells.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> input_prediction.sdr
+    - embed input:
+#        - input.sdr -> SE.feedforward.sdr
+#        - SE.compute()
+#        - SE.output.sdr -> embed_input.sdr
+        - input.sdr -> embed_input.sdr
+    - compute TM:
+        - embed_input.sdr -> TM.feedforward.sdr
+        - TM.compute()
+        - TM.compare_with_prediction()
+        - TM.active_cells.sdr -> TM.state.sdr
+    - learn decoder:
+        - embed_input.sdr -> decoder.feedback.sdr
+        - decoder.learn()
+    - predict input w/ posterior belief:
+        - TM.state.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> input_posterior_prediction.sdr
+
+  STM2:
+    - predict input w/ prior belief:
+        - TM2.predict()
+        - TM.predict()
+        - TM.predicted_cells.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> input_prediction.sdr
+    - embed input:
+        - input.sdr -> embed_input.sdr
+    - compute TM^1:
+        - embed_input.sdr -> TM.feedforward.sdr
+        - TM.compute()
+        - TM.compare_with_prediction()
+        - TM.active_cells.sdr -> TM.state.sdr
+    - compute TM^2:
+        - TM.active_cells.sdr -> TM2.feedforward.sdr
+        - TM2.compute()
+        - TM2.compare_with_prediction()
+        - TM2.active_cells.sdr -> TM2.state.sdr
+    - learn decoder:
+        - embed_input.sdr -> decoder.feedback.sdr
+        - decoder.learn()
+    - predict input w/ posterior belief:
+        - TM.state.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> input_posterior_prediction.sdr
 
 SE:
   sp:
@@ -212,7 +273,7 @@ TM:
     initial_max_rf_sparsity: 0.5
     target_rf_to_input_ratio: 2.0
     learning_rate: 0.02
-    newborn_pruning_cycle: 5.0
+    newborn_pruning_cycle: 3.0
     newborn_pruning_stages: 20
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 100.0
@@ -316,6 +377,11 @@ blocks:
     sp:
       _base_: SA.sp
   TM:
+    _type_: block.tm
+    _base_: $_base.blocks.tm_like
+    tm:
+      _base_: TM.tm
+  TM2:
     _type_: block.tm
     _base_: $_base.blocks.tm_like
     tm:

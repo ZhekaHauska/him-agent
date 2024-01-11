@@ -35,7 +35,9 @@ class NewTemporalMemoryBlock(Block):
     def __init__(self, tm: TConfig, learn_during_prediction: bool, **kwargs):
         super().__init__(**kwargs)
         self.learn_during_prediction = learn_during_prediction
+        self.use_context = False
         self.tm = self.model.config.config_resolver.resolve(tm, config_type=dict)
+        self.sdr_concatenator = None
 
     def fit_dimensions(self) -> bool:
         active_cells, state = self[ACTIVE_CELLS], self[STATE]
@@ -50,9 +52,14 @@ class NewTemporalMemoryBlock(Block):
         return active_cells.valid_sds
 
     def compile(self):
-        feedforward_sds, state_sds = self[FEEDFORWARD].sds, self[STATE].sds
-        self.sdr_concatenator = SdrConcatenator([feedforward_sds, state_sds])
+        self.use_context = self[CONTEXT] is not None
 
+        feedforward_sds, state_sds = self[FEEDFORWARD].sds, self[STATE].sds
+        sds_list = [feedforward_sds, state_sds]
+        if self.use_context:
+            sds_list.append(feedforward_sds)
+
+        self.sdr_concatenator = SdrConcatenator(sds_list)
         self.tm = self.model.config.resolve_object(
             self.tm,
             feedforward_sds=self.sdr_concatenator.output_sds,
@@ -67,15 +74,23 @@ class NewTemporalMemoryBlock(Block):
         learn = self.model.streams[VARS_LEARN].get()
         ff_sdr = self[FEEDFORWARD].get()
         state_sdr = self[STATE].get()
-        full_ff_sdr = self.sdr_concatenator.concatenate(ff_sdr, state_sdr)
+        sdr_list = (ff_sdr, state_sdr)
+        if self.use_context:
+            sdr_list = sdr_list + (self[CONTEXT].get())
+
+        full_ff_sdr = self.sdr_concatenator.concatenate(*sdr_list)
 
         output_sdr = self.tm.compute(full_ff_sdr, learn=learn)
         self[ACTIVE_CELLS].set(output_sdr)
 
     def predict(self):
         learn = self.model.streams[VARS_LEARN].get() and self.learn_during_prediction
-        state = self[STATE].get()
-        full_ff_sdr = self.sdr_concatenator.concatenate([], state)
+        state_sdr = self[STATE].get()
+        sdr_list = ([], state_sdr)
+        if self.use_context:
+            sdr_list = sdr_list + (self[CONTEXT].get())
+
+        full_ff_sdr = self.sdr_concatenator.concatenate(*sdr_list)
 
         output_sdr = self.tm.compute(full_ff_sdr, learn=learn)
         self[PREDICTED_CELLS].set(output_sdr)
