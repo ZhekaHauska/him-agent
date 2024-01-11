@@ -15,7 +15,7 @@ from hima.common.sds import Sds
 # circular import otherwise
 if TYPE_CHECKING:
     from hima.experiments.temporal_pooling.graph.block import Block
-    from hima.experiments.temporal_pooling.blocks.tracker import THandler
+    from hima.experiments.temporal_pooling.blocks.tracker import TGeneralHandler
 
 
 class Stream:
@@ -29,7 +29,7 @@ class Stream:
     owner: Block | None
     name: str
     _value: Any
-    _trackers: list[THandler]
+    _trackers: list[TGeneralHandler]
 
     def __init__(self, name: str, block: Block = None):
         self.owner = block
@@ -46,7 +46,7 @@ class Stream:
         for tracker in self._trackers:
             tracker(self, value, reset)
 
-    def track(self, tracker: THandler):
+    def track(self, tracker: TGeneralHandler):
         self._trackers.append(tracker)
 
     @property

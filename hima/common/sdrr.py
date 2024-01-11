@@ -74,3 +74,9 @@ class RateSdr:
 
 # Aggregate type for functions that support both representations.
 AnySparseSdr = Union[SparseSdr, RateSdr]
+
+
+def split_sdr_values(sdr: AnySparseSdr):
+    if isinstance(sdr, RateSdr):
+        return sdr.sdr, sdr.values
+    return sdr, 1.0

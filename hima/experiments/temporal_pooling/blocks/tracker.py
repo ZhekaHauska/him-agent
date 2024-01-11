@@ -12,17 +12,34 @@ from hima.experiments.temporal_pooling.graph.global_vars import VARS_TRACKING_EN
 from hima.experiments.temporal_pooling.graph.stream import Stream, SdrStream
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 
-THandler = Callable[[Stream, Any, bool], None]
+TTrackedStreams = dict[str, Stream]
+
+# TrackerBlock.handle method signature. NB: doesn't return anything
+TGeneralHandler = Callable[[Stream, Any, bool], None]
+
+# A signature of each individual tracker's method that handle an event. NB: returns metrics.
+TTrackerHandler = Callable[[Any, bool], TMetrics]
 
 if TYPE_CHECKING:
     from hima.experiments.temporal_pooling.graph.model import Model
 
 
 class TrackerBlock:
+    """
+    TrackerBlock wraps a single tracker object in a block to be used in a model graph.
+
+    It loosely binds tracked streams with the tracker's handling methods by re-routing
+    a stream's "on_change" event to the corresponding handling method. That is, any stream
+    knows only about TrackerBlocks, and these blocks know how to re-route events to
+    the corresponding trackers' handling methods.
+
+    The block also takes the burden of collecting the emitted metrics and placing them
+    to the model's centralized metrics storage.
+    """
     model: Model
     name: str
     # stream_name -> tracker.on_xxx
-    track: dict
+    track: dict[str, TTrackerHandler]
     # each tracker listen special `enabled` stream, which controls trackers' activity
     enabled: Stream
 
@@ -47,7 +64,7 @@ class TrackerBlock:
         if not self.enabled.get():
             return
 
-        metrics = self.track[stream.name](new_value, reset=reset)
+        metrics = self.track[stream.name](new_value, reset)
         metrics = self.personalize_metrics(metrics)
         if metrics:
             self.model.metrics |= metrics
@@ -59,5 +76,5 @@ class TrackerBlock:
         }
 
     @staticmethod
-    def get_handler(tracker, handler_name: str) -> THandler:
+    def get_handler(tracker, handler_name: str) -> TTrackerHandler:
         return getattr(tracker, f'on_{handler_name}')
