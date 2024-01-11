@@ -188,7 +188,11 @@ class TemporalMemory:
         return np.copy(self.active_columns.sparse)
 
     def get_predicted_columns(self):
-        return self.predicted_columns.sparse
+        return np.copy(self.predicted_columns.sparse)
+
+    def get_correctly_predicted_columns(self):
+        cols = self._columns_for_cells(self.correct_predicted_cells.sparse)
+        return np.array(list(sorted(set(cols))), dtype=int, copy=False)
 
     def get_active_cells(self):
         return self.active_cells.sparse - self.local_range[0]

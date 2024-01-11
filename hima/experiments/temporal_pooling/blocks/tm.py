@@ -12,6 +12,8 @@ from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.graph.block import Block
 
 FEEDFORWARD = 'feedforward.sdr'
+PREDICTED_COLUMNS = 'predicted_columns.sdr'
+CORRECTLY_PREDICTED_COLUMNS = 'correctly_predicted_columns.sdr'
 ACTIVE_CELLS = 'active_cells.sdr'
 PREDICTED_CELLS = 'predicted_cells.sdr'
 CORRECTLY_PREDICTED_CELLS = 'correctly_predicted_cells.sdr'
@@ -21,7 +23,8 @@ WINNER_CELLS = 'winner_cells.sdr'
 class TemporalMemoryBlock(Block):
     family = 'temporal_memory'
     supported_streams = {
-        FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
+        FEEDFORWARD, PREDICTED_COLUMNS, CORRECTLY_PREDICTED_COLUMNS,
+        ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
     }
 
     tm: Any | TConfig
@@ -31,14 +34,20 @@ class TemporalMemoryBlock(Block):
         self.tm = self.model.config.config_resolver.resolve(tm, config_type=dict)
 
         # register stream in case it's not auto-registered
+        self.register_stream(PREDICTED_COLUMNS)
+        self.register_stream(CORRECTLY_PREDICTED_COLUMNS)
+        self.register_stream(PREDICTED_CELLS)
         self.register_stream(WINNER_CELLS)
 
     def fit_dimensions(self) -> bool:
-        # TODO: fix required streams
+        successful = True
 
         cells_per_column = self.tm['cells_per_column']
-        required_streams = {
-            FEEDFORWARD, ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
+        col_streams = {
+            FEEDFORWARD, PREDICTED_COLUMNS, CORRECTLY_PREDICTED_COLUMNS
+        }
+        cell_streams = {
+            ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
         }
 
         propagate_from, propagate_from_stream = None, None
@@ -56,15 +65,12 @@ class TemporalMemoryBlock(Block):
             if stream is None:
                 continue
 
-            if propagate_from == FEEDFORWARD and name in [
-                ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
-            ]:
+            if propagate_from in col_streams and name in cell_streams:
                 size = propagate_from_stream.sds.size * cells_per_column
-            elif name == FEEDFORWARD and propagate_from in [
-                ACTIVE_CELLS, PREDICTED_CELLS, CORRECTLY_PREDICTED_CELLS, WINNER_CELLS
-            ]:
+            elif name in col_streams and propagate_from in cell_streams:
                 size = propagate_from_stream.sds.size // cells_per_column
             else:
+                # name and propagate_from in the same set
                 size = propagate_from_stream.sds.size
             sds = Sds(size=size, active_size=propagate_from_stream.sds.active_size)
             stream.set_sds(sds)
@@ -118,14 +124,17 @@ class TemporalMemoryBlock(Block):
         self.tm.activate_basal_dendrites(learn)
         self.tm.predict_cells()
 
+        self[PREDICTED_COLUMNS].set(self.tm.get_predicted_columns())
         self[PREDICTED_CELLS].set(self.tm.get_predicted_cells())
 
     def set_predicted_cells(self):
         self.tm.set_predicted_cells(self[PREDICTED_CELLS].get())
+        self[PREDICTED_COLUMNS].set(self.tm.get_predicted_columns())
 
     def union_predicted_cells(self):
         self.tm.union_predicted_cells(self[PREDICTED_CELLS].get())
         self[PREDICTED_CELLS].set(self.tm.get_predicted_cells())
+        self[PREDICTED_COLUMNS].set(self.tm.get_predicted_columns())
 
     def set_active_columns(self):
         self.tm.set_active_columns(self[FEEDFORWARD].get())
@@ -137,4 +146,5 @@ class TemporalMemoryBlock(Block):
 
         self[ACTIVE_CELLS].set(self.tm.get_active_cells())
         self[CORRECTLY_PREDICTED_CELLS].set(self.tm.get_correctly_predicted_cells())
+        self[CORRECTLY_PREDICTED_COLUMNS].set(self.tm.get_correctly_predicted_columns())
         self[WINNER_CELLS].set(self.tm.get_winner_cells())

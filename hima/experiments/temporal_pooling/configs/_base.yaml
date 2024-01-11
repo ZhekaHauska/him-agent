@@ -311,6 +311,20 @@ models:
       - TM.activate()
     - TM.correctly_predicted_cells.sdr -> output.sdr
 
+models_new:
+  Baseline TM:
+    - predict input w/ prior belief:
+      - TM.predict()
+      - TM.set_predicted_cells()
+      - TM.predicted_columns.sdr -> input_prediction.sdr
+    - embed input:
+      - input.sdr -> embed_input.sdr
+    - compute TM:
+      - embed_input.sdr -> TM.feedforward.sdr
+      - TM.activate()
+    - predict input w/ posterior belief:
+      - TM.correctly_predicted_columns.sdr -> input_posterior_prediction.sdr
+
 
 spatial_pooler:
   default:

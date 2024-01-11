@@ -14,10 +14,8 @@ from hima.experiments.temporal_pooling._depr.stats.config import StatsMetricsCon
 from hima.experiments.temporal_pooling._depr.stats.metrics import (
     multiplicative_loss
 )
-from hima.experiments.temporal_pooling._depr.stats.recall_tracker import AnomalyTracker
 from hima.experiments.temporal_pooling._depr.stats.stream_tracker import (
-    StreamTracker,
-    rename_dict_keys
+    StreamTracker
 )
 from hima.experiments.temporal_pooling.run_progress import RunProgress
 
@@ -66,16 +64,6 @@ class ExperimentStats:
         self.stream_trackers = self._make_stream_trackers(
             track_streams=track_streams, stats_config=stats_config, n_sequences=n_sequences
         )
-
-        from hima.experiments.temporal_pooling.blocks.tm_new import NewTemporalMemoryBlock
-        self.tms = [
-            (self.model.blocks[block_name], AnomalyTracker())
-            for block_name in self.model.blocks
-            if (
-                self.model.blocks[block_name].family in 'temporal_memory'
-                and not isinstance(self.model.blocks[block_name], NewTemporalMemoryBlock)
-            )
-        ]
 
     def _make_stream_trackers(
             self,
@@ -128,17 +116,11 @@ class ExperimentStats:
             tracker = self.stream_trackers[name]
             tracker.on_step(tracker.stream.get())
 
-        for block, anomaly_tracker in self.tms:
-            anomaly_tracker.on_step(block.tm.anomaly[-1])
-
         metrics = {
             'epoch': self.progress.epoch
         }
         for name in self.stream_trackers:
             metrics |= self.stream_trackers[name].step_metrics()
-        for block, anomaly_tracker in self.tms:
-            res = anomaly_tracker.step_metrics()
-            metrics |= rename_dict_keys(res, add_prefix=f'{block.name}/')
 
         if self.model.metrics:
             metrics |= self.model.flush_metrics()
@@ -175,9 +157,6 @@ class ExperimentStats:
         }
         for name in self.stream_trackers:
             metrics |= self.stream_trackers[name].aggregate_metrics()
-        for block, anomaly_tracker in self.tms:
-            res = anomaly_tracker.aggregate_metrics()
-            metrics |= rename_dict_keys(res, add_prefix=f'{block.name}/')
 
         if self.model.metrics:
             metrics |= self.model.flush_metrics()
