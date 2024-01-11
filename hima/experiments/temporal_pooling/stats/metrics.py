@@ -65,6 +65,10 @@ def _sdr_similarity_for_sets(x1: SetSdr, x2: SetSdr, symmetrical: bool = False) 
     """Optimized for SDRs represented with sets."""
     overlap = len(x1 & x2)
 
+    # NB: if x1 — prediction, x2 — positives, then for non-symmetrical case:
+    #   sim(x1, x2) = recall = 1 - miss_rate;
+    #   sim(x2, x1) = precision = 1 - imprecision
+
     # sim is a fraction of their union or x2. For the former, len(x1 | x2) = x1 + x2 - overlap
     norm = len(x1) + len(x2) - overlap if symmetrical else len(x2)
     return safe_divide(overlap, norm)
@@ -109,17 +113,19 @@ def _sdrr_similarity(
     dense_cache[x2.sdr] = x2.values
     dense_cache[x1.sdr] -= x1.values
 
-    # similarity is 1 minus an average L1 distance from x1 to x2 over supp(x2)
-    raw_distance = np.sum(np.abs(dense_cache[x2.sdr]))
+    # similarity is 1 - avg (L1 distance from x1 to x2) over supp(x2)
+    np.abs(dense_cache[x2.sdr], out=dense_cache[x2.sdr])
+    raw_distance = np.sum(dense_cache[x2.sdr])
     norm = len(x2.sdr)
 
-    # clear cache
+    # clear cache; also make x1 -> x1 \ x2, which we use in `symmetrical` case below
     dense_cache[x2.sdr] = 0
 
     if symmetrical:
-        # similarity is 1 minus an average L1 distance from x1 to x2 over supp(x1 | x2)
+        # similarity is 1 - avg (L1 distance from x1 to x2) over supp(x1 | x2)
         # so, we also need to add (x1 \ x2) part
-        raw_distance += np.sum(np.abs(dense_cache[x1.sdr]))
+        np.abs(dense_cache[x1.sdr], out=dense_cache[x1.sdr])
+        raw_distance += np.sum(dense_cache[x1.sdr])
         norm += np.count_nonzero(dense_cache[x1.sdr])
 
     # finish clearing cache
