@@ -13,6 +13,7 @@ class StpLazyTypeResolver(LazyTypeResolver):
             ('block.', _resolve_block),
             ('tracker.', _resolve_tracker),
             ('encoder.', _resolve_encoder),
+            ('decoder.', _resolve_decoder),
             ('ds.', _resolve_dataset),
             ('sp.', _resolve_spatial_pooler),
             ('stp.', _resolve_spatial_temporal_pooler),
@@ -52,6 +53,9 @@ def _resolve_block(type_tag: str):
     if type_tag == 'block.lstm':
         from hima.experiments.temporal_pooling.blocks.lstm import LstmBlock
         return LstmBlock
+    if type_tag == 'block.decoder':
+        from hima.experiments.temporal_pooling.blocks.decoder import DecoderBlock
+        return DecoderBlock
 
 
 def _resolve_temporal_memory(type_tag: str):
@@ -110,6 +114,11 @@ def _resolve_tracker(type_tag: str):
     if type_tag == 'tracker.tm':
         from hima.experiments.temporal_pooling.stats.tm_tracker import get_tm_tracker
         return get_tm_tracker
+    if type_tag == 'tracker.sdr_prediction':
+        from hima.experiments.temporal_pooling.stats.sdr_prediction_tracker import (
+            get_sdr_prediction_tracker
+        )
+        return get_sdr_prediction_tracker
 
 
 def _resolve_dataset(type_tag):
@@ -131,6 +140,12 @@ def _resolve_encoder(type_tag):
     if type_tag == 'encoder.int_random':
         from hima.common.sdr_encoders import IntRandomEncoder
         return IntRandomEncoder
+
+
+def _resolve_decoder(type_tag):
+    if type_tag == 'decoder.mlp':
+        from hima.experiments.temporal_pooling.stp.mlp_decoder import MlpDecoder
+        return MlpDecoder
 
 
 def _resolve_runner(type_tag: str):

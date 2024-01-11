@@ -7,34 +7,8 @@ reset_tm: False
 iterate:
   _base_: iterate_setups.small_10k
 
-iterate_setups:
-  small_10k:
-    epochs: 10
-    resample_frequency: 1
-    sequences: [10, 1]
-    elements: 100
-  default_100k:
-    epochs: 50
-    resample_frequency: 1
-    sequences: [10, 1]
-    elements: 200
-  default_5x20k:
-    epochs: 50
-    resample_frequency: 5
-    sequences: [10, 1]
-    elements: 200
-  large_400k:
-    epochs: 100
-    resample_frequency: 1
-    sequences: [10, 1]
-    elements: 400
-  large_5x80k:
-    epochs: 100
-    resample_frequency: 5
-    sequences: [10, 1]
-    elements: 400
-
 log_schedule:
+  # add emit dict to skip logging steps/seq_started
   epoch: 1
   repeat: 5
 
@@ -50,21 +24,29 @@ model:
     - tracking_enabled
     - learn
   pipeline:
-#    - input.sdr -> SE.feedforward.sdr
-#    - SE.compute()
-#    - SE.output.sdr -> TM.feedforward.sdr
-    - input.sdr -> TM.feedforward.sdr
-    - compute TM:
+    - predict input w/ prior belief:
       - TM.predict()
+      - TM.predicted_cells.sdr -> decoder.feedforward.sdr
+      - decoder.decode()
+      - decoder.output.sdr -> input_prediction.sdr
+    - embed input:
+#      - input.sdr -> SE.feedforward.sdr
+#      - SE.compute()
+#      - SE.output.sdr -> embed_input.sdr
+      - input.sdr -> embed_input.sdr
+    - compute TM:
+      - embed_input.sdr -> TM.feedforward.sdr
       - TM.compute()
       - TM.compare_with_prediction()
       - TM.active_cells.sdr -> TM.state.sdr
-    - learn & decode state:
-        - input.sdr -> decoder.feedback.sdr
-        - decoder.learn()
-        - TM.correctly_predicted_cells.sdr -> decoder.feedforward.sdr
-        - decoder.decode()
-    - decoder.output.sdr -> output.sdr
+    - learn decoder:
+      - embed_input.sdr -> decoder.feedback.sdr
+      - decoder.learn()
+    - predict input w/ posterior belief:
+      - TM.state.sdr -> decoder.feedforward.sdr
+      - decoder.decode()
+      - decoder.output.sdr -> input_posterior_prediction.sdr
+
 #  track_smoothing:
   track:
 #    - name: input_all
@@ -73,55 +55,61 @@ model:
 #        sequence_started: epoch
 #        sdr_updated: input.sdr
 #        sequence_finished: epoch_finished
-#    - name: input_seq
-#      tracker: trackers.sdr
-#      on:
-#        sequence_started: sequence_id
-#        sdr_updated: input.sdr
-#        sequence_finished: sequence_finished
-#    - name: SE
+    - name: state_L1.prediction
+      tracker: trackers.sdr_prediction
+      on:
+        sequence_started: epoch
+        sdr_predicted: TM.predicted_cells.sdr
+        sdr_observed: TM.active_cells.sdr
+        sequence_finished: epoch_finished
+
+    - name: input.prediction.prior
+      tracker: trackers.sdr_prediction
+      on:
+        sequence_started: epoch
+        sdr_predicted: input_prediction.sdr
+        sdr_observed: embed_input.sdr
+        sequence_finished: epoch_finished
+
+    - name: input.prediction.posterior
+      tracker: trackers.sdr_prediction
+      on:
+        sequence_started: epoch
+        sdr_predicted: input_posterior_prediction.sdr
+        sdr_observed: embed_input.sdr
+        sequence_finished: epoch_finished
+#    - name: input.prediction.prior.sdr
 #      tracker: trackers.sdr
 #      on:
 #        sequence_started: epoch
-#        sdr_updated: SE.output.sdr
+#        sdr_updated: input_prediction.sdr
 #        sequence_finished: epoch_finished
-#    - name: TM
-#      tracker: trackers.tm
+#    - name: input.prediction.posterior.sdr
+#      tracker: trackers.sdr
 #      on:
-#        activate: TM.active_cells.sdr
-    - name: TM.correctly_predicted
-      tracker: trackers.sdr
-      on:
-        sequence_started: epoch
-        sdr_updated: TM.correctly_predicted_cells.sdr
-        sequence_finished: epoch_finished
-    - name: output
-      tracker: trackers.sdr
-      on:
-        sequence_started: epoch
-        sdr_updated: output.sdr
-        sequence_finished: epoch_finished
+#        sequence_started: epoch
+#        sdr_updated: input_posterior_prediction.sdr
+#        sequence_finished: epoch_finished
 
 track_streams:
   input.sdr:
     - cross.online.el
   SE.output.sdr:
     - cross.online.el
-#  SA.output.sdr:
-  AA.feedforward.sdr:
+  TM.predicted_cells.sdr:
     - cross.online.el
-  TM.correctly_predicted_cells.sdr:
+  input_prediction.sdr:
     - cross.online.el
-  output.sdr:
+  input_posterior_prediction.sdr:
     - cross.online.el
 
 diff_stats:
   online_el:
     - input.sdr/epoch/sim_mx_on_el
     - SE.output.sdr/epoch/sim_mx_on_el
-    - AA.feedforward.sdr/epoch/sim_mx_on_el
-    - TM.correctly_predicted_cells.sdr/epoch/sim_mx_on_el
-    - output.sdr/epoch/sim_mx_on_el
+    - TM.predicted_cells.sdr/epoch/sim_mx_on_el
+    - input_prediction.sdr/epoch/sim_mx_on_el
+    - input_posterior_prediction.sdr/epoch/sim_mx_on_el
 
 data: datas.text_sequences
 
@@ -168,7 +156,7 @@ models:
   LSTM+SE_DVS+SE: $_base.models.LSTM+SE_DVS+SE
   LSTM: $_base.models.LSTM
 
-  Baseline TM: $_base.models.Baseline TM
+  Baseline TM: $_base.models_new.Baseline TM
 
 SE:
   sp:
@@ -224,7 +212,7 @@ TM:
     initial_max_rf_sparsity: 0.5
     target_rf_to_input_ratio: 2.0
     learning_rate: 0.02
-    newborn_pruning_cycle: 3.0
+    newborn_pruning_cycle: 5.0
     newborn_pruning_stages: 20
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 100.0
@@ -359,12 +347,42 @@ stats_and_metrics:
   loss_normalization: False
   loss_layer_discount: 0.75
 
+iterate_setups:
+  small_10k:
+    epochs: 10
+    resample_frequency: 1
+    sequences: [10, 1]
+    elements: 100
+  default_100k:
+    epochs: 50
+    resample_frequency: 1
+    sequences: [10, 1]
+    elements: 200
+  default_5x20k:
+    epochs: 50
+    resample_frequency: 5
+    sequences: [10, 1]
+    elements: 200
+  large_400k:
+    epochs: 100
+    resample_frequency: 1
+    sequences: [10, 1]
+    elements: 400
+  large_5x80k:
+    epochs: 100
+    resample_frequency: 5
+    sequences: [10, 1]
+    elements: 400
+
 trackers:
   sdr:
     _type_: tracker.sdr
     on: ???
   tm:
     _type_: tracker.tm
+    on: ???
+  sdr_prediction:
+    _type_: tracker.sdr_prediction
     on: ???
 
 wandb_init:
