@@ -121,14 +121,22 @@ class BioAgentWrapper(BaseAgent):
             self.initial_context = np.empty(0)
             self.initial_external_message = np.empty(0)
         elif self.layer_type == 'dhtm':
-            self.initial_action = None
+            self.initial_action = 0
             self.initial_context = sparse_to_dense(
                 np.arange(
                     self.agent.cortical_column.layer.n_hidden_vars
                 ) * self.agent.cortical_column.layer.n_hidden_states,
                 like=self.agent.cortical_column.layer.context_messages
             )
-            self.initial_external_message = None
+
+            if conf['n_actions'] > 0:
+                self.initial_external_message = sparse_to_dense(
+                    [0],
+                    size=conf['n_actions']
+                )
+            else:
+                self.initial_external_message = None
+
         else:
             self.initial_action = None
             self.initial_context = self.agent.cortical_column.layer.context_messages
