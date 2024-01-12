@@ -1029,8 +1029,8 @@ class Layer:
         return np.array(new_segments, dtype=UINT_DTYPE)
 
     def draw_messages(self, messages, figsize=10, aspect_ratio=0.3, non_zero=True):
-        n_cols = int(np.ceil(np.sqrt(self.n_hidden_vars / aspect_ratio)))
-        n_rows = int(np.floor(n_cols * aspect_ratio))
+        n_cols = max(int(np.ceil(np.sqrt(self.n_hidden_vars / aspect_ratio))), 1)
+        n_rows = max(int(np.floor(n_cols * aspect_ratio)), 1)
 
         fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(figsize, figsize*aspect_ratio))
 
