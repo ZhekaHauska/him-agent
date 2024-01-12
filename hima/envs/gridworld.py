@@ -14,6 +14,7 @@ class GridWorld:
             default_reward=0,
             observation_radius=0,
             collision_hint=False,
+            collision_reward=0,
             seed=None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -27,6 +28,7 @@ class GridWorld:
         self.return_state = observation_radius < 0
         self.observation_radius = observation_radius
         self.collision_hint = collision_hint
+        self.collision_reward = collision_reward
 
         self.shift = max(self.observation_radius, 1)
 
@@ -35,7 +37,7 @@ class GridWorld:
             self.shift,
             mode='constant',
             constant_values=-1
-        )
+        ).astype(np.int32)
 
         self.n_colors = len(np.unique(self.colors))
 
@@ -49,6 +51,7 @@ class GridWorld:
         self.r = None
         self.c = None
         self.action = None
+        self.action_success = None
         self.temp_obs = None
         # left, right, up, down
         self.actions = {0, 1, 2, 3}
@@ -62,24 +65,33 @@ class GridWorld:
 
         self.start_r, self.start_c = start_r, start_c
         self.r, self.c = start_r, start_c
+
         self.temp_obs = None
+        self.action = None
 
     def obs(self):
         assert self.r is not None
         assert self.c is not None
+
+        obs = []
+
         if self.return_state:
-            obs = (self.r, self.c)
+            obs.append((self.r, self.c))
         else:
             if self.temp_obs is not None:
-                obs = copy(self.temp_obs)
+                obs.append(copy(self.temp_obs))
                 self.temp_obs = None
             else:
-                obs = self._get_obs(self.r, self.c)
-        return (
-            obs,
-            self.rewards[self.r, self.c] + self.default_reward,
-            bool(self.terminals[self.r, self.c])
-        )
+                obs.append(self._get_obs(self.r, self.c))
+
+        reward = self.rewards[self.r, self.c] + self.default_reward
+        if not self.action_success:
+            reward += self.collision_reward
+
+        obs.append(reward)
+        obs.append(bool(self.terminals[self.r, self.c]))
+
+        return obs
 
     def act(self, action):
         assert action in self.actions
@@ -110,6 +122,10 @@ class GridWorld:
 
                 if (not self.return_state) and self.collision_hint:
                     self.temp_obs = np.full(self.observation_shape, fill_value=temp_x)
+
+                self.action_success = False
+            else:
+                self.action_success = True
 
     def _get_obs(self, r, c):
         r += self.shift
