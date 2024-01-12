@@ -515,6 +515,9 @@ class SFDiff(BaseMetric):
         self.values.append(value)
 
     def log(self, step):
+        if len(self.values) == 0:
+            return
+
         values = np.array(self.values).mean(axis=0)
         average = np.mean(values)
 
