@@ -99,6 +99,7 @@ class BaseRunner:
         self.environment = self.make_environment(conf['env_type'], env_conf, self.setup)
 
         agent_conf['raw_obs_shape'] = self.environment.raw_obs_shape
+
         if self.observe_actions:
             agent_conf['n_actions'] = self.environment.n_actions
         else:
@@ -188,7 +189,12 @@ class BaseRunner:
                 if not self.end_of_episode:
                     if self.strategies is not None:
                         if self.steps == 0:
-                            self.strategy = self.strategies[self.agent.sample_action()]
+                            if self.reward_free:
+                                strategy = self._rng.integers(len(self.strategies))
+                            else:
+                                strategy = self.agent.sample_action()
+
+                            self.strategy = self.strategies[strategy]
 
                         if (self.steps % self.action_inertia) == 0:
                             if self.action_step < len(self.strategy):
