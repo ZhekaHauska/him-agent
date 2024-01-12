@@ -213,8 +213,6 @@ class GridWorldWrapper(BaseEnvironment):
         im = self.environment.colors.copy()
         if shift > 0:
             im = im[shift:-shift, shift:-shift]
-        im += self.environment.terminals
-        im += self.environment.rewards
         plt.figure()
         plt.imshow(im, cmap='Pastel1', aspect=1, vmin=self.min_color)
         plt.axis('off')
