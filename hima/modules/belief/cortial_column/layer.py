@@ -229,7 +229,9 @@ class Factors:
         synapse_efficiency = self.synapse_efficiency[active_segments]
 
         dependent_part = messages * synapse_efficiency
-        dependent_part = np.log(np.mean(dependent_part, axis=-1))
+        dependent_part = np.mean(synapse_efficiency, axis=-1) * np.log(
+            np.mean(dependent_part, axis=-1) + EPS
+        )
 
         independent_part = np.sum((1 - synapse_efficiency) * np.log(messages), axis=-1)
 
