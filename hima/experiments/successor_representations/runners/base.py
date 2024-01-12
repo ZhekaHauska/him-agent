@@ -8,6 +8,7 @@ from __future__ import annotations
 import numpy as np
 from hima.common.metrics import MetricsRack
 from hima.common.scenario import Scenario
+from hima.experiments.successor_representations.runners.visualizers import BaseVisualizer
 
 
 class BaseAgent:
@@ -55,6 +56,7 @@ class BaseRunner:
     agent: BaseAgent
     environment: BaseEnvironment
     metrics_rack: MetricsRack | None
+    visualizer: BaseVisualizer | None
 
     def __init__(self, logger, conf):
         """
@@ -123,6 +125,11 @@ class BaseRunner:
         else:
             self.scenario = None
 
+        if conf['run'].get('visualize', False):
+            self.visualizer = self.make_visualizer()
+        else:
+            self.visualizer = None
+
         self.steps = 0
         self.episodes = 0
         self.setup_episodes = 0
@@ -145,6 +152,9 @@ class BaseRunner:
     def make_agent(agent_type, conf):
         raise NotImplementedError
 
+    def make_visualizer(self):
+        raise NotImplementedError
+
     def prepare_episode(self):
         self.steps = 0
         self.is_terminal = False
@@ -153,6 +163,9 @@ class BaseRunner:
 
         self.environment.reset()
         self.agent.reset()
+
+        if self.visualizer is not None:
+            self.visualizer.reset()
 
         self.strategy = None
         self.action_step = 0
@@ -217,6 +230,9 @@ class BaseRunner:
 
                 if (self.metrics_rack is not None) and self.logging:
                     self.metrics_rack.step()
+
+                if self.visualizer is not None:
+                    self.visualizer.step()
         else:
             self.environment.close()
 

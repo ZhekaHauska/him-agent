@@ -370,6 +370,9 @@ class Layer:
             self.context_factors = None
             self.enable_context_connections = False
 
+        self.cells_to_grow_new_context_segments = np.empty(0)
+        self.new_context_segments = np.empty(0)
+
         if internal_factors_conf is not None and self.enable_internal_connections:
             internal_factors_conf['n_cells'] = self.total_cells
             internal_factors_conf['n_vars'] = self.total_vars
@@ -539,7 +542,10 @@ class Layer:
             # learn context segments
             # use context cells and external cells to predict internal cells
             if self.enable_context_connections:
-                self._learn(
+                (
+                    self.cells_to_grow_new_context_segments,
+                    self.new_context_segments
+                 ) = self._learn(
                     np.concatenate(
                         [
                             (
@@ -744,6 +750,8 @@ class Layer:
         factors.var_score[vars_for_incorrect_segments] -= factors.var_score_lr * factors.var_score[
             vars_for_incorrect_segments
         ]
+
+        return cells_to_grow_new_segments, new_segments
 
     def _calculate_learning_segments(self, active_cells, next_active_cells, factors: Factors):
         # determine which segments are learning and growing
@@ -1028,8 +1036,16 @@ class Layer:
 
         return np.array(new_segments, dtype=UINT_DTYPE)
 
-    def draw_messages(self, messages, figsize=10, aspect_ratio=0.3, non_zero=True):
-        n_cols = max(int(np.ceil(np.sqrt(self.n_hidden_vars / aspect_ratio))), 1)
+    @staticmethod
+    def draw_messages(
+            messages,
+            n_vars,
+            figsize=10,
+            aspect_ratio=0.3,
+            non_zero=True
+    ):
+        messages = messages.reshape(n_vars, -1)
+        n_cols = max(int(np.ceil(np.sqrt(n_vars / aspect_ratio))), 1)
         n_rows = max(int(np.floor(n_cols * aspect_ratio)), 1)
 
         fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(figsize, figsize*aspect_ratio))
