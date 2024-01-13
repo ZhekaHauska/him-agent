@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from hima.modules.htm.connections import Connections
 from hima.modules.belief.utils import softmax, normalize, sample_categorical_variables
 from hima.modules.belief.utils import EPS, INT_TYPE, UINT_DTYPE, REAL_DTYPE, REAL64_DTYPE
+from hima.common.sdr import sparse_to_dense
 
 from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
@@ -267,6 +268,7 @@ class Layer:
             enable_context_connections: bool = True,
             enable_internal_connections: bool = True,
             cells_activity_lr: float = 0.1,
+            bursting_threshold: float = EPS,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -289,6 +291,7 @@ class Layer:
         self.external_vars_boost = external_vars_boost
         self.unused_vars_boost = unused_vars_boost
         self.cells_activity_lr = cells_activity_lr
+        self.bursting_threshold = bursting_threshold
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -508,28 +511,13 @@ class Layer:
             observation: pattern in sparse representation
         """
         # update messages
-        cells = self._get_cells_for_observation(observation)
-        obs_factor = np.zeros_like(self.internal_forward_messages)
-        obs_factor[cells] = 1
-        self.internal_forward_messages *= obs_factor
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error')
-            self.internal_forward_messages = normalize(
-                self.internal_forward_messages.reshape((self.n_hidden_vars, -1)),
-                obs_factor.reshape((self.n_hidden_vars, -1))
-            ).flatten()
+        self._update_posterior(observation)
 
         # update connections
         if learn and self.lr > 0:
             # sample cells from messages (1-step Monte-Carlo learning)
-            # internal cells cooldown to avoid self-loops
-            internal_messages = self.internal_forward_messages.copy()
-            internal_messages *= (1 - self.internal_cells_activity)
-            internal_messages = normalize(internal_messages.reshape((self.n_hidden_vars, -1)))
-
             self.internal_active_cells.sparse = self._sample_cells(
-                internal_messages
+                self.internal_forward_messages
             )
             self.context_active_cells.sparse = self._sample_cells(
                 self.context_messages.reshape((self.n_context_vars, -1))
@@ -577,6 +565,54 @@ class Layer:
             )
 
         self.timestep += 1
+
+    def _update_posterior(self, observation):
+        cells = self._get_cells_for_observation(observation)
+        obs_factor = sparse_to_dense(cells, like=self.internal_forward_messages)
+
+        messages = self.internal_forward_messages.reshape(self.n_hidden_vars, -1)
+        obs_factor = obs_factor.reshape(self.n_hidden_vars, -1)
+
+        messages = normalize(messages * obs_factor, obs_factor)
+
+        # detect bursting vars
+        bursting_vars_mask = self._detect_bursting_vars(messages, obs_factor)
+
+        # replace priors for bursting vars
+        if np.any(bursting_vars_mask):
+            # TODO decrease probability to sample frequently active cells
+            # TODO decrease probability to sample cells with many segments
+            bursting_factor = obs_factor[bursting_vars_mask]
+            winners = self._sample_cells(normalize(bursting_factor))
+            bursting_factor = sparse_to_dense(
+                winners,
+                size=bursting_factor.size,
+                dtype=bursting_factor.dtype
+            ).reshape(bursting_factor.shape)
+
+            messages[bursting_vars_mask] = bursting_factor
+
+        self.internal_forward_messages = messages
+
+    def _detect_bursting_vars(self, messages, obs_factor):
+        """
+            messages: (n_vars, n_states)
+            obs_factor: (n_vars, n_states)
+        """
+        n_states = obs_factor.sum(axis=-1)
+        uni_dkl = (
+                np.log(n_states) +
+                np.sum(
+                    messages * np.log(
+                        np.clip(
+                            messages, EPS, None
+                        )
+                    ),
+                    axis=-1
+                )
+        )
+
+        return uni_dkl < self.bursting_threshold
 
     def _propagate_belief(
             self,
