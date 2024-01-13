@@ -26,7 +26,7 @@ class DHTMVisualizer(BaseVisualizer):
         self.fig_messages = plt.figure('messages')
         self.messages = self.fig_messages.subplot_mosaic(
             [
-                ['external', 'external', 'external'],
+                ['external', '.', '.'],
                 ['context', 'prediction', 'internal']
             ],
             height_ratios=[0.25, 1]
