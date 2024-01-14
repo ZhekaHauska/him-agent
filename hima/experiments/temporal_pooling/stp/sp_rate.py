@@ -10,8 +10,8 @@ from typing import cast
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdrr import RateSdr, AnySparseSdr
 from hima.common.sdr import SparseSdr, DenseSdr
+from hima.common.sdrr import RateSdr, AnySparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed, safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import entropy
@@ -212,9 +212,9 @@ class SpatialPooler:
         n_winners = self.output_sds.active_size
 
         winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
-        self.strongest_winner = cast(int, winners[0])
+        self.strongest_winner = cast(int, winners[np.argmax(self.potentials[winners])])
         winners.sort()
-        print(winners, self.potentials[winners])
+        # print(winners, self.potentials[winners])
 
         self.winners = winners[self.potentials[winners] > 0]
 

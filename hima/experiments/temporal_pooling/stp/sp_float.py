@@ -242,41 +242,6 @@ class SpatialPooler:
 
         self.weights[neurons] = normalize_weights(w + dw_matched)
 
-    def alt_stdp(
-            self, neurons: SparseSdr, synaptic_activity: np.ndarray,
-            modulation: float = 1.0
-    ):
-        """
-        Apply learning rule.
-
-        Parameters
-        ----------
-        neurons: array of neurons affected with learning
-        synaptic_activity: dense array n_neurons x RF_size with their synaptic activations
-        modulation: a modulation coefficient for the update step
-        """
-        if len(neurons) == 0:
-            return
-
-        synaptic_activity = np.expand_dims(synaptic_activity, -1)
-
-        # NB: everything further on is individual for each learning neuron
-        # recognition strength — how good the input pattern is recognized
-        # recognition_strength = synaptic_activity.sum(axis=1, keepdims=True)
-        recognition_strength = synaptic_activity
-        # FIXME: consider using input normalization; do we need weighting by recognition str?
-        # normalized_recognition_strength = recognition_strength / total_input_activity
-        normalized_recognition_strength = recognition_strength
-
-        # the weaker recognition, the less sure the neuron that it should
-        # specialize to the pattern (NB: doubtful decision)
-        lr = modulation * self.learning_rate * normalized_recognition_strength
-
-        w = self.weights[neurons]
-        dw = synaptic_activity * lr
-
-        self.weights[neurons] = normalize_weights(w + dw)
-
     def select_output(self):
         output_sdr = self.winners
         if self.output_mode == SpOutputMode.RATE:

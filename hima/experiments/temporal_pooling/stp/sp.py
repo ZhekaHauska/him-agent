@@ -16,7 +16,8 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 )
 
 # DEPRECATED: old version of the SpatialPooler to check against the
-# new generalized float/binary-SP.
+# new generalized float/binary-SP. For it: sp_float is the first stable version
+# and sp_rate is planned to be the dev extension.
 # It is scheduled for removal soon after the latter is stabilized/tested.
 
 
