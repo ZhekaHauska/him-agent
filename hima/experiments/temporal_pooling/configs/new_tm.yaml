@@ -150,22 +150,8 @@ datas:
 
 
 models:
-  +SE_DVS+SE+SA+AA: $_base.models.+SE_DVS+SE+SA+AA
-  +SE_DVS+SE+AA: $_base.models.+SE_DVS+SE+AA
-  +SE_DVS+SE: $_base.models.+SE_DVS+SE
-
-  # use winners instead of predicted cells
-  +SE+SA+AA|W: $_base.models.+SE+SA+AA|W
-  +SE+AA|W: $_base.models.+SE+AA|W
-
-  +SE+SA+AA: $_base.models.+SE+SA+AA
-  +SE+AA: $_base.models.+SE+AA
-  +AA: $_base.models.+AA
   +SE: $_base.models.+SE
-
-  LSTM+SE_DVS+SE: $_base.models.LSTM+SE_DVS+SE
   LSTM: $_base.models.LSTM
-
   Baseline TM: $_base.models_new.Baseline TM
 
   STM1:
@@ -248,13 +234,6 @@ SE:
     adapt_to_ff_sparsity: False
 
 TM:
-  general_feedback_tm:
-    _base_: $_base.temporal_memory.general_feedback_tm
-    cells_per_column: 12
-    activation_threshold_basal: .9
-    learning_threshold_basal: .7
-    max_synapses_per_segment_basal: 2.1
-    max_segments_per_cell_basal: 16
   tm:
     _base_: $_base.temporal_memory.default
     cells_per_column: 8
@@ -267,9 +246,8 @@ TM:
     max_segments_per_cell_basal: 16
   tm_new:
     _base_: $_base.spatial_pooler.default
-#    _type_: sp.vectorized
-    _type_: sp.float
-#    _type_: sp.sdrr
+#    _type_: sp.float
+    _type_: sp.sdrr
     initial_max_rf_sparsity: 0.5
     target_rf_to_input_ratio: 2.0
     learning_rate: 0.02
@@ -279,84 +257,13 @@ TM:
     prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: False
     boosting_k: 0.5
-#    output_mode: binary
+    output_mode: binary
   lstm:
     _type_: tm.lstm
     seed: ???
     input_size: ???
     hidden_size: 400
     lr: 0.002
-
-AA:
-  general_feedback_tm:
-    _base_: $_base.temporal_memory.general_feedback_tm
-    cells_per_column: 1
-    activation_threshold_basal: .8
-    learning_threshold_basal: .6
-    max_synapses_per_segment_basal: 4.4
-    max_segments_per_cell_basal: 32
-  tm:
-    _base_: $_base.temporal_memory.default
-    cells_per_column: 1
-    permanence_increment_basal: 0.1
-    permanence_decrement_basal: 0.012
-    predicted_segment_decrement_basal: 0.006
-    activation_threshold_basal: .8
-    learning_threshold_basal: .6
-#    max_synapses_per_segment_basal: 4.2
-#    max_segments_per_cell_basal: 32
-    max_synapses_per_segment_basal: 1.5
-    max_segments_per_cell_basal: 16
-
-SA:
-  sp:
-    _base_: $_base.spatial_pooler.default
-#    _type_: sp.vectorized
-    _type_: sp.float
-#    _type_: sp.sdrr
-    initial_max_rf_sparsity: 0.33
-    initial_rf_to_input_ratio: 60.0
-    target_rf_to_input_ratio: 0.4
-    learning_rate: 0.005
-    newborn_pruning_cycle: 6.0
-    newborn_pruning_stages: 16
-    newborn_pruning_mode: powerlaw
-    prune_grow_cycle: 100.0
-    adapt_to_ff_sparsity: False
-    boosting_k: 0.4
-  stp:
-    _base_: $_base.spatial_temporal_pooler.default
-    initial_rf_to_input_ratio: 4.0  #12?
-    max_rf_to_input_ratio: 2.0
-    learning_rate: 0.02
-    global_inhibition_strength: 0.2
-    newborn_pruning_cycle: 1.0
-    newborn_pruning_stages: 4
-    prune_grow_cycle: 10.0
-    adapt_to_ff_sparsity: False
-
-SE_DVS:
-  sp:
-    _base_: $_base.spatial_pooler.default
-    initial_rf_to_input_ratio: 8.0
-    target_max_rf_sparsity: 1.5
-    learning_rate: 0.001
-    newborn_pruning_cycle: 2.5
-    newborn_pruning_stages: 20
-    prune_grow_cycle: 100.0
-    adapt_to_ff_sparsity: False
-  stp:
-    _base_: $_base.spatial_temporal_pooler.default
-    max_pooling_window: 4
-    reset_potential_on_activation: True
-    initial_rf_to_input_ratio: 8.0
-    max_rf_to_input_ratio: 1.5
-    learning_rate: 0.001
-    global_inhibition_strength: 0.2
-    newborn_pruning_cycle: 2.0
-    newborn_pruning_stages: 10
-    prune_grow_cycle: 10.0
-    adapt_to_ff_sparsity: False
 
 blocks:
   concat:
@@ -371,11 +278,6 @@ blocks:
     output_sds: [600, 18]
     sp:
       _base_: SE.sp
-  SA:
-    _type_: block.sp
-    _base_: $_base.blocks.sp_like
-    sp:
-      _base_: SA.sp
   TM:
     _type_: block.tm
     _base_: $_base.blocks.tm_like
@@ -386,23 +288,6 @@ blocks:
     _base_: $_base.blocks.tm_like
     tm:
       _base_: TM.tm
-  AA:
-    _type_: block.tm
-    _base_: $_base.blocks.tm_like
-    tm:
-      _base_: AA.tm
-  SE_DVS:
-    _type_: block.sp
-    _base_: $_base.blocks.sp_like
-    output_sds: [1200, 0.04]
-    sp:
-      _base_: SE_DVS.sp
-      initial_rf_to_input_ratio: 5.0
-      target_max_rf_sparsity: 0.4
-      adapt_to_ff_sparsity: True
-      learning_rate: 0.002
-      newborn_pruning_cycle: 2.5
-      boosting_k: 0.25
 
 stats_and_metrics:
   mae_normalization: no

@@ -276,7 +276,6 @@ class SpatialPooler:
     def select_output(self):
         output_sdr = self.winners
         if self.output_mode == SpOutputMode.RATE:
-            assert False, 'fix me'
             values = safe_divide(
                 self.potentials[self.winners],
                 cast(float, self.potentials[self.strongest_winner])
