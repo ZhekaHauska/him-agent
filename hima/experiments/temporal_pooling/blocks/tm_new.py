@@ -11,6 +11,7 @@ import numpy as np
 
 from hima.common.config.base import TConfig
 from hima.common.sdr_encoders import SdrConcatenator
+from hima.common.sdrr import split_sdr_values
 from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.global_vars import VARS_LEARN
 
@@ -105,9 +106,10 @@ class NewTemporalMemoryBlock(Block):
         pass
 
     def compare_with_prediction(self):
-        overlap_sdr = list(
-            set(self[PREDICTED_CELLS].get()) & set(self[ACTIVE_CELLS].get())
-        )
+        pred_sdr, _ = split_sdr_values(self[PREDICTED_CELLS].get())
+        act_sdr, _ = split_sdr_values(self[ACTIVE_CELLS].get())
+
+        overlap_sdr = list(set(pred_sdr) & set(act_sdr))
         overlap_sdr = np.array(overlap_sdr, dtype=int)
         overlap_sdr.sort()
         self[CORRECTLY_PREDICTED_CELLS].set(overlap_sdr)

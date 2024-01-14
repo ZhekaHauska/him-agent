@@ -11,6 +11,7 @@ import numpy as np
 import numpy.typing as npt
 
 from hima.common.sdr import SparseSdr
+from hima.common.sdrr import AnySparseSdr, RateSdr
 from hima.common.sds import Sds, TSdsShortNotation
 from hima.common.utils import isnone
 
@@ -174,22 +175,42 @@ class SdrConcatenator:
         self._shifts = cumulative_sizes[:-1]
         self.output_sds = Sds(size=total_size, active_size=total_active_size)
 
-    def concatenate(self, *sparse_sdrs: SparseSdr) -> SparseSdr:
+    def concatenate(self, *sparse_sdrs: AnySparseSdr) -> AnySparseSdr:
         """Concatenates `sparse_sdrs` fixing their relative indexes."""
-        size = sum(len(sdr) for sdr in sparse_sdrs)
-        result = np.empty(size, dtype=int)
+        if len(sparse_sdrs) == 0:
+            return []
+
+        is_rate_sdr = [isinstance(sdr, RateSdr) for sdr in sparse_sdrs]
+        is_any_rate_sdr = any(is_rate_sdr)
+
+        sizes = [
+            len(sdr.sdr) if isinstance(sdr, RateSdr) else len(sdr)
+            for sdr in sparse_sdrs
+        ]
+        total_size = sum(sizes)
+        result = np.empty(total_size, dtype=int)
 
         # to speed things up do not apply zero shift to the first sdr
         first = sparse_sdrs[0]
-        l, r = 0, len(first)
+        l, r = 0, sizes[0]
         result[l:r] = first
 
         # apply corresponding shifts to the rest inputs
         for i in range(1, len(sparse_sdrs)):
             sdr = sparse_sdrs[i]
+            if is_rate_sdr[i]:
+                sdr = sdr.sdr
+            sz = sizes[i]
             l = r
-            r = r + len(sdr)
+            r = r + sz
             result[l:r] = sdr + self._shifts[i - 1]
+
+        if is_any_rate_sdr:
+            values = np.concatenate([
+                sparse_sdrs[i].values if is_rate_sdr[i] else np.repeat(1.0, sizes[i])
+                for i in range(len(sparse_sdrs))
+            ])
+            return RateSdr(result, values=values)
         return result
 
     @property
