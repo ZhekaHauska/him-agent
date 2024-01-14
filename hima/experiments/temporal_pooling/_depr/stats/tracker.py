@@ -6,8 +6,7 @@
 from typing import Any
 
 from hima.common.sdr import SparseSdr
-
-TMetrics = dict[str, Any]
+from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 
 
 class Tracker:

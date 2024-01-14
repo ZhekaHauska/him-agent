@@ -8,19 +8,20 @@ from typing import Any
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.graph.stream import Stream
 from hima.experiments.temporal_pooling._depr.stats.config import StatsMetricsConfig
-from hima.experiments.temporal_pooling._depr.stats.tracker import Tracker, TMetrics
+from hima.experiments.temporal_pooling._depr.stats.tracker import Tracker
+from hima.experiments.temporal_pooling.graph.stream import SdrStream
+from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 
 
 class StreamTracker(Tracker):
-    stream: Stream
+    stream: SdrStream
     trackers: list[Tracker]
 
     # TODO: history of trackers?
 
     def __init__(
-            self, stream: Stream, trackers: list[str], config: StatsMetricsConfig,
+            self, stream: SdrStream, trackers: list[str], config: StatsMetricsConfig,
             n_sequences: int
     ):
         self.stream = stream
@@ -79,13 +80,7 @@ class StreamTracker(Tracker):
 def resolve_tracker(
         tracker_name: str, sds: Sds, n_sequences: int, stats_config: StatsMetricsConfig
 ) -> Tracker:
-    if tracker_name == 'sdr':
-        from hima.experiments.temporal_pooling._depr.stats.sdr_tracker import SdrTracker
-        return SdrTracker(sds)
-    elif tracker_name == 'attractor':
-        from hima.experiments.temporal_pooling._depr.stats.attractor_tracker import AttractorTracker
-        return AttractorTracker(sds)
-    elif tracker_name == 'cross.offline.el':
+    if tracker_name == 'cross.offline.el':
         from hima.experiments.temporal_pooling._depr.stats.similarity_matrix import \
             OfflineElementwiseSimilarityMatrix
         return OfflineElementwiseSimilarityMatrix(
