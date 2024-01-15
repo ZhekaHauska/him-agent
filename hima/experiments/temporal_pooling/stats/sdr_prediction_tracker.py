@@ -15,8 +15,9 @@ from hima.experiments.temporal_pooling.stp.temporal_memory import TemporalMemory
 class SdrPredictionTracker:
     tm: TemporalMemory
 
-    def __init__(self, sds: Sds):
+    def __init__(self, sds: Sds, symmetrical_dissimilarity: bool = True):
         self.sds = sds
+        self.symmetrical_dissimilarity = symmetrical_dissimilarity
         self.dense_cache = np.zeros(sds.size, dtype=float)
         self.predicted_sdr = []
         self._reset()
@@ -56,7 +57,8 @@ class SdrPredictionTracker:
         if isinstance(self.predicted_sdr, RateSdr):
             dissimilarity = sdr_similarity(
                 self.predicted_sdr, RateSdr(sdr=gt_sdr, values=gt_value),
-                symmetrical=False, dense_cache=self.dense_cache
+                symmetrical=self.symmetrical_dissimilarity,
+                dense_cache=self.dense_cache
             )
 
         return {

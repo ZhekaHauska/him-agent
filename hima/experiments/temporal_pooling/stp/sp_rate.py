@@ -94,7 +94,8 @@ class SpatialPooler:
             adapt_to_ff_sparsity: bool = True,
             newborn_pruning_mode: str = 'powerlaw',
             output_mode: str = 'binary',
-            learning_algo: str = 'old'
+            learning_algo: str = 'old',
+            normalize_rates: bool = True
     ):
         self.rng = np.random.default_rng(seed)
 
@@ -111,6 +112,8 @@ class SpatialPooler:
             self.stdp = self._stdp_new
         elif self.learning_algo == SpLearningAlgo.NEW_SQ:
             self.stdp = self._stdp_new_squared
+
+        self.normalize_rates = normalize_rates
 
         self.initial_rf_sparsity = min(
             initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
@@ -231,14 +234,15 @@ class SpatialPooler:
         winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
         self.strongest_winner = cast(int, winners[np.argmax(self.potentials[winners])])
         winners.sort()
-        # print(winners, self.potentials[winners])
 
         self.winners = winners[self.potentials[winners] > 0]
         if self.output_mode == SpOutputMode.RATE:
-            self.winners_value = safe_divide(
-                self.potentials[self.winners],
-                cast(float, self.potentials[self.strongest_winner])
-            )
+            self.winners_value = self.potentials[self.winners].copy()
+            if self.normalize_rates:
+                self.winners_value = safe_divide(
+                    self.winners_value,
+                    cast(float, self.potentials[self.strongest_winner])
+                )
 
     def reinforce_winners(self, matched_input_activity, learn: bool):
         if not learn:

@@ -191,7 +191,7 @@ class SdrConcatenator:
         result = np.empty(total_size, dtype=int)
 
         # to speed things up do not apply zero shift to the first sdr
-        first = sparse_sdrs[0]
+        first = sparse_sdrs[0].sdr if is_rate_sdr[0] else sparse_sdrs[0]
         l, r = 0, sizes[0]
         result[l:r] = first
 
