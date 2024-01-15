@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from enum import Enum, auto
 from typing import cast
 
 import numpy as np
@@ -20,6 +21,12 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
     sample_for_each_neuron
 )
+
+
+class SpLearningAlgo(Enum):
+    OLD = 1
+    NEW = auto()
+    NEW_SQ = auto()
 
 
 class SpatialPooler:
@@ -86,7 +93,8 @@ class SpatialPooler:
             boosting_k: float, seed: int,
             adapt_to_ff_sparsity: bool = True,
             newborn_pruning_mode: str = 'powerlaw',
-            output_mode: str = 'binary'
+            output_mode: str = 'binary',
+            learning_algo: str = 'old'
     ):
         self.rng = np.random.default_rng(seed)
 
@@ -95,6 +103,14 @@ class SpatialPooler:
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = SpOutputMode[output_mode.upper()]
+
+        self.learning_algo = SpLearningAlgo[learning_algo.upper()]
+        if self.learning_algo == SpLearningAlgo.OLD:
+            self.stdp = self._stdp
+        elif self.learning_algo == SpLearningAlgo.NEW:
+            self.stdp = self._stdp_new
+        elif self.learning_algo == SpLearningAlgo.NEW_SQ:
+            self.stdp = self._stdp_new_squared
 
         self.initial_rf_sparsity = min(
             initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
@@ -131,6 +147,7 @@ class SpatialPooler:
         # inevitable int-to-float converting when we multiply it by weights
         self.dense_input = np.zeros(self.ff_size, dtype=float)
         self.winners = []
+        self.winners_value = 1.0
         self.strongest_winner = None
         self.potentials = np.zeros(self.output_size)
 
@@ -217,29 +234,34 @@ class SpatialPooler:
         # print(winners, self.potentials[winners])
 
         self.winners = winners[self.potentials[winners] > 0]
+        if self.output_mode == SpOutputMode.RATE:
+            self.winners_value = safe_divide(
+                self.potentials[self.winners],
+                cast(float, self.potentials[self.strongest_winner])
+            )
 
     def reinforce_winners(self, matched_input_activity, learn: bool):
         if not learn:
             return
         self.stdp(self.winners, matched_input_activity[self.winners])
 
-    def stdp(
-            self, neurons: SparseSdr, rf_match_input_mask: np.ndarray,
+    def _stdp(
+            self, neurons: SparseSdr, pre_synaptic_activity: np.ndarray,
             modulation: float = 1.0
     ):
         if len(neurons) == 0:
             return
 
         w = self.weights[neurons]
-        n_matched = rf_match_input_mask.sum(axis=1, keepdims=True) + .1
+        n_matched = pre_synaptic_activity.sum(axis=1, keepdims=True) + .1
         lr = modulation * self.learning_rate / n_matched
 
-        dw_matched = rf_match_input_mask * lr
+        dw_matched = pre_synaptic_activity * lr
 
         self.weights[neurons] = normalize_weights(w + dw_matched)
 
-    def alt_stdp(
-            self, neurons: SparseSdr, synaptic_activity: np.ndarray,
+    def _stdp_new(
+            self, neurons: SparseSdr, pre_synaptic_activity: np.ndarray,
             modulation: float = 1.0
     ):
         """
@@ -248,40 +270,56 @@ class SpatialPooler:
         Parameters
         ----------
         neurons: array of neurons affected with learning
-        synaptic_activity: dense array n_neurons x RF_size with their synaptic activations
+        pre_synaptic_activity: dense array n_neurons x RF_size with their synaptic activations
         modulation: a modulation coefficient for the update step
         """
         if len(neurons) == 0:
             return
 
-        synaptic_activity = np.expand_dims(synaptic_activity, -1)
+        pre_rates = pre_synaptic_activity
+        post_rates = self.winners_value
+        if self.output_mode == SpOutputMode.RATE:
+            post_rates = np.expand_dims(self.winners_value, -1)
 
-        # NB: everything further on is individual for each learning neuron
-        # recognition strength — how good the input pattern is recognized
-        # recognition_strength = synaptic_activity.sum(axis=1, keepdims=True)
-        recognition_strength = synaptic_activity
-        # FIXME: consider using input normalization; do we need weighting by recognition str?
-        # normalized_recognition_strength = recognition_strength / total_input_activity
-        normalized_recognition_strength = recognition_strength
-
-        # the weaker recognition, the less sure the neuron that it should
-        # specialize to the pattern (NB: doubtful decision)
-        lr = modulation * self.learning_rate * normalized_recognition_strength
+        lr = modulation * self.learning_rate
 
         w = self.weights[neurons]
-        dw = synaptic_activity * lr
+        dw = lr * post_rates * (pre_rates - post_rates * w)
+
+        self.weights[neurons] = normalize_weights(w + dw)
+
+    def _stdp_new_squared(
+            self, neurons: SparseSdr, pre_synaptic_activity: np.ndarray,
+            modulation: float = 1.0
+    ):
+        """
+        Apply learning rule.
+
+        Parameters
+        ----------
+        neurons: array of neurons affected with learning
+        pre_synaptic_activity: dense array n_neurons x RF_size with their synaptic activations
+        modulation: a modulation coefficient for the update step
+        """
+        if len(neurons) == 0:
+            return
+
+        pre_rates = pre_synaptic_activity
+        post_rates = self.winners_value
+        if self.output_mode == SpOutputMode.RATE:
+            post_rates = np.expand_dims(self.winners_value, -1)
+
+        lr = modulation * self.learning_rate
+
+        w = self.weights[neurons]
+        dw = lr * post_rates * (pre_rates - w)
 
         self.weights[neurons] = normalize_weights(w + dw)
 
     def select_output(self):
-        output_sdr = self.winners
         if self.output_mode == SpOutputMode.RATE:
-            values = safe_divide(
-                self.potentials[self.winners],
-                cast(float, self.potentials[self.strongest_winner])
-            )
-            output_sdr = RateSdr(self.winners, values=values)
-        return output_sdr
+            return RateSdr(self.winners, values=self.winners_value)
+        return self.winners
 
     def accept_output(self, sdr: SparseSdr, *, learn: bool):
         if isinstance(sdr, RateSdr):

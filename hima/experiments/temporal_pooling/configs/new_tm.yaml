@@ -258,6 +258,7 @@ TM:
     adapt_to_ff_sparsity: False
     boosting_k: 0.5
     output_mode: binary
+    learning_algo: new
   lstm:
     _type_: tm.lstm
     seed: ???
