@@ -270,6 +270,7 @@ class Layer:
             cells_activity_lr: float = 0.1,
             replace_prior: bool = True,
             bursting_threshold: float = EPS,
+            override_context: bool = False,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -294,6 +295,7 @@ class Layer:
         self.cells_activity_lr = cells_activity_lr
         self.replace_uniform_prior = replace_prior
         self.bursting_threshold = bursting_threshold
+        self.override_context = override_context
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -518,12 +520,19 @@ class Layer:
         # update connections
         if learn and self.lr > 0:
             # sample cells from messages (1-step Monte-Carlo learning)
-            self.internal_active_cells.sparse = self._sample_cells(
-                self.internal_forward_messages
-            )
             self.context_active_cells.sparse = self._sample_cells(
                 self.context_messages.reshape((self.n_context_vars, -1))
             )
+
+            # for debugging
+            if self.override_context:
+                if len(self.internal_active_cells.sparse) > 0:
+                    self.context_active_cells.sparse = self.internal_active_cells.sparse
+
+            self.internal_active_cells.sparse = self._sample_cells(
+                self.internal_forward_messages
+            )
+
             if len(self.external_messages) > 0:
                 self.external_active_cells.sparse = self._sample_cells(
                     self.external_messages.reshape((self.n_external_vars, -1))
