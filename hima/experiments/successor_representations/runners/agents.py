@@ -74,7 +74,7 @@ class BioAgentWrapper(BaseAgent):
             layer_conf['n_context_states'] = (
                     n_obs_states * layer_conf['cells_per_column']
             )
-            layer_conf['n_context_vars'] = n_obs_vars
+            layer_conf['n_context_vars'] = n_obs_vars * layer_conf['n_hidden_vars_per_obs_var']
             layer_conf['n_external_vars'] = 1
             layer = Layer(**layer_conf)
         elif self.layer_type == 'lstm':

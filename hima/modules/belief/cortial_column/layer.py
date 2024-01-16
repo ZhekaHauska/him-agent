@@ -253,6 +253,7 @@ class Layer:
             n_obs_vars: int,
             n_obs_states: int,
             cells_per_column: int,
+            n_hidden_vars_per_obs_var: int = 1,
             context_factors_conf: dict = None,
             internal_factors_conf: dict = None,
             n_context_vars: int = 0,
@@ -284,7 +285,8 @@ class Layer:
         self.timestep = 1
         self.developmental_period = developmental_period
         self.n_obs_vars = n_obs_vars
-        self.n_hidden_vars = n_obs_vars
+        self.n_hidden_vars_per_obs_var = n_hidden_vars_per_obs_var
+        self.n_hidden_vars = n_obs_vars * n_hidden_vars_per_obs_var
         self.n_obs_states = n_obs_states
         self.n_external_vars = n_external_vars
         self.n_external_states = n_external_states
@@ -348,6 +350,7 @@ class Layer:
 
         self.prediction_cells = None
         self.prediction_columns = None
+        self.observation_messages = None
 
         # cells are numbered in the following order:
         # internal cells | context cells | external cells
@@ -502,9 +505,14 @@ class Layer:
             ).flatten()
 
         self.prediction_cells = self.internal_forward_messages.copy()
+
         self.prediction_columns = self.prediction_cells.reshape(
-            (self.n_columns, self.cells_per_column)
+            -1, self.cells_per_column
         ).sum(axis=-1)
+
+        self.prediction_columns = self.prediction_columns.reshape(
+            -1, self.n_hidden_vars_per_obs_var, self.n_obs_states
+        ).mean(axis=1).flatten()
 
     def observe(
             self,
@@ -521,7 +529,7 @@ class Layer:
         if learn and self.lr > 0:
             # sample cells from messages (1-step Monte-Carlo learning)
             self.context_active_cells.sparse = self._sample_cells(
-                self.context_messages.reshape((self.n_context_vars, -1))
+                self.context_messages.reshape(self.n_context_vars, -1)
             )
 
             # for debugging
@@ -530,12 +538,12 @@ class Layer:
                     self.context_active_cells.sparse = self.internal_active_cells.sparse
 
             self.internal_active_cells.sparse = self._sample_cells(
-                self.internal_forward_messages
+                self.internal_forward_messages.reshape(self.n_hidden_vars, -1)
             )
 
             if len(self.external_messages) > 0:
                 self.external_active_cells.sparse = self._sample_cells(
-                    self.external_messages.reshape((self.n_external_vars, -1))
+                    self.external_messages.reshape(self.n_external_vars, -1)
                 )
 
             # learn context segments
@@ -578,6 +586,7 @@ class Layer:
         self.timestep += 1
 
     def _update_posterior(self, observation):
+        self.observation_messages = sparse_to_dense(observation, size=self.input_sdr_size)
         cells = self._get_cells_for_observation(observation)
         obs_factor = sparse_to_dense(cells, like=self.internal_forward_messages)
 
@@ -604,7 +613,7 @@ class Layer:
 
                 messages[bursting_vars_mask] = bursting_factor
 
-        self.internal_forward_messages = messages
+        self.internal_forward_messages = messages.flatten()
 
     def _detect_bursting_vars(self, messages, obs_factor):
         """
@@ -831,14 +840,25 @@ class Layer:
 
     def _get_cells_for_observation(self, obs_states):
         vars_for_obs_states = obs_states // self.n_obs_states
-        all_vars = np.arange(self.n_obs_vars)
-        vars_without_states = all_vars[np.isin(all_vars, vars_for_obs_states, invert=True)]
+        obs_states -= vars_for_obs_states * self.n_obs_states
+
+        hid_vars = (
+            np.tile(np.arange(self.n_hidden_vars_per_obs_var), len(vars_for_obs_states)) +
+            vars_for_obs_states * self.n_hidden_vars_per_obs_var
+        )
+        hid_columns = (
+            np.repeat(obs_states, self.n_hidden_vars_per_obs_var) +
+            self.n_obs_states * hid_vars
+        )
+
+        all_vars = np.arange(self.n_hidden_vars)
+        vars_without_states = all_vars[np.isin(all_vars, hid_vars, invert=True)]
 
         cells_for_empty_vars = self._get_cells_in_vars(vars_without_states)
 
         cells_in_columns = (
                 (
-                    obs_states * self.cells_per_column
+                    hid_columns * self.cells_per_column
                 ).reshape((-1, 1)) +
                 np.arange(self.cells_per_column, dtype=UINT_DTYPE)
             ).flatten()
