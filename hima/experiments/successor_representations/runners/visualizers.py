@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from hima.modules.belief.cortial_column.layer import Layer
+from hima.common.sdr import sparse_to_dense
 
 
 class BaseVisualizer:
@@ -27,9 +28,10 @@ class DHTMVisualizer(BaseVisualizer):
         self.messages = self.fig_messages.subplot_mosaic(
             [
                 ['external', '.', '.'],
-                ['context', 'prediction', 'internal']
+                ['context', 'prediction', 'internal'],
+                ['.', 'obs_states_prediction', 'obs_states']
             ],
-            height_ratios=[0.25, 1]
+            height_ratios=[0.25, 1, 0.25]
         )
         self.fig_segments = plt.figure('segments')
         self.segments = self.fig_segments.subplot_mosaic(
@@ -86,7 +88,23 @@ class DHTMVisualizer(BaseVisualizer):
             annot=True,
             cbar=False
         )
+        sns.heatmap(
+            self.memory.prediction_columns.reshape(
+                1, -1
+            ),
+            ax=self.messages['obs_states_prediction'],
+            annot=True,
+            cbar=False
+        )
 
+        sns.heatmap(
+            self.memory.observation_messages.reshape(
+                1, -1
+            ),
+            ax=self.messages['obs_states'],
+            annot=True,
+            cbar=False
+        )
         self.context_messages = self.memory.context_messages.copy()
 
     def _update_segments(self):
