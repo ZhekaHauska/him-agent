@@ -47,44 +47,38 @@ model:
       - decoder.decode()
       - decoder.output.sdr -> input_posterior_prediction.sdr
 
-#  track_smoothing:
   track:
-#    - name: input_all
-#      tracker: trackers.sdr
-#      on:
-#        sequence_started: epoch
-#        sdr_updated: input.sdr
-#        sequence_finished: epoch_finished
+    - name: input.sequence.sdr
+      tracker: trackers.sdr
+      on:
+        sdr_updated: input.sdr
+        sequence_finished: sequence_finished
     - name: state_L1.prediction
       tracker: trackers.sdr_prediction
       on:
-        sequence_started: epoch
         sdr_predicted: TM.predicted_cells.sdr
         sdr_observed: TM.active_cells.sdr
-        sequence_finished: epoch_finished
+        sequence_finished: sequence_finished
     - name: state_L2.prediction
       tracker: trackers.sdr_prediction
       on:
-        sequence_started: epoch
         sdr_predicted: TM2.predicted_cells.sdr
         sdr_observed: TM2.active_cells.sdr
-        sequence_finished: epoch_finished
+        sequence_finished: sequence_finished
 
     - name: input.prediction.prior
       tracker: trackers.sdr_prediction
       on:
-        sequence_started: epoch
         sdr_predicted: input_prediction.sdr
         sdr_observed: embed_input.sdr
-        sequence_finished: epoch_finished
+        sequence_finished: sequence_finished
 
     - name: input.prediction.posterior
       tracker: trackers.sdr_prediction
       on:
-        sequence_started: epoch
         sdr_predicted: input_posterior_prediction.sdr
         sdr_observed: embed_input.sdr
-        sequence_finished: epoch_finished
+        sequence_finished: sequence_finished
 #    - name: input.prediction.prior.sdr
 #      tracker: trackers.sdr
 #      on:
@@ -99,18 +93,18 @@ model:
 #        sequence_finished: epoch_finished
 
 track_streams:
-  input.sdr:
-    - cross.online.el
+#  input.sdr:
+#    - cross.online.el
   SE.output.sdr:
     - cross.online.el
-  TM.predicted_cells.sdr:
-    - cross.online.el
-  TM2.predicted_cells.sdr:
-    - cross.online.el
-  input_prediction.sdr:
-    - cross.online.el
-  input_posterior_prediction.sdr:
-    - cross.online.el
+#  TM.predicted_cells.sdr:
+#    - cross.online.el
+#  TM2.predicted_cells.sdr:
+#    - cross.online.el
+#  input_prediction.sdr:
+#    - cross.online.el
+#  input_posterior_prediction.sdr:
+#    - cross.online.el
 
 diff_stats:
   online_el:

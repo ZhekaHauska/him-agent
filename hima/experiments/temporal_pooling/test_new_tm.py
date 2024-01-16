@@ -122,7 +122,7 @@ class NewTmExperiment:
                 else:
                     ws = stp.weights
                 print(np.mean(ws), np.std(ws))
-                print(np.round(np.histogram(ws, bins=20)[0] / stp.output_size, 1))
+                print(np.round(np.histogram(ws, bins=10)[0] / stp.output_size, 1))
 
         if self.logger:
             try:
@@ -138,49 +138,29 @@ class NewTmExperiment:
         self.model.streams[VARS_EPOCH].set(self.progress.epoch)
         self.stats.on_epoch_started()
 
-        # TODO: FINISH
-        if self.iterate.resample_frequency < self.iterate.epochs:
-            self.train_epoch_with_switch_data()
-            return
+        # if resampling is enabled, epochs are split into stages, where
+        # within each stage the set of sequences is fixed
+        stage = self.progress.epoch // self.iterate.resample_frequency
+        start = stage * self.iterate.sequences
+        stop = start + self.iterate.sequences
 
-        # noinspection PyTypeChecker
-        for sequence in self.data:
+        for sequence in islice(self.data, start, stop):
+            # squash ids to the range [0, self.iterate.sequences)
+            real_id = sequence.id
+            sequence.id = real_id % self.iterate.sequences
+
             for i_repeat in range(self.iterate.sequence_repeats):
                 self.run_sequence(sequence, i_repeat)
             self.model.streams[VARS_SEQUENCE_FINISHED].set()
             self.stats.on_sequence_finished()
+
+            sequence.id = real_id
 
         epoch_final_log_scheduled = scheduled(
             i=self.progress.epoch, schedule=self.log_schedule['epoch'],
             always_report_first=True, always_report_last=True, i_max=self.iterate.epochs
         )
         self.model.streams[VARS_EPOCH_FINISHED].set()
-        self.stats.on_epoch_finished(epoch_final_log_scheduled)
-
-        # blocks = self.pipeline.blocks
-        # sp = blocks['sp2'].sp if 'sp2' in blocks else blocks['sp1']
-        # print(f'{round(sp.n_computes / sp.run_time / 1000, 2)} kcps')
-        # print(.sp.activation_entropy())
-        # print('_____')
-
-    def train_epoch_with_switch_data(self):
-        stage = self.progress.epoch // self.iterate.resample_frequency
-        start = stage * self.iterate.sequences
-        stop = start + self.iterate.sequences
-
-        # noinspection PyTypeChecker
-        for sequence in islice(self.data, start, stop):
-            # HACK
-            sequence.id = sequence.id % self.iterate.sequences
-
-            for i_repeat in range(self.iterate.sequence_repeats):
-                self.run_sequence(sequence, i_repeat)
-            self.stats.on_sequence_finished()
-
-        epoch_final_log_scheduled = scheduled(
-            i=self.progress.epoch, schedule=self.log_schedule['epoch'],
-            always_report_first=True, always_report_last=True, i_max=self.iterate.epochs
-        )
         self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
     def run_sequence(self, sequence: Sequence, i_repeat: int = 0):
@@ -191,8 +171,8 @@ class NewTmExperiment:
             i=i_repeat, schedule=self.log_schedule['repeat'],
             always_report_first=True, always_report_last=True, i_max=self.iterate.sequence_repeats
         )
-        self.stats.on_sequence_started(sequence.id, log_scheduled)
         self.model.streams['sequence_id'].set(sequence.id)
+        self.stats.on_sequence_started(sequence.id, log_scheduled)
 
         for _, input_sdr in enumerate(sequence):
             for _ in range(self.iterate.element_repeats):
