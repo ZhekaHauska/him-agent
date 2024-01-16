@@ -49,10 +49,11 @@ class NewTmExperiment:
             log: bool, seed: int,
             iterate: TConfig, reset_tm: bool, data: TConfig,
             model: TConfig,
-            track_streams: TConfig, stats_and_metrics: TConfig, diff_stats: TConfig,
+            stats_and_metrics: TConfig, diff_stats: TConfig,
             log_schedule: TConfig,
             project: str = None,
             wandb_init: TConfig = None,
+            track_streams: TConfig = None,
             **_
     ):
         self.init_time = timer()

@@ -92,11 +92,11 @@ model:
 #        sdr_updated: input_posterior_prediction.sdr
 #        sequence_finished: epoch_finished
 
-track_streams:
+#track_streams:
 #  input.sdr:
 #    - cross.online.el
-  SE.output.sdr:
-    - cross.online.el
+#  SE.output.sdr:
+#    - cross.online.el
 #  TM.predicted_cells.sdr:
 #    - cross.online.el
 #  TM2.predicted_cells.sdr:

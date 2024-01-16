@@ -10,6 +10,7 @@ from typing import Optional, TYPE_CHECKING
 import numpy as np
 
 from hima.common.config.base import TConfig
+from hima.common.utils import isnone
 from hima.experiments.temporal_pooling._depr.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling._depr.stats.metrics import (
     multiplicative_loss
@@ -70,6 +71,7 @@ class ExperimentStats:
             track_streams: TConfig,
             stats_config: StatsMetricsConfig, n_sequences: int
     ) -> dict[TStreamName, StreamTracker]:
+        track_streams = isnone(track_streams, [])
         trackers = {}
         for stream_name in track_streams:
             if stream_name not in self.model:
