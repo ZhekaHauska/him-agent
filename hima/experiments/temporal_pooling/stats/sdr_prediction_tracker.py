@@ -3,42 +3,52 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
+
 import numpy as np
 
 from hima.common.sdrr import AnySparseSdr, split_sdr_values, RateSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
+from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics, sdr_similarity
-from hima.experiments.temporal_pooling.stp.temporal_memory import TemporalMemory
 
 
 class SdrPredictionTracker:
-    tm: TemporalMemory
+    sds: Sds
+    step_flush_schedule: int | None
+    symmetrical_dissimilarity: bool
 
-    def __init__(self, sds: Sds, symmetrical_dissimilarity: bool = True):
+    miss_rate: MeanValue
+    imprecision: MeanValue
+    prediction_volume: MeanValue
+    dissimilarity: MeanValue
+
+    def __init__(
+            self, sds: Sds,
+            symmetrical_dissimilarity: bool = True, step_flush_schedule: int = None
+    ):
         self.sds = sds
         self.symmetrical_dissimilarity = symmetrical_dissimilarity
+        self.step_flush_schedule = step_flush_schedule
+
         self.dense_cache = np.zeros(sds.size, dtype=float)
         self.predicted_sdr = []
-        self._reset()
 
-    def _reset(self):
-        self.predicted_sdr = []
+        self.miss_rate = MeanValue()
+        self.imprecision = MeanValue()
+        self.prediction_volume = MeanValue()
+        self.dissimilarity = MeanValue()
 
-    def on_sequence_started(self, *_, **__) -> TMetrics:
-        self._reset()
-        return {}
-
-    def on_sdr_predicted(self, sdr: AnySparseSdr, reset: bool) -> TMetrics:
-        if reset:
-            self._reset()
+    def on_sdr_predicted(self, sdr: AnySparseSdr, ignore: bool) -> TMetrics:
+        if ignore:
             return {}
+
         self.predicted_sdr = sdr
         return {}
 
-    def on_sdr_observed(self, sdr: AnySparseSdr, reset: bool) -> TMetrics:
-        if reset:
-            self._reset()
+    def on_sdr_observed(self, sdr: AnySparseSdr, ignore: bool) -> TMetrics:
+        if ignore:
             return {}
 
         pr_sdr, pr_value = split_sdr_values(self.predicted_sdr)
@@ -48,10 +58,14 @@ class SdrPredictionTracker:
 
         recall = sdr_similarity(pr_set_sdr, gt_set_sdr, symmetrical=False)
         miss_rate = 1 - recall
+        self.miss_rate.put(miss_rate)
+
         precision = sdr_similarity(gt_set_sdr, pr_set_sdr, symmetrical=False)
         imprecision = 1 - precision
+        self.imprecision.put(imprecision)
 
         prediction_volume = safe_divide(len(pr_sdr), self.sds.active_size)
+        self.prediction_volume.put(prediction_volume)
 
         dissimilarity = miss_rate
         if isinstance(self.predicted_sdr, RateSdr):
@@ -60,20 +74,37 @@ class SdrPredictionTracker:
                 symmetrical=self.symmetrical_dissimilarity,
                 dense_cache=self.dense_cache
             )
+        self.dissimilarity.put(dissimilarity)
 
-        return {
-            'prediction_volume': prediction_volume,
-            'miss_rate': miss_rate,
-            'imprecision': imprecision,
-            'dissimilarity': dissimilarity
-        }
-
-    def on_sequence_finished(self, _, reset: bool) -> TMetrics:
-        if reset:
-            return {}
+        if len(self.miss_rate.value) == self.step_flush_schedule:
+            return self.flush_step_metrics()
         return {}
 
+    def on_sequence_finished(self, _, ignore: bool) -> TMetrics:
+        if ignore:
+            return {}
+        return self.flush_step_metrics()
 
-def get_sdr_prediction_tracker(on: dict) -> SdrPredictionTracker:
+    def flush_step_metrics(self) -> TMetrics:
+        if len(self.miss_rate.value) == 0:
+            return {}
+
+        metrics = {
+            'miss_rate': self.miss_rate.get(),
+            'imprecision': self.imprecision.get(),
+            'dissimilarity': self.dissimilarity.get(),
+            'prediction_volume': self.prediction_volume.get(),
+        }
+        self._reset_step_metrics()
+        return metrics
+
+    def _reset_step_metrics(self):
+        self.miss_rate.reset()
+        self.imprecision.reset()
+        self.prediction_volume.reset()
+        self.dissimilarity.reset()
+
+
+def get_sdr_prediction_tracker(on: dict, **config) -> SdrPredictionTracker:
     gt_stream = on['sdr_observed']
-    return SdrPredictionTracker(sds=gt_stream.sds)
+    return SdrPredictionTracker(sds=gt_stream.sds, **config)

@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
 
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 from hima.experiments.temporal_pooling.stp.temporal_memory import TemporalMemory
@@ -10,12 +11,13 @@ from hima.experiments.temporal_pooling.stp.temporal_memory import TemporalMemory
 
 class TmTracker:
     tm: TemporalMemory
+    step_flush_schedule: int | None
 
-    def __init__(self, tm: TemporalMemory):
+    def __init__(self, tm: TemporalMemory, step_flush_schedule: int = None):
         self.tm = tm
 
-    def on_activate(self, _, reset: bool) -> TMetrics:
-        if reset:
+    def on_activate(self, _, ignore: bool) -> TMetrics:
+        if ignore:
             return {}
 
         tm = self.tm
@@ -28,7 +30,7 @@ class TmTracker:
         }
 
 
-def get_tm_tracker(on: dict) -> TmTracker:
+def get_tm_tracker(on: dict, **config) -> TmTracker:
     tracked_stream = on['activate']
     tm = tracked_stream.owner.tm
-    return TmTracker(tm=tm)
+    return TmTracker(tm=tm, **config)
