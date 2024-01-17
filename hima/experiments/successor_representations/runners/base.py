@@ -141,6 +141,7 @@ class BaseRunner:
         self.events = None
         self.obs = None
         self.logging = False
+        self.visualizing = False
         self.is_terminal = False
         self.end_of_episode = False
 
@@ -231,13 +232,17 @@ class BaseRunner:
                 if (self.metrics_rack is not None) and self.logging:
                     self.metrics_rack.step()
 
-                if self.visualizer is not None:
+                if self.visualizer is not None and self.visualizing:
                     self.visualizer.step()
+                    print(f'step: {self.steps} episode: {self.episodes}')
         else:
             self.environment.close()
 
     def switch_logging(self):
         self.logging = not self.logging
+
+    def switch_visualizing(self):
+        self.visualizing = not self.visualizing
 
     def stop_episode(self):
         self.end_of_episode = True
