@@ -269,9 +269,9 @@ class Layer:
             enable_context_connections: bool = True,
             enable_internal_connections: bool = True,
             cells_activity_lr: float = 0.1,
-            replace_prior: bool = True,
+            replace_prior: bool = False,
             bursting_threshold: float = EPS,
-            override_context: bool = False,
+            override_context: bool = True,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -330,6 +330,12 @@ class Layer:
         self.internal_active_cells = SDR(self.internal_cells)
         self.external_active_cells = SDR(self.external_input_size)
         self.context_active_cells = SDR(self.context_input_size)
+
+        if self.override_context:
+            if self.internal_active_cells.size != self.context_active_cells.size:
+                raise Warning(
+                    "Context override will not work as context and internal sizes are different."
+                )
 
         self.internal_forward_messages = np.zeros(
             self.internal_cells,
@@ -528,14 +534,18 @@ class Layer:
         # update connections
         if learn and self.lr > 0:
             # sample cells from messages (1-step Monte-Carlo learning)
-            self.context_active_cells.sparse = self._sample_cells(
-                self.context_messages.reshape(self.n_context_vars, -1)
-            )
-
-            # for debugging
-            if self.override_context:
-                if len(self.internal_active_cells.sparse) > 0:
-                    self.context_active_cells.sparse = self.internal_active_cells.sparse
+            if (
+                    self.override_context
+                    and
+                    (self.context_active_cells.size == self.internal_active_cells.size)
+                    and
+                    (len(self.internal_active_cells.sparse) > 0)
+            ):
+                self.context_active_cells.sparse = self.internal_active_cells.sparse
+            else:
+                self.context_active_cells.sparse = self._sample_cells(
+                    self.context_messages.reshape(self.n_context_vars, -1)
+                )
 
             self.internal_active_cells.sparse = self._sample_cells(
                 self.internal_forward_messages.reshape(self.n_hidden_vars, -1)
