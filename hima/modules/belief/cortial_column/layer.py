@@ -459,6 +459,10 @@ class Layer:
             dtype=REAL64_DTYPE
         )
 
+        self.context_active_cells.sparse = []
+        self.internal_active_cells.sparse = []
+        self.external_active_cells.sparse = []
+
         self.prediction_cells = None
         self.prediction_columns = None
 
