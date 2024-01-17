@@ -75,6 +75,10 @@ class Sds:
     def __str__(self):
         return f'({self.shape}, {self.size}, {self.active_size}, {self.sparsity:.4f})'
 
+    def with_active_size(self, active_size: int) -> Sds:
+        """Produce another SDS with the specified active size."""
+        return Sds(shape=self.shape, active_size=active_size)
+
     @staticmethod
     def parse_short_notation(first, second):
         shape, size, sparsity, active_size = None, None, None, None
@@ -120,6 +124,12 @@ class Sds:
             sparsity: float = None,
             active_size: int = None
     ):
+        """
+        Resolve all SDS components from the given subset of them.
+
+        As all components are interdependent, it is convenient to define SDS by specifying
+        only a necessary subset of them and let the others be induced.
+        """
         if shape is None and size is None:
             # defined: sparsity & active size
             #   resolve size and shape
@@ -148,7 +158,8 @@ class Sds:
             return sds
 
         if isinstance(sds, dict):
-            # full key-value notation
+            # full key-value notation aka TConfig
             return Sds(**sds)
-        # short notation
+
+        # otherwise, a short notation is expected, which is a two-element sequence-like object
         return Sds(short_notation=sds)
