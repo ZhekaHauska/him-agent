@@ -99,6 +99,9 @@ def _resolve_spatial_pooler(type_tag: str):
     if type_tag == 'sp.grouped':
         from hima.experiments.temporal_pooling.stp.sp_grouped import SpatialPoolerGrouped
         return SpatialPoolerGrouped
+    if type_tag == 'sp.htm':
+        from hima.modules.htm.spatial_pooler import SpatialPooler
+        return SpatialPooler
 
 
 def _resolve_spatial_temporal_pooler(type_tag: str):
@@ -155,6 +158,9 @@ def _resolve_runner(type_tag: str):
     if type_tag == 'stp_experiment.tm_sequence_learning':
         from hima.experiments.temporal_pooling.test_new_tm import NewTmExperiment
         return NewTmExperiment
+    if type_tag == 'stp_experiment.neurogenesis':
+        from hima.experiments.temporal_pooling.test_neurogenesis import NeurogenesisExperiment
+        return NeurogenesisExperiment
     if type_tag == 'stp_experiment.sp_attractor.mnist':
         from hima.experiments.temporal_pooling.test_attractor_mnist import (
             SpAttractorMnistExperiment

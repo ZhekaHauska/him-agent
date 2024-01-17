@@ -130,7 +130,7 @@ class SpatialPooler:
             rng=self.rng, n_neurons=self.output_size,
             set_size=self.ff_size, sample_size=rf_size
         )
-        print(f'SP vec init shape: {self.rf.shape}')
+        print(f'SP.rate init shape: {self.rf.shape}')
         self.weights = normalize_weights(
             self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
         )

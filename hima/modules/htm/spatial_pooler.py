@@ -892,7 +892,7 @@ class SpatialPooler:
             output_size: int = None, output_dilation_ratio: float = None,
     ):
         if input_size is None:
-            input_size = input_source.output_sdr_size
+            input_size = input_source.output_sds.size
         input_shape = [input_size]
 
         if output_size is None:
