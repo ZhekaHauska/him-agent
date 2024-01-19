@@ -13,6 +13,7 @@ from hima.modules.baselines.lstm import LstmLayer
 from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.baselines.hmm import FCHMMLayer
 from hima.modules.baselines.srtd import SRTD
+from hima.modules.belief.pattern_memory import DSFTD
 from hima.modules.dvs import DVS
 from hima.agents.q.agent import QAgent
 from hima.agents.sr.table import SRAgent
@@ -92,6 +93,16 @@ class BioAgentWrapper(BaseAgent):
             decoder
         )
 
+        if conf['dsftd_type'] is None:
+            dsftd = None
+        else:
+            dsftd = DSFTD(
+                cortical_column.layer.n_hidden_vars,
+                cortical_column.layer.input_sdr_size,
+                **conf['dsftd'],
+                seed=self.seed
+            )
+
         if conf['srtd_type'] is None:
             srtd = None
         else:
@@ -107,12 +118,14 @@ class BioAgentWrapper(BaseAgent):
             self.agent = LstmBioHima(
                 cortical_column,
                 srtd=srtd,
+                dsftd=dsftd,
                 **conf['agent']
             )
         else:
             self.agent = BioHIMA(
                 cortical_column,
                 srtd=srtd,
+                dsftd=dsftd,
                 **conf['agent']
             )
 
@@ -202,6 +215,13 @@ class BioAgentWrapper(BaseAgent):
     def num_segments(self):
         if isinstance(self.agent.cortical_column.layer, Layer):
             return self.agent.cortical_column.layer.context_factors.connections.numSegments()
+        else:
+            return 0
+
+    @property
+    def n_states(self):
+        if self.agent.dsftd is not None:
+            return len(self.agent.dsftd.states_in_use)
         else:
             return 0
 

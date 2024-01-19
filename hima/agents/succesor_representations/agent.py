@@ -15,6 +15,7 @@ from hima.common.utils import softmax, safe_divide
 from hima.common.smooth_values import SSValue
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.baselines.srtd import SRTD
+from hima.modules.belief.pattern_memory import DSFTD
 from hima.modules.baselines.lstm import to_numpy, TLstmLayerHiddenState
 from copy import copy
 import torch
@@ -58,12 +59,14 @@ class BioHIMA:
             adaptive_sr: bool = True,
             adaptive_lr: bool = True,
             srtd: SRTD | None,
+            dsftd: DSFTD | None,
             seed: int | None,
     ):
         self.observation_reward_lr = observation_reward_lr
         self.max_striatum_lr = striatum_lr
         self.cortical_column = cortical_column
         self.srtd = srtd
+        self.dsftd = dsftd
         self.gamma = gamma
         self.max_sr_steps = sr_steps
         self.sr_early_stop = sr_early_stop
@@ -278,12 +281,15 @@ class BioHIMA:
             return sr
 
     def predict_sr(self, hidden_vars_dist):
-        if self.srtd is None:
-            sr = np.dot(hidden_vars_dist, self.striatum_weights)
-            sr /= self.cortical_column.layer.n_hidden_vars
-        else:
+        if self.srtd is not None:
             msg = torch.tensor(hidden_vars_dist).float().to(self.srtd.device)
             sr = to_numpy(self.srtd.predict_sr(msg, target=True))
+        elif self.dsftd is not None:
+            sr = self.dsftd.predict(hidden_vars_dist, learn=True)
+            sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
+        else:
+            sr = np.dot(hidden_vars_dist, self.striatum_weights)
+            sr /= self.cortical_column.layer.n_hidden_vars
         return sr
 
     def td_update_sr(self):
@@ -294,20 +300,7 @@ class BioHIMA:
             approximate_tail=self.approximate_tail,
             early_stop=self.sr_early_stop
         )
-
-        if self.srtd is None:
-            predicted_sr = self.predict_sr(self.cortical_column.layer.internal_forward_messages)
-            prediction_cells = self.current_state
-            error_sr = target_sr - predicted_sr
-
-            # dSR / dW for linear model
-            delta_w = np.outer(prediction_cells, error_sr)
-
-            self.striatum_weights += self.striatum_lr * delta_w
-            self.striatum_weights = np.clip(self.striatum_weights, 0, None)
-
-            td_error = np.mean(np.power(error_sr, 2))
-        else:
+        if self.srtd is not None:
             current_state = torch.tensor(self.current_state).float().to(self.srtd.device)
             predicted_sr = self.srtd.predict_sr(current_state, target=False)
             target_sr = torch.tensor(target_sr)
@@ -319,6 +312,21 @@ class BioHIMA:
             )
             predicted_sr = to_numpy(predicted_sr)
             target_sr = to_numpy(target_sr)
+        elif self.dsftd is not None:
+            predicted_sr = self.dsftd.predict(self.current_state, learn=False)
+            td_error = self.dsftd.update_weights(target_sr)
+        else:
+            predicted_sr = self.predict_sr(self.current_state)
+            prediction_cells = self.current_state
+            error_sr = target_sr - predicted_sr
+
+            # dSR / dW for linear model
+            delta_w = np.outer(prediction_cells, error_sr)
+
+            self.striatum_weights += self.striatum_lr * delta_w
+            self.striatum_weights = np.clip(self.striatum_weights, 0, None)
+
+            td_error = np.mean(np.power(error_sr, 2))
 
         return predicted_sr, target_sr, td_error
 
