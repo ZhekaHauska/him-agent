@@ -30,9 +30,12 @@ class SdrTracker:
     histogram: npt.NDArray[float]
     union: set[int]
 
-    def __init__(self, sds: Sds, step_flush_schedule: int = None):
+    def __init__(
+            self, sds: Sds, step_flush_schedule: int = None, aggregate_flush_schedule: int = None
+    ):
         self.sds = sds
         self.step_flush_schedule = step_flush_schedule
+        self.aggregate_flush_schedule = aggregate_flush_schedule
 
         self.prev_sdr = set()
         self.sdr_size = MeanValue()
@@ -70,15 +73,24 @@ class SdrTracker:
 
         self.prev_sdr = sdr
 
+        metrics = {}
         if len(self.sdr_size.value) == self.step_flush_schedule:
-            return self.flush_step_metrics()
-        return {}
+            metrics |= self.flush_step_metrics()
+        if self.n_steps == self.aggregate_flush_schedule:
+            metrics |= self.flush_aggregate_metrics()
+
+        return metrics
 
     def on_sequence_finished(self, _, ignore: bool) -> TMetrics:
         if ignore:
             return {}
 
-        return self.flush_step_metrics() | self.flush_aggregate_metrics()
+        metrics = {}
+        if self.step_flush_schedule is None:
+            metrics |= self.flush_step_metrics()
+        if self.aggregate_flush_schedule is None:
+            metrics |= self.flush_aggregate_metrics()
+        return metrics
 
     def aggregate_pmf(self) -> np.ndarray:
         return safe_divide(self.histogram, self.n_steps)
