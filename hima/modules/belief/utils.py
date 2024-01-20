@@ -36,6 +36,7 @@ def sample_categorical_variables(probs, rng: np.random.Generator):
     gammas = rng.uniform(size=probs.shape[0]).reshape((-1, 1))
 
     dist = np.cumsum(probs, axis=-1)
+    dist[:, -1] = 1.0
 
     ubounds = dist
     lbounds = np.zeros_like(dist)
