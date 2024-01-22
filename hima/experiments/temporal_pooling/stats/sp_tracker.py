@@ -73,7 +73,7 @@ class SpTracker:
         metrics = {
             'potentials': self.potentials.get(),
             'recognition_strength': self.recognition_strength.get(),
-            'weights': self.weights.get()
+            'weights': self.weights.get() * len(self.weights.agg_value)
         }
         self._reset_aggregate_metrics()
         return metrics

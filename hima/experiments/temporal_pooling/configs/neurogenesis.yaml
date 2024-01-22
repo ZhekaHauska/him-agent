@@ -11,7 +11,7 @@ output_sds: [400, 12]
 n_prototypes: 400
 noise_level: 0.1
 n_epochs: 10
-n_steps: 1000
+n_steps: 1200
 
 layer: sp.rate
 

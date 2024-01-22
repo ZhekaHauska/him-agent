@@ -88,6 +88,7 @@ class NeurogenesisExperiment:
         sdr_tracker_config = dict(step_flush_schedule=100, aggregate_flush_schedule=100)
         self.input_sdr_tracker = SdrTracker(self.input_sds, **sdr_tracker_config)
         self.output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
+        self.test_output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
         self.sp_tracker = SpTracker(self.layer, **sdr_tracker_config)
 
         self.epoch = 0
@@ -100,7 +101,6 @@ class NeurogenesisExperiment:
         self.epoch += 1
 
         self.train_epoch(start=0, n_prototypes=self.n_prototypes)
-        self.test_epoch()
         self.train_epoch(start=self.n_prototypes, n_prototypes=self.n_prototypes)
         self.test_epoch()
         self.train_epoch(start=0, n_prototypes=2*self.n_prototypes)
@@ -111,24 +111,31 @@ class NeurogenesisExperiment:
         self.print_with_timestamp('<==')
 
     def train_epoch(self, start, n_prototypes):
-        self.print_with_timestamp(f'Epoch {self.epoch}')
-        for i_sample in range(self.n_steps):
-            prototype = self.data[start + self.rng.choice(n_prototypes)]
-            # NB: log just before the next step to include both step and epoch metrics,
-            # and also both train and test
-            self.log()
+        for _ in range(self.n_epochs):
+            self.print_with_timestamp(f'Epoch {self.epoch}')
+            for i_sample in range(self.n_steps):
+                prototype = self.data[start + self.rng.choice(n_prototypes)]
+                # NB: log just before the next step to include both step and epoch metrics,
+                # and also both train and test
+                self.log()
 
-            input_sdr = sample_noisy_sdr(self.rng, self.input_sds, prototype, self.noise_level)
-            output_sdr = self.layer.compute(input_sdr, learn=True)
+                input_sdr = sample_noisy_sdr(self.rng, self.input_sds, prototype, self.noise_level)
+                output_sdr = self.layer.compute(input_sdr, learn=True)
 
-            self.on_step(input_sdr, output_sdr)
+                self.on_step(input_sdr, output_sdr)
 
-        self.on_epoch()
-        self.epoch += 1
+            self.on_epoch()
+            self.test_epoch()
+            self.epoch += 1
 
     def test_epoch(self):
         for prototype in self.data:
-            self.layer.compute(prototype, learn=False)
+            self.log()
+            input_sdr = prototype
+            output_sdr = self.layer.compute(prototype, learn=False)
+            self.on_step(input_sdr, output_sdr)
+
+        self.on_epoch()
 
     def on_step(self, input_sdr, output_sdr):
         if not self.logger:
