@@ -76,7 +76,7 @@ class SdrPredictionTracker:
             )
         self.dissimilarity.put(dissimilarity)
 
-        if len(self.miss_rate.value) == self.step_flush_schedule:
+        if len(self.miss_rate.agg_value) == self.step_flush_schedule:
             return self.flush_step_metrics()
         return {}
 
@@ -86,7 +86,7 @@ class SdrPredictionTracker:
         return self.flush_step_metrics()
 
     def flush_step_metrics(self) -> TMetrics:
-        if len(self.miss_rate.value) == 0:
+        if len(self.miss_rate.agg_value) == 0:
             return {}
 
         metrics = {

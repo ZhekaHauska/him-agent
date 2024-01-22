@@ -23,6 +23,7 @@ from hima.experiments.temporal_pooling.data.synthetic_patterns import (
 )
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
+from hima.experiments.temporal_pooling.stats.sp_tracker import SpTracker
 from hima.experiments.temporal_pooling.utils import resolve_random_seed
 
 if TYPE_CHECKING:
@@ -87,6 +88,7 @@ class NeurogenesisExperiment:
         sdr_tracker_config = dict(step_flush_schedule=100, aggregate_flush_schedule=100)
         self.input_sdr_tracker = SdrTracker(self.input_sds, **sdr_tracker_config)
         self.output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
+        self.sp_tracker = SpTracker(self.layer, **sdr_tracker_config)
 
         self.epoch = 0
         self.metrics = dict()
@@ -140,6 +142,10 @@ class NeurogenesisExperiment:
             metrics=self.output_sdr_tracker.on_sdr_updated(output_sdr, False),
             prefix='output.sdr'
         )
+        self.metrics |= personalize_metrics(
+            metrics=self.sp_tracker.on_sp_computed(None, False),
+            prefix='sp'
+        )
 
     def on_epoch(self):
         if not self.logger:
@@ -152,6 +158,10 @@ class NeurogenesisExperiment:
         self.metrics |= personalize_metrics(
             metrics=self.output_sdr_tracker.on_sequence_finished(None, False),
             prefix='output.sdr'
+        )
+        self.metrics |= personalize_metrics(
+            metrics=self.sp_tracker.on_sequence_finished(None, False),
+            prefix='sp'
         )
 
     def log(self):

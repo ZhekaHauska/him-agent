@@ -259,13 +259,20 @@ class SpatialPooler:
         else:
             values = 1.0
 
-        if not learn or sdr.shape[0] <= 0:
+        if not learn or sdr.size == 0:
             return
 
         # update winners activation stats
         self.output_trace[sdr] += values
         # FIXME: make two metrics: for pre-weighting, post weighting delta
         self.recognition_strength_trace += self.potentials[sdr].mean()
+
+    def get_step_debug_info(self):
+        return {
+            'potentials': np.sort(self.potentials),
+            'recognition_strength': self.potentials[self.winners].mean(),
+            'weights': np.sort(self.weights, axis=1).mean(axis=0),
+        }
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         # feedback SDR is the SP neurons that should be reinforced or punished
