@@ -30,8 +30,11 @@ class SpTracker:
             self, sp, aggregate_flush_schedule: int = None, **_
     ):
         self.sp = sp
+        self.supported = getattr(sp, 'get_step_debug_info', None) is not None
         self.aggregate_flush_schedule = aggregate_flush_schedule
 
+        if not self.supported:
+            return
         self.potentials = MeanValue(sp.output_sds.size)
         self.recognition_strength = MeanValue()
         target_rf_size = round(sp.get_target_rf_sparsity() * sp.feedforward_sds.size)
@@ -43,7 +46,7 @@ class SpTracker:
         self.weights.reset()
 
     def on_sp_computed(self, _, ignore: bool) -> TMetrics:
-        if ignore:
+        if ignore or not self.supported:
             return {}
 
         debug_info = self.sp.get_step_debug_info()
@@ -59,7 +62,7 @@ class SpTracker:
         return {}
 
     def on_sequence_finished(self, _, ignore: bool) -> TMetrics:
-        if ignore:
+        if ignore or not self.supported:
             return {}
 
         if self.aggregate_flush_schedule is None:

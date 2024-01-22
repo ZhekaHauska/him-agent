@@ -102,9 +102,7 @@ class NeurogenesisExperiment:
 
         self.train_epoch(start=0, n_prototypes=self.n_prototypes)
         self.train_epoch(start=self.n_prototypes, n_prototypes=self.n_prototypes)
-        self.test_epoch()
         self.train_epoch(start=0, n_prototypes=2*self.n_prototypes)
-        self.test_epoch()
 
         # NB: log last step
         self.log()

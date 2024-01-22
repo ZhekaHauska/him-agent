@@ -44,6 +44,15 @@ sp:
 
   htm:
     _type_: sp.htm
+    seed: ???
+    feedforward_sds: ???
+    output_sds: ???
+    potential_synapses_ratio: 0.6
+    synapse_permanence_deltas: [0.04, 0.008]
+    connected_permanence_threshold: 0.5
+    boost_strength: 0.5
+    boost_sliding_window: 40000  # should be big enough if boostStrength > 0: 20k+
+    expected_normal_overlap_frequency: 0.0002  # or set to 0: !important!
 
 wandb_init:
   _base_: $_base.wandb_init

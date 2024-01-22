@@ -234,6 +234,13 @@ class SpatialPooler:
         self.output_trace[sdr] += 1.0
         self.recognition_strength_trace += self.potentials[sdr].mean()
 
+    def get_step_debug_info(self):
+        return {
+            'potentials': np.sort(self.potentials),
+            'recognition_strength': self.potentials[self.winners].mean(),
+            'weights': np.sort(self.weights, axis=1).mean(axis=0),
+        }
+
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         # feedback SDR is the SP neurons that should be reinforced or punished
         fb_match_mask = self.match_current_input(with_neurons=feedback_sdr)
