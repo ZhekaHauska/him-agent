@@ -47,7 +47,8 @@ class BioHIMA:
             gamma: float = 0.99,
             observation_reward_lr: float = 0.01,
             striatum_lr: float = 1.0,
-            sr_steps: int = 5,
+            plan_steps: int = 1,
+            td_steps: int = 1,
             approximate_tail: bool = True,
             inverse_temp: float = 1.0,
             exploration_eps: float = -1,
@@ -68,7 +69,8 @@ class BioHIMA:
         self.srtd = srtd
         self.dsftd = dsftd
         self.gamma = gamma
-        self.max_sr_steps = sr_steps
+        self.max_plan_steps = plan_steps
+        self.td_steps = td_steps
         self.sr_early_stop = sr_early_stop
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
@@ -82,7 +84,7 @@ class BioHIMA:
             self.exploration_policy = ExplorationPolicy.EPS_GREEDY
             self.exploration_eps = exploration_eps
 
-        self.action_value_estimate = ActionValueEstimate[action_value_estimate.upper()]
+        self._action_value_estimate = ActionValueEstimate[action_value_estimate.upper()]
         self.sr_estimate_planning = SrEstimatePlanning[sr_estimate_planning.upper()]
 
         layer = self.cortical_column.layer
@@ -103,6 +105,9 @@ class BioHIMA:
 
         self.predicted_sr = None
         self.generated_sr = None
+        self.action_values = None
+        self.action_dist = None
+        self.action = None
 
         # metrics
         self.ss_td_error = SSValue(*lr_td_error)
@@ -120,10 +125,12 @@ class BioHIMA:
 
     def sample_action(self):
         """Evaluate and sample actions."""
-        action_values = self.evaluate_actions(with_planning=True)
-        action_dist = self._get_action_selection_distribution(action_values, on_policy=True)
-        action = self._rng.choice(self.n_actions, p=action_dist)
-        return action
+        self.action_values = self.evaluate_actions(with_planning=True)
+        self.action_dist = self._get_action_selection_distribution(
+            self.action_values, on_policy=True
+        )
+        self.action = self._rng.choice(self.n_actions, p=self.action_dist)
+        return self.action
 
     def observe(self, observation, learn=True):
         """
@@ -186,9 +193,10 @@ class BioHIMA:
 
             if estimate_strategy == ActionValueEstimate.PLAN:
                 sr = self.generate_sr(
-                    self.sr_steps,
+                    self.plan_steps,
                     initial_messages=self.cortical_column.layer.prediction_cells,
                     initial_prediction=self.cortical_column.layer.prediction_columns,
+                    approximate_tail=self.approximate_tail,
                     save_state=False,
                     early_stop=self.sr_early_stop
                 )
@@ -285,7 +293,7 @@ class BioHIMA:
             msg = torch.tensor(hidden_vars_dist).float().to(self.srtd.device)
             sr = to_numpy(self.srtd.predict_sr(msg, target=True))
         elif self.dsftd is not None:
-            sr = self.dsftd.predict(hidden_vars_dist, learn=True)
+            sr = self.dsftd.predict(hidden_vars_dist, learn=False)
             sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
         else:
             sr = np.dot(hidden_vars_dist, self.striatum_weights)
@@ -294,12 +302,13 @@ class BioHIMA:
 
     def td_update_sr(self):
         target_sr = self.generate_sr(
-            self.sr_steps,
+            self.td_steps,
             initial_messages=self.cortical_column.layer.internal_forward_messages,
             initial_prediction=self.observation_messages,
-            approximate_tail=self.approximate_tail,
+            approximate_tail=True,
             early_stop=self.sr_early_stop
         )
+
         if self.srtd is not None:
             current_state = torch.tensor(self.current_state).float().to(self.srtd.device)
             predicted_sr = self.srtd.predict_sr(current_state, target=False)
@@ -313,7 +322,7 @@ class BioHIMA:
             predicted_sr = to_numpy(predicted_sr)
             target_sr = to_numpy(target_sr)
         elif self.dsftd is not None:
-            predicted_sr = self.dsftd.predict(self.current_state, learn=False)
+            predicted_sr = self.dsftd.predict(self.current_state, learn=True)
             td_error = self.dsftd.update_weights(target_sr)
         else:
             predicted_sr = self.predict_sr(self.current_state)
@@ -333,6 +342,14 @@ class BioHIMA:
     @property
     def current_state(self):
         return self.cortical_column.layer.internal_forward_messages
+
+    @property
+    def action_value_estimate(self):
+        return self._action_value_estimate
+
+    @action_value_estimate.setter
+    def action_value_estimate(self, value: str):
+        self._action_value_estimate = ActionValueEstimate[value.upper()]
 
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True
@@ -396,20 +413,20 @@ class BioHIMA:
         return (1 - np.log(s_current) / s_base_log) / (1 - np.log(s_min) / s_base_log)
 
     @property
-    def sr_steps(self):
+    def plan_steps(self):
         if self.adaptive_sr:
             sr_steps = int(
                 max(
                     1,
                     np.round(
-                        self.max_sr_steps *
+                        self.max_plan_steps *
                         np.clip(self.ss_td_error.norm_value, 0, 1) *
                         self.relative_log_surprise
                     )
                 )
             )
         else:
-            sr_steps = self.max_sr_steps
+            sr_steps = self.max_plan_steps
         return sr_steps
 
     @property

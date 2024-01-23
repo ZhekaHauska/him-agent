@@ -8,14 +8,15 @@ agent:
   gamma: 0.99
   observation_reward_lr: 0.1
   striatum_lr: 0.1
-  sr_steps: 1
-  approximate_tail: True
+  td_steps: 1
   inverse_temp: 10
 
   # p \in [0, 1]: eps-greedy | otherwise (use -1): softmax
   exploration_eps: 0.05
   # predict | plan | balance === 0-step | n-step | td-error based probability to use n-step
-  action_value_estimate: predict
+  action_value_estimate: plan
+  plan_steps: 10
+  approximate_tail: False
   # uniform | on_policy | off_policy
   sr_estimate_planning: uniform
 
