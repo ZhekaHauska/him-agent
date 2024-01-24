@@ -107,6 +107,11 @@ model:
       on:
         sp_computed: TM.active_cells.sdr
         sequence_finished: sequence_finished
+    - name: state_L2.prior.sp
+      tracker: trackers.sp_concat
+      on:
+        sp_computed: TM2.predicted_cells.sdr
+        sequence_finished: sequence_finished
 
 #track_streams:
 #  input.sdr:
@@ -364,6 +369,7 @@ trackers:
   sp_concat:
     _base_: sp
     track_split: True
+    potentials_quantile: 0.3
 
 wandb_init:
   _base_: $_base.wandb_init
