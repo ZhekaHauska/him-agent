@@ -44,12 +44,14 @@ class NeurogenesisExperiment:
             input_sds: TSdsShortNotation,
             output_sds: TSdsShortNotation,
             n_prototypes: int,
+            visible_frac: float,
             noise_level: float,
             n_epochs: int,
             n_steps: int,
 
             step_flush_schedule: int,
             aggregate_flush_schedule: int,
+            sp_potentials_quantile: float,
 
             layer: TConfig,
 
@@ -83,6 +85,20 @@ class NeurogenesisExperiment:
             sample_random_sdr(self.rng, self.input_sds)
             for _ in range(2 * self.n_prototypes)
         ]
+        # list of (starting index in data, number of examples) for each experiment stage
+        self.data_parts = [
+            (0, self.n_prototypes),
+            (self.n_prototypes, self.n_prototypes),
+            (0, 2 * self.n_prototypes)
+        ]
+
+        # list of (start, end) indices in input_sds for each experiment stage
+        shift = round(visible_frac * self.input_sds.size)
+        self.visible_sds_ranges = [
+            (0, shift),
+            (self.input_sds.size - shift, self.input_sds.size),
+            None
+        ]
 
         self.layer = self.config.resolve_object(
             layer, feedforward_sds=self.input_sds, output_sds=self.output_sds,
@@ -94,8 +110,15 @@ class NeurogenesisExperiment:
         )
         self.input_sdr_tracker = SdrTracker(self.input_sds, **sdr_tracker_config)
         self.output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
-        self.test_output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
-        self.sp_tracker = SpTracker(self.layer, step_flush_schedule=step_flush_schedule)
+        # self.test_output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
+        self.sp_tracker = SpTracker(
+            self.layer, step_flush_schedule=step_flush_schedule,
+            potentials_quantile=sp_potentials_quantile
+        )
+        # self.test_sp_tracker = SpTracker(
+        #     self.layer, step_flush_schedule=step_flush_schedule,
+        #     potentials_quantile=sp_potentials_quantile
+        # )
 
         self.epoch = 0
         self.metrics = dict()
@@ -106,36 +129,52 @@ class NeurogenesisExperiment:
         self.test_epoch()
         self.epoch += 1
 
-        self.train_epoch(start=0, n_prototypes=self.n_prototypes)
-        self.train_epoch(start=self.n_prototypes, n_prototypes=self.n_prototypes)
-        self.train_epoch(start=0, n_prototypes=2*self.n_prototypes)
+        n_stages = len(self.data_parts)
+        for i in range(n_stages):
+            start, n_prototypes = self.data_parts[i]
+            masked_sds_range = self.visible_sds_ranges[i]
+            self.print_with_timestamp(
+                f'Experiment stage {i+1}: {start}:{start+n_prototypes} {masked_sds_range}'
+            )
+            self.run_stage(
+                start=start, n_prototypes=n_prototypes, masked_sds_range=masked_sds_range
+            )
 
         # NB: log last step
         self.log()
         self.print_with_timestamp('<==')
 
-    def train_epoch(self, start, n_prototypes):
+    def run_stage(self, start, n_prototypes, masked_sds_range: tuple[int, int] = None):
         for _ in range(self.n_epochs):
             self.print_with_timestamp(f'Epoch {self.epoch}')
-            for i_sample in range(self.n_steps):
-                prototype = self.data[start + self.rng.choice(n_prototypes)]
-                # NB: log just before the next step to include both step and epoch metrics,
-                # and also both train and test
-                self.log()
-
-                input_sdr = sample_noisy_sdr(self.rng, self.input_sds, prototype, self.noise_level)
-                output_sdr = self.layer.compute(input_sdr, learn=True)
-
-                self.on_step(input_sdr, output_sdr)
-
-            self.on_epoch()
+            self.train_epoch(start, n_prototypes, masked_sds_range)
             self.test_epoch()
             self.epoch += 1
+
+    def train_epoch(self, start, n_prototypes, masked_sds_range: tuple[int, int] = None):
+        for i_sample in range(self.n_steps):
+            prototype = self.data[start + self.rng.choice(n_prototypes)]
+            # NB: log just before the next step to include both step and epoch metrics,
+            # and also both train and test
+            self.log()
+
+            input_sdr = sample_noisy_sdr(self.rng, self.input_sds, prototype, self.noise_level)
+
+            # mask out input sdr to be within a certain range
+            if masked_sds_range is not None:
+                low, high = masked_sds_range
+                input_sdr = input_sdr[(input_sdr >= low) & (input_sdr < high)]
+
+            output_sdr = self.layer.compute(input_sdr, learn=True)
+            self.on_step(input_sdr, output_sdr)
+
+        self.on_epoch()
 
     def test_epoch(self):
         for prototype in self.data:
             self.log()
             input_sdr = prototype
+
             output_sdr = self.layer.compute(prototype, learn=False)
             self.on_step(input_sdr, output_sdr)
 
