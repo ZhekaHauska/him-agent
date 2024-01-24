@@ -270,8 +270,9 @@ class SpatialPooler:
     def get_step_debug_info(self):
         return {
             'potentials': np.sort(self.potentials),
-            'recognition_strength': self.potentials[self.winners].mean(),
-            'weights': np.sort(self.weights, axis=1).mean(axis=0),
+            'recognition_strength': self.potentials[self.winners],
+            'weights': self.weights,
+            'rf': self.rf,
         }
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
