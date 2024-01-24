@@ -19,10 +19,10 @@ class SdrPredictionTracker:
     step_flush_schedule: int | None
     symmetrical_dissimilarity: bool
 
-    miss_rate: MeanValue
-    imprecision: MeanValue
-    prediction_volume: MeanValue
-    dissimilarity: MeanValue
+    miss_rate: MeanValue[float]
+    imprecision: MeanValue[float]
+    prediction_volume: MeanValue[float]
+    dissimilarity: MeanValue[float]
 
     def __init__(
             self, sds: Sds,
@@ -34,6 +34,7 @@ class SdrPredictionTracker:
 
         self.dense_cache = np.zeros(sds.size, dtype=float)
         self.predicted_sdr = []
+        self.observed_sdr = []
 
         self.miss_rate = MeanValue()
         self.imprecision = MeanValue()
@@ -51,8 +52,17 @@ class SdrPredictionTracker:
         if ignore:
             return {}
 
+        self.observed_sdr = sdr
+        return {}
+
+    def on_both_known(self, _, ignore: bool) -> TMetrics:
+        if ignore:
+            return {}
+
         pr_sdr, pr_value = split_sdr_values(self.predicted_sdr)
-        gt_sdr, gt_value = split_sdr_values(sdr)
+        gt_sdr, gt_value = split_sdr_values(self.observed_sdr)
+        self.predicted_sdr = None
+        self.observed_sdr = None
 
         pr_set_sdr, gt_set_sdr = set(pr_sdr), set(gt_sdr)
 
@@ -76,17 +86,20 @@ class SdrPredictionTracker:
             )
         self.dissimilarity.put(dissimilarity)
 
-        if len(self.miss_rate.agg_value) == self.step_flush_schedule:
+        if self.miss_rate.n_steps == self.step_flush_schedule:
             return self.flush_step_metrics()
         return {}
 
     def on_sequence_finished(self, _, ignore: bool) -> TMetrics:
         if ignore:
             return {}
-        return self.flush_step_metrics()
+
+        if self.step_flush_schedule is None:
+            return self.flush_step_metrics()
+        return {}
 
     def flush_step_metrics(self) -> TMetrics:
-        if len(self.miss_rate.agg_value) == 0:
+        if self.miss_rate.n_steps == 0:
             return {}
 
         metrics = {

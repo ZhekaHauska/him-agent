@@ -122,6 +122,9 @@ def _resolve_tracker(type_tag: str):
             get_sdr_prediction_tracker
         )
         return get_sdr_prediction_tracker
+    if type_tag == 'tracker.sp':
+        from hima.experiments.temporal_pooling.stats.sp_tracker import get_sp_tracker
+        return get_sp_tracker
 
 
 def _resolve_dataset(type_tag):
