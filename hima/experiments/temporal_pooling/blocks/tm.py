@@ -40,8 +40,6 @@ class TemporalMemoryBlock(Block):
         self.register_stream(WINNER_CELLS)
 
     def fit_dimensions(self) -> bool:
-        successful = True
-
         cells_per_column = self.tm['cells_per_column']
         col_streams = {
             FEEDFORWARD, PREDICTED_COLUMNS, CORRECTLY_PREDICTED_COLUMNS
