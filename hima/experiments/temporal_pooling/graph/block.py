@@ -33,7 +33,7 @@ class Block(Stretchable, Stateful):
 
         # extend set to dict with values — resolved stream full names
         self.supported_streams = {
-            short_name: f'{self.name}.{short_name}'
+            short_name: self.to_full_stream_name(short_name)
             for short_name in self.supported_streams
         }
 
@@ -71,3 +71,6 @@ class Block(Stretchable, Stateful):
     def register_stream(self, short_name: str):
         stream_name = self.supported_streams[short_name]
         return self.model.register_stream(stream_name)
+
+    def to_full_stream_name(self, short_name: str) -> str:
+        return f'{self.name}.{short_name}'

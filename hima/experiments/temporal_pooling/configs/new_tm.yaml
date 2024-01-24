@@ -187,12 +187,16 @@ models:
         - TM.state.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_posterior_prediction.sdr
+        - decoder.learn()
 
   STM2:
     - predict input w/ prior belief:
         - TM2.predict()
+        - TM2.predicted_cells.sdr -> concat.feedforward_#2.sdr
         - TM.predict()
-        - TM.predicted_cells.sdr -> decoder.feedforward.sdr
+        - TM.predicted_cells.sdr -> concat.feedforward_#1.sdr
+        - concat.compute()
+        - concat.output.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_prediction.sdr
     - embed input:
@@ -211,9 +215,12 @@ models:
         - embed_input.sdr -> decoder.feedback.sdr
         - decoder.learn()
     - predict input w/ posterior belief:
-        - TM.state.sdr -> decoder.feedforward.sdr
+        - TM.state.sdr -> concat.feedforward_#1.sdr
+        - concat.compute()
+        - concat.output.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_posterior_prediction.sdr
+        - decoder.learn()
 
 SE:
   sp:
@@ -268,7 +275,7 @@ TM:
     prune_grow_cycle: 100.0
     adapt_to_ff_sparsity: False
     boosting_k: 0.2
-    output_mode: binary
+    output_mode: rate
     learning_algo: new
   lstm:
     _type_: tm.lstm
