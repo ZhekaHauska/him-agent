@@ -315,6 +315,7 @@ models_new:
   Baseline TM:
     - predict input w/ prior belief:
       - TM.predict()
+      - TM.set_predicted_cells()
       - TM.predicted_columns.sdr -> input_prediction.sdr
     - embed input:
       - input.sdr -> embed_input.sdr
@@ -397,9 +398,9 @@ decoder:
     feedforward_sds: ???
     output_sds: ???
     weights_scale: 0.01
-    learning_rate: 0.1
+    learning_rate: 0.004
 #    power_t: 0.1
-    power_t: 0.01
+    power_t: 0.00
     epoch_size: 1_000
     total_updates_required: 1_000_000
     collect_errors: False
