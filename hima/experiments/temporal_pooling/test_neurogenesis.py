@@ -22,6 +22,10 @@ from hima.experiments.temporal_pooling.data.synthetic_patterns import (
     sample_noisy_sdr
 )
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
+from hima.experiments.temporal_pooling.stats.metrics import (
+    sequence_similarity_elementwise,
+    sdr_similarity
+)
 from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
 from hima.experiments.temporal_pooling.stats.sp_tracker import SpTracker
 from hima.experiments.temporal_pooling.utils import resolve_random_seed
@@ -48,6 +52,11 @@ class NeurogenesisExperiment:
             noise_level: float,
             n_epochs: int,
             n_steps: int,
+
+            n_seq_elements: int,
+            seq_logging_schedule: int,
+            n_sim_elements: int,
+            sim_noise_level: list[int],
 
             step_flush_schedule: int,
             aggregate_flush_schedule: int,
@@ -81,6 +90,14 @@ class NeurogenesisExperiment:
         self.n_epochs = n_epochs
         self.n_steps = n_steps
 
+        self.n_seq_elements = n_seq_elements
+        self.seq_logging_schedule = seq_logging_schedule
+        self.n_sim_elements = n_sim_elements
+        self.sim_noise_level = sim_noise_level
+
+        self.input_dense_cache = np.zeros(self.input_sds.size, dtype=float)
+        self.output_dense_cache = np.zeros(self.output_sds.size, dtype=float)
+
         self.data = [
             sample_random_sdr(self.rng, self.input_sds)
             for _ in range(2 * self.n_prototypes)
@@ -100,6 +117,24 @@ class NeurogenesisExperiment:
             None
         ]
 
+        self.sim_test_sequences = self.generate_sim_test_sequences()
+        self.input_mx = self.get_similarity_matrix(self.sim_test_sequences, self.input_dense_cache)
+
+        self.sim_test_sdrs = [
+            [
+                (sdr, sample_noisy_sdr(self.rng, self.input_sds, sdr, noise_level))
+                for sdr in self.rng.choice(self.data, size=n_sim_elements, replace=False)
+            ]
+            for noise_level in sim_noise_level
+        ]
+        self.input_avg_sims = [
+            np.mean([
+                sdr_similarity(sdr, noisy_sdr, symmetrical=True, dense_cache=self.input_dense_cache)
+                for sdr, noisy_sdr in sim_test_sdr_list
+            ])
+            for sim_test_sdr_list in self.sim_test_sdrs
+        ]
+
         self.layer = self.config.resolve_object(
             layer, feedforward_sds=self.input_sds, output_sds=self.output_sds,
         )
@@ -110,15 +145,10 @@ class NeurogenesisExperiment:
         )
         self.input_sdr_tracker = SdrTracker(self.input_sds, **sdr_tracker_config)
         self.output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
-        # self.test_output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
         self.sp_tracker = SpTracker(
             self.layer, step_flush_schedule=step_flush_schedule,
             potentials_quantile=sp_potentials_quantile
         )
-        # self.test_sp_tracker = SpTracker(
-        #     self.layer, step_flush_schedule=step_flush_schedule,
-        #     potentials_quantile=sp_potentials_quantile
-        # )
 
         self.epoch = 0
         self.metrics = dict()
@@ -180,6 +210,79 @@ class NeurogenesisExperiment:
 
         self.on_epoch()
 
+        mod_shift = self.epoch % self.seq_logging_schedule
+        if mod_shift in [0, 1]:
+            self.metrics |= self.test_sequences()
+            self.metrics |= self.test_sequences2()
+
+    def test_sequences(self):
+        from hima.experiments.temporal_pooling.experiment_stats_tmp import (
+            transform_sim_mx_to_plots
+        )
+
+        output_seqs = [
+            [self.layer.compute(sdr, learn=False) for sdr in seq]
+            for seq in self.sim_test_sequences
+        ]
+        output_mx = self.get_similarity_matrix(output_seqs, self.output_dense_cache)
+        abs_err_mx = np.ma.abs(output_mx - self.input_mx)
+        diff_dict = dict(
+            input_sdr=self.input_mx,
+            output_sdr=output_mx,
+            abs_err=abs_err_mx,
+        )
+        sorted_errs = np.sort(abs_err_mx.flatten())
+        sorted_errs = sorted_errs[-round(0.1 * len(sorted_errs)):]
+        metrics = {
+            'sim_mx_diff': diff_dict,
+            'sim_mae': abs_err_mx.mean(),
+            'sim_mae_top10': sorted_errs.mean(),
+        }
+        transform_sim_mx_to_plots(metrics)
+        return personalize_metrics(metrics, prefix='similarity')
+
+    def test_sequences2(self):
+        output_avg_sims = [
+            np.mean([
+                sdr_similarity(
+                    self.layer.compute(sdr, learn=False),
+                    self.layer.compute(noisy_sdr, learn=False),
+                    symmetrical=True, dense_cache=self.output_dense_cache
+                )
+                for sdr, noisy_sdr in sim_test_sdr_list
+            ])
+            for sim_test_sdr_list in self.sim_test_sdrs
+        ]
+        metrics = {
+            f'sim_mae_noisy_{round(noise_level*100)}': (
+                abs(output_avg_sims[i] - self.input_avg_sims[i])
+            )
+            for i, noise_level in enumerate(self.sim_noise_level)
+        }
+        return personalize_metrics(metrics, prefix='similarity')
+
+    def get_similarity_matrix(self, sequences, dense_cache):
+        n = len(sequences)
+        diagonal_mask = np.identity(n, dtype=bool)
+        mx = np.empty((n, n))
+
+        for i in range(n):
+            s1 = sequences[i]
+            if isinstance(s1[0], int):
+                s1 = self.data[s1]
+
+            for j in range(i+1, n):
+                s2 = sequences[j]
+                if isinstance(s2[0], int):
+                    s2 = self.data[s2]
+
+                mx[i, j] = sequence_similarity_elementwise(
+                    s1=s1, s2=s2, symmetrical=True, dense_cache=dense_cache
+                )
+                mx[j, i] = mx[i, j]
+
+        return np.ma.array(mx, mask=diagonal_mask)
+
     def on_step(self, input_sdr, output_sdr):
         if not self.logger:
             return
@@ -213,6 +316,35 @@ class NeurogenesisExperiment:
             metrics=self.sp_tracker.on_sequence_finished(None, False),
             prefix='sp'
         )
+
+    def generate_sim_test_sequences(self):
+        sub_sds_list = [
+            (
+                sds_range[0],
+                Sds(size=sds_range[1] - sds_range[0], active_size=self.input_sds.active_size)
+            )
+            for sds_range in self.visible_sds_ranges
+            if sds_range is not None
+        ]
+        seq_sets = []
+        for shift, sub_sds in sub_sds_list:
+            base_arr = [
+                sample_random_sdr(self.rng, sub_sds)
+                for _ in range(self.n_seq_elements)
+            ]
+
+            seq_sets.append([shift + sdr for sdr in base_arr])
+            for noise_level in self.sim_noise_level:
+                seq_sets.append([
+                    shift + sample_noisy_sdr(self.rng, sub_sds, sdr, noise_level)
+                    for sdr in base_arr
+                ])
+            for noise_level in self.sim_noise_level:
+                seq_sets.append([
+                    sample_noisy_sdr(self.rng, self.input_sds, shift+sdr, noise_level)
+                    for sdr in base_arr
+                ])
+        return seq_sets
 
     def log(self):
         if not self.logger:

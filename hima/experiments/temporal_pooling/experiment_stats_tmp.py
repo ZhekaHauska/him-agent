@@ -10,6 +10,7 @@ from typing import Optional, TYPE_CHECKING
 import numpy as np
 
 from hima.common.config.base import TConfig
+from hima.common.lazy_imports import lazy_import
 from hima.common.utils import isnone
 from hima.experiments.temporal_pooling._depr.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling._depr.stats.metrics import (
@@ -23,6 +24,9 @@ from hima.experiments.temporal_pooling.run_progress import RunProgress
 if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run
     from hima.experiments.temporal_pooling.graph.model import Model
+
+
+wandb = lazy_import('wandb')
 
 
 class ExperimentStats:
@@ -166,7 +170,7 @@ class ExperimentStats:
         for name in self.diff_stats:
             self.append_sim_mae(diff_tag=name, tags=self.diff_stats[name], metrics=metrics)
 
-        self.transform_sim_mx_to_plots(metrics)
+        transform_sim_mx_to_plots(metrics)
 
         loss_items = [metrics[key] for key in self.loss_items if key in metrics]
         if loss_items:
@@ -201,14 +205,14 @@ class ExperimentStats:
 
         metrics[f'diff/{diff_tag}'] = diff_dict
 
-    @staticmethod
-    def transform_sim_mx_to_plots(metrics):
-        for metric_key in metrics:
-            metric_value = metrics[metric_key]
-            if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
-                metrics[metric_key] = plot_single_heatmap(metric_value)
-            if isinstance(metric_value, dict):
-                metrics[metric_key] = plot_heatmaps_row(**metric_value)
+
+def transform_sim_mx_to_plots(metrics):
+    for metric_key in metrics:
+        metric_value = metrics[metric_key]
+        if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
+            metrics[metric_key] = plot_single_heatmap(metric_value)
+        if isinstance(metric_value, dict):
+            metrics[metric_key] = plot_heatmaps_row(**metric_value)
 
 
 def compute_loss(components, layer_discount) -> float:
@@ -225,7 +229,6 @@ HEATMAP_SIDE_SIZE = 7
 
 
 def plot_single_heatmap(repr_matrix):
-    import wandb
     from matplotlib import pyplot as plt
 
     fig, ax = plt.subplots(1, 1, figsize=(HEATMAP_SIDE_SIZE+1, HEATMAP_SIDE_SIZE-1))
@@ -238,7 +241,6 @@ def plot_single_heatmap(repr_matrix):
 
 
 def plot_heatmaps_row(**sim_matrices):
-    import wandb
     from matplotlib import pyplot as plt
 
     n = len(sim_matrices)

@@ -14,8 +14,10 @@ noise_level: 0.12
 n_epochs: 10
 n_steps: 3000
 
-n_seq_size: 50
+n_seq_elements: 200
 seq_logging_schedule: 5
+n_sim_elements: 200
+sim_noise_level: [0.3, 0.45, 0.6]
 
 step_flush_schedule: 200
 aggregate_flush_schedule: 200
