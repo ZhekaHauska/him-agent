@@ -5,13 +5,16 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 seed: 42
 binary: true
 
-input_sds: [400, 12]
-output_sds: [400, 12]
+input_sds: [600, 18]
+output_sds: [600, 18]
 
-n_prototypes: 400
-noise_level: 0.1
+n_prototypes: 1500
+noise_level: 0.2
 n_epochs: 10
-n_steps: 1200
+n_steps: 2000
+
+step_flush_schedule: 200
+aggregate_flush_schedule: 200
 
 layer: sp.rate
 

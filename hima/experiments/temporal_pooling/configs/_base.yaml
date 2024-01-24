@@ -315,7 +315,6 @@ models_new:
   Baseline TM:
     - predict input w/ prior belief:
       - TM.predict()
-      - TM.set_predicted_cells()
       - TM.predicted_columns.sdr -> input_prediction.sdr
     - embed input:
       - input.sdr -> embed_input.sdr
@@ -399,9 +398,10 @@ decoder:
     output_sds: ???
     weights_scale: 0.01
     learning_rate: 0.1
-    power_t: 0.08
-    total_updates_required: 100_000
-    epoch_size: 4_000
+#    power_t: 0.1
+    power_t: 0.01
+    epoch_size: 1_000
+    total_updates_required: 1_000_000
     collect_errors: False
 
 # additional params for wandb.init

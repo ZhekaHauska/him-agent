@@ -71,13 +71,13 @@ class MlpDecoder:
         return self.weights @ self.dense_input
 
     def learn(self, input_sdr: AnySparseSdr, gt_sdr: AnySparseSdr, prediction: DenseSdr):
-        if self.n_updates >= self.total_updates_required:
-            return
+        # if self.n_updates >= self.total_updates_required:
+        #     return
 
         # every stage update will be approximately every `stage`-th time
         epoch = (1 + self.n_updates // self.epoch_size) ** 0.7
-        if self.rng.random() >= 1. / epoch:
-            return
+        # if self.rng.random() >= 1. / epoch:
+        #     return
 
         self.n_updates += 1
         self.accept_input(input_sdr)
@@ -87,7 +87,7 @@ class MlpDecoder:
             prediction = self.predict()
 
         loss_derivative = prediction - self.dense_gt
-        lr = self.lr / self.n_updates ** self.power_t
+        lr = self.lr / epoch ** self.power_t
         self.weights -= np.outer(loss_derivative, lr * self.dense_input)
 
         if self.collect_errors:

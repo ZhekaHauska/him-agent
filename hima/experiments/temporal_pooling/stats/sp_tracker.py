@@ -27,8 +27,7 @@ class SpTracker:
 
     def __init__(
             self, sp, step_flush_schedule: int = None,
-            track_split: bool = False, potentials_quantile: float = 0.5,
-            **_
+            track_split: bool = False, potentials_quantile: float = 0.5
     ):
         self.sp = sp
         self.supported = getattr(sp, 'get_step_debug_info', None) is not None

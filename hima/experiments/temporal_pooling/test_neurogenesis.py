@@ -48,6 +48,9 @@ class NeurogenesisExperiment:
             n_epochs: int,
             n_steps: int,
 
+            step_flush_schedule: int,
+            aggregate_flush_schedule: int,
+
             layer: TConfig,
 
             # data: TConfig,
@@ -85,11 +88,14 @@ class NeurogenesisExperiment:
             layer, feedforward_sds=self.input_sds, output_sds=self.output_sds,
         )
 
-        sdr_tracker_config = dict(step_flush_schedule=100, aggregate_flush_schedule=100)
+        sdr_tracker_config = dict(
+            step_flush_schedule=step_flush_schedule,
+            aggregate_flush_schedule=aggregate_flush_schedule
+        )
         self.input_sdr_tracker = SdrTracker(self.input_sds, **sdr_tracker_config)
         self.output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
         self.test_output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
-        self.sp_tracker = SpTracker(self.layer, **sdr_tracker_config)
+        self.sp_tracker = SpTracker(self.layer, step_flush_schedule=step_flush_schedule)
 
         self.epoch = 0
         self.metrics = dict()

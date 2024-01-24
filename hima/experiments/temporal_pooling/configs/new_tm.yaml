@@ -46,51 +46,67 @@ model:
       - TM.state.sdr -> decoder.feedforward.sdr
       - decoder.decode()
       - decoder.output.sdr -> input_posterior_prediction.sdr
+      - decoder.learn()
 
   track:
+    # SDR Tracking
     - name: input.sequence.sdr
       tracker: trackers.sdr
       on:
         sdr_updated: input.sdr
+        sequence_finished: sequence_finished
+    - name: input.prediction.prior.sdr
+      tracker: trackers.sdr
+      on:
+        sdr_updated: input_prediction.sdr
+        sequence_finished: epoch_finished
+    - name: input.prediction.posterior.sdr
+      tracker: trackers.sdr
+      on:
+        sdr_updated: input_posterior_prediction.sdr
+        sequence_finished: epoch_finished
+
+    # SDR Prediction quality tracking
+    - name: input.prediction.prior
+      tracker: trackers.sdr_prediction
+      on:
+        sdr_predicted: input_prediction.sdr
+        sdr_observed: embed_input.sdr
+        both_known: embed_input.sdr
+        sequence_finished: sequence_finished
+    - name: input.prediction.posterior
+      tracker: trackers.sdr_prediction
+      on:
+        sdr_predicted: input_posterior_prediction.sdr
+        sdr_observed: embed_input.sdr
+        both_known: input_posterior_prediction.sdr
         sequence_finished: sequence_finished
     - name: state_L1.prediction
       tracker: trackers.sdr_prediction
       on:
         sdr_predicted: TM.predicted_cells.sdr
         sdr_observed: TM.active_cells.sdr
+        both_known: TM.active_cells.sdr
         sequence_finished: sequence_finished
     - name: state_L2.prediction
       tracker: trackers.sdr_prediction
       on:
         sdr_predicted: TM2.predicted_cells.sdr
         sdr_observed: TM2.active_cells.sdr
+        both_known: TM2.active_cells.sdr
         sequence_finished: sequence_finished
 
-    - name: input.prediction.prior
-      tracker: trackers.sdr_prediction
+    # SP Tracking
+    - name: state_L1.prior.sp
+      tracker: trackers.sp_concat
       on:
-        sdr_predicted: input_prediction.sdr
-        sdr_observed: embed_input.sdr
+        sp_computed: TM.predicted_cells.sdr
         sequence_finished: sequence_finished
-
-    - name: input.prediction.posterior
-      tracker: trackers.sdr_prediction
+    - name: state_L1.posterior.sp
+      tracker: trackers.sp_concat
       on:
-        sdr_predicted: input_posterior_prediction.sdr
-        sdr_observed: embed_input.sdr
+        sp_computed: TM.active_cells.sdr
         sequence_finished: sequence_finished
-#    - name: input.prediction.prior.sdr
-#      tracker: trackers.sdr
-#      on:
-#        sequence_started: epoch
-#        sdr_updated: input_prediction.sdr
-#        sequence_finished: epoch_finished
-#    - name: input.prediction.posterior.sdr
-#      tracker: trackers.sdr
-#      on:
-#        sequence_started: epoch
-#        sdr_updated: input_posterior_prediction.sdr
-#        sequence_finished: epoch_finished
 
 #track_streams:
 #  input.sdr:
@@ -324,12 +340,22 @@ trackers:
   sdr:
     _type_: tracker.sdr
     on: ???
+    step_flush_schedule: 100
   tm:
     _type_: tracker.tm
     on: ???
   sdr_prediction:
     _type_: tracker.sdr_prediction
     on: ???
+    step_flush_schedule: 100
+  sp:
+    _type_: tracker.sp
+    on: ???
+    step_flush_schedule: 100
+    track_split: False
+  sp_concat:
+    _base_: sp
+    track_split: True
 
 wandb_init:
   _base_: $_base.wandb_init
