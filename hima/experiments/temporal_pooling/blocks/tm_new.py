@@ -110,6 +110,6 @@ class NewTemporalMemoryBlock(Block):
         act_sdr, _ = split_sdr_values(self[ACTIVE_CELLS].get())
 
         overlap_sdr = list(set(pred_sdr) & set(act_sdr))
-        overlap_sdr = np.array(overlap_sdr, dtype=int)
+        overlap_sdr = np.array(overlap_sdr, dtype=int, copy=False)
         overlap_sdr.sort()
         self[CORRECTLY_PREDICTED_CELLS].set(overlap_sdr)

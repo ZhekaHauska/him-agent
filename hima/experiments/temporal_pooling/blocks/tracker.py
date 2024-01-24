@@ -39,7 +39,7 @@ class TrackerBlock:
     model: Model
     name: str
     # stream_name -> tracker.on_xxx
-    track: dict[str, TTrackerHandler]
+    track: dict[str, list[TTrackerHandler]]
     # each tracker listen special `enabled` stream, which controls trackers' activity
     enabled: Stream
 
@@ -54,20 +54,25 @@ class TrackerBlock:
 
         self.track = {}
         for handler_name, stream in on.items():
-            # register general handler
-            stream.track(tracker=self.handle)
+            is_already_tracked = stream.name in self.track
+            if not is_already_tracked:
+                # register general handler
+                stream.track(tracker=self.handle)
+                self.track[stream.name] = []
+
             # save particular handler
             handler = self.get_handler(self.tracker, handler_name)
-            self.track[stream.name] = handler
+            self.track[stream.name].append(handler)
 
     def handle(self, stream: Stream | SdrStream, new_value, reset: bool):
         if not self.enabled.get():
             return
 
-        metrics = self.track[stream.name](new_value, reset)
-        metrics = self.personalize_metrics(metrics)
-        if metrics:
-            self.model.metrics |= metrics
+        for handler in self.track[stream.name]:
+            metrics = handler(new_value, reset)
+            metrics = self.personalize_metrics(metrics)
+            if metrics:
+                self.model.metrics |= metrics
 
     def personalize_metrics(self, metrics: TMetrics):
         return {
