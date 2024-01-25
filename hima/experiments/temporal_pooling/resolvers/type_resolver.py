@@ -90,6 +90,9 @@ def _resolve_spatial_pooler(type_tag: str):
     if type_tag == 'sp.sdrr':
         from hima.experiments.temporal_pooling.stp.sp_rate import SpatialPooler
         return SpatialPooler
+    if type_tag == 'sp.layer':
+        from hima.experiments.temporal_pooling.stp.sp_layer import SpatialPooler
+        return SpatialPooler
     if type_tag == 'sp.list':
         from hima.experiments.temporal_pooling.stp.sp_list import SpatialPooler
         return SpatialPooler

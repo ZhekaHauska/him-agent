@@ -38,6 +38,12 @@ sp:
     adapt_to_ff_sparsity: False
     boosting_k: 0.2
 
+  layer:
+    _base_: base
+    _type_: sp.layer
+    output_mode: binary
+    learning_algo: new
+
   rate:
     _base_: base
     _type_: sp.sdrr

@@ -117,6 +117,27 @@ class NeurogenesisExperiment:
             None
         ]
 
+        self.epoch = 0
+        self.metrics = dict()
+
+        self.layer = self.config.resolve_object(
+            layer, feedforward_sds=self.input_sds, output_sds=self.output_sds,
+        )
+
+        if not self.logger:
+            return
+
+        sdr_tracker_config = dict(
+            step_flush_schedule=step_flush_schedule,
+            aggregate_flush_schedule=aggregate_flush_schedule
+        )
+        self.input_sdr_tracker = SdrTracker(self.input_sds, **sdr_tracker_config)
+        self.output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
+        self.sp_tracker = SpTracker(
+            self.layer, step_flush_schedule=step_flush_schedule,
+            potentials_quantile=sp_potentials_quantile
+        )
+
         self.sim_test_sequences = self.generate_sim_test_sequences()
         self.input_mx = self.get_similarity_matrix(self.sim_test_sequences, self.input_dense_cache)
 
@@ -134,24 +155,6 @@ class NeurogenesisExperiment:
             ])
             for sim_test_sdr_list in self.sim_test_sdrs
         ]
-
-        self.layer = self.config.resolve_object(
-            layer, feedforward_sds=self.input_sds, output_sds=self.output_sds,
-        )
-
-        sdr_tracker_config = dict(
-            step_flush_schedule=step_flush_schedule,
-            aggregate_flush_schedule=aggregate_flush_schedule
-        )
-        self.input_sdr_tracker = SdrTracker(self.input_sds, **sdr_tracker_config)
-        self.output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
-        self.sp_tracker = SpTracker(
-            self.layer, step_flush_schedule=step_flush_schedule,
-            potentials_quantile=sp_potentials_quantile
-        )
-
-        self.epoch = 0
-        self.metrics = dict()
 
     def run(self):
         self.print_with_timestamp('==> Run')
@@ -213,9 +216,12 @@ class NeurogenesisExperiment:
         mod_shift = self.epoch % self.seq_logging_schedule
         if mod_shift in [0, 1]:
             self.metrics |= self.test_sequences()
-            self.metrics |= self.test_sequences2()
+            self.metrics |= self.test_noisy_pairs()
 
     def test_sequences(self):
+        if not self.logger:
+            return {}
+
         from hima.experiments.temporal_pooling.experiment_stats_tmp import (
             transform_sim_mx_to_plots
         )
@@ -241,7 +247,10 @@ class NeurogenesisExperiment:
         transform_sim_mx_to_plots(metrics)
         return personalize_metrics(metrics, prefix='similarity')
 
-    def test_sequences2(self):
+    def test_noisy_pairs(self):
+        if not self.logger:
+            return {}
+
         output_avg_sims = [
             np.mean([
                 sdr_similarity(
