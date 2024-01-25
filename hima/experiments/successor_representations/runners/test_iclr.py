@@ -157,16 +157,11 @@ class ICLRunner(BaseRunner):
         if observation_radius >= 0:
             # convert sr to sf
             n_features = (2*observation_radius + 1)**2
-            colors = list(range(np.max(env.colors) + 1))
-            colors_map = np.pad(
-                env.colors,
-                observation_radius,
-                mode='constant',
-                constant_values=-1
-            )
+            colors = env.unique_colors
+            colors_map = env.colors
 
-            if observation_radius > 0:
-                colors.append(-1)
+            if n_features == 1:
+                colors_map = colors_map[1:-1, 1:-1]
 
             sfs = list()
 

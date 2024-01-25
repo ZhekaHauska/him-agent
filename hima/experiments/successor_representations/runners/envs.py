@@ -157,15 +157,15 @@ class GridWorldWrapper(BaseEnvironment):
 
         self.conf = conf
         self.environment = self._start_env(setup)
+        self.n_colors = self.environment.n_colors
+        self.min_color = np.min(self.environment.unique_colors)
+        self.n_cells = (
+                (self.environment.observation_radius * 2 + 1) ** 2
+        )
 
         if self.environment.return_state:
             self.raw_obs_shape = (1, self.environment.h * self.environment.w)
         else:
-            self.n_colors = self.environment.n_colors
-            self.min_color = np.min(self.environment.colors)
-            self.n_cells = (
-                (self.environment.observation_radius * 2 + 1) ** 2
-            )
             self.raw_obs_shape = (
                 self.n_cells,
                 self.n_colors
