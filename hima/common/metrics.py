@@ -508,7 +508,7 @@ class SFDiff(BaseMetric):
         if self.difference_mode == 'mse':
             value = np.mean(np.power(base_sf - sf, 2), axis=-1).flatten()
         elif self.difference_mode == 'dkl':
-            value = np.array([rel_entr(sf[i], base_sf[i]) for i in range(sf.shape[0])])
+            value = np.array([np.sum(rel_entr(sf[i], base_sf[i])) for i in range(sf.shape[0])])
         else:
             raise ValueError(f'Unknown difference mode: {self.difference_mode}!')
 
