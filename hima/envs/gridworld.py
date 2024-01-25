@@ -39,7 +39,12 @@ class GridWorld:
             constant_values=-1
         ).astype(np.int32)
 
-        self.n_colors = len(np.unique(self.colors))
+        self.unique_colors = np.unique(self.colors)
+
+        if (not self.collision_hint) and (self.observation_radius <= 0):
+            self.unique_colors = self.unique_colors[self.unique_colors >= 0]
+
+        self.n_colors = len(self.unique_colors)
 
         if not self.return_state:
             self.observation_shape = (2*self.observation_radius + 1, 2*self.observation_radius + 1)
