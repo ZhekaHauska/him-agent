@@ -185,13 +185,18 @@ class BioAgentWrapper(BaseAgent):
 
     @property
     def state_value(self):
-        action_values = self.agent.evaluate_actions(with_planning=True)
+        action_values = self.agent.action_values
+        if action_values is None:
+            action_values = self.agent.evaluate_actions(with_planning=True)
         state_value = np.sum(action_values)
         return state_value
 
     @property
     def action_values(self):
-        return self.agent.evaluate_actions(with_planning=True)
+        action_values = self.agent.action_values
+        if action_values is None:
+            action_values = self.agent.evaluate_actions(with_planning=True)
+        return action_values
 
     @property
     def sr(self):
