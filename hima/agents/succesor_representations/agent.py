@@ -54,7 +54,8 @@ class BioHIMA:
             exploration_eps: float = -1,
             action_value_estimate: str = 'plan',
             sr_estimate_planning: str = 'uniform',
-            sr_early_stop: bool = True,
+            sr_early_stop_uniform: float | None = None,
+            sr_early_stop_goal: float | None = None,
             lr_surprise=(0.2, 0.01),
             lr_td_error=(0.2, 0.01),
             adaptive_sr: bool = True,
@@ -71,7 +72,6 @@ class BioHIMA:
         self.gamma = gamma
         self.max_plan_steps = plan_steps
         self.td_steps = td_steps
-        self.sr_early_stop = sr_early_stop
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
         self.adaptive_sr = adaptive_sr
@@ -83,6 +83,9 @@ class BioHIMA:
         else:
             self.exploration_policy = ExplorationPolicy.EPS_GREEDY
             self.exploration_eps = exploration_eps
+
+        self.sr_early_stop_uniform = sr_early_stop_uniform
+        self.sr_early_stop_goal = sr_early_stop_goal
 
         self._action_value_estimate = ActionValueEstimate[action_value_estimate.upper()]
         self.sr_estimate_planning = SrEstimatePlanning[sr_estimate_planning.upper()]
@@ -103,8 +106,8 @@ class BioHIMA:
 
         self.state_snapshot_stack = deque()
 
-        self.predicted_sr = None
-        self.generated_sr = None
+        self.predicted_sf = None
+        self.generated_sf = None
         self.action_values = None
         self.action_dist = None
         self.action = None
@@ -112,6 +115,7 @@ class BioHIMA:
         # metrics
         self.ss_td_error = SSValue(*lr_td_error)
         self.ss_surprise = SSValue(*lr_surprise)
+        self.sf_steps = 0
 
         self.seed = seed
         self._rng = np.random.default_rng(seed)
@@ -153,12 +157,13 @@ class BioHIMA:
             return
 
         # striatum TD learning
-        self.predicted_sr, self.generated_sr, td_error = self.td_update_sr()
+        if self.td_steps > 0:
+            self.predicted_sf, self.generated_sf, td_error = self.td_update_sf()
+            self.ss_td_error.update(td_error)
 
-        self.ss_td_error.update(td_error)
         self.ss_surprise.update(self.cortical_column.surprise)
 
-        return self.predicted_sr, self.generated_sr
+        return self.predicted_sf, self.generated_sf
 
     def reinforce(self, reward):
         """
@@ -192,20 +197,19 @@ class BioHIMA:
             )
 
             if estimate_strategy == ActionValueEstimate.PLAN:
-                sr = self.generate_sr(
+                sf, self.sf_steps = self.generate_sf(
                     self.plan_steps,
                     initial_messages=self.cortical_column.layer.prediction_cells,
                     initial_prediction=self.cortical_column.layer.prediction_columns,
                     approximate_tail=self.approximate_tail,
                     save_state=False,
-                    early_stop=self.sr_early_stop
                 )
             else:
-                sr = self.predict_sr(self.cortical_column.layer.prediction_cells)
+                sf = self.predict_sf(self.cortical_column.layer.prediction_cells)
 
             # average value predicted by all variables
             action_values[action] = np.sum(
-                sr * self.observation_rewards
+                sf * self.observation_rewards
             ) / self.cortical_column.layer.n_obs_vars
 
             self._restore_last_snapshot(pop=False)
@@ -213,7 +217,7 @@ class BioHIMA:
         self.state_snapshot_stack.pop()
         return action_values
 
-    def generate_sr(
+    def generate_sf(
             self,
             n_steps,
             initial_messages,
@@ -221,7 +225,6 @@ class BioHIMA:
             approximate_tail=True,
             save_state=True,
             return_predictions=False,
-            early_stop=False
     ):
         """
             n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
@@ -238,21 +241,9 @@ class BioHIMA:
         predicted_observation = initial_prediction
 
         discount = 1.0
+        t = -1
         for t in range(n_steps):
-            if early_stop:
-                uni_dkl = (
-                        np.log(self.cortical_column.layer.n_obs_states) +
-                        np.sum(
-                            predicted_observation * np.log(
-                                np.clip(
-                                    predicted_observation, EPS, None
-                                )
-                            )
-                        )
-                )
-
-                if uni_dkl < EPS:
-                    break
+            early_stop = self._early_stop_planning(predicted_observation)
 
             sr += predicted_observation * discount
 
@@ -277,18 +268,21 @@ class BioHIMA:
             if return_predictions:
                 predictions.append(copy(predicted_observation))
 
+            if early_stop:
+                break
+
         if approximate_tail:
-            sr += self.predict_sr(context_messages) * discount
+            sr += self.predict_sf(context_messages) * discount
 
         if save_state:
             self._restore_last_snapshot()
 
         if return_predictions:
-            return sr, predictions
+            return sr, t+1, predictions
         else:
-            return sr
+            return sr, t+1
 
-    def predict_sr(self, hidden_vars_dist):
+    def predict_sf(self, hidden_vars_dist):
         if self.srtd is not None:
             msg = torch.tensor(hidden_vars_dist).float().to(self.srtd.device)
             sr = to_numpy(self.srtd.predict_sr(msg, target=True))
@@ -300,13 +294,12 @@ class BioHIMA:
             sr /= self.cortical_column.layer.n_hidden_vars
         return sr
 
-    def td_update_sr(self):
-        target_sr = self.generate_sr(
+    def td_update_sf(self):
+        target_sr, _ = self.generate_sf(
             self.td_steps,
             initial_messages=self.cortical_column.layer.internal_forward_messages,
             initial_prediction=self.observation_messages,
             approximate_tail=True,
-            early_stop=self.sr_early_stop
         )
 
         if self.srtd is not None:
@@ -325,7 +318,7 @@ class BioHIMA:
             predicted_sr = self.dsftd.predict(self.current_state, learn=True)
             td_error = self.dsftd.update_weights(target_sr)
         else:
-            predicted_sr = self.predict_sr(self.current_state)
+            predicted_sr = self.predict_sf(self.current_state)
             prediction_cells = self.current_state
             error_sr = target_sr - predicted_sr
 
@@ -397,6 +390,33 @@ class BioHIMA:
         snapshot = self.state_snapshot_stack.pop() if pop else self.state_snapshot_stack[-1]
         self.cortical_column.restore_last_snapshot(snapshot)
 
+    def _early_stop_planning(self, predicted_observation: np.ndarray) -> bool:
+        if self.sr_early_stop_uniform is not None:
+            uni_dkl = (
+                    np.log(self.cortical_column.layer.n_obs_states) +
+                    np.sum(
+                        predicted_observation * np.log(
+                            np.clip(
+                                predicted_observation, EPS, None
+                            )
+                        )
+                    )
+            )
+
+            uniform = uni_dkl < self.sr_early_stop_uniform
+        else:
+            uniform = False
+
+        if self.sr_early_stop_goal is not None:
+            goal = (
+                np.sum(predicted_observation[self.observation_rewards > 0]) >
+                self.sr_early_stop_goal
+            )
+        else:
+            goal = False
+
+        return uniform or goal
+
     @property
     def striatum_lr(self):
         if self.adaptive_lr:
@@ -452,7 +472,7 @@ class LstmBioHima(BioHIMA):
         super().__init__(cortical_column, **kwargs)
 
     # noinspection PyMethodOverriding
-    def generate_sr(
+    def generate_sf(
             self,
             n_steps,
             initial_messages,
@@ -526,7 +546,7 @@ class LstmBioHima(BioHIMA):
                 predictions.append(copy(predicted_observation))
 
         if approximate_tail:
-            sr += self.predict_sr(context_messages) * discount
+            sr += self.predict_sf(context_messages) * discount
 
         if save_state:
             self._restore_last_snapshot()
@@ -546,9 +566,9 @@ class LstmBioHima(BioHIMA):
         state_probs_out = self.cortical_column.layer.model.to_probabilistic_out_state(state_out)
         return state_probs_out.detach()
 
-    def predict_sr(self, context_messages: TLstmLayerHiddenState):
+    def predict_sf(self, context_messages: TLstmLayerHiddenState):
         msg = to_numpy(self._extract_state_from_context(context_messages))
-        return super().predict_sr(msg)
+        return super().predict_sf(msg)
 
     @property
     def current_state(self):
