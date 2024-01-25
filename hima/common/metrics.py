@@ -485,8 +485,6 @@ class SFDiff(BaseMetric):
 
         self.values = list()
 
-        self.logger.define_metric(self.name, step_metric=self.log_step)
-
     def update(self):
         # sf: (n_vars, n_states)
         # value: (n_vars,)
@@ -524,7 +522,9 @@ class SFDiff(BaseMetric):
         log_dict = {
                 f"{self.name}_feature{i}": values[i] for i in range(len(values))
             }
-        log_dict[f"{self.name}_average"] = average
+        if len(values) > 1:
+            log_dict[f"{self.name}_average"] = average
+
         log_dict[self.log_step] = step
 
         self.logger.log(
