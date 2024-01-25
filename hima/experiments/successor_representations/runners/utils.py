@@ -36,36 +36,3 @@ def print_digest(metrics: dict):
         digest += f'| Loss = {loss:.7f}'
     print(digest)
 
-
-def compare_srs(agent, sr_steps, approximate_tail):
-    current_state = agent.cortical_column.layer.internal_forward_messages
-    pred_sr = agent.predict_sr(current_state)
-    pred_sr = normalize(
-        pred_sr.reshape(
-            agent.cortical_column.layer.n_obs_vars, -1
-        )
-    ).flatten()
-
-    gen_sr, predictions = agent.generate_sr(
-        sr_steps,
-        initial_messages=current_state,
-        initial_prediction=agent.observation_messages,
-        approximate_tail=approximate_tail,
-        return_predictions=True
-    )
-    gen_sr = normalize(
-        gen_sr.reshape(
-            agent.cortical_column.layer.n_obs_vars, -1
-        )
-    ).flatten()
-
-    pred_sr_raw = agent.cortical_column.decoder.decode(
-        pred_sr
-    )
-    gen_sr_raw = agent.cortical_column.decoder.decode(
-        gen_sr
-    )
-
-    mse = np.mean(np.power(pred_sr_raw - gen_sr_raw, 2))
-
-    return mse, pred_sr, gen_sr, pred_sr_raw, gen_sr_raw, predictions
