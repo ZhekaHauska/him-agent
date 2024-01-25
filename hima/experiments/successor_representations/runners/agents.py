@@ -212,6 +212,19 @@ class BioAgentWrapper(BaseAgent):
         )
 
     @property
+    def planned_sf(self):
+        return self.agent.generate_sr(
+            self.agent.plan_steps,
+            initial_messages=self.agent.cortical_column.layer.internal_forward_messages,
+            initial_prediction=self.agent.observation_messages,
+            approximate_tail=self.agent.approximate_tail,
+            early_stop=self.agent.sr_early_stop
+        ).reshape(
+            self.agent.cortical_column.layer.n_obs_vars,
+            -1
+        )
+
+    @property
     def num_segments(self):
         if isinstance(self.agent.cortical_column.layer, Layer):
             return self.agent.cortical_column.layer.context_factors.connections.numSegments()
