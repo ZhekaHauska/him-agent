@@ -88,5 +88,6 @@ class DSFTD:
 
         if len(self.active_states) > 0:
             self.weights[self.active_states] += self.lr * error.reshape(1, -1) * self.probs
+            self.weights = np.clip(self.weights, 0, None)
 
         return np.sum(np.power(error, 2))
