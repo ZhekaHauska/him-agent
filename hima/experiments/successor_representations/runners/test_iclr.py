@@ -213,6 +213,10 @@ class ICLRunner(BaseRunner):
         agent = self.agent.agent
         return agent.rewards.reshape(1, -1)
 
+    @property
+    def sf_diff(self):
+        return np.mean(self.agent.predicted_sf - self.agent.planned_sf)
+
 
 def main(config_path):
     if len(sys.argv) > 1:
