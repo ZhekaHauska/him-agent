@@ -263,10 +263,10 @@ def main(config_path):
         else:
             config['agent']['srtd_type'] = None
 
-        if 'dsftd_conf' in config['agent']:
-            load_subconfig('dsftd', config)
+        if 'striatum_conf' in config['agent']:
+            load_subconfig('striatum', config)
         else:
-            config['agent']['dsftd_type'] = None
+            config['agent']['striatum_type'] = None
 
     elif config['agent_type'] == 'q':
         config['agent']['qvn'] = read_config(config['agent'].pop('qvn_conf'))

@@ -15,7 +15,7 @@ from hima.common.utils import softmax, safe_divide
 from hima.common.smooth_values import SSValue
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.baselines.srtd import SRTD
-from hima.modules.belief.pattern_memory import DSFTD
+from hima.agents.succesor_representations.striatum import Striatum
 from hima.modules.baselines.lstm import to_numpy, TLstmLayerHiddenState
 from copy import copy
 import torch
@@ -48,6 +48,8 @@ class BioHIMA:
             observation_reward_lr: float = 0.01,
             striatum_lr: float = 1.0,
             plan_steps: int = 1,
+            use_cached_plan: bool = False,
+            learn_cached_plan: bool = False,
             td_steps: int = 1,
             approximate_tail: bool = True,
             inverse_temp: float = 1.0,
@@ -61,16 +63,18 @@ class BioHIMA:
             adaptive_sr: bool = True,
             adaptive_lr: bool = True,
             srtd: SRTD | None,
-            dsftd: DSFTD | None,
+            pattern_memory: Striatum | None,
             seed: int | None,
     ):
         self.observation_reward_lr = observation_reward_lr
         self.max_striatum_lr = striatum_lr
         self.cortical_column = cortical_column
         self.srtd = srtd
-        self.dsftd = dsftd
+        self.pattern_memory = pattern_memory
         self.gamma = gamma
         self.max_plan_steps = plan_steps
+        self.use_cached_plan = use_cached_plan
+        self.learn_cached_plan = learn_cached_plan
         self.td_steps = td_steps
         self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
@@ -102,6 +106,7 @@ class BioHIMA:
         self.previous_state = self.cortical_column.layer.internal_forward_messages.copy()
         self.previous_observation = np.zeros_like(self.observation_rewards)
 
+        # TODO move it to Striatum class
         self.striatum_weights = np.zeros((layer_hidden_size, layer_obs_size))
 
         self.state_snapshot_stack = deque()
@@ -161,6 +166,9 @@ class BioHIMA:
             self.predicted_sf, self.generated_sf, td_error = self.td_update_sf()
             self.ss_td_error.update(td_error)
 
+        if self.plan_steps > 0 and self.pattern_memory is not None and self.learn_cached_plan:
+            self.update_planned_sf()
+
         self.ss_surprise.update(self.cortical_column.surprise)
 
         return self.predicted_sf, self.generated_sf
@@ -197,13 +205,16 @@ class BioHIMA:
             )
 
             if estimate_strategy == ActionValueEstimate.PLAN:
-                sf, self.sf_steps = self.generate_sf(
-                    self.plan_steps,
-                    initial_messages=self.cortical_column.layer.prediction_cells,
-                    initial_prediction=self.cortical_column.layer.prediction_columns,
-                    approximate_tail=self.approximate_tail,
-                    save_state=False,
-                )
+                if self.use_cached_plan:
+                    sf = self.predict_sf(self.cortical_column.layer.prediction_cells, area=1)
+                else:
+                    sf, self.sf_steps = self.generate_sf(
+                        self.plan_steps,
+                        initial_messages=self.cortical_column.layer.prediction_cells,
+                        initial_prediction=self.cortical_column.layer.prediction_columns,
+                        approximate_tail=self.approximate_tail,
+                        save_state=False,
+                    )
             else:
                 sf = self.predict_sf(self.cortical_column.layer.prediction_cells)
 
@@ -282,12 +293,12 @@ class BioHIMA:
         else:
             return sr, t+1
 
-    def predict_sf(self, hidden_vars_dist):
+    def predict_sf(self, hidden_vars_dist, area=0):
         if self.srtd is not None:
             msg = torch.tensor(hidden_vars_dist).float().to(self.srtd.device)
             sr = to_numpy(self.srtd.predict_sr(msg, target=True))
-        elif self.dsftd is not None:
-            sr = self.dsftd.predict(hidden_vars_dist, learn=False)
+        elif self.pattern_memory is not None:
+            sr = self.pattern_memory.predict(hidden_vars_dist, area=area, learn=False)
             sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
         else:
             sr = np.dot(hidden_vars_dist, self.striatum_weights)
@@ -295,7 +306,7 @@ class BioHIMA:
         return sr
 
     def td_update_sf(self):
-        target_sr, _ = self.generate_sf(
+        target_sf, _ = self.generate_sf(
             self.td_steps,
             initial_messages=self.cortical_column.layer.internal_forward_messages,
             initial_prediction=self.observation_messages,
@@ -304,23 +315,23 @@ class BioHIMA:
 
         if self.srtd is not None:
             current_state = torch.tensor(self.current_state).float().to(self.srtd.device)
-            predicted_sr = self.srtd.predict_sr(current_state, target=False)
-            target_sr = torch.tensor(target_sr)
-            target_sr = target_sr.float().to(self.srtd.device)
+            predicted_sf = self.srtd.predict_sr(current_state, target=False)
+            target_sf = torch.tensor(target_sf)
+            target_sf = target_sf.float().to(self.srtd.device)
 
             td_error = self.srtd.compute_td_loss(
-                target_sr,
-                predicted_sr
+                target_sf,
+                predicted_sf
             )
-            predicted_sr = to_numpy(predicted_sr)
-            target_sr = to_numpy(target_sr)
-        elif self.dsftd is not None:
-            predicted_sr = self.dsftd.predict(self.current_state, learn=True)
-            td_error = self.dsftd.update_weights(target_sr)
+            predicted_sf = to_numpy(predicted_sf)
+            target_sf = to_numpy(target_sf)
+        elif self.pattern_memory is not None:
+            predicted_sf = self.pattern_memory.predict(self.current_state, learn=True)
+            td_error = self.pattern_memory.update_weights(target_sf)
         else:
-            predicted_sr = self.predict_sf(self.current_state)
+            predicted_sf = self.predict_sf(self.current_state)
             prediction_cells = self.current_state
-            error_sr = target_sr - predicted_sr
+            error_sr = target_sf - predicted_sf
 
             # dSR / dW for linear model
             delta_w = np.outer(prediction_cells, error_sr)
@@ -330,7 +341,17 @@ class BioHIMA:
 
             td_error = np.mean(np.power(error_sr, 2))
 
-        return predicted_sr, target_sr, td_error
+        return predicted_sf, target_sf, td_error
+
+    def update_planned_sf(self):
+        target_sf, self.sf_steps = self.generate_sf(
+            self.plan_steps,
+            initial_messages=self.cortical_column.layer.internal_forward_messages,
+            initial_prediction=self.observation_messages,
+            approximate_tail=False,
+        )
+        self.pattern_memory.predict(self.current_state, area=1, learn=True)
+        self.pattern_memory.update_weights(target_sf, area=1)
 
     @property
     def current_state(self):
