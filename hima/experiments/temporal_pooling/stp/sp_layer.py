@@ -161,6 +161,10 @@ class SpatialPooler:
         self.recognition_strength_trace = 0
         self.run_time = 0
 
+        self.dyn_n_computes = 1
+        self.dyn_ff_trace = np.full(self.ff_size, self.feedforward_sds.sparsity)
+        self.dyn_out_trace = np.full(self.output_size, self.output_sds.sparsity)
+
     def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
         output_sdr, run_time = self._compute(input_sdr, learn)
@@ -203,10 +207,15 @@ class SpatialPooler:
 
         # For SP, an online learning is THE MOST natural operation mode.
         # We treat the opposite case as the special mode, which only partly affects SP state.
-        if learn:
-            self.n_computes += 1
-            self.feedforward_trace[sdr] += values
-            self.feedforward_size_trace += len(sdr)
+        if not learn:
+            return
+
+        self.n_computes += 1
+        self.feedforward_trace[sdr] += values
+        self.feedforward_size_trace += len(sdr)
+
+        self.dyn_n_computes += 1
+        self.dyn_ff_trace[sdr] += values
 
     def get_step_debug_info(self):
         return {
@@ -340,13 +349,15 @@ class SpatialPooler:
         else:
             values = 1.0
 
-        if not learn or sdr.shape[0] <= 0:
+        if not learn or sdr.shape[0] == 0:
             return
 
         # update winners activation stats
         self.output_trace[sdr] += values
         # FIXME: make two metrics: for pre-weighting, post weighting delta
         self.recognition_strength_trace += self.potentials[sdr].mean()
+
+        self.dyn_out_trace[sdr] += values
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         # feedback SDR is the SP neurons that should be reinforced or punished
@@ -400,14 +411,49 @@ class SpatialPooler:
             # it is ended
             self.on_end_newborn_phase()
 
-        self.prune_grow_synapses()
+        print(f'{self.output_entropy():.3f} | {self.recognition_strength:.1f}')
 
     def prune_grow_synapses(self):
-        # FIXME: implement prune/grow
+        rate_threshold = 1 / 20
+        dyn_learning_rate = 0.8
+
+        ff_rate = self.dyn_ff_trace / self.dyn_n_computes / self.feedforward_sds.sparsity
+        weighted_ff_rate = (self.weights * ff_rate[self.rf]).sum(axis=1)
+        out_rate = self.dyn_out_trace / self.dyn_n_computes / self.output_sds.sparsity
+
+        pg_mask = weighted_ff_rate < rate_threshold
+        non_pg_mask = ~pg_mask
+
+        non_pg_nrp = out_rate[non_pg_mask] / ff_rate[non_pg_mask]
+        avg_nrp = non_pg_nrp.mean()
+        underperforming_neurons = non_pg_nrp / avg_nrp < rate_threshold
+
+        to_pg_ix = np.flatnonzero(non_pg_mask)[underperforming_neurons]
+        pg_mask[to_pg_ix] = True
+        pg_ix = np.flatnonzero(pg_mask)
+
+        to_change_ix = np.argmin(self.weights[pg_ix], axis=1)
+        ff_sample_distr = safe_divide(self.dyn_ff_trace, self.dyn_ff_trace.sum())
+        new_synapses = self.rng.choice(self.ff_size, size=len(pg_ix), p=ff_sample_distr)
+        self.rf[pg_ix, to_change_ix] = new_synapses
+        self.weights[pg_ix, to_change_ix] = 1.0 / self.rf_size
+
+        reorder_ix = np.argsort(self.rf[pg_ix], axis=1)
+        self.rf[pg_ix] = np.take_along_axis(self.rf[pg_ix], reorder_ix, axis=1)
+        self.weights[pg_ix] = normalize_weights(
+            np.take_along_axis(self.weights[pg_ix], reorder_ix, axis=1)
+        )
+
         print(
             f'{self.output_entropy():.3f}'
             f' | {self.recognition_strength:.1f}'
+            f' | {avg_nrp:.3f}'
+            f' | {np.count_nonzero(pg_mask)}'
         )
+
+        self.dyn_n_computes *= dyn_learning_rate
+        self.dyn_ff_trace *= dyn_learning_rate
+        self.dyn_out_trace *= dyn_learning_rate
 
     def on_end_newborn_phase(self):
         # self.learning_rate /= 2

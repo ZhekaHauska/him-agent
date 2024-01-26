@@ -71,9 +71,10 @@ class SpTracker:
         )
 
         weights = debug_info.get('weights')
-        avg_weights = np.sort(weights, axis=1).mean(axis=0)
-        avg_weights = avg_weights[-self.weights.agg_value.size:]
-        self.weights.put(avg_weights)
+        if weights.ndim == 2:
+            avg_weights = np.sort(weights, axis=1).mean(axis=0)
+            avg_weights = avg_weights[-self.weights.agg_value.size:]
+            self.weights.put(avg_weights)
 
         if self.track_split:
             rf = debug_info.get('rf')

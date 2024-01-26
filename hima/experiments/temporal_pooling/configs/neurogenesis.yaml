@@ -41,6 +41,10 @@ sp:
   layer:
     _base_: base
     _type_: sp.layer
+#    initial_rf_to_input_ratio: 0.75
+#    initial_max_rf_sparsity: 0.08
+#    initial_weight_noise: 0.0001
+    prune_grow_cycle: 30.0
     output_mode: binary
     learning_algo: new
 
