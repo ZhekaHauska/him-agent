@@ -1,4 +1,4 @@
 state_detection_threshold: 0.1
-lr: 0.5
+lr: 0.1
 activity_lr: 0.001
 max_states: 10000
