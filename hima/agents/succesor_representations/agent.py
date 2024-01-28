@@ -12,6 +12,7 @@ import numpy as np
 
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import softmax, safe_divide
+from hima.modules.belief.utils import normalize
 from hima.common.smooth_values import SSValue
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.baselines.srtd import SRTD
@@ -64,6 +65,7 @@ class BioHIMA:
             adaptive_lr: bool = True,
             srtd: SRTD | None,
             pattern_memory: Striatum | None,
+            use_sf_as_state: bool = False,
             seed: int | None,
     ):
         self.observation_reward_lr = observation_reward_lr
@@ -71,6 +73,7 @@ class BioHIMA:
         self.cortical_column = cortical_column
         self.srtd = srtd
         self.pattern_memory = pattern_memory
+        self.use_sf_as_state = use_sf_as_state
         self.gamma = gamma
         self.max_plan_steps = plan_steps
         self.use_cached_plan = use_cached_plan
@@ -107,7 +110,10 @@ class BioHIMA:
         self.previous_observation = np.zeros_like(self.observation_rewards)
 
         # TODO move it to Striatum class
-        self.striatum_weights = np.zeros((layer_hidden_size, layer_obs_size))
+        if self.use_sf_as_state:
+            self.striatum_weights = np.zeros((layer_obs_size, layer_obs_size))
+        else:
+            self.striatum_weights = np.zeros((layer_hidden_size, layer_obs_size))
 
         self.state_snapshot_stack = deque()
 
@@ -127,6 +133,14 @@ class BioHIMA:
 
     def reset(self, initial_context_message, initial_external_message):
         assert len(self.state_snapshot_stack) == 0
+
+        self.predicted_sf = None
+        self.generated_sf = None
+        self.action_values = None
+        self.action_dist = None
+        self.action = None
+        self.sf_steps = 0
+
         self.cortical_column.reset(initial_context_message, initial_external_message)
 
         self.previous_state = self.cortical_column.layer.internal_forward_messages.copy()
@@ -298,8 +312,14 @@ class BioHIMA:
             msg = torch.tensor(hidden_vars_dist).float().to(self.srtd.device)
             sr = to_numpy(self.srtd.predict_sr(msg, target=True))
         elif self.pattern_memory is not None:
-            sr = self.pattern_memory.predict(hidden_vars_dist, area=area, learn=False)
-            sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
+            if self.use_sf_as_state and area == 0:
+                sr = self.pattern_memory.predict(hidden_vars_dist, area=1, learn=False)
+                sr = sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
+                sr = np.dot(normalize(sr).flatten(), self.striatum_weights)
+                sr /= self.cortical_column.layer.n_obs_vars
+            else:
+                sr = self.pattern_memory.predict(hidden_vars_dist, area=area, learn=False)
+                sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
         else:
             sr = np.dot(hidden_vars_dist, self.striatum_weights)
             sr /= self.cortical_column.layer.n_hidden_vars
@@ -326,8 +346,24 @@ class BioHIMA:
             predicted_sf = to_numpy(predicted_sf)
             target_sf = to_numpy(target_sf)
         elif self.pattern_memory is not None:
-            predicted_sf = self.pattern_memory.predict(self.current_state, learn=True)
-            td_error = self.pattern_memory.update_weights(target_sf)
+            if self.use_sf_as_state:
+                sr = self.pattern_memory.predict(self.current_state, area=1, learn=False)
+                sr = sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
+
+                predicted_sf = self.predict_sf(self.current_state)
+                prediction_cells = normalize(sr).flatten()
+                error_sr = target_sf - predicted_sf
+
+                # dSR / dW for linear model
+                delta_w = np.outer(prediction_cells, error_sr)
+
+                self.striatum_weights += self.striatum_lr * delta_w
+                self.striatum_weights = np.clip(self.striatum_weights, 0, None)
+
+                td_error = np.mean(np.power(error_sr, 2))
+            else:
+                predicted_sf = self.pattern_memory.predict(self.current_state, learn=True)
+                td_error = self.pattern_memory.update_weights(target_sf)
         else:
             predicted_sf = self.predict_sf(self.current_state)
             prediction_cells = self.current_state
