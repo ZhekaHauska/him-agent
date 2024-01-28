@@ -184,6 +184,10 @@ class BioAgentWrapper(BaseAgent):
 
         return self.agent.reset(self.initial_context, self.initial_external_message)
 
+    def initialize_sf_memory(self):
+        memory = self.agent.pattern_memory.weights
+        memory[0] = memory[1].copy()
+
     @property
     def state_value(self):
         action_values = self.agent.action_values
