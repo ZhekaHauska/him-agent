@@ -39,7 +39,8 @@ class Factors:
             initial_synapse_value,
             max_segments,
             fraction_of_segments_to_prune,
-            max_segments_per_cell
+            max_segments_per_cell,
+            min_log_factor_value=-1,
     ):
         """
             hidden vars are those that we predict, or output vars
@@ -51,6 +52,7 @@ class Factors:
         self.var_score_lr = var_score_lr
         self.segment_activity_lr = segment_activity_lr
         self.factor_lr = factor_lr
+        self.min_log_factor_value = min_log_factor_value
         self.synapse_lr = synapse_lr
         self.max_factors_per_var = max_factors_per_var
         self.n_vars_per_factor = n_vars_per_factor
@@ -199,6 +201,9 @@ class Factors:
         self.segment_activity[non_active_segments] -= (
                 self.segment_activity_lr * self.segment_activity[non_active_segments]
         )
+
+        w = self.log_factor_values_per_segment[active_segments]
+        self._destroy_segments(active_segments[w < self.min_log_factor_value])
 
         # prune segments based on their activity and factor value
         if prune:
