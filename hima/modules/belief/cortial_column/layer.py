@@ -160,16 +160,19 @@ class Factors:
             np.argpartition(score, n_segments)[:n_segments]
         ]
 
+        self._destroy_segments(segments_to_prune)
+
+        return segments_to_prune
+
+    def _destroy_segments(self, segments):
         filter_destroyed_segments = np.isin(
-            self.segments_in_use, segments_to_prune, invert=True
+            self.segments_in_use, segments, invert=True
         )
         self.segments_in_use = self.segments_in_use[filter_destroyed_segments]
 
-        for segment in segments_to_prune:
+        for segment in segments:
             self.connections.destroySegment(segment)
 
-        return segments_to_prune
-    
     def update_factors(
             self,
             segments_to_reinforce,
@@ -197,6 +200,7 @@ class Factors:
                 self.segment_activity_lr * self.segment_activity[non_active_segments]
         )
 
+        # prune segments based on their activity and factor value
         if prune:
             n_segments_to_prune = int(
                 self.fraction_of_segments_to_prune * len(self.segments_in_use)
@@ -725,6 +729,11 @@ class Layer:
             log_prediction_for_cells_with_factors = np.add.reduceat(
                 log_excitation_per_factor, indices=reduce_inxs
             )
+
+            # avoid overflow
+            log_prediction_for_cells_with_factors[
+                log_prediction_for_cells_with_factors < -100
+            ] = -np.inf
 
             log_next_messages[cells_with_factors] = log_prediction_for_cells_with_factors
 
