@@ -15,6 +15,7 @@ from scipy.special import rel_entr
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
 imageio = lazy_import('imageio')
+minisom = lazy_import('minisom')
 
 
 class BaseMetric:
@@ -532,3 +533,121 @@ class SFDiff(BaseMetric):
         )
 
         self.values.clear()
+
+
+class SOMClusters(BaseMetric):
+    def __init__(
+            self, name, att, label_att,
+            logger, runner,
+            update_step, log_step, update_period, log_period,
+            size=100, iterations=1000, sigma=0.1, learning_rate=0.1, seed=None
+    ):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.att_to_log = att
+        self.label_att = label_att
+
+        self.size = size
+        self.iterations = iterations
+        self.sigma = sigma
+        self.learning_rate = learning_rate
+        self.seed = seed
+
+        self.patterns = list()
+        self.labels = list()
+
+    def update(self):
+        pattern = self.get_attr(self.att_to_log)
+        label = self.get_attr(self.label_att)
+
+        if pattern is not None:
+            self.patterns.append(normalize(pattern).flatten())
+            self.labels.append(label)
+
+    def log(self, step):
+        if len(self.patterns) <= 1:
+            return
+
+        import matplotlib.pyplot as plt
+
+        self.patterns = np.array(self.patterns)
+        self.labels = np.array(self.labels)
+        classes = np.unique(self.labels)
+        log_dict = dict()
+
+        dim = int(np.sqrt(self.size))
+        som = minisom.MiniSom(
+            dim, dim,
+            self.patterns.shape[-1],
+            sigma=self.sigma,
+            learning_rate=self.learning_rate,
+            random_seed=self.seed,
+            activation_distance=self.dkl
+        )
+        som.pca_weights_init(self.patterns)
+        som.train(self.patterns, self.iterations)
+
+        activation_map = np.zeros((dim, dim, classes.size))
+        fig = plt.figure(figsize=(8, 8))
+        plt.imshow(som.distance_map(), cmap='Greys', alpha=0.5)
+        plt.colorbar()
+
+        for p, cls in zip(self.patterns, self.labels):
+            activation_map[:, :, np.flatnonzero(classes == cls)[0]] += som.activate(p)
+
+            cell = som.winner(p)
+            plt.text(
+                cell[0],
+                cell[1],
+                str(cls),
+                color=plt.cm.rainbow(cls / classes.size),
+                alpha=0.1,
+                fontdict={'weight': 'bold', 'size': 16}
+            )
+        # plt.axis([0, som.get_weights().shape[0], 0, som.get_weights().shape[1]])
+
+        log_dict.update(
+            {
+                f'{self.name}_clusters': wandb.Image(fig),
+            }
+        )
+        plt.close('all')
+
+        # normalize activation map
+        activation_map /= self.patterns.shape[0]
+        activation_map /= activation_map.sum(axis=-1).reshape((dim, dim, 1))
+        # generate colormap
+        colors = [plt.cm.rainbow(c / classes.size)[:-1] for c in range(classes.size)]
+        color_map = (np.dot(activation_map.reshape((-1, classes.size)), colors) * 255)
+        color_map = color_map.reshape((dim, dim, 3))
+
+        for i in range(classes.size):
+            log_dict.update(
+                {
+                    f'{self.name}_activation_{classes[i]}': wandb.Image(
+                        sns.heatmap(activation_map[:, :, i], cmap='viridis')
+                    )
+                }
+            )
+            plt.close('all')
+
+        log_dict.update(
+            {
+                f'{self.name}_soft_clusters': wandb.Image(
+                    plt.imshow(color_map.astype('uint8'))
+                )
+            }
+        )
+
+        log_dict[self.log_step] = step
+
+        self.logger.log(log_dict)
+
+        self.patterns = list()
+        self.labels = list()
+
+    @staticmethod
+    def dkl(x, W):
+        return np.sum(rel_entr(x, W), axis=-1)
+
+
