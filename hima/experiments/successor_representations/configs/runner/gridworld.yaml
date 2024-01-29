@@ -1,16 +1,32 @@
 log: True
-project_name: gridworld_mdp_compare_sr
-run_tag: stationary
+visualize: False
+project_name: gridworld_pomdp_final
+run_tag: test1
 
 action_inertia: 1
 frame_skip: 0
 strategies: null
+#  - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+#  - [0, 0, 2, 2, 2, 3, 3, 2, 2, 2, 1]
+#  - [2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 1]
+#  - [ 2, 3, 1, 1, 2, 1, 1, 1, 1, 2, 2, 2 ]
+#  - [ 2, 1, 1, 1, 2, 0, 0, 3, 1, 0, 3, 0 ]
+#  - [ 3, 2, 2, 0, 2, 2, 1, 3, 3, 3, 0, 2 ]
+#  - [ 3, 3, 2, 3, 2, 3, 3, 2, 2, 1, 3, 3 ]
+#  - [ 1, 2, 2, 1, 0, 0, 0, 3, 1, 3, 2, 1 ]
+#  - [ 0, 0, 1, 2, 3, 3, 2, 2, 1, 3, 1, 2 ]
+#  - [ 1, 1, 2, 3, 2, 0, 0, 3, 2, 3, 0, 2 ]
+#  - [ 0, 0, 2, 2, 1, 3, 0, 0, 1, 3, 3, 0 ]
+#  - [ 2, 0, 2, 0, 2, 0, 2, 3, 0, 3, 0, 2 ]
+#  - [ 0, 2, 3, 3, 2, 3, 0, 0, 0, 2, 0, 1 ]
+observe_actions: True
+reward_free: False
 
-setup: two_rooms
+setup: blocked
 
-scenario: 'configs/scenario/gridworld_mdp.yaml'
-env_conf: 'configs/environment/gridworld/mdp.yaml'
-agent_conf: 'configs/agent/bio/gridworld_mdp.yaml'
-metrics_conf: 'configs/metrics/bio/gridworld_mdp.yaml'
+scenario: 'configs/scenario/gridworld_pomdp_chenv_fchmm.yaml'
+env_conf: 'configs/environment/gridworld/pomdp.yaml'
+agent_conf: 'configs/agent/bio/gridworld_pomdp.yaml'
+metrics_conf: 'configs/metrics/bio/gridworld_pomdp.yaml'
 
 seed: null

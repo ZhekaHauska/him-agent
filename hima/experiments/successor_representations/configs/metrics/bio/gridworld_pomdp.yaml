@@ -1,29 +1,29 @@
-setup:
-  class: ImageMetrics
-  params:
-    metrics:
-      agent/setup:
-        att: environment.render
-    update_step: current_setup_id
-    update_period: 1
-    log_step: current_setup_id
-    log_period: 1
-    log_fps: 5
+#setup:
+#  class: ImageMetrics
+#  params:
+#    metrics:
+#      agent/setup:
+#        att: environment.render
+#    update_step: current_setup_id
+#    update_period: 1
+#    log_step: current_setup_id
+#    log_period: 1
+#    log_fps: 5
 
-heatmap_metrics:
-  class: HeatmapMetrics
-  params:
-    metrics:
-      agent/obs_reward:
-        agg: np.mean
-        att: obs_reward
-      agent/striatum:
-        agg: np.mean
-        att: agent.agent.striatum_weights
-    update_step: episodes
-    update_period: 100
-    log_step: episodes
-    log_period: 100
+#heatmap_metrics:
+#  class: HeatmapMetrics
+#  params:
+#    metrics:
+#      agent/obs_reward:
+#        agg: np.mean
+#        att: obs_reward
+##      agent/striatum:
+##        agg: np.mean
+##        att: agent.agent.striatum_weights
+#    update_step: episodes
+#    update_period: 100
+#    log_step: episodes
+#    log_period: 100
 
 step_scalar_metrics:
   class: ScalarMetrics
@@ -35,12 +35,18 @@ step_scalar_metrics:
       layer/surprise_hidden:
         agg: np.mean
         att: agent.agent.surprise
-#      layer/segments:
-#        agg: np.mean
-#        att: agent.num_segments
-      sr/td_error:
+      layer/segments:
         agg: np.mean
-        att: agent.agent.td_error
+        att: agent.num_segments
+#      sf/td_error:
+#        agg: np.mean
+#        att: agent.agent.td_error
+#      sf/predict_plan_diff:
+#        agg: np.mean
+#        att: sf_diff
+      sf/steps:
+        agg: np.mean
+        att: agent.agent.sf_steps
     update_step: steps
     update_period: 1
     log_step: episodes
@@ -53,6 +59,9 @@ episodic_scalar_metrics:
       main_metrics/steps:
         agg: np.mean
         att: steps
+      agent/n_states:
+        agg: np.mean
+        att: agent.n_states
     update_step: episodes
     update_period: 1
     log_step: episodes
@@ -80,30 +89,92 @@ value_function:
     update_period: 1
     log_step: episodes
     log_period: 100
+#
+#
+#q_function:
+#  class: Histogram
+#  params:
+#    name: agent/q_function
+#    att: q_value
+#    normalized: true
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 100
 
+#sf_dkl_table_plan:
+#  class: SFDiff
+#  params:
+#    name: sr/dkl_table_plan
+#    att: agent.planned_sf
+#    state_att: environment.current_state
+#    difference_mode: dkl
+#    normalization_mode: categorical
+#    base_sf: load
+#    base_sf_path: logs/true_sf_wall_gridworld_radius_0_uniform.npy
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 1
+##
+#sf_dkl_uniform_gen:
+#  class: SFDiff
+#  params:
+#    name: sf/dkl_uniform_plan
+#    att: agent.planned_sf
+#    state_att: environment.current_state
+#    difference_mode: dkl
+#    normalization_mode: categorical
+#    base_sf: uniform
+#    base_sf_path: null
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 1
 
-q_function:
-  class: Histogram
-  params:
-    name: agent/q_function
-    att: q_value
-    normalized: true
-    update_step: steps
-    update_period: 1
-    log_step: episodes
-    log_period: 100
+#sf_dkl_table_pred:
+#  class: SFDiff
+#  params:
+#    name: sr/dkl_table_pred
+#    att: agent.predicted_sf
+#    state_att: environment.current_state
+#    difference_mode: dkl
+#    normalization_mode: categorical
+#    base_sf: load
+#    base_sf_path: logs/true_sf_wall_gridworld_radius_0_uniform.npy
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 1
+#
+#sf_dkl_uniform_pred:
+#  class: SFDiff
+#  params:
+#    name: sf/dkl_uniform_pred
+#    att: agent.predicted_sf
+#    state_att: environment.current_state
+#    difference_mode: dkl
+#    normalization_mode: categorical
+#    base_sf: uniform
+#    base_sf_path: null
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 1
 
-sf_dkl:
-  class: SFDiff
-  params:
-    name: sr/dkl_table_sr
-    att: agent.generated_sf
-    state_att: environment.current_state
-    difference_mode: dkl
-    normalization_mode: categorical
-    base_sf: load
-    base_sf_path: logs/true_sf_empty_gridworld_radius_0.npy
-    update_step: steps
-    update_period: 1
-    log_step: episodes
-    log_period: 1
+#sf_som:
+#  class: SOMClusters
+#  params:
+#    name: sf/som/
+#    att: agent.planned_sf
+#    label_att: environment.current_state
+#    size: 400
+#    iterations: 5000
+#    sigma: 0.5
+#    learning_rate: 0.5
+#    init: random
+#    font_size: 12
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 100

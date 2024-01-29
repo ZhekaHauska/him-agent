@@ -1,4 +1,4 @@
-cells_per_column: 1
+cells_per_column: 10
 batch_size: 2500
 em_iterations: 1000
 lr: 0.9
