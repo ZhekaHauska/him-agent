@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.run.wandb import get_logger
+from hima.common.sdrr import RateSdr
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import timed, isnone
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence

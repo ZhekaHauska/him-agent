@@ -102,9 +102,14 @@ class SdrPredictionTracker:
         if self.miss_rate.n_steps == 0:
             return {}
 
+        miss_rate = self.miss_rate.get()
+        imprecision = self.imprecision.get()
+        f1_score = safe_divide(2 * miss_rate * imprecision, miss_rate + imprecision)
+
         metrics = {
-            'miss_rate': self.miss_rate.get(),
-            'imprecision': self.imprecision.get(),
+            'miss_rate': miss_rate,
+            'imprecision': imprecision,
+            'f1_score': f1_score,
             'dissimilarity': self.dissimilarity.get(),
             'prediction_volume': self.prediction_volume.get(),
         }

@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+from numpy.random import Generator
+
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.config.values import get_unresolved_value
@@ -16,7 +19,7 @@ from hima.experiments.temporal_pooling.blocks.tracker import TrackerBlock
 from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.block_call import BlockCall
 from hima.experiments.temporal_pooling.graph.node import Node, Stretchable, Stateful
-from hima.experiments.temporal_pooling.graph.pipe import Pipe, SdrPipe
+from hima.experiments.temporal_pooling.graph.pipe import Pipe, SdrPipe, NoisySdrPipe
 from hima.experiments.temporal_pooling.graph.pipeline import Pipeline
 from hima.experiments.temporal_pooling.graph.repeat import Repeat
 from hima.experiments.temporal_pooling.graph.stream import Stream, SdrStream
@@ -25,6 +28,8 @@ from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 
 class Model(Stretchable, Stateful, Node):
     blocks_config_key = 'blocks'
+
+    rng: Generator
 
     config: GlobalConfig
     nodes: list[Node]
@@ -38,11 +43,14 @@ class Model(Stretchable, Stateful, Node):
     def __init__(
             self,
             global_config: GlobalConfig,
+            seed: int,
             pipeline: Pipeline | list,
             external: list[str],
             track: list[TConfig]
     ):
         self.config = global_config
+        self.rng = np.random.default_rng(seed)
+
         self.nodes = []
         self.streams = {}
         self.blocks = {}
@@ -230,7 +238,9 @@ class Model(Stretchable, Stateful, Node):
             node = node.strip()
             # pipe or block call
             if '->' in node:
-                return self.parse_pipe(node)
+                return self.parse_pipe(node, noisy=False)
+            elif '~>' in node:
+                return self.parse_pipe(node, noisy=True)
             elif node.endswith('()'):
                 return self.parse_block_func_call(node)
         elif isinstance(node, dict):
@@ -254,8 +264,12 @@ class Model(Stretchable, Stateful, Node):
         block = self.resolve_block(block_name)
         return BlockCall(block=block, name=func_name)
 
-    def parse_pipe(self, pipe: str, *, sds: Any = get_unresolved_value()) -> Pipe:
-        # pattern: src -> dst | sds
+    def parse_pipe(
+            self, pipe: str, noisy: bool, *,
+            sds: Any = get_unresolved_value(),
+
+    ) -> Pipe:
+        # pattern: src -> dst [| sds ]
         pipe = pipe.split('|')
         if len(pipe) == 2:
             pipe, sds = pipe
@@ -263,12 +277,30 @@ class Model(Stretchable, Stateful, Node):
         else:
             pipe, = pipe
 
-        src, dst = pipe.strip().split('->')
+        if noisy:
+            # pattern: src ~> [noise ~> ] dst [| sds]
+            parts = pipe.strip().split('~>')
+            if len(parts) == 3:
+                src, noise, dst = parts
+                noise = float(noise.strip())
+                pipe_config = dict(noise_frac=noise)
+            else:
+                src, dst = parts
+                pipe_config = {}
+        else:
+            src, dst = pipe.strip().split('->')
+
         src = self.register_stream(src)
         dst = self.register_stream(dst)
 
         if src.is_sdr:
-            pipe = SdrPipe(src=src, dst=dst, sds=sds)
+            if noisy:
+                pipe = NoisySdrPipe(
+                    seed=self.rng.integers(1_000_000),
+                    src=src, dst=dst, sds=sds, **pipe_config
+                )
+            else:
+                pipe = SdrPipe(src=src, dst=dst, sds=sds)
         else:
             pipe = Pipe(src=src, dst=dst)
         return pipe

@@ -14,6 +14,7 @@ log_schedule:
 
 model:
   global_config: ???
+  seed: ???
   external:
     - step
     - step_finished
@@ -207,7 +208,7 @@ models:
     - embed input:
         - input.sdr -> embed_input.sdr
     - compute TM:
-        - embed_input.sdr -> TM.feedforward.sdr
+        - embed_input.sdr ~> TM.feedforward.sdr
         - TM.compute()
         - TM.compare_with_prediction()
         - TM.active_cells.sdr -> TM.state.sdr
