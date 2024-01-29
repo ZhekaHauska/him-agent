@@ -12,7 +12,7 @@ from hima.common.sds import Sds
 
 
 # ==================== SDR generation ====================
-def sample_random_sdr(rng: Generator, sds: Sds):
+def sample_sdr(rng: Generator, sds: Sds):
     return rng.choice(sds.size, sds.active_size, replace=False)
 
 

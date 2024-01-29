@@ -23,6 +23,8 @@ step_flush_schedule: 200
 aggregate_flush_schedule: 200
 sp_potentials_quantile: 0.12
 
+rates_temp: 0.3
+
 layer: sp.rate
 
 sp:
@@ -50,6 +52,7 @@ sp:
     prune_grow_cycle: 30.0
     output_mode: binary
     learning_algo: new
+    normalize_rates: true
 
   rate:
     _base_: base

@@ -110,13 +110,17 @@ def _sdrr_similarity(
     NB: Both x1 and x2 are expected to have their sdr bits to have non-zero rates.
         Otherwise, supp(...) calculation will be incorrect.
     """
+    # print(f'x1: {x1}')
+    # print(f'x2: {x2}')
     dense_cache[x2.sdr] = x2.values
     dense_cache[x1.sdr] -= x1.values
 
     # similarity is 1 - avg (L1 distance from x1 to x2) over supp(x2)
-    np.abs(dense_cache[x2.sdr], out=dense_cache[x2.sdr])
+    dense_cache[x2.sdr] = np.abs(dense_cache[x2.sdr])
     raw_distance = np.sum(dense_cache[x2.sdr])
+    # print(f'raw_distance: {raw_distance}')
     norm = len(x2.sdr)
+    # print(f'norm: {norm}')
 
     # clear cache; also make x1 -> x1 \ x2, which we use in `symmetrical` case below
     dense_cache[x2.sdr] = 0
@@ -124,14 +128,19 @@ def _sdrr_similarity(
     if symmetrical:
         # similarity is 1 - avg (L1 distance from x1 to x2) over supp(x1 | x2)
         # so, we also need to add (x1 \ x2) part
-        np.abs(dense_cache[x1.sdr], out=dense_cache[x1.sdr])
+        dense_cache[x1.sdr] = np.abs(dense_cache[x1.sdr])
         raw_distance += np.sum(dense_cache[x1.sdr])
         norm += np.count_nonzero(dense_cache[x1.sdr])
+        # print(f'raw_distance: {raw_distance}')
+        # print(f'norm: {norm}')
 
     # finish clearing cache
     dense_cache[x1.sdr] = 0
 
-    return 1 - safe_divide(raw_distance, norm)
+    result = 1 - safe_divide(raw_distance, norm)
+    # print(f'result: {result}')
+    # assert False
+    return result
 
 
 # ==================== Sdr [sequence] similarity ====================

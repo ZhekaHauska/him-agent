@@ -18,8 +18,8 @@ from hima.common.sds import TSdsShortNotation, Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, prepend_dict_keys
 from hima.experiments.temporal_pooling.data.synthetic_patterns import (
-    sample_random_sdr,
-    sample_noisy_sdr
+    sample_sdr,
+    sample_noisy_sdr, sample_rate_sdr, sample_noisy_sdr_rate_sdr, sample_noisy_rates_rate_sdr
 )
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.stats.metrics import (
@@ -62,6 +62,8 @@ class NeurogenesisExperiment:
             aggregate_flush_schedule: int,
             sp_potentials_quantile: float,
 
+            rates_temp: float,
+
             layer: TConfig,
 
             # data: TConfig,
@@ -85,6 +87,7 @@ class NeurogenesisExperiment:
         self.input_sds = Sds.make(input_sds)
         self.output_sds = Sds.make(output_sds)
 
+        self.binary = binary
         self.n_prototypes = n_prototypes
         self.noise_level = noise_level
         self.n_epochs = n_epochs
@@ -99,9 +102,15 @@ class NeurogenesisExperiment:
         self.output_dense_cache = np.zeros(self.output_sds.size, dtype=float)
 
         self.data = [
-            sample_random_sdr(self.rng, self.input_sds)
+            sample_sdr(self.rng, self.input_sds)
             for _ in range(2 * self.n_prototypes)
         ]
+        if not self.binary:
+            self.data = [
+                sample_rate_sdr(self.rng, sdr, rates_temp)
+                for sdr in self.data
+            ]
+
         # list of (starting index in data, number of examples) for each experiment stage
         self.data_parts = [
             (0, self.n_prototypes),
@@ -141,13 +150,36 @@ class NeurogenesisExperiment:
         self.sim_test_sequences = self.generate_sim_test_sequences()
         self.input_mx = self.get_similarity_matrix(self.sim_test_sequences, self.input_dense_cache)
 
-        self.sim_test_sdrs = [
-            [
-                (sdr, sample_noisy_sdr(self.rng, self.input_sds, sdr, noise_level))
-                for sdr in self.rng.choice(self.data, size=n_sim_elements, replace=False)
+        if self.binary:
+            # SDR
+            self.sim_test_sdrs = [
+                [
+                    (sdr, sample_noisy_sdr(self.rng, self.input_sds, sdr, noise_level))
+                    for sdr in self.rng.choice(self.data, size=n_sim_elements, replace=False)
+                ]
+                for noise_level in sim_noise_level
             ]
-            for noise_level in sim_noise_level
-        ]
+        else:
+            # Rate SDR
+            self.sim_test_sdrs = []
+            for noise_level in sim_noise_level:
+                rate_sdrs = self.rng.choice(self.data, size=n_sim_elements, replace=False)
+                seq = []
+                for rate_sdr in rate_sdrs:
+                    if self.rng.random() < 0.5:
+                        # noisy sdr
+                        noisy_rate_sdr = sample_noisy_sdr_rate_sdr(
+                            self.rng, self.input_sds, rate_sdr, noise_level
+                        )
+                    else:
+                        # noisy rate
+                        noisy_rate_sdr = sample_noisy_rates_rate_sdr(
+                            self.rng, rate_sdr, noise_level
+                        )
+                    seq.append((rate_sdr, noisy_rate_sdr))
+
+                self.sim_test_sdrs.append(seq)
+
         self.input_avg_sims = [
             np.mean([
                 sdr_similarity(sdr, noisy_sdr, symmetrical=True, dense_cache=self.input_dense_cache)
@@ -198,8 +230,12 @@ class NeurogenesisExperiment:
                 low, high = masked_sds_range
                 input_sdr = input_sdr[(input_sdr >= low) & (input_sdr < high)]
 
+            # print('IN ', input_sdr)
             output_sdr = self.layer.compute(input_sdr, learn=True)
+            # print('OUT', output_sdr)
             self.on_step(input_sdr, output_sdr)
+            # if i_sample >= 2:
+            #     assert False
 
         self.on_epoch()
 
@@ -338,7 +374,7 @@ class NeurogenesisExperiment:
         seq_sets = []
         for shift, sub_sds in sub_sds_list:
             base_arr = [
-                sample_random_sdr(self.rng, sub_sds)
+                sample_sdr(self.rng, sub_sds)
                 for _ in range(self.n_seq_elements)
             ]
 
