@@ -540,7 +540,8 @@ class SOMClusters(BaseMetric):
             self, name, att, label_att,
             logger, runner,
             update_step, log_step, update_period, log_period,
-            size=100, iterations=1000, sigma=0.1, learning_rate=0.1, seed=None
+            size=100, iterations=1000, sigma=0.1, learning_rate=0.1, seed=None, init='random',
+            font_size=16
     ):
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
         self.name = name
@@ -551,6 +552,9 @@ class SOMClusters(BaseMetric):
         self.iterations = iterations
         self.sigma = sigma
         self.learning_rate = learning_rate
+        self.init = init
+        self.font_size = font_size
+        assert self.init in {'random', 'pca'}
         self.seed = seed
 
         self.patterns = list()
@@ -584,7 +588,12 @@ class SOMClusters(BaseMetric):
             random_seed=self.seed,
             activation_distance=self.dkl
         )
-        som.pca_weights_init(self.patterns)
+
+        if self.init == 'random':
+            som.random_weights_init(self.patterns)
+        elif self.init == 'pca':
+            som.pca_weights_init(self.patterns)
+
         som.train(self.patterns, self.iterations)
 
         activation_map = np.zeros((dim, dim, classes.size))
@@ -593,16 +602,16 @@ class SOMClusters(BaseMetric):
         plt.colorbar()
 
         for p, cls in zip(self.patterns, self.labels):
-            activation_map[:, :, np.flatnonzero(classes == cls)[0]] += som.activate(p)
+            activation_map[:, :, np.flatnonzero(classes == cls)[0]] -= som.activate(p)
 
             cell = som.winner(p)
             plt.text(
-                cell[0],
-                cell[1],
+                cell[0] - 0.5,
+                cell[1] + 0.5,
                 str(cls),
                 color=plt.cm.rainbow(cls / classes.size),
                 alpha=0.1,
-                fontdict={'weight': 'bold', 'size': 16}
+                fontdict={'weight': 'bold', 'size': self.font_size}
             )
         # plt.axis([0, som.get_weights().shape[0], 0, som.get_weights().shape[1]])
 
