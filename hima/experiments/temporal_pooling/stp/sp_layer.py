@@ -96,6 +96,7 @@ class SpatialPooler:
             learning_algo: str = 'old',
             normalize_rates: bool = True,
             connectable_ff_size: int = None,
+            sample_winners: bool = False
     ):
         self.rng = np.random.default_rng(seed)
 
@@ -136,6 +137,8 @@ class SpatialPooler:
             self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
         )
 
+        self.select_winners = self._sample_winners if sample_winners else self._select_winners
+
         self.base_boosting_k = boosting_k
         self.boosting_k = self.base_boosting_k
         self.newborn_pruning_cycle = newborn_pruning_cycle
@@ -165,6 +168,7 @@ class SpatialPooler:
         self.dyn_n_computes = 1
         self.dyn_ff_trace = np.full(self.ff_size, self.feedforward_sds.sparsity)
         self.dyn_out_trace = np.full(self.output_size, self.output_sds.sparsity)
+        self.dyn_to_change = np.zeros(self.output_size, dtype=int)
 
     def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
@@ -246,7 +250,7 @@ class SpatialPooler:
             overlaps = overlaps * boosting_alpha
         return overlaps
 
-    def select_winners(self):
+    def _select_winners(self):
         n_winners = self.output_sds.active_size
 
         winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
@@ -262,10 +266,37 @@ class SpatialPooler:
                     cast(float, self.potentials[self.strongest_winner])
                 )
 
+    def _sample_winners(self):
+        n_winners = self.output_sds.active_size
+
+        n_pot_winners = min(3*n_winners, self.potentials.size)
+        pot_winners = np.argpartition(self.potentials, -n_pot_winners)[-n_pot_winners:]
+        self.strongest_winner = cast(int, pot_winners[np.argmax(self.potentials[pot_winners])])
+
+        probs = self.potentials[pot_winners]**2 + 1e-10
+        norm = np.sum(probs)
+
+        winners = self.rng.choice(
+            pot_winners, size=n_winners, replace=False,
+            p=safe_divide(probs, norm)
+        )
+        winners.sort()
+
+        self.winners = winners[self.potentials[winners] > 0]
+        if self.output_mode == OutputMode.RATE:
+            self.winners_value = self.potentials[self.winners].copy()
+            if self.normalize_rates:
+                self.winners_value = safe_divide(
+                    self.winners_value,
+                    cast(float, self.potentials[self.strongest_winner])
+                )
+
     def reinforce_winners(self, matched_input_activity, learn: bool):
         if not learn:
             return
         self.stdp(self.winners, matched_input_activity[self.winners])
+        if not self.is_newborn_phase:
+            self.try_grow_synapses_to_input(self.winners)
 
     def _stdp(
             self, neurons: SparseSdr, pre_synaptic_activity: np.ndarray,
@@ -431,7 +462,12 @@ class SpatialPooler:
 
         to_pg_ix = np.flatnonzero(non_pg_mask)[underperforming_neurons]
         pg_mask[to_pg_ix] = True
-        pg_ix = np.flatnonzero(pg_mask)
+
+        # what didn't change during finished cycle we change now,
+        # and what we selected is for the change during the next cycle
+        pg_ix = np.flatnonzero(self.dyn_to_change)
+        self.dyn_to_change[pg_ix] = 0
+        self.dyn_to_change[pg_mask] = 1
 
         to_change_ix = np.argmin(self.weights[pg_ix], axis=1)
         ff_sample_distr = safe_divide(self.dyn_ff_trace, self.dyn_ff_trace.sum())
@@ -455,6 +491,33 @@ class SpatialPooler:
         self.dyn_n_computes *= dyn_learning_rate
         self.dyn_ff_trace *= dyn_learning_rate
         self.dyn_out_trace *= dyn_learning_rate
+
+    def try_grow_synapses_to_input(self, neurons: SparseSdr):
+        if np.sum(self.dyn_to_change[neurons]) == 0:
+            return
+
+        found = False
+        to_choose_from = np.flatnonzero(self.dyn_to_change[neurons])
+        for _ in range(3):
+            neuron = self.rng.choice(to_choose_from)
+            syn = self.rng.choice(self.sparse_input)
+            if syn not in self.rf[neuron]:
+                found = True
+                break
+
+        if not found:
+            return
+
+        self.dyn_to_change[neuron] = 0
+
+        to_change_ix = np.argmin(self.weights[neuron])
+        self.rf[neuron, to_change_ix] = syn
+        self.weights[neuron, to_change_ix] = 1.0 / self.rf_size
+
+        reorder_ix = np.argsort(self.rf[neuron])
+        self.rf[neuron, :] = self.rf[neuron, reorder_ix]
+        self.weights[neuron, :] = self.weights[neuron, reorder_ix]
+        self.weights[[neuron]] = normalize_weights(self.weights[[neuron]])
 
     def on_end_newborn_phase(self):
         # self.learning_rate /= 2

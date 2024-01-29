@@ -368,6 +368,7 @@ spatial_pooler:
     learning_algo: new
     normalize_rates: true
     connectable_ff_size: ???
+    sample_winners: false
 
 
 spatial_temporal_pooler:
