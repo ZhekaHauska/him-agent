@@ -12,6 +12,7 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 
 from hima.common.sdr import SparseSdr
+from hima.common.sdrr import AnySparseSdr
 from hima.common.utils import clip
 
 
@@ -19,12 +20,12 @@ from hima.common.utils import clip
 class Sequence:
     """Sequence of SDRs."""
     id: int
-    seq: list[SparseSdr]
+    seq: list[AnySparseSdr]
 
     def __getitem__(self, ind):
         return self.seq[ind]
 
-    def __iter__(self) -> Iterator[SparseSdr]:
+    def __iter__(self) -> Iterator[AnySparseSdr]:
         return iter(self.seq)
 
     def __len__(self):

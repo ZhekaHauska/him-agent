@@ -9,15 +9,14 @@ import numpy as np
 import numpy.typing as npt
 
 from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr
+from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.stp.sp_float import SpOutputMode
 
 
 class MlpDecoder:
     feedforward_sds: Sds
     output_sds: Sds
-    output_mode: SpOutputMode
+    output_mode: OutputMode
 
     # cache
     sparse_input: SparseSdr
@@ -41,7 +40,7 @@ class MlpDecoder:
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = feedforward_sds
         self.output_sds = output_sds
-        self.output_mode = SpOutputMode[output_mode.upper()]
+        self.output_mode = OutputMode[output_mode.upper()]
 
         shape = (output_sds.size, feedforward_sds.size)
 
@@ -99,7 +98,7 @@ class MlpDecoder:
         winners.sort()
         winners = winners[prediction[winners] > 0]
 
-        if self.output_mode == SpOutputMode.RATE:
+        if self.output_mode == OutputMode.RATE:
             values = np.clip(prediction[winners], 0., 1.)
             return RateSdr(winners, values=values)
         return winners

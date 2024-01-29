@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Union
 
 import numpy as np
@@ -74,6 +75,11 @@ class RateSdr:
 
 # Aggregate type for functions that support both representations.
 AnySparseSdr = Union[SparseSdr, RateSdr]
+
+
+class OutputMode(Enum):
+    BINARY = 1
+    RATE = auto()
 
 
 def split_sdr_values(sdr: AnySparseSdr):

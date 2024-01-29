@@ -12,11 +12,10 @@ import numpy as np
 from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr
+from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
 from hima.common.sds import Sds
 from hima.common.utils import timed, safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.sp_float import SpOutputMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
     sample_for_each_neuron
@@ -38,7 +37,7 @@ class SpatialPooler:
     adapt_to_ff_sparsity: bool
 
     output_sds: Sds
-    output_mode: SpOutputMode
+    output_mode: OutputMode
 
     initial_rf_sparsity: float
     target_max_rf_sparsity: float
@@ -103,7 +102,7 @@ class SpatialPooler:
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
         self.output_sds = Sds.make(output_sds)
-        self.output_mode = SpOutputMode[output_mode.upper()]
+        self.output_mode = OutputMode[output_mode.upper()]
 
         self.learning_algo = SpLearningAlgo[learning_algo.upper()]
         if self.learning_algo == SpLearningAlgo.OLD:
@@ -244,7 +243,7 @@ class SpatialPooler:
         winners.sort()
 
         self.winners = winners[self.potentials[winners] > 0]
-        if self.output_mode == SpOutputMode.RATE:
+        if self.output_mode == OutputMode.RATE:
             self.winners_value = self.potentials[self.winners].copy()
             if self.normalize_rates:
                 self.winners_value = safe_divide(
@@ -290,7 +289,7 @@ class SpatialPooler:
 
         pre_rates = pre_synaptic_activity
         post_rates = self.winners_value
-        if self.output_mode == SpOutputMode.RATE:
+        if self.output_mode == OutputMode.RATE:
             post_rates = np.expand_dims(self.winners_value, -1)
 
         lr = modulation * self.learning_rate
@@ -318,7 +317,7 @@ class SpatialPooler:
 
         pre_rates = pre_synaptic_activity
         post_rates = self.winners_value
-        if self.output_mode == SpOutputMode.RATE:
+        if self.output_mode == OutputMode.RATE:
             post_rates = np.expand_dims(self.winners_value, -1)
 
         lr = modulation * self.learning_rate
@@ -329,7 +328,7 @@ class SpatialPooler:
         self.weights[neurons] = normalize_weights(w + dw)
 
     def select_output(self):
-        if self.output_mode == SpOutputMode.RATE:
+        if self.output_mode == OutputMode.RATE:
             return RateSdr(self.winners, values=self.winners_value)
         return self.winners
 

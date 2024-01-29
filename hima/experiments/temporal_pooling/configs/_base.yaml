@@ -65,6 +65,7 @@ encoder:
       active_size: ???
       sds: ???
       seed: ???
+      output_mode: binary
     flexible_sds:
       _base_: base
       active_size: ???
@@ -419,7 +420,7 @@ decoder:
     feedforward_sds: ???
     output_sds: ???
     weights_scale: 0.01
-    learning_rate: 0.004
+    learning_rate: 0.001
 #    power_t: 0.1
     power_t: 0.00
     epoch_size: 1_000

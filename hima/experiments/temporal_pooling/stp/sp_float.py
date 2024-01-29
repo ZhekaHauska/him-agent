@@ -5,13 +5,12 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from enum import Enum, auto
 from typing import cast
 
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdrr import RateSdr, AnySparseSdr
+from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed, safe_divide
@@ -22,11 +21,6 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 )
 
 
-class SpOutputMode(Enum):
-    BINARY = 1
-    RATE = auto()
-
-
 class SpatialPooler:
     rng: Generator
 
@@ -35,7 +29,7 @@ class SpatialPooler:
     adapt_to_ff_sparsity: bool
 
     output_sds: Sds
-    output_mode: SpOutputMode
+    output_mode: OutputMode
 
     initial_rf_sparsity: float
     target_max_rf_sparsity: float
@@ -98,7 +92,7 @@ class SpatialPooler:
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
         self.output_sds = Sds.make(output_sds)
-        self.output_mode = SpOutputMode[output_mode.upper()]
+        self.output_mode = OutputMode[output_mode.upper()]
 
         self.initial_rf_sparsity = min(
             initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
@@ -244,7 +238,7 @@ class SpatialPooler:
 
     def select_output(self):
         output_sdr = self.winners
-        if self.output_mode == SpOutputMode.RATE:
+        if self.output_mode == OutputMode.RATE:
             values = safe_divide(
                 self.potentials[self.winners],
                 cast(float, self.potentials[self.strongest_winner])

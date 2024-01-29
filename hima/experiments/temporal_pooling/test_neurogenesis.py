@@ -17,7 +17,7 @@ from hima.common.run.wandb import get_logger
 from hima.common.sds import TSdsShortNotation, Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, prepend_dict_keys
-from hima.experiments.temporal_pooling.data.synthetic_patterns import (
+from hima.common.sdr_sampling import (
     sample_sdr,
     sample_noisy_sdr, sample_rate_sdr, sample_noisy_sdr_rate_sdr, sample_noisy_rates_rate_sdr
 )

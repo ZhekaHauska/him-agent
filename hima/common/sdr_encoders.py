@@ -11,9 +11,10 @@ import numpy as np
 import numpy.typing as npt
 
 from hima.common.sdr import SparseSdr
-from hima.common.sdrr import AnySparseSdr, RateSdr
+from hima.common.sdrr import AnySparseSdr, RateSdr, OutputMode
 from hima.common.sds import Sds, TSdsShortNotation
 from hima.common.utils import isnone
+from hima.common.sdr_sampling import sample_sdr, sample_rate_sdr
 
 INT_TYPE = "int64"
 UINT_DTYPE = "uint32"
@@ -103,7 +104,8 @@ class IntRandomEncoder:
             self, n_values: int, seed: int,
             sds: Sds | TSdsShortNotation = None,
             space_compression: float = None,
-            active_size: int = None
+            active_size: int = None,
+            output_mode: str = 'binary'
     ):
         """
         Initializes encoder that maps each categorical value to a fixed random SDR.
@@ -119,11 +121,10 @@ class IntRandomEncoder:
             sds = (sds_size, active_size)
 
         self.output_sds = Sds.make(sds)
+        self.output_mode = OutputMode[output_mode.upper()]
+
         self.encoding_map = self._make_encoding_map(
-            n_values=n_values,
-            total_bits=self.output_sds.size,
-            n_active_bits=self.output_sds.active_size,
-            seed=seed
+            seed=seed, n_values=n_values, sds=self.output_sds, output_mode=self.output_mode
         )
 
     @property
@@ -138,19 +139,32 @@ class IntRandomEncoder:
     def n_values(self) -> int:
         return self.encoding_map.shape[0]
 
-    def encode(self, x: int | list[int] | np.ndarray) -> SparseSdr:
+    def encode(
+            self, x: int | list[int] | np.ndarray
+    ) -> AnySparseSdr | list[AnySparseSdr]:
         """
         Encodes value x to sparse SDR format using random overlapping encoding.
         It is vectorized, so an array-like x is accepted too.
         """
+        if self.output_mode == OutputMode.BINARY:
+            return self.encoding_map[x]
+
+        # Rate SDR
+        if isinstance(x, (list, np.ndarray)):
+            return [self.encoding_map[i] for i in x]
         return self.encoding_map[x]
 
     @staticmethod
-    def _make_encoding_map(n_values, total_bits, n_active_bits, seed: int) -> np.ndarray:
+    def _make_encoding_map(
+            seed: int, n_values, sds, output_mode: OutputMode
+    ) -> np.ndarray:
         rng = np.random.default_rng(seed=seed)
-        encoding_map = np.empty(shape=(n_values, n_active_bits), dtype=int)
-        for x in range(n_values):
-            encoding_map[x, :] = rng.choice(total_bits, size=n_active_bits, replace=False)
+        encoding_map = np.array([sample_sdr(rng, sds) for _ in range(n_values)], dtype=int)
+        if output_mode == OutputMode.RATE:
+            encoding_map = [
+                sample_rate_sdr(rng, sdr)
+                for sdr in encoding_map
+            ]
         return encoding_map
 
 
