@@ -27,9 +27,10 @@ class MeanValue(Generic[T]):
     def put(self, value: T, sdr: SparseSdr = None):
         if sdr is not None:
             self.agg_value[sdr] += value
+            self.n_steps += np.mean(value)
         else:
             self.agg_value += value
-        self.n_steps += 1
+            self.n_steps += 1
 
     def get(self) -> T:
         return safe_divide(self.agg_value, self.n_steps)
