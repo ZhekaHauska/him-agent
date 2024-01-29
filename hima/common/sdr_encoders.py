@@ -162,7 +162,7 @@ class IntRandomEncoder:
         encoding_map = np.array([sample_sdr(rng, sds) for _ in range(n_values)], dtype=int)
         if output_mode == OutputMode.RATE:
             encoding_map = [
-                sample_rate_sdr(rng, sdr)
+                sample_rate_sdr(rng, sdr, scale=1.0)
                 for sdr in encoding_map
             ]
         return encoding_map

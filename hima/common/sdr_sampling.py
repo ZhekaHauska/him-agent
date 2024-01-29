@@ -84,11 +84,11 @@ def sample_rates(rng: Generator, size: int, temp: float = 0.3):
     return x
 
 
-def sample_rate_sdr(rng: Generator, sdr: SparseSdr, temp: float = 0.3):
+def sample_rate_sdr(rng: Generator, sdr: SparseSdr, temp: float = 0.3, scale: float = 1.):
     """Sample RateSdr from the given SDR with the given temperature (noise scale)."""
     return RateSdr(
         sdr=sdr,
-        values=sample_rates(rng, len(sdr), temp=temp)
+        values=sample_rates(rng, len(sdr), temp=temp) * scale
     )
 
 
