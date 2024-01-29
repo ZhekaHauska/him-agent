@@ -14,7 +14,7 @@ from numpy.random import Generator
 from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sdrr import RateSdr, AnySparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed, safe_divide
+from hima.common.utils import timed, safe_divide, isnone
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_float import SpOutputMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
@@ -95,7 +95,8 @@ class SpatialPooler:
             newborn_pruning_mode: str = 'powerlaw',
             output_mode: str = 'binary',
             learning_algo: str = 'old',
-            normalize_rates: bool = True
+            normalize_rates: bool = True,
+            connectable_ff_size: int = None,
     ):
         self.rng = np.random.default_rng(seed)
 
@@ -126,11 +127,12 @@ class SpatialPooler:
         self.learning_rate = learning_rate
 
         rf_size = int(self.initial_rf_sparsity * self.ff_size)
+        set_size = isnone(connectable_ff_size, self.ff_size)
         self.rf = sample_for_each_neuron(
             rng=self.rng, n_neurons=self.output_size,
-            set_size=self.ff_size, sample_size=rf_size
+            set_size=set_size, sample_size=rf_size
         )
-        print(f'SP.rate init shape: {self.rf.shape}')
+        print(f'SP.layer init shape: {self.rf.shape} to {set_size}')
         self.weights = normalize_weights(
             self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
         )
@@ -424,7 +426,7 @@ class SpatialPooler:
         pg_mask = weighted_ff_rate < rate_threshold
         non_pg_mask = ~pg_mask
 
-        non_pg_nrp = out_rate[non_pg_mask] / ff_rate[non_pg_mask]
+        non_pg_nrp = out_rate[non_pg_mask] / weighted_ff_rate[non_pg_mask]
         avg_nrp = non_pg_nrp.mean()
         underperforming_neurons = non_pg_nrp / avg_nrp < rate_threshold
 

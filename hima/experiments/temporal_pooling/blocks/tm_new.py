@@ -32,9 +32,14 @@ class NewTemporalMemoryBlock(Block):
 
     tm: Any | TConfig
 
-    def __init__(self, tm: TConfig, learn_during_prediction: bool, **kwargs):
+    def __init__(
+            self, tm: TConfig, learn_during_prediction: bool,
+            forbid_initial_state_connections: bool = False,
+            **kwargs
+    ):
         super().__init__(**kwargs)
         self.learn_during_prediction = learn_during_prediction
+        self.forbid_initial_state_connections = forbid_initial_state_connections
         self.use_context = False
         self.tm = self.model.config.config_resolver.resolve(tm, config_type=dict)
         self.sdr_concatenator = None
@@ -60,10 +65,16 @@ class NewTemporalMemoryBlock(Block):
         sds_list.append(self[STATE].sds)
 
         self.sdr_concatenator = SdrConcatenator(sds_list)
+        if self.forbid_initial_state_connections:
+            connectable_ff_size = self.sdr_concatenator.output_sds.size - self[STATE].sds.size
+        else:
+            connectable_ff_size = None
+
         self.tm = self.model.config.resolve_object(
             self.tm,
             feedforward_sds=self.sdr_concatenator.output_sds,
-            output_sds=self[STATE].sds
+            output_sds=self[STATE].sds,
+            connectable_ff_size=connectable_ff_size
         )
 
     def reset(self):
@@ -82,6 +93,10 @@ class NewTemporalMemoryBlock(Block):
         return self.sdr_concatenator.concatenate(*sdrs)
 
     # =========== API ==========
+    def reset_ff(self):
+        self[FEEDFORWARD].set([], reset=True)
+        assert len(self[FEEDFORWARD].get()) == 0
+
     def compute(self):
         learn = self.model.streams[VARS_LEARN].get()
         full_ff_sdr = self.prepare_input(use_ff=True, use_context=True, use_state=True)
@@ -91,7 +106,7 @@ class NewTemporalMemoryBlock(Block):
 
     def predict(self):
         learn = self.model.streams[VARS_LEARN].get() and self.learn_during_prediction
-        full_ff_sdr = self.prepare_input(use_ff=False, use_context=True, use_state=True)
+        full_ff_sdr = self.prepare_input(use_ff=True, use_context=True, use_state=True)
 
         output_sdr = self.tm.compute(full_ff_sdr, learn=learn)
         self[PREDICTED_CELLS].set(output_sdr)
