@@ -868,14 +868,14 @@ class Layer:
 
     def _get_cells_for_observation(self, obs_states):
         vars_for_obs_states = obs_states // self.n_obs_states
-        obs_states -= vars_for_obs_states * self.n_obs_states
+        obs_states_per_var = obs_states - vars_for_obs_states * self.n_obs_states
 
         hid_vars = (
             np.tile(np.arange(self.n_hidden_vars_per_obs_var), len(vars_for_obs_states)) +
             vars_for_obs_states * self.n_hidden_vars_per_obs_var
         )
         hid_columns = (
-            np.repeat(obs_states, self.n_hidden_vars_per_obs_var) +
+            np.repeat(obs_states_per_var, self.n_hidden_vars_per_obs_var) +
             self.n_obs_states * hid_vars
         )
 
