@@ -13,7 +13,9 @@ from hima.common.sds import Sds
 
 # ==================== SDR generation ====================
 def sample_sdr(rng: Generator, sds: Sds):
-    return rng.choice(sds.size, sds.active_size, replace=False)
+    sdr = rng.choice(sds.size, sds.active_size, replace=False)
+    sdr.sort()
+    return sdr
 
 
 def sample_noisy_sdr(rng: Generator, sds: Sds, sdr: SparseSdr, frac: float):
