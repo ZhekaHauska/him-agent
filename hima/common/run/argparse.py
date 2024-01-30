@@ -18,21 +18,25 @@ def parse_arg_list(args: list[str]) -> list[TKeyPathValue]:
 
 def parse_arg(arg: str | tuple[str, Any]) -> TKeyPathValue:
     """Parse a single command line argument to the key-value pair."""
-    if isinstance(arg, str):
-        # raw arg string: "key=value"
+    try:
+        if isinstance(arg, str):
+            # raw arg string: "key=value"
 
-        # "--key=value" --> ["--key", "value"]
-        key_path, value = arg.split('=', maxsplit=1)
+            # "--key=value" --> ["--key", "value"]
+            key_path, value = arg.split('=', maxsplit=1)
 
-        # "--key" --> "key"
-        key_path = key_path.removeprefix('--')
+            # "--key" --> "key"
+            key_path = key_path.removeprefix('--')
 
-        # parse value represented as str
-        value = parse_str(value)
-    else:
-        # tuple ("key", value) from wandb config of the sweep single run
-        # we assume that the passed value is already correctly parsed
-        key_path, value = arg
+            # parse value represented as str
+            value = parse_str(value)
+        else:
+            # tuple ("key", value) from wandb config of the sweep single run
+            # we assume that the passed value is already correctly parsed
+            key_path, value = arg
+    except:
+        print(arg)
+        raise
 
     # parse key tokens as they can represent array indices
     # NB: skip empty key tokens (see [1] in the end of the file for an explanation)

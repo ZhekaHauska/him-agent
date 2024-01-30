@@ -59,7 +59,11 @@ class Sds:
     ):
         if short_notation is not None:
             # ignore keyword-only params
-            shape, size, sparsity, active_size = self.parse_short_notation(*short_notation)
+            try:
+                shape, size, sparsity, active_size = self.parse_short_notation(*short_notation)
+            except:
+                print(short_notation)
+                raise
 
         self.shape, self.size, self.sparsity, self.active_size = self.induce_all_components(
             shape=shape, size=size, sparsity=sparsity, active_size=active_size
