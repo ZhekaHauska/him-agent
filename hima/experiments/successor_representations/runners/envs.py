@@ -67,7 +67,8 @@ class AnimalAIWrapper(BaseEnvironment):
 
         conf['file_name'] = self._get_exe_path()
         self.conf = conf
-        self.environment, self.behavior = self._start_env(setup)
+        self.setup = setup
+        self.environment, self.behavior = self._start_env(self.setup)
 
         self.raw_obs_shape = self.environment.behavior_specs[self.behavior].observation_specs[
             0].shape[:2]
@@ -107,11 +108,12 @@ class AnimalAIWrapper(BaseEnvironment):
         self.environment.step()
 
     def reset(self):
-        self.environment.reset()
+        self.environment.reset(self._get_setup_path(self.setup))
 
     def change_setup(self, setup):
         self.environment.close()
-        self.environment, self.behavior = self._start_env(setup)
+        self.setup = setup
+        self.environment, self.behavior = self._start_env(self.setup)
 
     def close(self):
         self.environment.close()
