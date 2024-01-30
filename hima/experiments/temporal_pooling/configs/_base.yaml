@@ -427,6 +427,7 @@ decoder:
     epoch_size: 1_000
     total_updates_required: 1_000_000
     collect_errors: False
+    learn_on_sdr: False
 
 # additional params for wandb.init
 wandb_init:
