@@ -9,6 +9,7 @@ from enum import Enum, auto
 from typing import cast
 
 import numpy as np
+import numpy.typing as npt
 from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr, DenseSdr
@@ -474,12 +475,7 @@ class SpatialPooler:
         new_synapses = self.rng.choice(self.ff_size, size=len(pg_ix), p=ff_sample_distr)
         self.rf[pg_ix, to_change_ix] = new_synapses
         self.weights[pg_ix, to_change_ix] = 1.0 / self.rf_size
-
-        reorder_ix = np.argsort(self.rf[pg_ix], axis=1)
-        self.rf[pg_ix] = np.take_along_axis(self.rf[pg_ix], reorder_ix, axis=1)
-        self.weights[pg_ix] = normalize_weights(
-            np.take_along_axis(self.weights[pg_ix], reorder_ix, axis=1)
-        )
+        self.weights[pg_ix] = normalize_weights(self.weights[pg_ix])
 
         print(
             f'{self.output_entropy():.3f}'
@@ -513,11 +509,7 @@ class SpatialPooler:
         to_change_ix = np.argmin(self.weights[neuron])
         self.rf[neuron, to_change_ix] = syn
         self.weights[neuron, to_change_ix] = 1.0 / self.rf_size
-
-        reorder_ix = np.argsort(self.rf[neuron])
-        self.rf[neuron, :] = self.rf[neuron, reorder_ix]
-        self.weights[neuron, :] = self.weights[neuron, reorder_ix]
-        self.weights[[neuron]] = normalize_weights(self.weights[[neuron]])
+        self.weights[neuron] = normalize_weights(self.weights[neuron])
 
     def on_end_newborn_phase(self):
         # self.learning_rate /= 2
@@ -604,6 +596,10 @@ class SpatialPooler:
         return self.recognition_strength_trace / self.n_computes
 
 
-def normalize_weights(weights):
-    normalizer = np.abs(weights).sum(axis=1, keepdims=True)
+def normalize_weights(weights: npt.NDArray[float]):
+    normalizer = np.abs(weights)
+    if weights.ndim == 2:
+        normalizer = normalizer.sum(axis=1, keepdims=True)
+    else:
+        normalizer = normalizer.sum()
     return np.clip(weights / normalizer, 0., 1)

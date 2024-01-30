@@ -99,34 +99,38 @@ class NewTmExperiment:
         self.log_schedule = log_schedule
 
     def run(self):
+        # return
         self.print_with_timestamp('==> Run')
         self.stats.define_metrics()
         self.model.streams[VARS_LEARN].set(True)
         self.model.streams[VARS_TRACKING_ENABLED].set(self.logger is not None)
 
-        from hima.experiments.temporal_pooling.stp.stp import SpatialTemporalPooler
-        import numpy as np
-        stp = None
-        if 'STE' in self.model.blocks:
-            stp: SpatialTemporalPooler = self.model.blocks['STE'].sp
-        elif 'SE' in self.model.blocks:
-            stp: SpatialTemporalPooler = self.model.blocks['SE'].sp
-
         for epoch in range(self.iterate.epochs):
             self.print_with_timestamp(f'Epoch {epoch}')
             _, elapsed_time = self.train_epoch()
 
-            if stp is not None:
-                if isinstance(stp, SpatialTemporalPooler):
-                    indices = np.arange(stp.rf_size)
-                    mask = (indices < stp.corrected_rf_size).flatten()
-                    ws = stp.weights.flatten()[mask]
-                else:
-                    ws = stp.weights
-                print(np.mean(ws), np.std(ws))
-                print(np.round(np.histogram(ws, bins=10)[0] / stp.output_size, 1))
-
         if self.logger:
+            try:
+                self.logger.config.update(self.config.config, allow_val_change=True)
+            except:
+                # quick-n-dirty hack to remedy DryWandbLogger's inability to do this :)
+                pass
+        self.print_with_timestamp('<==')
+
+    def run_by_epoch(self):
+        if self.progress.epoch == self.iterate.epochs:
+            return
+
+        if self.progress.epoch == -1:
+            self.print_with_timestamp('==> Run')
+            self.stats.define_metrics()
+            self.model.streams[VARS_LEARN].set(True)
+            self.model.streams[VARS_TRACKING_ENABLED].set(self.logger is not None)
+
+        self.print_with_timestamp(f'Epoch {self.progress.epoch + 1}')
+        _, elapsed_time = self.train_epoch()
+
+        if self.progress.epoch == self.iterate.epochs and self.logger:
             try:
                 self.logger.config.update(self.config.config, allow_val_change=True)
             except:
