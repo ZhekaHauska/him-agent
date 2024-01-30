@@ -5,13 +5,28 @@ scalar_metrics:
       main_metrics/reward:
         agg: np.sum
         att: reward
-      main_metrics/steps:
-        agg: np.mean
-        att: steps
       layer/surprise_hidden:
         agg: np.mean
         att: agent.agent.surprise
+      layer/n_segments:
+        agg: np.mean
+        att: agent.num_segments
+      sf/steps:
+        agg: np.mean
+        att: agent.agent.sf_steps
     update_step: steps
+    update_period: 1
+    log_step: episodes
+    log_period: 1
+
+episodic_scalar_metrics:
+  class: ScalarMetrics
+  params:
+    metrics:
+      main_metrics/steps:
+        agg: np.mean
+        att: steps
+    update_step: episodes
     update_period: 1
     log_step: episodes
     log_period: 1
@@ -26,4 +41,4 @@ heatmap_metrics:
     update_step: episodes
     update_period: 1
     log_step: episodes
-    log_period: 5
+    log_period: 100
