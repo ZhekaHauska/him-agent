@@ -21,6 +21,8 @@ class MlpDecoder:
     # cache
     sparse_input: SparseSdr
     dense_input: npt.NDArray[float]
+    sparse_pred: SparseSdr
+    dense_pred: npt.NDArray[float]
     sparse_gt: SparseSdr
     dense_gt: npt.NDArray[float]
 
@@ -35,7 +37,8 @@ class MlpDecoder:
             learning_rate: float = 0.25, power_t: float = 0.05,
             total_updates_required: int = 100_000, epoch_size: int = 4_000,
             collect_errors: bool = False,
-            output_mode: str = 'binary'
+            output_mode: str = 'binary',
+            learn_on_sdr: bool = False,
     ):
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = feedforward_sds
@@ -54,8 +57,12 @@ class MlpDecoder:
 
         self.sparse_input = []
         self.dense_input = np.zeros(self.feedforward_sds.size, dtype=float)
+        self.sparse_pred = []
+        self.dense_pred = np.zeros(self.output_sds.size, dtype=float)
         self.sparse_gt = []
         self.dense_gt = np.zeros(self.output_sds.size, dtype=float)
+
+        self.learn = self._learn_sdr if learn_on_sdr else self._learn
 
         self.collect_errors = collect_errors
         if self.collect_errors:
@@ -69,7 +76,10 @@ class MlpDecoder:
     def predict(self):
         return self.weights @ self.dense_input
 
-    def learn(self, input_sdr: AnySparseSdr, gt_sdr: AnySparseSdr, prediction: DenseSdr):
+    def _learn(
+            self, input_sdr: AnySparseSdr, gt_sdr: AnySparseSdr,
+            prediction: AnySparseSdr | DenseSdr
+    ):
         # if self.n_updates >= self.total_updates_required:
         #     return
 
@@ -85,7 +95,36 @@ class MlpDecoder:
         if prediction is None:
             prediction = self.predict()
 
+        if len(prediction) != self.output_sds.size:
+            # to dense prediction
+            self.accept_prediction(prediction)
+            prediction = self.dense_pred
+
         loss_derivative = prediction - self.dense_gt
+        lr = self.lr / epoch ** self.power_t
+        self.weights -= np.outer(loss_derivative, lr * self.dense_input)
+
+        if self.collect_errors:
+            self.errors.append(np.abs(loss_derivative).mean())
+
+    def _learn_sdr(self, input_sdr: AnySparseSdr, gt_sdr: AnySparseSdr, prediction: DenseSdr):
+        # every stage update will be approximately every `stage`-th time
+        epoch = (1 + self.n_updates // self.epoch_size) ** 0.7
+
+        self.n_updates += 1
+        self.accept_input(input_sdr)
+        self.accept_ground_truth(gt_sdr)
+
+        if prediction is None:
+            prediction = self.predict()
+
+        if len(prediction) == self.output_sds.size:
+            # convert to SDR
+            prediction = self.to_sdr(prediction)
+
+        self.accept_prediction(prediction)
+
+        loss_derivative = self.dense_pred - self.dense_gt
         lr = self.lr / epoch ** self.power_t
         self.weights -= np.outer(loss_derivative, lr * self.dense_input)
 
@@ -117,6 +156,21 @@ class MlpDecoder:
         # set new SDR
         self.sparse_input = sdr
         self.dense_input[self.sparse_input] = values
+
+    def accept_prediction(self, sdr: AnySparseSdr):
+        """Accept new input and move to the next time step"""
+        if isinstance(sdr, RateSdr):
+            values = sdr.values
+            sdr = sdr.sdr
+        else:
+            values = 1.0
+
+        # forget prev SDR
+        self.dense_pred[self.sparse_pred] = 0.
+
+        # set new SDR
+        self.sparse_pred = sdr
+        self.dense_pred[self.sparse_pred] = values
 
     def accept_ground_truth(self, sdr: AnySparseSdr):
         """Accept new input and move to the next time step"""
