@@ -35,7 +35,7 @@ class MeanValue(Generic[T]):
         self.n_steps = 0.
         self.avg_mass = 0.
 
-    def put(self, value: T, sdr: SparseSdr = None, avg_mass: float = None):
+    def put(self, value: T | float, sdr: SparseSdr = None, avg_mass: float = None):
         if sdr is not None:
             # only for array: sliced update
             self.agg_value[sdr] += value
