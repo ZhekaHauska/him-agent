@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import numpy as np
+from numba import jit
 from numpy.random import Generator
 
 
@@ -51,3 +52,20 @@ def boosting(relative_rate: float | np.ndarray, k: float, softness: float = 3.0)
     #   +inf -> -inf -> K^tanh(-inf) = 1 / K
     # higher softness just makes the sigmoid curve smoother; default value is empirically optimized
     return np.power(k + 1, np.tanh(x / softness))
+
+
+RepeatingCountdown = tuple[int, int]
+
+
+def make_repeating_counter(ticks: int) -> RepeatingCountdown:
+    return ticks, ticks
+
+
+@jit
+def tick(countdown: RepeatingCountdown) -> tuple[bool, RepeatingCountdown]:
+    """Return True if the countdown has reached zero."""
+    ticks_left, initial_ticks = countdown
+    ticks_left -= 1
+    if ticks_left == 0:
+        return True, (initial_ticks, initial_ticks)
+    return False, (ticks_left, initial_ticks)
