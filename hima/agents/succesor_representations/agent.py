@@ -59,6 +59,7 @@ class BioHIMA:
             sr_estimate_planning: str = 'uniform',
             sr_early_stop_uniform: float | None = None,
             sr_early_stop_goal: float | None = None,
+            sr_early_stop_surprise: float | None = None,
             lr_surprise=(0.2, 0.01),
             lr_td_error=(0.2, 0.01),
             adaptive_sr: bool = True,
@@ -93,6 +94,7 @@ class BioHIMA:
 
         self.sr_early_stop_uniform = sr_early_stop_uniform
         self.sr_early_stop_goal = sr_early_stop_goal
+        self.sr_early_stop_surprise = sr_early_stop_surprise
 
         self._action_value_estimate = ActionValueEstimate[action_value_estimate.upper()]
         self.sr_estimate_planning = SrEstimatePlanning[sr_estimate_planning.upper()]
@@ -472,7 +474,12 @@ class BioHIMA:
         else:
             goal = False
 
-        return uniform or goal
+        if self.sr_early_stop_surprise is not None:
+            surprise = self.ss_surprise.mean > self.sr_early_stop_surprise
+        else:
+            surprise = False
+
+        return uniform or goal or surprise
 
     @property
     def striatum_lr(self):
@@ -537,7 +544,6 @@ class LstmBioHima(BioHIMA):
             approximate_tail=True,
             save_state=True,
             return_predictions=False,
-            early_stop=False
     ):
         """
             n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
@@ -556,21 +562,9 @@ class LstmBioHima(BioHIMA):
         predicted_observation = initial_prediction
 
         discount = 1.0
+        t = -1
         for t in range(n_steps):
-            if early_stop:
-                uni_dkl = (
-                        np.log(self.cortical_column.layer.n_obs_states) +
-                        np.sum(
-                            predicted_observation * np.log(
-                                np.clip(
-                                    predicted_observation, EPS, None
-                                )
-                            )
-                        )
-                )
-
-                if uni_dkl < EPS:
-                    break
+            early_stop = self._early_stop_planning(predicted_observation)
 
             sr += predicted_observation * discount
 
@@ -586,6 +580,8 @@ class LstmBioHima(BioHIMA):
                 )
 
             self.cortical_column.predict(context_messages, external_messages=action_dist)
+
+            context_messages = self.cortical_column.layer.internal_forward_messages.copy()
             predicted_observation = self.cortical_column.layer.prediction_columns
 
             # THE ONLY ADDED CHANGE TO HIMA: explicitly observe predicted_observation
@@ -596,11 +592,13 @@ class LstmBioHima(BioHIMA):
             )
             # ======
 
-            context_messages = self.cortical_column.layer.internal_forward_messages.copy()
             discount *= self.gamma
 
             if return_predictions:
                 predictions.append(copy(predicted_observation))
+
+            if early_stop:
+                break
 
         if approximate_tail:
             sr += self.predict_sf(context_messages) * discount
@@ -611,9 +609,9 @@ class LstmBioHima(BioHIMA):
         # sr /= self.cortical_column.layer.n_hidden_vars
 
         if return_predictions:
-            return sr, predictions
+            return sr, t+1, predictions
         else:
-            return sr
+            return sr, t+1
 
     def _extract_state_from_context(self, context_messages: TLstmLayerHiddenState):
         # extract model state from layer state
