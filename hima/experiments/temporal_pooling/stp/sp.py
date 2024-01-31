@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from enum import auto, Enum
+
 import numpy as np
 from numpy.random import Generator
 
@@ -14,6 +16,12 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
     sample_for_each_neuron
 )
+
+
+class SpNewbornPruningMode(Enum):
+    LINEAR = 1
+    POWERLAW = auto()
+
 
 # DEPRECATED: old version of the SpatialPooler to check against the
 # new generalized float/binary-SP. For it: sp_float is the first stable version
@@ -37,7 +45,7 @@ class SpatialPooler:
     weights: np.ndarray
 
     # newborn stage
-    newborn_pruning_mode: str
+    newborn_pruning_mode: SpNewbornPruningMode
     newborn_pruning_cycle: float
     newborn_pruning_stages: int
     newborn_pruning_schedule: int
@@ -70,18 +78,18 @@ class SpatialPooler:
     recognition_strength_trace: float
 
     def __init__(
-            self, *,
+            self, *, seed: int,
             feedforward_sds: Sds,
+            adapt_to_ff_sparsity: bool,
             # newborn / mature
             initial_max_rf_sparsity: float, target_max_rf_sparsity: float,
             initial_rf_to_input_ratio: float, target_rf_to_input_ratio: float,
             output_sds: Sds,
             learning_rate: float,
+            # neurogenesis
+            newborn_pruning_mode: str,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
-            prune_grow_cycle: float,
-            boosting_k: float, seed: int,
-            adapt_to_ff_sparsity: bool = True,
-            newborn_pruning_mode: str = 'powerlaw'
+            prune_grow_cycle: float, boosting_k: float,
     ):
         self.rng = np.random.default_rng(seed)
 
@@ -115,7 +123,7 @@ class SpatialPooler:
         self.newborn_pruning_cycle = newborn_pruning_cycle
         self.newborn_pruning_schedule = int(self.newborn_pruning_cycle / self.output_sds.sparsity)
         self.newborn_pruning_stages = newborn_pruning_stages
-        self.newborn_pruning_mode = newborn_pruning_mode
+        self.newborn_pruning_mode = SpNewbornPruningMode[newborn_pruning_mode.upper()]
         self.newborn_pruning_stage = 0
         self.prune_grow_cycle = prune_grow_cycle
         self.prune_grow_schedule = int(self.prune_grow_cycle / self.output_sds.sparsity)

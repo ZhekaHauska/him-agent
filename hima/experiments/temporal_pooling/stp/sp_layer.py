@@ -13,10 +13,11 @@ import numpy.typing as npt
 from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
+from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.utils import timed, safe_divide, isnone
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
     sample_for_each_neuron
@@ -47,7 +48,7 @@ class SpatialPooler:
     weights: np.ndarray
 
     # newborn stage
-    newborn_pruning_mode: str
+    newborn_pruning_mode: SpNewbornPruningMode
     newborn_pruning_cycle: float
     newborn_pruning_stages: int
     newborn_pruning_schedule: int
@@ -81,23 +82,24 @@ class SpatialPooler:
     recognition_strength_trace: float
 
     def __init__(
-            self, *,
+            self, *, seed: int,
             feedforward_sds: Sds,
+            adapt_to_ff_sparsity: bool,
             # initial — newborn; target — mature
             initial_max_rf_sparsity: float, target_max_rf_sparsity: float,
             initial_rf_to_input_ratio: float, target_rf_to_input_ratio: float,
-            output_sds: Sds,
-            learning_rate: float,
+            # output
+            output_sds: Sds, output_mode: str,
+            # learning
+            learning_rate: float, learning_algo: str,
+            # newborn phase
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
+            newborn_pruning_mode: str, boosting_k: float,
+            # mature phase
             prune_grow_cycle: float,
-            boosting_k: float, seed: int,
-            adapt_to_ff_sparsity: bool = True,
-            newborn_pruning_mode: str = 'powerlaw',
-            output_mode: str = 'binary',
-            learning_algo: str = 'old',
-            normalize_rates: bool = True,
+            # additional optional params
+            normalize_rates: bool = True, sample_winners: bool = False,
             connectable_ff_size: int = None,
-            sample_winners: bool = False
     ):
         self.rng = np.random.default_rng(seed)
 
@@ -106,16 +108,13 @@ class SpatialPooler:
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode[output_mode.upper()]
+        self.normalize_rates = normalize_rates
 
         self.learning_algo = SpLearningAlgo[learning_algo.upper()]
-        if self.learning_algo == SpLearningAlgo.OLD:
-            self.stdp = self._stdp
-        elif self.learning_algo == SpLearningAlgo.NEW:
-            self.stdp = self._stdp_new
-        elif self.learning_algo == SpLearningAlgo.NEW_SQ:
-            self.stdp = self._stdp_new_squared
+        self.stdp = self.get_learning_algos()[self.learning_algo]
 
-        self.normalize_rates = normalize_rates
+        self.initial_learning_rate = learning_rate
+        self.learning_rate = learning_rate
 
         self.initial_rf_sparsity = min(
             initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
@@ -123,9 +122,6 @@ class SpatialPooler:
         )
         self.target_rf_to_input_ratio = target_rf_to_input_ratio
         self.target_max_rf_sparsity = target_max_rf_sparsity
-
-        self.initial_learning_rate = learning_rate
-        self.learning_rate = learning_rate
 
         rf_size = int(self.initial_rf_sparsity * self.ff_size)
         set_size = isnone(connectable_ff_size, self.ff_size)
@@ -140,15 +136,15 @@ class SpatialPooler:
 
         self.select_winners = self._sample_winners if sample_winners else self._select_winners
 
-        self.base_boosting_k = boosting_k
-        self.boosting_k = self.base_boosting_k
+        self.newborn_pruning_mode = SpNewbornPruningMode[newborn_pruning_mode.upper()]
         self.newborn_pruning_cycle = newborn_pruning_cycle
         self.newborn_pruning_schedule = int(self.newborn_pruning_cycle / self.output_sds.sparsity)
         self.newborn_pruning_stages = newborn_pruning_stages
-        self.newborn_pruning_mode = newborn_pruning_mode
         self.newborn_pruning_stage = 0
         self.prune_grow_cycle = prune_grow_cycle
         self.prune_grow_schedule = int(self.prune_grow_cycle / self.output_sds.sparsity)
+        self.base_boosting_k = boosting_k
+        self.boosting_k = self.base_boosting_k
 
         self.sparse_input = []
         # use float not only to generalize to float-SDR, but also to eliminate
@@ -196,11 +192,7 @@ class SpatialPooler:
 
     def accept_input(self, sdr: AnySparseSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
-        if isinstance(sdr, RateSdr):
-            values = sdr.values
-            sdr = sdr.sdr
-        else:
-            values = 1.0
+        sdr, value = split_sdr_values(sdr)
 
         # forget prev SDR
         self.dense_input[self.sparse_input] = 0.
@@ -209,7 +201,7 @@ class SpatialPooler:
 
         # set new SDR
         self.sparse_input = sdr
-        self.dense_input[self.sparse_input] = values
+        self.dense_input[self.sparse_input] = value
 
         # For SP, an online learning is THE MOST natural operation mode.
         # We treat the opposite case as the special mode, which only partly affects SP state.
@@ -217,11 +209,11 @@ class SpatialPooler:
             return
 
         self.n_computes += 1
-        self.feedforward_trace[sdr] += values
+        self.feedforward_trace[sdr] += value
         self.feedforward_size_trace += len(sdr)
 
         self.dyn_n_computes += 1
-        self.dyn_ff_trace[sdr] += values
+        self.dyn_ff_trace[sdr] += value
 
     def get_step_debug_info(self):
         return {
@@ -376,21 +368,21 @@ class SpatialPooler:
         return self.winners
 
     def accept_output(self, sdr: SparseSdr, *, learn: bool):
-        if isinstance(sdr, RateSdr):
-            values = sdr.values
-            sdr = sdr.sdr
-        else:
-            values = 1.0
+        sdr, value = split_sdr_values(sdr)
 
         if not learn or sdr.shape[0] == 0:
             return
 
         # update winners activation stats
-        self.output_trace[sdr] += values
+        self.output_trace[sdr] += value
         # FIXME: make two metrics: for pre-weighting, post weighting delta
-        self.recognition_strength_trace += self.potentials[sdr].mean()
+        input_mass = self.dense_input[self.sparse_input].sum()
+        self.recognition_strength_trace += safe_divide(
+            self.potentials[sdr].mean(),
+            input_mass
+        )
 
-        self.dyn_out_trace[sdr] += values
+        self.dyn_out_trace[sdr] += value
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         # feedback SDR is the SP neurons that should be reinforced or punished
@@ -400,11 +392,11 @@ class SpatialPooler:
     def shrink_receptive_field(self):
         self.newborn_pruning_stage += 1
 
-        if self.newborn_pruning_mode == 'linear':
+        if self.newborn_pruning_mode == SpNewbornPruningMode.LINEAR:
             new_sparsity = self.newborn_linear_progress(
                 initial=self.initial_rf_sparsity, target=self.get_target_rf_sparsity()
             )
-        elif self.newborn_pruning_mode == 'powerlaw':
+        elif self.newborn_pruning_mode == SpNewbornPruningMode.POWERLAW:
             new_sparsity = self.newborn_powerlaw_progress(
                 current=self.rf_sparsity, target=self.get_target_rf_sparsity()
             )
@@ -594,6 +586,13 @@ class SpatialPooler:
     @property
     def recognition_strength(self):
         return self.recognition_strength_trace / self.n_computes
+
+    def get_learning_algos(self):
+        return {
+            SpLearningAlgo.OLD: self._stdp,
+            SpLearningAlgo.NEW: self._stdp_new,
+            SpLearningAlgo.NEW_SQ: self._stdp_new_squared
+        }
 
 
 def normalize_weights(weights: npt.NDArray[float]):

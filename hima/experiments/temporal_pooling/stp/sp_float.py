@@ -15,6 +15,7 @@ from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed, safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,
     sample_for_each_neuron
@@ -38,7 +39,7 @@ class SpatialPooler:
     weights: np.ndarray
 
     # newborn stage
-    newborn_pruning_mode: str
+    newborn_pruning_mode: SpNewbornPruningMode
     newborn_pruning_cycle: float
     newborn_pruning_stages: int
     newborn_pruning_schedule: int
@@ -72,19 +73,20 @@ class SpatialPooler:
     recognition_strength_trace: float
 
     def __init__(
-            self, *,
+            self, *, seed: int,
             feedforward_sds: Sds,
+            adapt_to_ff_sparsity: bool,
             # initial — newborn; target — mature
             initial_max_rf_sparsity: float, target_max_rf_sparsity: float,
             initial_rf_to_input_ratio: float, target_rf_to_input_ratio: float,
-            output_sds: Sds,
+            # output
+            output_sds: Sds, output_mode: str,
+            # learning
             learning_rate: float,
+            # neurogenesis
+            newborn_pruning_mode: str,
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
-            prune_grow_cycle: float,
-            boosting_k: float, seed: int,
-            adapt_to_ff_sparsity: bool = True,
-            newborn_pruning_mode: str = 'powerlaw',
-            output_mode: str = 'binary'
+            prune_grow_cycle: float, boosting_k: float,
     ):
         self.rng = np.random.default_rng(seed)
 
@@ -119,7 +121,7 @@ class SpatialPooler:
         self.newborn_pruning_cycle = newborn_pruning_cycle
         self.newborn_pruning_schedule = int(self.newborn_pruning_cycle / self.output_sds.sparsity)
         self.newborn_pruning_stages = newborn_pruning_stages
-        self.newborn_pruning_mode = newborn_pruning_mode
+        self.newborn_pruning_mode = SpNewbornPruningMode[newborn_pruning_mode.upper()]
         self.newborn_pruning_stage = 0
         self.prune_grow_cycle = prune_grow_cycle
         self.prune_grow_schedule = int(self.prune_grow_cycle / self.output_sds.sparsity)
@@ -277,11 +279,11 @@ class SpatialPooler:
     def shrink_receptive_field(self):
         self.newborn_pruning_stage += 1
 
-        if self.newborn_pruning_mode == 'linear':
+        if self.newborn_pruning_mode == SpNewbornPruningMode.LINEAR:
             new_sparsity = self.newborn_linear_progress(
                 initial=self.initial_rf_sparsity, target=self.get_target_rf_sparsity()
             )
-        elif self.newborn_pruning_mode == 'powerlaw':
+        elif self.newborn_pruning_mode == SpNewbornPruningMode.POWERLAW:
             new_sparsity = self.newborn_powerlaw_progress(
                 current=self.rf_sparsity, target=self.get_target_rf_sparsity()
             )
