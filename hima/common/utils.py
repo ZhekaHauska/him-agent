@@ -10,6 +10,7 @@ from timeit import default_timer as timer
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 DecayingValue = tuple[float, float]
 Coord2d = tuple[int, int]
@@ -32,13 +33,6 @@ def safe_ith(arr: list | None, ind: int, default: Any = None) -> Any | None:
     if arr is not None:
         return arr[ind]
     return default
-
-
-def wrap(obj, *wrappers):
-    """Sequentially wrap passed object."""
-    for wrapper in wrappers:
-        obj = wrapper(obj)
-    return obj
 
 
 def timed(f):
@@ -95,8 +89,8 @@ def multiply_decaying_value(value: DecayingValue, alpha: float) -> DecayingValue
 
 
 def softmax(
-        x: np.ndarray, *, temp: float = None, beta: float = None, axis: int = -1
-) -> np.ndarray:
+        x: npt.NDArray[float], *, temp: float = None, beta: float = None, axis: int = -1
+) -> npt.NDArray[float]:
     """
     Compute softmax values for a vector `x` with a given temperature or inverse temperature.
     The softmax operation is applied over the last axis by default, or over the specified axis.
@@ -109,12 +103,12 @@ def softmax(
     return e_x / np.sum(e_x, axis=axis, keepdims=True)
 
 
-def symlog(x: np.ndarray) -> np.ndarray:
+def symlog(x: npt.NDArray[float]) -> npt.NDArray[float]:
     """Compute symlog values for a vector `x`. It's an inverse operation for symexp."""
     return np.sign(x) * np.log(np.abs(x) + 1)
 
 
-def symexp(x: np.ndarray) -> np.ndarray:
+def symexp(x: npt.NDArray[float]) -> npt.NDArray[float]:
     """Compute symexp values for a vector `x`. It's an inverse operation for symlog."""
     return np.sign(x) * (np.exp(np.abs(x)) - 1.0)
 
@@ -146,7 +140,9 @@ def prepend_dict_keys(d: dict[str, Any], prefix, separator='/'):
     }
 
 
-def to_gray_img(img: np.ndarray, like: tuple[int, int] | np.ndarray = None):
+def to_gray_img(
+        img: npt.NDArray, like: tuple[int, int] | npt.NDArray = None
+) -> npt.NDArray[np.uint8]:
     img = img * 255
     if like is not None:
         if isinstance(like, np.ndarray):

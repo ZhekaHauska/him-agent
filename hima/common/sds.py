@@ -21,8 +21,6 @@ TSdsShortNotation = Union[
 ]
 
 
-# TODO: rework parsing and probably split building from the dataclass itself
-
 class Sds:
     """
     Sparse Distributed Space (SDS) parameters.

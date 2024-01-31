@@ -82,7 +82,8 @@ class OutputMode(Enum):
     RATE = auto()
 
 
-def split_sdr_values(sdr: AnySparseSdr):
+def split_sdr_values(sdr: AnySparseSdr) -> tuple[SparseSdr, float | npt.NDArray[float]]:
+    """Split SDR or Rate SDR into SDR and its rates."""
     if isinstance(sdr, RateSdr):
         return sdr.sdr, sdr.values
     return sdr, 1.0
