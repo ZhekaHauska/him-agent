@@ -11,6 +11,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.optim.lr_scheduler as lr_scheduler
+from tqdm import tqdm
 
 from hima.common.sdr import sparse_to_dense
 from hima.modules.belief.utils import normalize
@@ -61,6 +63,8 @@ class LstmLayer:
             use_batches: bool = True,
             batch_size: int = 50,
             num_epochs: int = 10,
+            early_stop_loss: float = 0.1,
+            retain_old_trajectories: float = 0.5,
             seed=None,
     ):
         torch.set_num_threads(1)
@@ -94,6 +98,8 @@ class LstmLayer:
         self.use_batches = use_batches
         self.batch_size = batch_size
         self.num_epochs = num_epochs
+        self.early_stop_loss = early_stop_loss
+        self.retain_old_trajectories = retain_old_trajectories
 
         # o_t
         self.observations = list()
@@ -183,7 +189,9 @@ class LstmLayer:
 
         if len(self.trajectories) == self.batch_size:
             self._train()
-            self.trajectories.clear()
+            self.trajectories = self.trajectories[
+                :int(self.batch_size * self.retain_old_trajectories)
+            ]
 
     def observe(self, observation, learn: bool = True):
         if observation.size == self.input_size:
@@ -310,14 +318,32 @@ class LstmLayer:
         ) = snapshot
 
     def _train(self):
-        for epoch in range(self.num_epochs):
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
+        scheduler = lr_scheduler.LinearLR(
+            self.optimizer,
+            start_factor=1.0,
+            end_factor=0.01,
+            total_iters=self.num_epochs
+        )
+        indx = np.arange(len(self.trajectories))
+        self.rng.shuffle(indx)
+
+        split_indx = len(indx) - int(len(indx) * 0.25)
+
+        val_indx = indx[split_indx:]
+        train_indx = indx[:split_indx]
+
+        previous_val_loss = 1e24
+        tolerance = 0
+
+        for epoch in (pbar := tqdm(range(self.num_epochs))):
             accumulated_loss = 0
             accumulated_steps = 0
 
-            for trajectory in self.trajectories:
+            for i in train_indx:
                 state = self.model.get_init_state()
 
-                for dense_obs, dense_act in trajectory:
+                for dense_obs, dense_act in self.trajectories[i]:
                     action_probs = dense_act
                     action_probs = torch.from_numpy(action_probs).float().to(self.device)
 
@@ -334,9 +360,47 @@ class LstmLayer:
             mean_loss = accumulated_loss / accumulated_steps
             mean_loss.backward()
             self.optimizer.step()
+            mean_loss = mean_loss.item()
 
+            if len(val_indx) != 0:
+                val_los = 0
+                val_los_steps = 0
 
+                for i in val_indx:
+                    state = self.model.get_init_state()
 
+                    for dense_obs, dense_act in self.trajectories[i]:
+                        action_probs = dense_act
+                        action_probs = torch.from_numpy(action_probs).float().to(self.device)
+
+                        with torch.no_grad():
+                            state = self.transition_with_action(action_probs, state)
+                            predicted_obs_logits = self.decode_obs(state)
+                            loss = self.get_loss(predicted_obs_logits, dense_obs)
+                            val_los += loss
+                            val_los_steps += 1
+                            state = self.transition_with_observation(dense_obs, state)
+
+                mean_val_loss = (val_los / val_los_steps).item()
+            else:
+                mean_val_loss = None
+
+            pbar.set_description(
+                f"loss: {round(mean_loss, 3)} val_loss: {round(mean_val_loss, 3)} lr: {round(scheduler.get_last_lr()[0], 3)} ",
+                refresh=True
+            )
+            scheduler.step()
+
+            if mean_val_loss < self.early_stop_loss:
+                break
+
+            if mean_val_loss > previous_val_loss:
+                tolerance += 1
+                if tolerance >= 3:
+                    break
+            else:
+                tolerance = 0
+                previous_val_loss = mean_val_loss
 
 
 class LstmWorldModel(nn.Module):
