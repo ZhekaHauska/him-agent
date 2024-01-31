@@ -5,6 +5,8 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from copy import copy
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -56,6 +58,9 @@ class LstmLayer:
             n_external_states: int = 0,
             lr=2e-3,
             loss_propagation_schedule: int = 5,
+            use_batches: bool = True,
+            batch_size: int = 50,
+            num_epochs: int = 10,
             seed=None,
     ):
         torch.set_num_threads(1)
@@ -86,6 +91,15 @@ class LstmLayer:
         self.internal_cells = self.hidden_size
         self.context_input_size = self.hidden_size
         self.external_input_size = self.n_external_vars * self.n_external_states
+        self.use_batches = use_batches
+        self.batch_size = batch_size
+        self.num_epochs = num_epochs
+
+        # o_t
+        self.observations = list()
+        # a_{t-1}
+        self.actions = list()
+        self.trajectories = list()
 
         self.lr = lr
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -160,6 +174,17 @@ class LstmLayer:
         self._reinit_model_state(reset_loss=False)
         self._reinit_messages_and_states()
 
+        self.trajectories.append(
+            list(zip(self.observations, self.actions))
+        )
+
+        self.observations.clear()
+        self.actions.clear()
+
+        if len(self.trajectories) == self.batch_size:
+            self._train()
+            self.trajectories.clear()
+
     def observe(self, observation, learn: bool = True):
         if observation.size == self.input_size:
             dense_obs = observation
@@ -168,14 +193,21 @@ class LstmLayer:
         dense_obs = torch.from_numpy(dense_obs).float().to(self.device)
 
         if learn:
-            loss = self.get_loss(self.predicted_obs_logits, dense_obs)
+            with torch.set_grad_enabled(not self.use_batches):
+                loss = self.get_loss(self.predicted_obs_logits, dense_obs)
+
             self.last_loss_value = loss.item()
-            self.accumulated_loss += loss
-            self.accumulated_loss_steps += 1
-            self.backpropagate_loss()
+
+            if self.use_batches:
+                self.observations.append(dense_obs)
+                self.actions.append(self.external_messages)
+            else:
+                self.accumulated_loss += loss
+                self.accumulated_loss_steps += 1
+                self.backpropagate_loss()
 
         _, state = self.internal_state
-        with torch.set_grad_enabled(learn):
+        with torch.set_grad_enabled(learn and not self.use_batches):
             state = self.transition_with_observation(dense_obs, state)
 
         self.internal_state = [True, state]
@@ -189,7 +221,7 @@ class LstmLayer:
             action_probs = self.external_messages
             action_probs = torch.from_numpy(action_probs).float().to(self.device)
 
-        with torch.set_grad_enabled(learn):
+        with torch.set_grad_enabled(learn and not self.use_batches):
             if self.external_input_size != 0:
                 state = self.transition_with_action(action_probs, state)
             self.predicted_obs_logits = self.decode_obs(state)
@@ -276,6 +308,35 @@ class LstmLayer:
             self.prediction_cells,
             self.prediction_columns
         ) = snapshot
+
+    def _train(self):
+        for epoch in range(self.num_epochs):
+            accumulated_loss = 0
+            accumulated_steps = 0
+
+            for trajectory in self.trajectories:
+                state = self.model.get_init_state()
+
+                for dense_obs, dense_act in trajectory:
+                    action_probs = dense_act
+                    action_probs = torch.from_numpy(action_probs).float().to(self.device)
+
+                    state = self.transition_with_action(action_probs, state)
+                    predicted_obs_logits = self.decode_obs(state)
+
+                    loss = self.get_loss(predicted_obs_logits, dense_obs)
+                    accumulated_loss += loss
+                    accumulated_steps += 1
+
+                    state = self.transition_with_observation(dense_obs, state)
+
+            self.optimizer.zero_grad()
+            mean_loss = accumulated_loss / accumulated_steps
+            mean_loss.backward()
+            self.optimizer.step()
+
+
+
 
 
 class LstmWorldModel(nn.Module):
