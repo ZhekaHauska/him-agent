@@ -37,11 +37,11 @@ class SpTracker:
         if not self.supported:
             return
         self.potentials_size = round(potentials_quantile * sp.output_sds.size)
-        self.potentials = MeanValue(self.potentials_size)
+        self.potentials = MeanValue(size=self.potentials_size)
 
         self.recognition_strength = MeanValue()
-        target_rf_size = round(sp.get_target_rf_sparsity() * sp.feedforward_sds.size)
-        self.weights = MeanValue(target_rf_size)
+        self.target_rf_size = round(sp.get_target_rf_sparsity() * sp.feedforward_sds.size)
+        self.weights = MeanValue(size=self.target_rf_size)
 
         if self.track_split:
             self.split_size = self.sp.output_sds.size
@@ -73,7 +73,7 @@ class SpTracker:
         weights = debug_info.get('weights')
         if weights.ndim == 2:
             avg_weights = np.sort(weights, axis=1).mean(axis=0)
-            avg_weights = avg_weights[-self.weights.agg_value.size:]
+            avg_weights = avg_weights[-self.target_rf_size:]
             self.weights.put(avg_weights)
 
         if self.track_split:
@@ -99,10 +99,12 @@ class SpTracker:
         if self.potentials.n_steps == 0:
             return {}
 
+        # expected weight = 1 / target_rf_size => we normalize by it
+        normalized_weights = self.weights.get() * self.target_rf_size
         metrics = {
             'potentials': self.potentials.get(),
             'recognition_strength': self.recognition_strength.get(),
-            'weights': self.weights.get() * len(self.weights.agg_value)
+            'weights': normalized_weights,
         }
         if self.track_split:
             metrics['split_ratio'] = self.split_ratio.get()

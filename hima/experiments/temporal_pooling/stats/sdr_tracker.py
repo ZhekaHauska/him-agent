@@ -39,7 +39,7 @@ class SdrTracker:
         self.prev_sdr = set()
         self.sdr_size = MeanValue()
         self.sym_similarity = MeanValue()
-        self.histogram = MeanValue(self.sds.size)
+        self.histogram = MeanValue(size=self.sds.size, track_avg_mass=True)
         self.union = set()
 
     def _reset_step_metrics(self):
@@ -109,11 +109,14 @@ class SdrTracker:
             return {}
 
         union_relative_sparsity = safe_divide(len(self.union), self.sds.active_size)
-        pmf = self.histogram.get()
-        relative_pmf = safe_divide(pmf, self.sds.sparsity)
+        relative_pmf = safe_divide(self.histogram.get(), self.sds.sparsity)
+
+        # NB: additional normalization by using avg mass instead of step counts —
+        # this way we can compare entropy regardless of the input avg rate
+        pmf_for_entropy = self.histogram.get(with_avg_mass=True)
 
         metrics = {
-            'entropy': entropy(pmf, self.sds),
+            'entropy': entropy(pmf_for_entropy, self.sds),
             'union_relative_sparsity': union_relative_sparsity,
             'relative_pmf': relative_pmf,
         }
