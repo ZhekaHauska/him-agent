@@ -97,21 +97,41 @@ model:
         both_known: TM2.active_cells.sdr
         sequence_finished: sequence_finished
 
-    # SP Tracking
-    - name: state_L1.prior.sp
-      tracker: trackers.sp_concat
+    # SP Matching Tracking
+    # L1
+    - name: state_L1.sp_matching.prior
+      tracker: trackers.sp_matching
       on:
         sp_computed: TM.predicted_cells.sdr
         sequence_finished: sequence_finished
-    - name: state_L1.posterior.sp
-      tracker: trackers.sp_concat
+    - name: state_L1.sp_matching.posterior
+      tracker: trackers.sp_matching
       on:
         sp_computed: TM.active_cells.sdr
         sequence_finished: sequence_finished
-    - name: state_L2.prior.sp
-      tracker: trackers.sp_concat
+    # L2
+    - name: state_L2.sp_matching.prior
+      tracker: trackers.sp_matching
       on:
         sp_computed: TM2.predicted_cells.sdr
+        sequence_finished: sequence_finished
+    - name: state_L2.sp_matching.posterior
+      tracker: trackers.sp_matching
+      on:
+        sp_computed: TM2.active_cells.sdr
+        sequence_finished: sequence_finished
+
+    # SP Synaptogenesis tracking
+    - name: state_L1.sp_synaptogenesis
+      tracker: trackers.sp_synaptogenesis_concat
+      on:
+        sp_computed: TM.state.sdr
+        sequence_finished: sequence_finished
+    # SP Synaptogenesis tracking
+    - name: state_L2.sp_synaptogenesis
+      tracker: trackers.sp_synaptogenesis_concat
+      on:
+        sp_computed: TM2.state.sdr
         sequence_finished: sequence_finished
 
 #track_streams:
@@ -172,14 +192,12 @@ models:
 
   STM1:
     - predict input w/ prior belief:
+        - TM.reset_ff()
         - TM.predict()
         - TM.predicted_cells.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_prediction.sdr
     - embed input:
-#        - input.sdr -> SE.feedforward.sdr
-#        - SE.compute()
-#        - SE.output.sdr -> embed_input.sdr
         - input.sdr -> embed_input.sdr
     - compute TM:
         - embed_input.sdr -> TM.feedforward.sdr
@@ -220,6 +238,8 @@ models:
 
   STM2:
     - predict input w/ prior belief:
+        - TM.reset_ff()
+        - TM2.reset_ff()
         - TM2.predict()
         - TM2.predicted_cells.sdr -> concat.feedforward_#2.sdr
         - TM.predict()
@@ -441,15 +461,19 @@ trackers:
     _type_: tracker.sdr_prediction
     on: ???
     step_flush_schedule: 100
-  sp:
-    _type_: tracker.sp
+  sp_matching:
+    _type_: tracker.sp_matching
+    on: ???
+    step_flush_schedule: 100
+    potentials_quantile: 0.3
+  sp_synaptogenesis:
+    _type_: tracker.sp_synaptogenesis
     on: ???
     step_flush_schedule: 100
     track_split: False
-  sp_concat:
-    _base_: sp
+  sp_synaptogenesis_concat:
+    _base_: sp_synaptogenesis
     track_split: True
-    potentials_quantile: 0.3
 
 wandb_init:
   _base_: $_base.wandb_init

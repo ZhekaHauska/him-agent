@@ -125,9 +125,16 @@ def _resolve_tracker(type_tag: str):
             get_sdr_prediction_tracker
         )
         return get_sdr_prediction_tracker
-    if type_tag == 'tracker.sp':
-        from hima.experiments.temporal_pooling.stats.sp_tracker import get_sp_tracker
-        return get_sp_tracker
+    if type_tag == 'tracker.sp_matching':
+        from hima.experiments.temporal_pooling.stats.sp_matching_tracker import (
+            get_sp_matching_tracker
+        )
+        return get_sp_matching_tracker
+    if type_tag == 'tracker.sp_synaptogenesis':
+        from hima.experiments.temporal_pooling.stats.sp_synaptogenesis_tracker import (
+            get_sp_synaptogenesis_tracker
+        )
+        return get_sp_synaptogenesis_tracker
 
 
 def _resolve_dataset(type_tag):

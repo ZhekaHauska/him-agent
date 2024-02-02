@@ -73,8 +73,7 @@ class SpMatchingTracker:
         return {}
 
     def flush_aggregate_metrics(self) -> TMetrics:
-        if self.potentials.n_steps == 0:
-            return {}
+        assert self.potentials.n_steps != 0
 
         metrics = {
             'potentials': self.potentials.get(),
@@ -85,7 +84,7 @@ class SpMatchingTracker:
         return metrics
 
 
-def get_sp_tracker(on: dict, **config) -> SpMatchingTracker:
+def get_sp_matching_tracker(on: dict, **config) -> SpMatchingTracker:
     tracked_stream = on['sp_computed']
     sp = getattr(tracked_stream.owner, 'sp', None)
     if sp is None:

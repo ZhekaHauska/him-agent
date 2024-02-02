@@ -27,7 +27,10 @@ from hima.experiments.temporal_pooling.stats.metrics import (
     sdr_similarity
 )
 from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
-from hima.experiments.temporal_pooling.stats.sp_tracker import SpTracker
+from hima.experiments.temporal_pooling.stats.sp_matching_tracker import SpMatchingTracker
+from hima.experiments.temporal_pooling.stats.sp_synaptogenesis_tracker import (
+    SpSynaptogenesisTracker
+)
 from hima.experiments.temporal_pooling.utils import resolve_random_seed
 
 if TYPE_CHECKING:
@@ -142,7 +145,11 @@ class NeurogenesisExperiment:
         )
         self.input_sdr_tracker = SdrTracker(self.input_sds, **sdr_tracker_config)
         self.output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
-        self.sp_tracker = SpTracker(
+        self.sp_matching_tracker = SpMatchingTracker(
+            self.layer, step_flush_schedule=step_flush_schedule,
+            potentials_quantile=sp_potentials_quantile
+        )
+        self.sp_synaptogenesis_tracker = SpSynaptogenesisTracker(
             self.layer, step_flush_schedule=step_flush_schedule
         )
 
@@ -340,8 +347,12 @@ class NeurogenesisExperiment:
             prefix='output.sdr'
         )
         self.metrics |= personalize_metrics(
-            metrics=self.sp_tracker.on_sp_computed(None, False),
-            prefix='sp'
+            metrics=self.sp_matching_tracker.on_sp_computed(None, False),
+            prefix='sp.matching'
+        )
+        self.metrics |= personalize_metrics(
+            metrics=self.sp_synaptogenesis_tracker.on_sp_computed(None, False),
+            prefix='sp.synaptogenesis'
         )
 
     def on_epoch(self):
@@ -357,8 +368,12 @@ class NeurogenesisExperiment:
             prefix='output.sdr'
         )
         self.metrics |= personalize_metrics(
-            metrics=self.sp_tracker.on_sequence_finished(None, False),
-            prefix='sp'
+            metrics=self.sp_matching_tracker.on_sequence_finished(None, False),
+            prefix='sp.matching'
+        )
+        self.metrics |= personalize_metrics(
+            metrics=self.sp_synaptogenesis_tracker.on_sequence_finished(None, False),
+            prefix='sp.synaptogenesis'
         )
 
     def generate_sim_test_sequences(self):

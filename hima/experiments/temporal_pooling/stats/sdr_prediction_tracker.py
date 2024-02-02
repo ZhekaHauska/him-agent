@@ -61,8 +61,6 @@ class SdrPredictionTracker:
 
         pr_sdr, pr_value = split_sdr_values(self.predicted_sdr)
         gt_sdr, gt_value = split_sdr_values(self.observed_sdr)
-        self.predicted_sdr = None
-        self.observed_sdr = None
 
         pr_set_sdr, gt_set_sdr = set(pr_sdr), set(gt_sdr)
 
@@ -79,12 +77,16 @@ class SdrPredictionTracker:
 
         dissimilarity = miss_rate
         if isinstance(self.predicted_sdr, RateSdr):
-            dissimilarity = sdr_similarity(
+            similarity = sdr_similarity(
                 self.predicted_sdr, RateSdr(sdr=gt_sdr, values=gt_value),
                 symmetrical=self.symmetrical_dissimilarity,
                 dense_cache=self.dense_cache
             )
+            dissimilarity = 1 - similarity
         self.dissimilarity.put(dissimilarity)
+
+        self.predicted_sdr = None
+        self.observed_sdr = None
 
         if self.miss_rate.n_steps == self.step_flush_schedule:
             return self.flush_step_metrics()
@@ -104,7 +106,10 @@ class SdrPredictionTracker:
 
         miss_rate = self.miss_rate.get()
         imprecision = self.imprecision.get()
-        f1_score = safe_divide(2 * miss_rate * imprecision, miss_rate + imprecision)
+        f1_score = safe_divide(
+            2 * (1 - miss_rate) * (1 - imprecision),
+            (1 - miss_rate) + (1 - imprecision)
+        )
 
         metrics = {
             'miss_rate': miss_rate,
