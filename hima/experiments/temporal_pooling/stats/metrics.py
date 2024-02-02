@@ -6,8 +6,9 @@
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
-from hima.common.sdr import SparseSdr, DenseSdr, SetSdr
+from hima.common.sdr import SparseSdr, SetSdr
 from hima.common.sdrr import AnySparseSdr, RateSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide, isnone
@@ -31,7 +32,7 @@ NO_NORMALIZATION = 'no'
 
 def sdr_similarity(
         x1: AnySparseSdr, x2: AnySparseSdr, symmetrical: bool = False,
-        sds: Sds = None, dense_cache: DenseSdr = None
+        sds: Sds = None, dense_cache: npt.NDArray[float] = None
 ) -> float:
     """
     Compute similarity between two SDRs (both Sdr or RateSdr).
@@ -75,7 +76,7 @@ def _sdr_similarity_for_sets(x1: SetSdr, x2: SetSdr, symmetrical: bool = False) 
 
 
 def _sdr_similarity(
-        x1: SparseSdr, x2: SparseSdr, dense_cache: DenseSdr, symmetrical: bool = False
+        x1: SparseSdr, x2: SparseSdr, dense_cache: npt.NDArray[float], symmetrical: bool = False
 ) -> float:
     """
     Optimized for SDRs represented with arrays. For fast computations, it utilizes
@@ -101,7 +102,7 @@ def _sdr_similarity(
 #       group of methods.
 
 def _sdrr_similarity(
-        x1: RateSdr, x2: RateSdr, dense_cache: DenseSdr, symmetrical: bool = False
+        x1: RateSdr, x2: RateSdr, dense_cache: npt.NDArray[float], symmetrical: bool = False
 ) -> float:
     """
     Optimized for SDRs represented with arrays. For fast computations, it utilizes
@@ -130,6 +131,7 @@ def _sdrr_similarity(
         # symmetrical distance is an average of two non-symmetrical distances
         dense_cache[x1.sdr] = np.abs(dense_cache[x1.sdr])
         raw_distance = np.sum(dense_cache[x1.sdr])
+        # noinspection PyUnboundLocalVariable
         distance = (distance + safe_divide(raw_distance, norm_)) / 2
 
     distance = max(min(distance, 1.), 0.)
@@ -170,11 +172,12 @@ def sequence_similarity(
 
 
 def distribution_similarity(
-        p: np.ndarray, q: np.ndarray, algorithm: str, sds: Sds = None, symmetrical: bool = False
+        p: npt.NDArray[float], q: npt.NDArray[float],
+        algorithm: str, sds: Sds = None, symmetrical: bool = False
 ) -> float:
     if algorithm == 'kl-divergence':
         # We take |1 - KL| to make it similarity metric. NB: normalized KL div for SDS can be > 1
-        return np.abs(1 - kl_divergence(p, q, sds, symmetrical=symmetrical))
+        return np.abs(1 - kl_divergence(p, q, sds=sds, symmetrical=symmetrical))
     elif algorithm == 'pmf_pointwise':
         return point_pmf_similarity(p, q, sds=sds)
     elif algorithm == 'wasserstein':
@@ -187,7 +190,7 @@ def similarity_matrix(
         a: list[AnySparseSdr],
         algorithm: str = None, discount: float = None, symmetrical: bool = False,
         sds: Sds = None
-) -> np.ndarray:
+) -> npt.NDArray[float]:
     n = len(a)
     diagonal_mask = np.identity(n, dtype=bool)
     sm = np.empty((n, n))
@@ -213,7 +216,6 @@ def similarity_matrix(
             if regime == 0:
                 sim = _sdr_similarity_for_sets(x, y, symmetrical=symmetrical)
             elif regime == 1:
-                # noinspection PyTypeChecker
                 sim = distribution_similarity(
                     x, y, algorithm=algorithm, sds=sds, symmetrical=symmetrical
                 )
@@ -229,7 +231,7 @@ def similarity_matrix(
 def sequence_similarity_elementwise(
         s1: SdrSequence, s2: SdrSequence,
         discount: float = None, symmetrical: bool = False,
-        sds: Sds = None, dense_cache: np.ndarray = None
+        sds: Sds = None, dense_cache: npt.NDArray[float] = None
 ) -> float:
     n = len(s1)
     assert n == len(s2)
@@ -364,7 +366,7 @@ def aggregate_pmf(seq: list[AnySparseSdr], sds: Sds, decay: float = 1.0) -> np.n
     return histogram / cnt
 
 
-def representation_from_pmf(pmf: np.ndarray, sds: Sds) -> SparseSdr:
+def representation_from_pmf(pmf: npt.NDArray[float], sds: Sds) -> SparseSdr:
     """
     Return an SDR representative from a probability-mass-like function, i.e.
     `active_size` the most probable elements.
@@ -375,41 +377,59 @@ def representation_from_pmf(pmf: np.ndarray, sds: Sds) -> SparseSdr:
     return representative_sdr
 
 
-def _correct_information_metric_for_sds(metric: float, sds: Sds = None) -> float:
+def _correct_information_metric_for_sds(
+        metric: float, p: npt.NDArray[float], sds: Sds = None
+) -> float:
     # if SDS params are passed, we treat each distribution as cluster distribution
-    # and normalize it
+    # and normalize it.
+    # There are two different cases:
+    #   - for binary SDR pmf the sum of it equals to `sds.active_size`
+    #   - for Rate SDRs pmf the sum of it equals to the average rate mass (= sum of rates)
+
+    # we distinguish these cases by checking if `sds` is passed
     if sds is not None:
-        # as probability mass functions do not sum to 1, but to `active_size`
+        # for SDR pmf does not sum to 1, but to `active_size`
         metric /= sds.active_size
         # normalize relative to max possible value, i.e. uniform bucket encoding
         # NB: it's equivalent to changing the logarithm base of the main equation
         metric /= -np.log(sds.sparsity)
+    else:
+        # for Rate SDRs pmf does not sum to 1, but to the average rate mass (= sum of rates)
+        avg_rate_mass = p.sum()
+        if avg_rate_mass != 0:
+            metric /= avg_rate_mass
+            # normalize relative to max possible value, i.e. uniform pmf
+            metric /= -np.log(1 / avg_rate_mass)
     return metric
 
 
 def kl_divergence(
-        p: np.ndarray, q: np.ndarray, sds: Sds = None,
-        symmetrical=False
+        p: npt.NDArray[float], q: npt.NDArray[float],
+        normalize=True, sds: Sds = None, symmetrical=False
 ) -> float:
     if symmetrical:
-        return (kl_divergence(p, q, sds) + kl_divergence(q, p, sds)) / 2
+        return (kl_divergence(p, q, normalize, sds) + kl_divergence(q, p, normalize, sds)) / 2
 
     # noinspection PyTypeChecker
     kl_div: float = np.dot(p, np.ma.log(p) - np.ma.log(q))
-    kl_div = _correct_information_metric_for_sds(kl_div, sds)
+    if normalize:
+        kl_div = _correct_information_metric_for_sds(kl_div, p=p, sds=sds)
     # we take abs as for SDS KL-div actually can be < 0! But I think it's ok to consider abs value
     kl_div = abs(kl_div)
     return kl_div
 
 
-def cross_entropy(d1: np.ndarray, d2: np.ndarray, sds: Sds = None) -> float:
-    ce = -np.dot(d1, np.ma.log(d2))
-    ce = _correct_information_metric_for_sds(ce, sds)
+def cross_entropy(
+        p: npt.NDArray[float], q: npt.NDArray[float], normalize=True, sds: Sds = None
+) -> float:
+    ce = -np.dot(p, np.ma.log(q))
+    if normalize:
+        ce = _correct_information_metric_for_sds(ce, p=p, sds=sds)
     return ce
 
 
-def entropy(x: np.ndarray, sds: Sds = None) -> float:
-    return cross_entropy(x, x, sds)
+def entropy(x: np.ndarray, sds: Sds = None, normalize=True) -> float:
+    return cross_entropy(x, x, normalize=normalize, sds=sds)
 
 
 def wasserstein_distance(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
