@@ -12,34 +12,30 @@ import numpy.typing as npt
 
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
+from hima.experiments.temporal_pooling.stp.sp_utils import (
+    RepeatingCountdown,
+    make_repeating_counter, tick, is_infinite
+)
 
 
 class SpTracker:
     sp: Any
-    step_flush_schedule: int | None
+    step_flush_scheduler: RepeatingCountdown
 
     track_split: bool
     potentials_quantile: float
 
-    potentials: MeanValue[npt.NDArray[float]]
-    recognition_strength: MeanValue[float]
     weights: MeanValue[npt.NDArray[float]]
 
-    def __init__(
-            self, sp, step_flush_schedule: int = None,
-            track_split: bool = False, potentials_quantile: float = 0.5
-    ):
+    def __init__(self, sp, step_flush_schedule: int = None, track_split: bool = False):
         self.sp = sp
         self.supported = getattr(sp, 'get_step_debug_info', None) is not None
-        self.step_flush_schedule = step_flush_schedule
-        self.track_split = track_split
-
         if not self.supported:
             return
-        self.potentials_size = round(potentials_quantile * sp.output_sds.size)
-        self.potentials = MeanValue(size=self.potentials_size)
 
-        self.recognition_strength = MeanValue()
+        self.step_flush_scheduler = make_repeating_counter(step_flush_schedule)
+        self.track_split = track_split
+
         self.target_rf_size = round(sp.get_target_rf_sparsity() * sp.feedforward_sds.size)
         self.weights = MeanValue(size=self.target_rf_size)
 
@@ -49,8 +45,6 @@ class SpTracker:
             self.split_mass = MeanValue()
 
     def _reset_aggregate_metrics(self):
-        self.potentials.reset()
-        self.recognition_strength.reset()
         self.weights.reset()
 
         if self.track_split:
@@ -62,13 +56,6 @@ class SpTracker:
             return {}
 
         debug_info = self.sp.get_step_debug_info()
-
-        self.potentials.put(debug_info['potentials'][-self.potentials_size:])
-
-        recognition_strength = debug_info.get('recognition_strength')
-        self.recognition_strength.put(
-            recognition_strength.mean() if len(recognition_strength) > 0 else 0.
-        )
 
         weights = debug_info.get('weights')
         if weights.ndim == 2:
@@ -83,7 +70,8 @@ class SpTracker:
             self.split_ratio.put(np.count_nonzero(mask) / rf.size)
             self.split_mass.put(np.sum(weights.flatten()[mask]) / weights.shape[0])
 
-        if self.potentials.n_steps == self.step_flush_schedule:
+        flush_now, self.step_flush_scheduler = tick(self.step_flush_scheduler)
+        if flush_now:
             return self.flush_aggregate_metrics()
         return {}
 
@@ -91,19 +79,17 @@ class SpTracker:
         if ignore or not self.supported:
             return {}
 
-        if self.step_flush_schedule is None:
+        if is_infinite(self.step_flush_scheduler):
             return self.flush_aggregate_metrics()
         return {}
 
     def flush_aggregate_metrics(self) -> TMetrics:
-        if self.potentials.n_steps == 0:
+        if self.weights.n_steps == 0:
             return {}
 
-        # expected weight = 1 / target_rf_size => we normalize by it
+        # expected weight = 1 / target_rf_size => we divide by this normalization term
         normalized_weights = self.weights.get() * self.target_rf_size
         metrics = {
-            'potentials': self.potentials.get(),
-            'recognition_strength': self.recognition_strength.get(),
             'weights': normalized_weights,
         }
         if self.track_split:
