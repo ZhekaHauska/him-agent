@@ -102,6 +102,7 @@ class SpatialPooler:
             # additional optional params
             normalize_rates: bool = True, sample_winners: bool = False,
             connectable_ff_size: int = None,
+            # rand_weights_ratio: 0.7, rand_weights_noise: 0.01,
             slow_trace_decay: float = 0.95, fast_trace_decay: float = 0.75,
     ):
         self.rng = np.random.default_rng(seed)
@@ -136,6 +137,10 @@ class SpatialPooler:
         self.weights = normalize_weights(
             self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
         )
+        # self.rand_weights = np.clip(
+        #     self.rng.normal(loc=rand_weights_ratio, scale=0.01, size=self.output_size),
+        #     0., 1.
+        # )
 
         self.select_winners = self._sample_winners if sample_winners else self._select_winners
 
@@ -162,33 +167,37 @@ class SpatialPooler:
         self.strongest_winner = None
         self.potentials = np.zeros(self.output_size)
 
+        # stats collection
+        self.health_check_results = {}
         self.computation_speed = MeanValue(exp_decay=slow_trace_decay)
+        # TODO: remove avg mass tracking
         self.slow_feedforward_trace = MeanValue(
             size=self.ff_size, track_avg_mass=True, exp_decay=slow_trace_decay
         )
         self.slow_feedforward_trace.put(self.feedforward_sds.sparsity)
 
         self.slow_feedforward_size_trace = MeanValue(exp_decay=slow_trace_decay)
-        self.slow_output_trace = MeanValue(
-            size=self.output_size, track_avg_mass=True, exp_decay=slow_trace_decay
-        )
-        self.slow_output_trace.put(self.output_sds.sparsity)
-        self.slow_recognition_strength_trace = MeanValue(exp_decay=slow_trace_decay)
-
         self.fast_feedforward_trace = MeanValue(
             size=self.ff_size, track_avg_mass=True, exp_decay=fast_trace_decay
         )
         self.fast_feedforward_trace.put(self.feedforward_sds.sparsity)
+
+        self.slow_recognition_strength_trace = MeanValue(exp_decay=slow_trace_decay)
+        self.slow_output_trace = MeanValue(
+            size=self.output_size, track_avg_mass=True, exp_decay=slow_trace_decay
+        )
+        self.slow_output_trace.put(self.output_sds.sparsity)
         self.fast_output_trace = MeanValue(
             size=self.output_size, track_avg_mass=True, exp_decay=fast_trace_decay
         )
         self.fast_output_trace.put(self.output_sds.sparsity)
+
         self.neurogenesis_queue = np.zeros(self.output_size, dtype=int)
 
     def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
         output_sdr, run_time = self._compute(input_sdr, learn)
-        self.computation_speed.get(run_time)
+        self.computation_speed.put(run_time)
         return output_sdr
 
     @timed
@@ -236,7 +245,7 @@ class SpatialPooler:
             'potentials': np.sort(self.potentials),
             'recognition_strength': self.potentials[self.winners],
             'weights': self.weights,
-            'rf': self.rf,
+            'rf': self.rf
         }
 
     def try_activate_neurogenesis(self):
@@ -244,10 +253,12 @@ class SpatialPooler:
         if not is_now:
             return
 
+        # self.health_check()
         if self.is_newborn_phase:
             self.shrink_receptive_field()
         else:
             self.prune_grow_synapses()
+            pass
 
     def match_current_input(self, with_neurons: np.ndarray = None) -> npt.NDArray[float]:
         rf = self.rf if with_neurons is None else self.rf[with_neurons]
@@ -498,6 +509,83 @@ class SpatialPooler:
         )
 
         self.decay_stat_trackers()
+
+    def health_check(self):
+        # TODO:
+        #   - Input's popularity IP — how specified input sdr represents the whole input
+        #       in terms of popularity:
+        #       ip[sdr] = in_rate[sdr].mean() / target_in_rate
+        #   - Input Rate SDR popularity IRP — the same, but taking into account
+        #       current Rate SDR rates:
+        #       irp[sdr] = in_rate[sdr] * rate_sdr / target_in_rate
+        #   - RF's efficiency RFE_i:
+        #       rfe_i = in_rate[rf_i] * w_i
+        #   - RFE^in_i:
+        #       rfe^in_i = rfe_i / target_in_rate
+        #   - Normalized RFE^in_i:
+        #       nrfe^in_i = rfe^in_i / rfe^in.mean()
+        #   - Learning Potential LP_i:
+        #       lp_i = rfe^in_i / ip[rf_i] = rfe_i / in_rate[rf_i].mean()
+        #   - Average IP:
+        #       aip = ip[RF].mean()
+        #   - Average LP:
+        #       alp = lp[RF].mean()
+        #   - Output popularity OP_i:
+        #       op_i = out_rate_i / target_out_rate
+        #   - RFE^out_i:
+        #       rfe^out_i = op_i / rfe^in_i
+        #   - Normalized RFE^out_i:
+        #       nrfe^out_i = rfe^out_i / rfe^out.mean()
+
+        # TODO: check normalization — do I need it?
+        in_rate = self.fast_feedforward_trace.get()
+        target_in_rate = in_rate.sum() / self.ff_size
+
+        # relative to target input rate
+        ip = in_rate / target_in_rate
+
+        rfe = np.sum(in_rate[self.rf] * self.weights, axis=1)
+        # relative to target input rate
+        rfe_in = rfe / target_in_rate
+        avg_rfe_in = rfe_in.mean()
+        nrfe_in = rfe_in / avg_rfe_in
+
+        ip_rf = np.mean(ip[self.rf], axis=1)
+        lp = rfe_in / ip_rf
+        alp = np.mean(lp)
+
+        out_rate = self.fast_output_trace.get()
+        target_out_rate = out_rate.sum() / self.output_size
+
+        # relative to target output rate
+        op = out_rate / target_out_rate
+        rfe_out = op / rfe_in
+        avg_rfe_out = rfe_out.mean()
+        nrfe_out = rfe_out / avg_rfe_out
+
+        slow_in_rate = self.slow_feedforward_trace.get()
+        slow_target_in_rate = slow_in_rate.sum() / self.ff_size
+        slow_rfe = np.sum(slow_in_rate[self.rf] * self.weights, axis=1)
+        slow_rfe_in = slow_rfe / slow_target_in_rate
+
+        self.health_check_results = {
+            'ip': ip,
+            'op': op,
+            'avg_rfe_in': rfe_in.mean(),
+            'nrfe_in': nrfe_in,
+            'ip_rf': ip_rf,
+            'avg_ip_rf': ip_rf.mean(),
+            'lp': lp,
+            'alp': alp,
+            'avg_rfe_out': rfe_out.mean(),
+            'nrfe_out': nrfe_out,
+        }
+
+        # I also care about:
+        #   - rfe^in_i fast and slow (but the latter only for calcs);
+        #       their thresholds low and high; how to map them to probs
+        #   - rfe^out_i fast; their thresholds low and high; how to map them to probs;
+        #       and std(rfe^out_i) or std for nrfe^out_i; how to map deviations to probs
 
     def try_grow_synapses_to_input(self, neurons: SparseSdr):
         if np.sum(self.neurogenesis_queue[neurons]) == 0:

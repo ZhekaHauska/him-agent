@@ -331,9 +331,9 @@ TM:
     max_segments_per_cell_basal: 16
   tm_new:
     _base_: $_base.spatial_pooler.default
-#    _type_: sp.float
+    _type_: sp.float
 #    _type_: sp.sdrr
-    _type_: sp.sdrr
+#    _type_: sp.sdrr
     initial_rf_to_input_ratio: 100.0
     initial_max_rf_sparsity: 0.5
     target_rf_to_input_ratio: 0.75
@@ -345,7 +345,7 @@ TM:
     adapt_to_ff_sparsity: False
     boosting_k: 0.2
     output_mode: rate
-    learning_algo: new
+#    learning_algo: new
   tm_new2:
     _base_: $_base.spatial_pooler.default_layer
     initial_rf_to_input_ratio: 5.0

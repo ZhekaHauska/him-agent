@@ -31,6 +31,7 @@ class MeanValue(Generic[T]):
         self.track_avg_mass = track_avg_mass
         self.exp_decay = exp_decay
 
+        # TODO: remove avg mass tracking — it's inducible with just agg_value and n_steps
         self.agg_value = np.zeros(size) if self.is_array else 0.
         self.n_steps = 0.
         self.avg_mass = 0.

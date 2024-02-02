@@ -110,6 +110,11 @@ class SpTracker:
             metrics['split_ratio'] = self.split_ratio.get()
             metrics['split_mass'] = self.split_mass.get()
 
+        if getattr(self.sp, 'health_check', None) is not None:
+            self.sp.health_check()
+            metrics |= self.sp.health_check_results
+            metrics['speed_kcps'] = round(1.0 / self.sp.computation_speed.get() / 1000.0, 2)
+
         self._reset_aggregate_metrics()
         return metrics
 
