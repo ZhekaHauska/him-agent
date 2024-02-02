@@ -1,15 +1,15 @@
 log: True
-project_name: animalai_test_new_runner
+visualize: False
+project_name: animalai_test
 run_tag: null
 
 action_inertia: 1
-frame_skip: 10
-strategies:
-  - [0, 1, 1, 2, 1]
-  - [1, 0, 2, 0, 2]
-  - [2, 1, 1, 0, 1]
+frame_skip: 3
+strategies: null
+observe_action: True
+reward_free: False
 
-setup: custom/two_ways_left.yaml
+setup: custom/free10x10.yaml
 
 scenario: 'configs/scenario/animalai.yaml'
 env_conf: 'configs/environment/animalai/default.yaml'
