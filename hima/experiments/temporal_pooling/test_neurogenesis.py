@@ -143,8 +143,7 @@ class NeurogenesisExperiment:
         self.input_sdr_tracker = SdrTracker(self.input_sds, **sdr_tracker_config)
         self.output_sdr_tracker = SdrTracker(self.output_sds, **sdr_tracker_config)
         self.sp_tracker = SpTracker(
-            self.layer, step_flush_schedule=step_flush_schedule,
-            potentials_quantile=sp_potentials_quantile
+            self.layer, step_flush_schedule=step_flush_schedule
         )
 
         self.sim_test_sequences = self.generate_sim_test_sequences()

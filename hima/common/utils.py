@@ -5,8 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from functools import wraps
-from timeit import default_timer as timer
 from typing import Any
 
 import numpy as np
@@ -33,17 +31,6 @@ def safe_ith(arr: list | None, ind: int, default: Any = None) -> Any | None:
     if arr is not None:
         return arr[ind]
     return default
-
-
-def timed(f):
-    """Wrap function with the timer that returns tuple: result, elapsed_time."""
-    @wraps(f)
-    def _wrap(*args, **kw):
-        start = timer()
-        result = f(*args, **kw)
-        elapsed = timer() - start
-        return result, elapsed
-    return _wrap
 
 
 def exp_sum(ema, decay, val):

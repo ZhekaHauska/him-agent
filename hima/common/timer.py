@@ -3,9 +3,10 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-import timeit
+from __future__ import annotations
 
-timer = timeit.default_timer
+from functools import wraps
+from timeit import default_timer as timer
 
 
 def print_with_timestamp(start_time: float, *args):
@@ -19,3 +20,14 @@ def print_with_timestamp(start_time: float, *args):
     else:
         time_format = '5.0f'
     print(f'[{elapsed_sec:{time_format}}]', *args)
+
+
+def timed(f):
+    """Wrap function with the timer that returns tuple: result, elapsed_time."""
+    @wraps(f)
+    def _wrap(*args, **kw):
+        start = timer()
+        result = f(*args, **kw)
+        elapsed = timer() - start
+        return result, elapsed
+    return _wrap

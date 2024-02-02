@@ -10,7 +10,7 @@ from itertools import islice
 
 from hima.common.config.base import TConfig
 from hima.common.run.runner import Runner
-from hima.common.utils import timed
+from hima.common.timer import timed
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
 from hima.experiments.temporal_pooling.graph.graph import Pipeline
 from hima.experiments.temporal_pooling.graph.block import Block

@@ -5,6 +5,8 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 from numba import jit
 from numpy.random import Generator
@@ -54,18 +56,23 @@ def boosting(relative_rate: float | np.ndarray, k: float, softness: float = 3.0)
     return np.power(k + 1, np.tanh(x / softness))
 
 
-RepeatingCountdown = tuple[int, int]
+RepeatingCountdown = tuple[int, Optional[int]]
 
 
-def make_repeating_counter(ticks: int) -> RepeatingCountdown:
-    return ticks, ticks
+@jit(inline='always')
+def make_repeating_counter(ticks: int | None) -> RepeatingCountdown:
+    return ticks if not None else 0, ticks
+
+
+@jit(inline='always')
+def is_infinite(countdown: RepeatingCountdown) -> bool:
+    return countdown[1] is None
 
 
 @jit
 def tick(countdown: RepeatingCountdown) -> tuple[bool, RepeatingCountdown]:
     """Return True if the countdown has reached zero."""
-    ticks_left, initial_ticks = countdown
-    ticks_left -= 1
+    ticks_left, initial_ticks = countdown[0] - 1, countdown[1]
     if ticks_left == 0:
-        return True, (initial_ticks, initial_ticks)
+        return True, make_repeating_counter(initial_ticks)
     return False, (ticks_left, initial_ticks)

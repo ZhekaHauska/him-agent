@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.run.wandb import get_logger
-from hima.common.timer import timer, print_with_timestamp
-from hima.common.utils import timed, isnone
+from hima.common.timer import timer, print_with_timestamp, timed
+from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
 from hima.experiments.temporal_pooling.graph.global_vars import VARS_TRACKING_ENABLED
 from hima.experiments.temporal_pooling.graph.model import Model

@@ -10,7 +10,8 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed, lin_sum, exp_sum
+from hima.common.utils import lin_sum, exp_sum
+from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, gather_rows,

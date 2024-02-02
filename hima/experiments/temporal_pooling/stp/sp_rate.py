@@ -14,7 +14,8 @@ from numpy.random import Generator
 from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
 from hima.common.sds import Sds
-from hima.common.utils import timed, safe_divide
+from hima.common.utils import safe_divide
+from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
