@@ -56,17 +56,19 @@ def boosting(relative_rate: float | np.ndarray, k: float, softness: float = 3.0)
     return np.power(k + 1, np.tanh(x / softness))
 
 
-RepeatingCountdown = tuple[int, Optional[int]]
+RepeatingCountdown = tuple[int, int]
 
 
 @jit(inline='always')
-def make_repeating_counter(ticks: int | None) -> RepeatingCountdown:
-    return ticks if not None else 0, ticks
+def make_repeating_counter(ticks: int) -> RepeatingCountdown:
+    if ticks is None:
+        ticks = -1
+    return ticks, ticks
 
 
 @jit(inline='always')
 def is_infinite(countdown: RepeatingCountdown) -> bool:
-    return countdown[1] is None
+    return countdown[1] == -1
 
 
 @jit

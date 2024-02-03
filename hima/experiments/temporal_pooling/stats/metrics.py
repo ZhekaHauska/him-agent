@@ -430,7 +430,8 @@ def _correct_information_metric_for_sds(
         # NB: it's equivalent to changing the logarithm base of the main equation
         metric /= -np.log(sds.sparsity)
     else:
-        # for Rate SDRs pmf does not sum to 1, but to the average rate mass (= sum of rates)
+        # for Rate SDRs pmf does not sum to 1, but to the average rate mass
+        # (= sum of rates in rate SDRs)
         avg_rate_mass = p.sum()
         if avg_rate_mass != 0:
             metric /= avg_rate_mass

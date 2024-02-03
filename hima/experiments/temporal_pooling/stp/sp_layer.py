@@ -173,23 +173,23 @@ class SpatialPooler:
         self.computation_speed = MeanValue(exp_decay=slow_trace_decay)
         # TODO: remove avg mass tracking
         self.slow_feedforward_trace = MeanValue(
-            size=self.ff_size, track_avg_mass=True, exp_decay=slow_trace_decay
+            size=self.ff_size, exp_decay=slow_trace_decay
         )
         self.slow_feedforward_trace.put(self.feedforward_sds.sparsity)
 
         self.slow_feedforward_size_trace = MeanValue(exp_decay=slow_trace_decay)
         self.fast_feedforward_trace = MeanValue(
-            size=self.ff_size, track_avg_mass=True, exp_decay=fast_trace_decay
+            size=self.ff_size, exp_decay=fast_trace_decay
         )
         self.fast_feedforward_trace.put(self.feedforward_sds.sparsity)
 
         self.slow_recognition_strength_trace = MeanValue(exp_decay=slow_trace_decay)
         self.slow_output_trace = MeanValue(
-            size=self.output_size, track_avg_mass=True, exp_decay=slow_trace_decay
+            size=self.output_size, exp_decay=slow_trace_decay
         )
         self.slow_output_trace.put(self.output_sds.sparsity)
         self.fast_output_trace = MeanValue(
-            size=self.output_size, track_avg_mass=True, exp_decay=fast_trace_decay
+            size=self.output_size, exp_decay=fast_trace_decay
         )
         self.fast_output_trace.put(self.output_sds.sparsity)
 
@@ -254,7 +254,6 @@ class SpatialPooler:
         if not is_now:
             return
 
-        # self.health_check()
         if self.is_newborn_phase:
             self.shrink_receptive_field()
         else:
@@ -472,6 +471,10 @@ class SpatialPooler:
         print(f'{self.output_entropy():.3f} | {self.recognition_strength:.1f}')
 
     def prune_grow_synapses(self):
+        in_first_threshold, in_second_threshold = np.log(1/10), np.log(1/20)
+        out_first_threshold, out_second_threshold = np.log(1/10), np.log(1/20)
+
+
         rate_threshold = 1 / 20
 
         avg_ff_trace = self.fast_feedforward_trace.get()
@@ -551,6 +554,8 @@ class SpatialPooler:
         avg_rfe_in = rfe_in.mean()
         nrfe_in = rfe_in / avg_rfe_in
 
+        log_nrfe_in = np.log(nrfe_in)
+
         ip_rf = np.mean(ip[self.rf], axis=1)
         lp = rfe_in / ip_rf
         alp = np.mean(lp)
@@ -564,6 +569,8 @@ class SpatialPooler:
         avg_rfe_out = rfe_out.mean()
         nrfe_out = rfe_out / avg_rfe_out
 
+        log_nrfe_out = np.log(nrfe_out)
+
         slow_in_rate = self.slow_feedforward_trace.get()
         slow_target_in_rate = slow_in_rate.sum() / self.ff_size
         slow_rfe = np.sum(slow_in_rate[self.rf] * self.weights, axis=1)
@@ -574,12 +581,14 @@ class SpatialPooler:
             'op': op,
             'avg_rfe_in': rfe_in.mean(),
             'nrfe_in': nrfe_in,
+            'log_nrfe_in': log_nrfe_in,
             'ip_rf': ip_rf,
             'avg_ip_rf': ip_rf.mean(),
             'lp': lp,
             'alp': alp,
             'avg_rfe_out': rfe_out.mean(),
             'nrfe_out': nrfe_out,
+            'log_nrfe_out': log_nrfe_out,
         }
 
         # I also care about:

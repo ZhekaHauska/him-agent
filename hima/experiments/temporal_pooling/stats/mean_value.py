@@ -20,23 +20,19 @@ class MeanValue(Generic[T]):
     agg_value: T
     n_steps: float
 
-    track_avg_mass: bool
     avg_mass: float
 
     is_array: bool
     exp_decay: float
 
-    def __init__(self, *, size: int = None, track_avg_mass: bool = False, exp_decay: float = 0.):
+    def __init__(self, *, size: int = None, exp_decay: float = 0.):
         self.is_array = size is not None
-        self.track_avg_mass = track_avg_mass
         self.exp_decay = exp_decay
 
-        # TODO: remove avg mass tracking — it's inducible with just agg_value and n_steps
         self.agg_value = np.zeros(size) if self.is_array else 0.
         self.n_steps = 0.
-        self.avg_mass = 0.
 
-    def put(self, value: T | float, sdr: SparseSdr = None, avg_mass: float = None):
+    def put(self, value: T | float, sdr: SparseSdr = None):
         if sdr is not None:
             # only for array: sliced update
             self.agg_value[sdr] += value
@@ -46,17 +42,7 @@ class MeanValue(Generic[T]):
 
         self.n_steps += 1.0
 
-        if self.track_avg_mass:
-            if avg_mass is None:
-                # only for array: update by average mass
-                self.avg_mass += np.mean(value)
-            else:
-                # for array or scalar
-                self.avg_mass += avg_mass
-
-    def get(self, with_avg_mass: bool = False) -> T:
-        if with_avg_mass:
-            return safe_divide(self.agg_value, self.avg_mass)
+    def get(self) -> T:
         return safe_divide(self.agg_value, self.n_steps)
 
     def decay(self):
@@ -64,7 +50,6 @@ class MeanValue(Generic[T]):
         # step to improve performance
         self.agg_value *= self.exp_decay
         self.n_steps *= self.exp_decay
-        self.avg_mass *= self.exp_decay
 
     def reset(self):
         if self.is_array:

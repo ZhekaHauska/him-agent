@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import numpy.typing as npt
 
+from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 from hima.experiments.temporal_pooling.stp.sp_utils import (
@@ -27,7 +29,7 @@ class SpMatchingTracker:
     recognition_strength: MeanValue[float]
 
     def __init__(
-            self, sp, step_flush_schedule: int = None, potentials_quantile: float = 0.5
+            self, sp, step_flush_schedule: int = None, potentials_quantile: float = None
     ):
         self.sp = sp
         self.supported = getattr(sp, 'get_step_debug_info', None) is not None
@@ -36,6 +38,7 @@ class SpMatchingTracker:
 
         self.step_flush_scheduler = make_repeating_counter(step_flush_schedule)
 
+        potentials_quantile = isnone(potentials_quantile, 3*sp.output_sds.sparsity)
         self.potentials_size = round(potentials_quantile * sp.output_sds.size)
         self.potentials = MeanValue(size=self.potentials_size)
 
@@ -75,8 +78,11 @@ class SpMatchingTracker:
     def flush_aggregate_metrics(self) -> TMetrics:
         assert self.potentials.n_steps != 0
 
+        potentials = self.potentials.get()
+        log_potentials = np.log(potentials + 1e-6)
         metrics = {
-            'potentials': self.potentials.get(),
+            'potentials': potentials,
+            'log_potentials': log_potentials,
             'recognition_strength': self.recognition_strength.get(),
         }
 
