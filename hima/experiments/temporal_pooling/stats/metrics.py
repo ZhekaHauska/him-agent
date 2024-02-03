@@ -49,7 +49,17 @@ def sdr_similarity(
     if dense_cache is None:
         dense_cache = np.zeros(sds.size)
 
-    sim_func = _sdrr_similarity if isinstance(x1, RateSdr) else _sdr_similarity
+    is_rate_sdr1 = isinstance(x1, RateSdr)
+    is_rate_sdr2 = isinstance(x2, RateSdr)
+    if is_rate_sdr1 or is_rate_sdr2:
+        if not is_rate_sdr1:
+            x1 = RateSdr(x1, np.repeat(1., len(x1)))
+        if not is_rate_sdr2:
+            x2 = RateSdr(x2, np.repeat(1., len(x2)))
+        sim_func = _sdrr_similarity
+    else:
+        sim_func = _sdr_similarity
+
     return sim_func(x1, x2, dense_cache=dense_cache, symmetrical=symmetrical)
 
 
@@ -82,14 +92,25 @@ def _sdr_similarity(
     Optimized for SDRs represented with arrays. For fast computations, it utilizes
     a zeroed-out dense SDR array (will be cleared after using before returning the result).
     """
+    # SDR similarity is implemented as a special case of Rate SDR similarity for easier
+    # results comparison with different output modes.
+
+    # NB: sym(pred, gt) — recall; sym(gt, pred) — precision.
+
     dense_cache[x2] = 1
     overlap = dense_cache[x1].sum()
     # clear it
     dense_cache[x2] = 0
 
-    # sim is a fraction of their union or x2. For the former, len(x1 | x2) = x1 + x2 - overlap
-    norm = len(x1) + len(x2) - overlap if symmetrical else len(x2)
-    return safe_divide(overlap, norm)
+    sim = safe_divide(overlap, len(x2))
+    sim = max(min(sim, 1.), 0.)
+
+    if symmetrical:
+        sim_ = safe_divide(overlap, len(x1))
+        sim_ = max(min(sim_, 1.), 0.)
+        sim = (sim + sim_) / 2
+
+    return sim
 
 
 # ==================== SDRR similarity ====================
@@ -112,29 +133,44 @@ def _sdrr_similarity(
         # we define that empty SDRs aren't similar to anything, even to each other
         return 0.
 
-    # print(f'x1: {x1}')
-    # print(f'x2: {x2}')
+    # NB: sym(pred, gt) — recall; sym(gt, pred) — precision.
+
     dense_cache[x2.sdr] = x2.values
     norm = np.sum(x2.values)
+    if np.isclose(norm, 0.):
+        return 0.
 
-    dense_cache[x1.sdr] -= x1.values
     if symmetrical:
         norm_ = np.sum(x1.values)
+        if np.isclose(norm_, 0.):
+            return 0.
+
+    dense_cache[x1.sdr] -= x1.values
 
     # we define non-symmetrical distance as: d(x1, x2) = |x1 - x2| / |x2|
     dense_cache[x2.sdr] = np.abs(dense_cache[x2.sdr])
     raw_distance = np.sum(dense_cache[x2.sdr])
 
+    # I clip all intermediate results to [0, 1] to avoid incorrect results for cases
+    # like [1, 1, 1] vs [<<1, <<1, <<1] —> which would get one of non-symmetrical
+    # distances >> 1 and the total distance > 1 => similarity = 0, which is wrong as
+    # for this case similarity should be 0 < sim << 1.
+    # E.g. [1, 1, 1] vs [0.1, 0.1, 0.1] should give us a similarity ~= 0.1. It gives us
+    # a symmetrical similarity = 0.1 / 2 with intermediate clipping, which is a good enough.
+    # NB: this problem is relevant only for rate SDRs with significantly different masses.
     distance = safe_divide(raw_distance, norm)
+    distance = max(min(distance, 1.), 0.)
 
     if symmetrical:
         # symmetrical distance is an average of two non-symmetrical distances
         dense_cache[x1.sdr] = np.abs(dense_cache[x1.sdr])
         raw_distance = np.sum(dense_cache[x1.sdr])
-        # noinspection PyUnboundLocalVariable
-        distance = (distance + safe_divide(raw_distance, norm_)) / 2
 
-    distance = max(min(distance, 1.), 0.)
+        # noinspection PyUnboundLocalVariable
+        distance_ = safe_divide(raw_distance, norm_)
+        distance_ = max(min(distance_, 1.), 0.)
+
+        distance = (distance + distance_) / 2
 
     # clear cache
     dense_cache[x2.sdr] = 0
