@@ -112,10 +112,10 @@ class SdrPredictionTracker:
         )
 
         metrics = {
-            'miss_rate': miss_rate,
-            'imprecision': imprecision,
             'f1_score': f1_score,
+            'miss_rate': miss_rate,
             'dissimilarity': self.dissimilarity.get(),
+            'imprecision': imprecision,
             'prediction_volume': self.prediction_volume.get(),
         }
         self._reset_step_metrics()

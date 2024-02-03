@@ -82,7 +82,7 @@ class SpMatchingTracker:
         log_potentials = np.log(potentials + 1e-6)
         metrics = {
             'potentials': potentials,
-            'log_potentials': log_potentials,
+            'ln(potentials)': log_potentials,
             'recognition_strength': self.recognition_strength.get(),
         }
 

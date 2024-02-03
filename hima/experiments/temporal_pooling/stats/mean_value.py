@@ -25,7 +25,7 @@ class MeanValue(Generic[T]):
     is_array: bool
     exp_decay: float
 
-    def __init__(self, *, size: int = None, exp_decay: float = 0.):
+    def __init__(self, *, size: int = None, exp_decay: float = 0.5):
         self.is_array = size is not None
         self.exp_decay = exp_decay
 
@@ -45,90 +45,10 @@ class MeanValue(Generic[T]):
     def get(self) -> T:
         return safe_divide(self.agg_value, self.n_steps)
 
-    def decay(self):
-        # it is expected to apply decay only periodically, not after every
+    def reset(self, hard: bool = False):
+        # it is expected to apply reset/decay only periodically, not after every
         # step to improve performance
-        self.agg_value *= self.exp_decay
-        self.n_steps *= self.exp_decay
+        decay = self.exp_decay if not hard else 0.
 
-    def reset(self):
-        if self.is_array:
-            self.agg_value.fill(0.)
-        else:
-            self.agg_value = 0.
-
-        self.n_steps = 0.
-        self.avg_mass = 0.
-
-
-class ScalarMeanValue:
-    agg_value: float
-    n_steps: float
-
-    exp_decay: float
-
-    def __init__(self, exp_decay: float = 0.):
-        self.exp_decay = exp_decay
-
-        self.agg_value = 0.
-        self.n_steps = 0.
-
-    def put(self, value: float, step_size: float = 1.0):
-        self.agg_value += value
-        self.n_steps += step_size
-
-    def get(self) -> float:
-        return safe_divide(self.agg_value, self.n_steps)
-
-    def decay(self):
-        # it is expected to apply decay only periodically, not after every
-        # step to improve performance
-        self.agg_value *= self.exp_decay
-        self.n_steps *= self.exp_decay
-
-    def reset(self):
-        self.agg_value = 0.
-        self.n_steps = 0.
-
-
-class ArrayMeanValue:
-    agg_value: npt.NDArray[float]
-    n_steps: float
-
-    step_by_avg_mass: bool
-    exp_decay: float
-
-    def __init__(self, size: int, step_by_avg_mass: bool = False, exp_decay: float = 0.):
-        self.step_by_avg_mass = step_by_avg_mass
-        self.exp_decay = exp_decay
-
-        self.agg_value = np.zeros(size, dtype=float)
-        self.n_steps = 0.
-
-    def put(
-            self, value: npt.NDArray[float], sdr: SparseSdr = None,
-            step_size: float = 1.0
-    ):
-        if sdr is not None:
-            # sliced update
-            self.agg_value[sdr] += value
-        else:
-            self.agg_value += value
-
-        if self.step_by_avg_mass:
-            self.n_steps += np.mean(value)
-        else:
-            self.n_steps += step_size
-
-    def get(self) -> T:
-        return safe_divide(self.agg_value, self.n_steps)
-
-    def decay(self):
-        # it is expected to apply decay only periodically, not after every
-        # step to improve performance
-        self.agg_value *= self.exp_decay
-        self.n_steps *= self.exp_decay
-
-    def reset(self):
-        self.agg_value.fill(0.)
-        self.n_steps = 0.
+        self.agg_value *= decay
+        self.n_steps *= decay

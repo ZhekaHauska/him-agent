@@ -436,7 +436,7 @@ def _correct_information_metric_for_sds(
         if avg_rate_mass != 0:
             metric /= avg_rate_mass
             # normalize relative to max possible value, i.e. uniform pmf
-            metric /= -np.log(1 / avg_rate_mass)
+            metric /= -np.log(avg_rate_mass / p.size)
     return metric
 
 

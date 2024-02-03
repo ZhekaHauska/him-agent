@@ -51,7 +51,7 @@ model:
 
   track:
     # SDR Tracking
-    - name: input.sequence.sdr
+    - name: input.sdr
       tracker: trackers.sdr
       on:
         sdr_updated: input.sdr

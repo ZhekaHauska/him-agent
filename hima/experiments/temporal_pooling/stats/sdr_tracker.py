@@ -107,27 +107,23 @@ class SdrTracker:
 
         metrics = {
             'sparsity': sparsity,
-            'relative_sparsity': relative_sparsity,
-            'sym_similarity': self.sym_similarity.get(),
+            'sparsity_rel': relative_sparsity,
+            'similarity': self.sym_similarity.get(),
         }
         self._reset_step_metrics()
         return metrics
 
     def flush_aggregate_metrics(self) -> TMetrics:
         union_relative_sparsity = safe_divide(len(self.union), self.sds.active_size)
-        relative_pmf = safe_divide(self.histogram.get(), self.sds.sparsity)
+        pmf = self.histogram.get()
+        relative_pmf = safe_divide(pmf, pmf.mean())
         log_relative_pmf = np.log(relative_pmf)
 
-        # NB: additional normalization by using avg mass instead of step counts —
-        # this way we can compare entropy regardless of the input avg rate
-        pmf_for_entropy = self.histogram.get()
-
         metrics = {
-            # TODO: fix entropy calculation with respect to avg mass
-            'entropy': entropy(pmf_for_entropy, self.sds),
-            'union_relative_sparsity': union_relative_sparsity,
-            'relative_pmf': relative_pmf,
-            'log_relative_pmf': log_relative_pmf,
+            'H': entropy(pmf),
+            'union_sparsity_rel': union_relative_sparsity,
+            'PMF_rel': relative_pmf,
+            'ln(PMF_rel)': log_relative_pmf,
         }
         self._reset_aggregate_metrics()
         return metrics

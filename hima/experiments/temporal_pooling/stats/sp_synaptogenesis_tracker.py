@@ -62,8 +62,8 @@ class SpSynaptogenesisTracker:
         normalized_weights = avg_weights * self.target_rf_size
         log_normalized_weights = np.log(normalized_weights)
         metrics = {
-            'weights': normalized_weights,
-            'log_weights': log_normalized_weights,
+            # 'weights': normalized_weights,
+            'ln(weights)': log_normalized_weights,
         }
 
         if self.track_split:

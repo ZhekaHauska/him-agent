@@ -170,8 +170,9 @@ class SpatialPooler:
 
         # stats collection
         self.health_check_results = {}
+        self.slow_health_check_results = {}
+
         self.computation_speed = MeanValue(exp_decay=slow_trace_decay)
-        # TODO: remove avg mass tracking
         self.slow_feedforward_trace = MeanValue(
             size=self.ff_size, exp_decay=slow_trace_decay
         )
@@ -405,9 +406,7 @@ class SpatialPooler:
         # update winners activation stats
         self.slow_output_trace.put(value, sdr)
         # FIXME: make two metrics: for pre-weighting, post weighting delta
-        input_mass = self.dense_input[self.sparse_input].sum()
         self.slow_recognition_strength_trace.put(
-            # safe_divide(self.potentials[sdr].mean(), input_mass)
             self.potentials[sdr].mean()
         )
 
@@ -533,7 +532,7 @@ class SpatialPooler:
         #   - Average IP:
         #       aip = ip[RF].mean()
         #   - Average LP:
-        #       alp = lp[RF].mean()
+        #       avg_lp = lp[RF].mean()
         #   - Output popularity OP_i:
         #       op_i = out_rate_i / target_out_rate
         #   - RFE^out_i:
@@ -547,48 +546,66 @@ class SpatialPooler:
 
         # relative to target input rate
         ip = in_rate / target_in_rate
+        log_ip = np.log(ip)
 
-        rfe = np.sum(in_rate[self.rf] * self.weights, axis=1)
         # relative to target input rate
-        rfe_in = rfe / target_in_rate
+        rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
         avg_rfe_in = rfe_in.mean()
         nrfe_in = rfe_in / avg_rfe_in
-
         log_nrfe_in = np.log(nrfe_in)
 
-        ip_rf = np.mean(ip[self.rf], axis=1)
-        lp = rfe_in / ip_rf
-        alp = np.mean(lp)
+        rfp_in = np.mean(ip[self.rf], axis=1)
+        avg_rfp_in = rfp_in.mean()
+        log_rfp_in = np.log(rfp_in)
+
+        lp = rfe_in / rfp_in
+        avg_lp = lp.mean()
+        log_lp = np.log(lp)
 
         out_rate = self.fast_output_trace.get()
         target_out_rate = out_rate.sum() / self.output_size
 
         # relative to target output rate
         op = out_rate / target_out_rate
+        log_op = np.log(op)
+
         rfe_out = op / rfe_in
         avg_rfe_out = rfe_out.mean()
         nrfe_out = rfe_out / avg_rfe_out
-
         log_nrfe_out = np.log(nrfe_out)
 
-        slow_in_rate = self.slow_feedforward_trace.get()
-        slow_target_in_rate = slow_in_rate.sum() / self.ff_size
-        slow_rfe = np.sum(slow_in_rate[self.rf] * self.weights, axis=1)
-        slow_rfe_in = slow_rfe / slow_target_in_rate
-
         self.health_check_results = {
-            'ip': ip,
-            'op': op,
-            'avg_rfe_in': rfe_in.mean(),
-            'nrfe_in': nrfe_in,
-            'log_nrfe_in': log_nrfe_in,
-            'ip_rf': ip_rf,
-            'avg_ip_rf': ip_rf.mean(),
-            'lp': lp,
-            'alp': alp,
-            'avg_rfe_out': rfe_out.mean(),
-            'nrfe_out': nrfe_out,
-            'log_nrfe_out': log_nrfe_out,
+            'ln(ip)': np.maximum(log_ip, np.log(1/20)),
+            'ln(op)': np.maximum(log_op, np.log(1/20)),
+
+            'avg(rfe_in)': rfe_in.mean(),
+            'ln(nrfe_in)': log_nrfe_in,
+
+            'avg(rfp_in)': avg_rfp_in,
+            'ln(rfp_in)': log_rfp_in,
+
+            'avg(lp)': avg_lp,
+            'ln(lp)': log_lp,
+
+            'avg(rfe_out)': rfe_out.mean(),
+            'ln(nrfe_out)': log_nrfe_out,
+        }
+
+        in_rate = self.slow_feedforward_trace.get()
+        target_in_rate = in_rate.sum() / self.ff_size
+
+        # relative to target input rate
+        ip = in_rate / target_in_rate
+        log_ip = np.log(ip)
+
+        # relative to target input rate
+        rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
+        avg_rfe_in = rfe_in.mean()
+        nrfe_in = rfe_in / avg_rfe_in
+        log_nrfe_in = np.log(nrfe_in)
+
+        self.slow_health_check_results = {
+            'ln(nrfe_in)': log_nrfe_in,
         }
 
         # I also care about:
@@ -705,14 +722,14 @@ class SpatialPooler:
         return self.slow_recognition_strength_trace.get()
 
     def decay_stat_trackers(self):
-        self.computation_speed.decay()
-        self.slow_feedforward_trace.decay()
-        self.slow_feedforward_size_trace.decay()
-        self.slow_output_trace.decay()
-        self.slow_recognition_strength_trace.decay()
+        self.computation_speed.reset()
+        self.slow_feedforward_trace.reset()
+        self.slow_feedforward_size_trace.reset()
+        self.slow_output_trace.reset()
+        self.slow_recognition_strength_trace.reset()
 
-        self.fast_feedforward_trace.decay()
-        self.fast_output_trace.decay()
+        self.fast_feedforward_trace.reset()
+        self.fast_output_trace.reset()
 
     def get_learning_algos(self):
         return {
