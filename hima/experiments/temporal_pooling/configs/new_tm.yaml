@@ -453,23 +453,22 @@ trackers:
   sdr:
     _type_: tracker.sdr
     on: ???
-    step_flush_schedule: 100
+    step_flush_schedule: 400
   tm:
     _type_: tracker.tm
     on: ???
   sdr_prediction:
     _type_: tracker.sdr_prediction
     on: ???
-    step_flush_schedule: 100
+    step_flush_schedule: 400
   sp_matching:
     _type_: tracker.sp_matching
     on: ???
-    step_flush_schedule: 100
-    potentials_quantile: 0.3
+    step_flush_schedule: 400
   sp_synaptogenesis:
     _type_: tracker.sp_synaptogenesis
     on: ???
-    step_flush_schedule: 100
+    step_flush_schedule: 400
     track_split: False
   sp_synaptogenesis_concat:
     _base_: sp_synaptogenesis
