@@ -68,6 +68,7 @@ class SpatialPooler:
     sparse_input: SparseSdr
     dense_input: DenseSdr
 
+    sample_winners_frac: float
     winners: SparseSdr
     strongest_winner: int | None
     potentials: np.ndarray
@@ -101,10 +102,10 @@ class SpatialPooler:
             # mature phase
             prune_grow_cycle: float,
             # additional optional params
-            normalize_rates: bool = True, sample_winners: bool = False,
+            normalize_rates: bool = True, sample_winners: float | None = None,
             connectable_ff_size: int = None,
             # rand_weights_ratio: 0.7, rand_weights_noise: 0.01,
-            slow_trace_decay: float = 0.95, fast_trace_decay: float = 0.75,
+            slow_trace_decay: float = 0.99, fast_trace_decay: float = 0.95,
     ):
         self.rng = np.random.default_rng(seed)
 
@@ -143,7 +144,11 @@ class SpatialPooler:
         #     0., 1.
         # )
 
-        self.select_winners = self._sample_winners if sample_winners else self._select_winners
+        if sample_winners is None or not sample_winners:
+            self.select_winners = self._select_winners
+        else:
+            self.select_winners = self._sample_winners
+            self.sample_winners_frac = sample_winners
 
         self.newborn_pruning_mode = SpNewbornPruningMode[newborn_pruning_mode.upper()]
         self.newborn_pruning_cycle = newborn_pruning_cycle
@@ -194,7 +199,8 @@ class SpatialPooler:
         )
         self.fast_output_trace.put(self.output_sds.sparsity)
 
-        self.neurogenesis_queue = np.zeros(self.output_size, dtype=int)
+        self.neurogenesis_cnt = 0
+        self.neurogenesis_queue = np.zeros(self.output_size, dtype=float)
 
     def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
@@ -292,7 +298,7 @@ class SpatialPooler:
     def _sample_winners(self):
         n_winners = self.output_sds.active_size
 
-        n_pot_winners = min(3*n_winners, self.potentials.size)
+        n_pot_winners = min(round(self.sample_winners_frac*n_winners), self.potentials.size)
         pot_winners = np.argpartition(self.potentials, -n_pot_winners)[-n_pot_winners:]
         self.strongest_winner = cast(int, pot_winners[np.argmax(self.potentials[pot_winners])])
 
@@ -470,48 +476,90 @@ class SpatialPooler:
         print(f'{self.output_entropy():.3f} | {self.recognition_strength:.1f}')
 
     def prune_grow_synapses(self):
-        in_first_threshold, in_second_threshold = np.log(1/10), np.log(1/20)
-        out_first_threshold, out_second_threshold = np.log(1/10), np.log(1/20)
+        # NB: usually we work in log-space => log_ prefix is mostly omit for vars
+        self.health_check()
 
+        in_first_threshold, in_second_threshold = np.log(1/10), np.log(1/40)
+        out_first_threshold, out_second_threshold = np.log(4), np.log(20)
+        out_threshold_dist = out_second_threshold - out_first_threshold
 
-        rate_threshold = 1 / 20
+        self.neurogenesis_queue[:] = 0
+        # Step 1: deal with sleepy input.
+        # TODO: consider increasing random potential part for them
+        slow_nrfe_in = self.slow_health_check_results['ln(nrfe_in)']
 
-        avg_ff_trace = self.fast_feedforward_trace.get()
-        ff_rate = avg_ff_trace / self.feedforward_sds.sparsity
-        weighted_ff_rate = (self.weights * ff_rate[self.rf]).sum(axis=1)
-        out_rate = self.fast_output_trace.get() / self.output_sds.sparsity
+        sleepy_rf_mask = slow_nrfe_in <= in_second_threshold
+        self.resample_synapses(np.flatnonzero(sleepy_rf_mask))
+        self.neurogenesis_queue[sleepy_rf_mask] = 1.0
 
-        pg_mask = weighted_ff_rate < rate_threshold
-        non_pg_mask = ~pg_mask
+        slow_op = self.health_check_results['ln(op)']
+        sleepy_output_mask = slow_op <= in_second_threshold
+        self.resample_synapses(np.flatnonzero(sleepy_output_mask))
+        self.neurogenesis_queue[sleepy_output_mask] = 1.0
 
-        non_pg_nrp = out_rate[non_pg_mask] / weighted_ff_rate[non_pg_mask]
-        avg_nrp = non_pg_nrp.mean()
-        underperforming_neurons = non_pg_nrp / avg_nrp < rate_threshold
+        too_sleepy_mask = sleepy_rf_mask.copy()
+        too_sleepy_mask |= sleepy_output_mask
 
-        to_pg_ix = np.flatnonzero(non_pg_mask)[underperforming_neurons]
-        pg_mask[to_pg_ix] = True
+        # Step 2: deal with sleepy output
+        nrfe_out = self.health_check_results['ln(nrfe_out)']
 
-        # what didn't change during finished cycle we change now,
-        # and what we selected is for the change during the next cycle
-        pg_ix = np.flatnonzero(self.neurogenesis_queue)
-        self.neurogenesis_queue[pg_ix] = 0
-        self.neurogenesis_queue[pg_mask] = 1
+        neurons = np.flatnonzero(~too_sleepy_mask)
+        prob = (-nrfe_out[neurons] - out_first_threshold) / out_threshold_dist
+        np.clip(prob, 0., 1., out=prob)
 
-        to_change_ix = np.argmin(self.weights[pg_ix], axis=1)
-        ff_sample_distr = safe_divide(avg_ff_trace, avg_ff_trace.sum())
-        new_synapses = self.rng.choice(self.ff_size, size=len(pg_ix), p=ff_sample_distr)
-        self.rf[pg_ix, to_change_ix] = new_synapses
-        self.weights[pg_ix, to_change_ix] = 1.0 / self.rf_size
-        self.weights[pg_ix] = normalize_weights(self.weights[pg_ix])
+        self.neurogenesis_queue[neurons] = prob ** 1.0
 
         print(
             f'{self.output_entropy():.3f}'
             f' | {self.recognition_strength:.1f}'
-            f' | {avg_nrp:.3f}'
-            f' | {np.count_nonzero(pg_mask)}'
+            f' | {self.health_check_results["avg(rfe_out)"]:.3f}'
+            f' | {self.neurogenesis_cnt}'
+            f' | {np.sum(self.neurogenesis_queue):.2f}'
         )
 
+        self.neurogenesis_cnt = 0
         self.decay_stat_trackers()
+
+    def try_grow_synapses_to_input(self, neurons: SparseSdr):
+        prob_norm = np.sum(self.neurogenesis_queue[neurons])
+        if np.isclose(prob_norm, 0.):
+            # print('---NEU')
+            return
+
+        found = None
+        in_set = set(self.sparse_input)
+        prob = self.neurogenesis_queue[neurons] / prob_norm
+        for _ in range(10):
+            neuron = self.rng.choice(neurons, p=prob)
+            to_choose_from = list(in_set - set(self.rf[neuron]))
+            if to_choose_from:
+                syn = self.rng.choice(to_choose_from)
+                found = neuron, syn
+                break
+
+        if found is None:
+            print('---SYN')
+            return
+
+        neuron, syn = found
+        self.neurogenesis_queue[neuron] = 0.
+        self.neurogenesis_cnt += 1
+
+        to_change_ix = np.argmin(self.weights[neuron])
+        self.rf[neuron, to_change_ix] = syn
+        self.weights[neuron, to_change_ix] = 1.0 / self.rf_size
+        self.weights[neuron] = normalize_weights(self.weights[neuron])
+
+    def resample_synapses(self, neurons: npt.NDArray[int]):
+        ip = np.exp(self.slow_health_check_results['ln(ip)'])
+        ff_sample_distr = ip / ip.sum()
+        new_synapses = self.rng.choice(self.ff_size, size=len(neurons), p=ff_sample_distr)
+
+        to_change_ix = np.argmin(self.weights[neurons], axis=1)
+
+        self.rf[neurons, to_change_ix] = new_synapses
+        self.weights[neurons, to_change_ix] = 1.0 / self.rf_size
+        self.weights[neurons] = normalize_weights(self.weights[neurons])
 
     def health_check(self):
         # TODO:
@@ -573,10 +621,11 @@ class SpatialPooler:
         avg_rfe_out = rfe_out.mean()
         nrfe_out = rfe_out / avg_rfe_out
         log_nrfe_out = np.log(nrfe_out)
+        appx_std_log_nrfe_out = np.mean(np.abs(log_nrfe_out))
 
         self.health_check_results = {
-            'ln(ip)': np.maximum(log_ip, np.log(1/20)),
-            'ln(op)': np.maximum(log_op, np.log(1/20)),
+            'ln(ip)': np.maximum(log_ip, np.log(1/40)),
+            'ln(op)': np.maximum(log_op, np.log(1/40)),
 
             'avg(rfe_in)': rfe_in.mean(),
             'ln(nrfe_in)': log_nrfe_in,
@@ -589,6 +638,7 @@ class SpatialPooler:
 
             'avg(rfe_out)': rfe_out.mean(),
             'ln(nrfe_out)': log_nrfe_out,
+            'std(ln(nrfe_out))': appx_std_log_nrfe_out,
         }
 
         in_rate = self.slow_feedforward_trace.get()
@@ -605,6 +655,7 @@ class SpatialPooler:
         log_nrfe_in = np.log(nrfe_in)
 
         self.slow_health_check_results = {
+            'ln(ip)': np.maximum(log_ip, np.log(1/40)),
             'ln(nrfe_in)': log_nrfe_in,
         }
 
@@ -613,29 +664,6 @@ class SpatialPooler:
         #       their thresholds low and high; how to map them to probs
         #   - rfe^out_i fast; their thresholds low and high; how to map them to probs;
         #       and std(rfe^out_i) or std for nrfe^out_i; how to map deviations to probs
-
-    def try_grow_synapses_to_input(self, neurons: SparseSdr):
-        if np.sum(self.neurogenesis_queue[neurons]) == 0:
-            return
-
-        found = False
-        to_choose_from = np.flatnonzero(self.neurogenesis_queue[neurons])
-        for _ in range(3):
-            neuron = self.rng.choice(to_choose_from)
-            syn = self.rng.choice(self.sparse_input)
-            if syn not in self.rf[neuron]:
-                found = True
-                break
-
-        if not found:
-            return
-
-        self.neurogenesis_queue[neuron] = 0
-
-        to_change_ix = np.argmin(self.weights[neuron])
-        self.rf[neuron, to_change_ix] = syn
-        self.weights[neuron, to_change_ix] = 1.0 / self.rf_size
-        self.weights[neuron] = normalize_weights(self.weights[neuron])
 
     def on_end_newborn_phase(self):
         self.boosting_k = 0.
