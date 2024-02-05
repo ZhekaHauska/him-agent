@@ -75,9 +75,11 @@ class SpSynaptogenesisTracker:
             metrics['split_ratio'] = split_ratio
             metrics['split_mass'] = split_mass
 
-        if getattr(self.sp, 'health_check', None) is not None:
-            self.sp.health_check()
-            metrics |= self.sp.health_check_results
+        if getattr(self.sp, 'get_health_check_stats', None) is not None:
+            metrics |= self.sp.get_health_check_stats(
+                self.sp.fast_feedforward_trace,
+                self.sp.fast_output_trace,
+            )
             metrics['speed_kcps'] = round(1.0 / self.sp.computation_speed.get() / 1000.0, 2)
 
         return metrics

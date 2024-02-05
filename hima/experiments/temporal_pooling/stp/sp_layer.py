@@ -139,10 +139,7 @@ class SpatialPooler:
         self.weights = normalize_weights(
             self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
         )
-        # self.rand_weights = np.clip(
-        #     self.rng.normal(loc=rand_weights_ratio, scale=0.01, size=self.output_size),
-        #     0., 1.
-        # )
+        self.rand_weights = np.zeros(self.output_size)
 
         if sample_winners is None or not sample_winners:
             self.select_winners = self._select_winners
@@ -211,11 +208,18 @@ class SpatialPooler:
     @timed
     def _compute(self, input_sdr: AnySparseSdr, learn: bool) -> AnySparseSdr:
         self.accept_input(input_sdr, learn=learn)
-        self.try_activate_neurogenesis()
+        self.try_activate_neurogenesis(learn)
 
         matched_input_activity = self.match_current_input()
         delta_potentials = (matched_input_activity * self.weights).sum(axis=1)
         self.potentials += self.apply_boosting(delta_potentials)
+
+        avg_in_rate = safe_divide(self.dense_input[self.sparse_input].sum(), len(self.sparse_input))
+
+        self.potentials *= 1 - self.neurogenesis_queue
+        self.potentials += (
+                self.rng.random(self.output_size) * self.neurogenesis_queue * avg_in_rate
+        )
 
         self.select_winners()
         self.reinforce_winners(matched_input_activity, learn)
@@ -256,7 +260,10 @@ class SpatialPooler:
             'rf': self.rf
         }
 
-    def try_activate_neurogenesis(self):
+    def try_activate_neurogenesis(self, learn):
+        if not learn:
+            return
+
         is_now, self.neurogenesis_countdown = tick(self.neurogenesis_countdown)
         if not is_now:
             return
@@ -359,9 +366,10 @@ class SpatialPooler:
             return
 
         pre_rates = pre_synaptic_activity
-        post_rates = self.winners_value
+        # post_rates = self.winners_value
+        post_rates = self.potentials[neurons]
         if self.output_mode == OutputMode.RATE:
-            post_rates = np.expand_dims(self.winners_value, -1)
+            post_rates = np.expand_dims(post_rates, -1)
 
         lr = modulation * self.learning_rate
 
@@ -479,58 +487,84 @@ class SpatialPooler:
         # NB: usually we work in log-space => log_ prefix is mostly omit for vars
         self.health_check()
 
-        in_first_threshold, in_second_threshold = np.log(1/10), np.log(1/40)
-        out_first_threshold, out_second_threshold = np.log(4), np.log(20)
-        out_threshold_dist = out_second_threshold - out_first_threshold
+        # self.rng.binomial(1, p=self.neurogenesis_queue)
+        self.neurogenesis_queue[:] = 0.
+        rnd_cnt = 0
 
-        self.neurogenesis_queue[:] = 0
-        # Step 1: deal with sleepy input.
+        abs_rate_low, abs_rate_high = np.log(20), np.log(100)
+        eff_low, eff_high = np.log(1.5), np.log(20)
+
+        # Step 1: deal with absolute rates: sleepy input RF and output
         # TODO: consider increasing random potential part for them
-        slow_nrfe_in = self.slow_health_check_results['ln(nrfe_in)']
-
-        sleepy_rf_mask = slow_nrfe_in <= in_second_threshold
-        self.resample_synapses(np.flatnonzero(sleepy_rf_mask))
-        self.neurogenesis_queue[sleepy_rf_mask] = 1.0
-
-        slow_op = self.health_check_results['ln(op)']
-        sleepy_output_mask = slow_op <= in_second_threshold
-        self.resample_synapses(np.flatnonzero(sleepy_output_mask))
-        self.neurogenesis_queue[sleepy_output_mask] = 1.0
-
-        too_sleepy_mask = sleepy_rf_mask.copy()
-        too_sleepy_mask |= sleepy_output_mask
+        rnd_cnt += self.apply_synaptogenesis_to_metric(
+            self.slow_health_check_results['ln(nrfe_in)'],
+            abs_rate_low, abs_rate_high,
+            prob_power=2.0,
+            apply_random_synaptogenesis=True
+        )
+        rnd_cnt += self.apply_synaptogenesis_to_metric(
+            self.health_check_results['ln(op)'],
+            abs_rate_low, abs_rate_high,
+            prob_power=2.0,
+            apply_random_synaptogenesis=True
+        )
 
         # Step 2: deal with sleepy output
-        nrfe_out = self.health_check_results['ln(nrfe_out)']
-
-        neurons = np.flatnonzero(~too_sleepy_mask)
-        prob = (-nrfe_out[neurons] - out_first_threshold) / out_threshold_dist
-        np.clip(prob, 0., 1., out=prob)
-
-        self.neurogenesis_queue[neurons] = prob ** 1.0
+        rnd_cnt += self.apply_synaptogenesis_to_metric(
+            self.health_check_results['ln(nrfe_out)'],
+            eff_low, eff_high,
+            prob_power=1.5,
+        )
 
         print(
             f'{self.output_entropy():.3f}'
             f' | {self.recognition_strength:.1f}'
             f' | {self.health_check_results["avg(rfe_out)"]:.3f}'
             f' | {self.neurogenesis_cnt}'
+            f' | {rnd_cnt}'
             f' | {np.sum(self.neurogenesis_queue):.2f}'
         )
 
         self.neurogenesis_cnt = 0
         self.decay_stat_trackers()
 
+    def apply_synaptogenesis_to_metric(
+            self, metric: npt.NDArray[float], low: float, high: float,
+            prob_power: float = 1.5,
+            apply_random_synaptogenesis: bool = False
+    ):
+        probs = (-metric - low) / (high - low)
+        np.clip(probs, 0., 1., out=probs)
+        np.power(probs, prob_power, out=probs)
+
+        neurons = np.flatnonzero(probs > 1e-3)
+        cnt = 0
+        # if apply_random_synaptogenesis:
+        #     sampled_indices = neurons[self.rng.random(neurons.size) < probs[neurons]]
+        #     self.try_grow_synapses_to_input(sampled_indices)
+        #     cnt = sampled_indices.size
+        if apply_random_synaptogenesis:
+            self.rand_weights[neurons] = np.maximum(
+                self.rand_weights[neurons], probs[neurons]
+            )
+
+        self.neurogenesis_queue[neurons] = np.maximum(
+            self.neurogenesis_queue[neurons], probs[neurons]
+        )
+        return cnt
+
     def try_grow_synapses_to_input(self, neurons: SparseSdr):
-        prob_norm = np.sum(self.neurogenesis_queue[neurons])
-        if np.isclose(prob_norm, 0.):
-            # print('---NEU')
+        sampled_neurons = neurons[
+            self.rng.random(neurons.size) < self.neurogenesis_queue[neurons]
+        ]
+        if sampled_neurons.size == 0:
             return
+
+        self.rng.shuffle(sampled_neurons)
 
         found = None
         in_set = set(self.sparse_input)
-        prob = self.neurogenesis_queue[neurons] / prob_norm
-        for _ in range(10):
-            neuron = self.rng.choice(neurons, p=prob)
+        for neuron in sampled_neurons:
             to_choose_from = list(in_set - set(self.rf[neuron]))
             if to_choose_from:
                 syn = self.rng.choice(to_choose_from)
@@ -546,22 +580,77 @@ class SpatialPooler:
         self.neurogenesis_cnt += 1
 
         to_change_ix = np.argmin(self.weights[neuron])
-        self.rf[neuron, to_change_ix] = syn
-        self.weights[neuron, to_change_ix] = 1.0 / self.rf_size
-        self.weights[neuron] = normalize_weights(self.weights[neuron])
+        self.assign_new_synapses(neuron, to_change_ix, syn)
 
     def resample_synapses(self, neurons: npt.NDArray[int]):
         ip = np.exp(self.slow_health_check_results['ln(ip)'])
         ff_sample_distr = ip / ip.sum()
-        new_synapses = self.rng.choice(self.ff_size, size=len(neurons), p=ff_sample_distr)
-
+        new_synapses = self.rng.choice(self.ff_size, size=neurons.size, p=ff_sample_distr)
         to_change_ix = np.argmin(self.weights[neurons], axis=1)
 
+        self.assign_new_synapses(neurons, to_change_ix, new_synapses)
+
+    def assign_new_synapses(
+            self, neurons: npt.NDArray[int] | int,
+            to_change_ix: npt.NDArray[int] | int,
+            new_synapses: npt.NDArray[int] | int
+    ):
         self.rf[neurons, to_change_ix] = new_synapses
         self.weights[neurons, to_change_ix] = 1.0 / self.rf_size
         self.weights[neurons] = normalize_weights(self.weights[neurons])
 
     def health_check(self):
+        in_rate = self.fast_feedforward_trace.get()
+        target_in_rate = in_rate.sum() / self.ff_size
+
+        # relative to target input rate
+        ip = in_rate / target_in_rate
+        log_ip = np.log(ip)
+
+        # relative to target input rate
+        rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
+        avg_rfe_in = rfe_in.mean()
+        nrfe_in = rfe_in / avg_rfe_in
+        log_nrfe_in = np.log(nrfe_in)
+
+        out_rate = self.fast_output_trace.get()
+        target_out_rate = out_rate.sum() / self.output_size
+
+        # relative to target output rate
+        op = out_rate / target_out_rate
+        log_op = np.log(op)
+
+        rfe_out = op / rfe_in
+        avg_rfe_out = rfe_out.mean()
+        nrfe_out = rfe_out / avg_rfe_out
+        log_nrfe_out = np.log(nrfe_out)
+
+        self.health_check_results = {
+            'ln(ip)': log_ip,
+            'ln(op)': log_op,
+            'ln(nrfe_in)': log_nrfe_in,
+            'avg(rfe_out)': avg_rfe_out,
+            'ln(nrfe_out)': log_nrfe_out,
+        }
+
+        in_rate = self.slow_feedforward_trace.get()
+        target_in_rate = in_rate.sum() / self.ff_size
+
+        # relative to target input rate
+        ip = in_rate / target_in_rate
+
+        # relative to target input rate
+        rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
+        avg_rfe_in = rfe_in.mean()
+        nrfe_in = rfe_in / avg_rfe_in
+        log_nrfe_in = np.log(nrfe_in)
+
+        self.slow_health_check_results = {
+            'ln(ip)': log_ip,
+            'ln(nrfe_in)': log_nrfe_in,
+        }
+
+    def get_health_check_stats(self, ff_trace, out_trace):
         # TODO:
         #   - Input's popularity IP — how specified input sdr represents the whole input
         #       in terms of popularity:
@@ -589,7 +678,7 @@ class SpatialPooler:
         #       nrfe^out_i = rfe^out_i / rfe^out.mean()
 
         # TODO: check normalization — do I need it?
-        in_rate = self.fast_feedforward_trace.get()
+        in_rate = ff_trace.get()
         target_in_rate = in_rate.sum() / self.ff_size
 
         # relative to target input rate
@@ -610,7 +699,7 @@ class SpatialPooler:
         avg_lp = lp.mean()
         log_lp = np.log(lp)
 
-        out_rate = self.fast_output_trace.get()
+        out_rate = out_trace.get()
         target_out_rate = out_rate.sum() / self.output_size
 
         # relative to target output rate
@@ -623,12 +712,13 @@ class SpatialPooler:
         log_nrfe_out = np.log(nrfe_out)
         appx_std_log_nrfe_out = np.mean(np.abs(log_nrfe_out))
 
-        self.health_check_results = {
-            'ln(ip)': np.maximum(log_ip, np.log(1/40)),
-            'ln(op)': np.maximum(log_op, np.log(1/40)),
+        min_ln = np.log(1/10)
+        return {
+            'ln(ip)': np.maximum(log_ip, min_ln),
+            'ln(op)': np.maximum(log_op, min_ln),
 
-            'avg(rfe_in)': rfe_in.mean(),
-            'ln(nrfe_in)': log_nrfe_in,
+            'avg(rfe_in)': avg_rfe_in,
+            'ln(nrfe_in)': np.maximum(log_nrfe_in, min_ln),
 
             'avg(rfp_in)': avg_rfp_in,
             'ln(rfp_in)': log_rfp_in,
@@ -636,34 +726,10 @@ class SpatialPooler:
             'avg(lp)': avg_lp,
             'ln(lp)': log_lp,
 
-            'avg(rfe_out)': rfe_out.mean(),
-            'ln(nrfe_out)': log_nrfe_out,
+            'avg(rfe_out)': avg_rfe_out,
+            'ln(nrfe_out)': np.maximum(log_nrfe_out, min_ln),
             'std(ln(nrfe_out))': appx_std_log_nrfe_out,
         }
-
-        in_rate = self.slow_feedforward_trace.get()
-        target_in_rate = in_rate.sum() / self.ff_size
-
-        # relative to target input rate
-        ip = in_rate / target_in_rate
-        log_ip = np.log(ip)
-
-        # relative to target input rate
-        rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
-        avg_rfe_in = rfe_in.mean()
-        nrfe_in = rfe_in / avg_rfe_in
-        log_nrfe_in = np.log(nrfe_in)
-
-        self.slow_health_check_results = {
-            'ln(ip)': np.maximum(log_ip, np.log(1/40)),
-            'ln(nrfe_in)': log_nrfe_in,
-        }
-
-        # I also care about:
-        #   - rfe^in_i fast and slow (but the latter only for calcs);
-        #       their thresholds low and high; how to map them to probs
-        #   - rfe^out_i fast; their thresholds low and high; how to map them to probs;
-        #       and std(rfe^out_i) or std for nrfe^out_i; how to map deviations to probs
 
     def on_end_newborn_phase(self):
         self.boosting_k = 0.

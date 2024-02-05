@@ -373,7 +373,7 @@ TM:
     target_rf_to_input_ratio: 0.75
     learning_rate: 0.01
     newborn_pruning_cycle: 10.0
-    newborn_pruning_stages: 5
+    newborn_pruning_stages: 0
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 20.0
     adapt_to_ff_sparsity: False
