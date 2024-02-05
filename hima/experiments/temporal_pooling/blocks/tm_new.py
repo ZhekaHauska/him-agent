@@ -86,7 +86,7 @@ class NewTemporalMemoryBlock(Block):
 
         if self.use_context:
             context_sdr = self[CONTEXT].get() if use_context else []
-            sdrs = [ff_sdr, state_sdr, context_sdr]
+            sdrs = [ff_sdr, context_sdr, state_sdr]
         else:
             sdrs = [ff_sdr, state_sdr]
 
