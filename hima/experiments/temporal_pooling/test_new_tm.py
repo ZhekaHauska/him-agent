@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.run.wandb import get_logger
-from hima.common.sdrr import RateSdr
 from hima.common.timer import timer, print_with_timestamp, timed
 from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.data.synthetic_sequences import Sequence
@@ -55,6 +54,7 @@ class NewTmExperiment:
             project: str = None,
             wandb_init: TConfig = None,
             track_streams: TConfig = None,
+            run_all: bool = True,
             **_
     ):
         self.init_time = timer()
@@ -69,6 +69,8 @@ class NewTmExperiment:
             config=config, log=log, project=project
         )
         self.seed = resolve_random_seed(seed)
+
+        self.run_all = run_all
 
         self.iterate = self.config.resolve_object(iterate, object_type_or_factory=IterationConfig)
         self.reset_tm = reset_tm
@@ -99,7 +101,9 @@ class NewTmExperiment:
         self.log_schedule = log_schedule
 
     def run(self):
-        # return
+        if not self.run_all:
+            return
+
         self.print_with_timestamp('==> Run')
         self.stats.define_metrics()
         self.model.streams[VARS_LEARN].set(True)
