@@ -96,13 +96,29 @@ class MlpDecoder:
             prediction = self.predict()
 
         if len(prediction) != self.output_sds.size:
+            assert False, 'Invalid prediction type'
             # to dense prediction
             self.accept_prediction(prediction)
             prediction = self.dense_pred
 
+        sum_k = 1.
+        full_k = 8.
+        sdr_k = 4.
+        k_norm = sum_k + full_k + sdr_k
+        sum_k, full_k, sdr_k = sum_k / k_norm, full_k / k_norm, sdr_k / k_norm
+
+        lr = self.lr / (epoch ** self.power_t)
+
         loss_derivative = prediction - self.dense_gt
-        lr = self.lr / epoch ** self.power_t
-        self.weights -= np.outer(loss_derivative, lr * self.dense_input)
+        self.weights -= np.outer(loss_derivative, full_k * lr * self.dense_input)
+
+        sum_loss_derivative = prediction.sum() - self.dense_gt.sum()
+        self.weights -= np.expand_dims(sum_k * lr * sum_loss_derivative * self.dense_input, axis=0)
+
+        sdr_prediction = self.to_sdr(prediction)
+        self.accept_prediction(sdr_prediction)
+        sdr_loss_derivative = self.dense_pred - self.dense_gt
+        self.weights -= np.outer(sdr_loss_derivative, sdr_k * lr * self.dense_input)
 
         if self.collect_errors:
             self.errors.append(np.abs(loss_derivative).mean())
@@ -127,6 +143,9 @@ class MlpDecoder:
         loss_derivative = self.dense_pred - self.dense_gt
         lr = self.lr / epoch ** self.power_t
         self.weights -= np.outer(loss_derivative, lr * self.dense_input)
+
+        sum_loss_derivative = self.dense_pred.sum() - self.dense_gt.sum()
+        self.weights -= np.expand_dims(0.1 * lr * sum_loss_derivative * self.dense_input, axis=0)
 
         if self.collect_errors:
             self.errors.append(np.abs(loss_derivative).mean())
