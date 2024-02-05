@@ -122,25 +122,6 @@ class SpatialPooler:
         self.initial_learning_rate = learning_rate
         self.learning_rate = learning_rate
 
-        self.initial_rf_sparsity = min(
-            initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
-            initial_max_rf_sparsity
-        )
-        self.target_rf_to_input_ratio = target_rf_to_input_ratio
-        self.target_max_rf_sparsity = target_max_rf_sparsity
-
-        rf_size = int(self.initial_rf_sparsity * self.ff_size)
-        set_size = isnone(connectable_ff_size, self.ff_size)
-        self.rf = sample_for_each_neuron(
-            rng=self.rng, n_neurons=self.output_size,
-            set_size=set_size, sample_size=rf_size
-        )
-        print(f'SP.layer init shape: {self.rf.shape} to {set_size}')
-        self.weights = normalize_weights(
-            self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
-        )
-        self.rand_weights = np.zeros(self.output_size)
-
         if sample_winners is None or not sample_winners:
             self.select_winners = self._select_winners
         else:
@@ -157,6 +138,30 @@ class SpatialPooler:
         self.base_boosting_k = boosting_k
         self.boosting_k = self.base_boosting_k
         self.neurogenesis_countdown = make_repeating_counter(self.newborn_pruning_schedule)
+
+        self.target_rf_to_input_ratio = target_rf_to_input_ratio
+        self.target_max_rf_sparsity = target_max_rf_sparsity
+
+        if self.is_newborn_phase:
+            self.initial_rf_sparsity = min(
+                initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
+                initial_max_rf_sparsity
+            )
+        else:
+            self.initial_rf_sparsity = self.get_target_rf_sparsity()
+
+        rf_size = int(self.initial_rf_sparsity * self.ff_size)
+        set_size = isnone(connectable_ff_size, self.ff_size)
+        self.rf = sample_for_each_neuron(
+            rng=self.rng, n_neurons=self.output_size,
+            set_size=set_size, sample_size=rf_size
+        )
+
+        print(f'SP.layer init shape: {self.rf.shape} to {set_size}')
+        self.weights = normalize_weights(
+            self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
+        )
+        self.rand_weights = np.zeros(self.output_size)
 
         if not self.is_newborn_phase:
             self.on_end_newborn_phase()
