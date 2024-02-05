@@ -3,6 +3,7 @@ project: stp.new_tm.test_text
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 
 seed: 1313
+run_all: True
 reset_tm: False
 iterate:
   _base_: iterate_setups.small_10k
@@ -210,17 +211,39 @@ models:
         - TM.state.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_posterior_prediction.sdr
+        - decoder.learn()
+
+  STM1_cue:
+    - predict input w/ prior belief:
+        - TM.reset_ff()
+        - input.sdr ~> 0.4 ~> TM.context.sdr
+        - TM.predict()
+        - TM.predicted_cells.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> input_prediction.sdr
+    - embed input:
+        - input.sdr -> embed_input.sdr
+    - compute TM:
+        - embed_input.sdr -> TM.feedforward.sdr
+        - TM.compute()
+        - TM.active_cells.sdr -> TM.state.sdr
+    - learn decoder:
+        - embed_input.sdr -> decoder.feedback.sdr
+        - decoder.learn()
+    - predict input w/ posterior belief:
+#        - TM.state.sdr -> decoder.feedforward.sdr
+#        - decoder.decode()
+        - decoder.output.sdr -> input_posterior_prediction.sdr
 #        - decoder.learn()
 
   STM1_att:
     - predict input w/ prior belief on 1st iter than bootstrap using prediction as input:
         - TM.reset_ff()
-        - repeat: 2
-          do:
-            - TM.predict()
-            - TM.predicted_cells.sdr -> decoder.feedforward.sdr
-            - decoder.decode()
-            - decoder.output.sdr -> TM.feedforward.sdr
+        - TM.predict()
+        - TM.predicted_cells.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> TM.feedforward.sdr
+        - TM.predict()
     - decoder.output.sdr -> input_prediction.sdr
     - embed input:
         - input.sdr -> embed_input.sdr
@@ -235,15 +258,19 @@ models:
         - TM.state.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_posterior_prediction.sdr
+        - decoder.learn()
 
   STM2:
     - predict input w/ prior belief:
         - TM.reset_ff()
-        - TM2.reset_ff()
-        - TM2.predict()
-        - TM2.predicted_cells.sdr -> concat.feedforward_#2.sdr
+        - TM2.state.sdr -> TM.context.sdr
         - TM.predict()
         - TM.predicted_cells.sdr -> concat.feedforward_#1.sdr
+
+#        - TM2.reset_ff()
+        - TM.predicted_cells.sdr -> TM2.feedforward.sdr
+        - TM2.predict()
+        - TM2.predicted_cells.sdr -> concat.feedforward_#2.sdr
         - concat.compute()
         - concat.output.sdr -> decoder.feedforward.sdr
         - decoder.decode()
@@ -265,11 +292,44 @@ models:
         - decoder.learn()
     - predict input w/ posterior belief:
         - TM.state.sdr -> concat.feedforward_#1.sdr
+        - TM2.state.sdr -> concat.feedforward_#2.sdr
         - concat.compute()
         - concat.output.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_posterior_prediction.sdr
-#        - decoder.learn()
+        - decoder.learn()
+
+  STM2_sd:
+    - predict input w/ prior belief:
+        - TM.reset_ff()
+        - TM2.state.sdr -> TM.context.sdr
+        - TM.predict()
+        - TM.predicted_cells.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> input_prediction.sdr
+
+        - TM.predicted_cells.sdr -> TM2.feedforward.sdr
+        - TM2.predict()
+    - embed input:
+        - input.sdr -> embed_input.sdr
+    - compute TM^1:
+        - embed_input.sdr -> TM.feedforward.sdr
+        - TM.compute()
+        - TM.compare_with_prediction()
+        - TM.active_cells.sdr -> TM.state.sdr
+    - compute TM^2:
+        - TM.active_cells.sdr -> TM2.feedforward.sdr
+        - TM2.compute()
+        - TM2.compare_with_prediction()
+        - TM2.active_cells.sdr -> TM2.state.sdr
+    - learn decoder:
+        - embed_input.sdr -> decoder.feedback.sdr
+        - decoder.learn()
+    - predict input w/ posterior belief:
+        - TM.state.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> input_posterior_prediction.sdr
+        - decoder.learn()
 
   STM2_att:
     - predict input w/ prior belief on 1st iter than bootstrap using prediction as input:
@@ -435,7 +495,7 @@ iterate_setups:
     elements: 200
   default_5x20k:
     epochs: 50
-    resample_frequency: 5
+    resample_frequency: 50
     sequences: [10, 1]
     elements: 200
   large_400k:
