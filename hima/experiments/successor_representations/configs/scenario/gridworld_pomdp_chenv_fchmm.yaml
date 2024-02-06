@@ -31,7 +31,7 @@
   action: switch_strategy
   params:
     strategy: random
-- condition: ['setup_episodes', 'equal', 100, 'repeat']
+- condition: ['episodes', 'equal', 100, 'repeat']
   check_every: 'episodes'
   action: switch_strategy
   params:

@@ -1,7 +1,7 @@
-log: False
+log: True
 visualize: False
-project_name: gridworld_pomdp_final
-run_tag: oracle
+project_name: gridworld_pomdp_reproduce
+run_tag: no_oracle
 
 action_inertia: 1
 frame_skip: 0
