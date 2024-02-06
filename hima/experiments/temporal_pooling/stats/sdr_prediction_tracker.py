@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from hima.common.sdrr import AnySparseSdr, split_sdr_values, RateSdr
+from hima.common.sdrr import AnySparseSdr, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
@@ -75,14 +75,12 @@ class SdrPredictionTracker:
         prediction_volume = safe_divide(len(pr_sdr), self.sds.active_size)
         self.prediction_volume.put(prediction_volume)
 
-        dissimilarity = miss_rate
-        if isinstance(self.predicted_sdr, RateSdr):
-            similarity = sdr_similarity(
-                self.predicted_sdr, RateSdr(sdr=gt_sdr, values=gt_value),
-                symmetrical=self.symmetrical_dissimilarity,
-                dense_cache=self.dense_cache
-            )
-            dissimilarity = 1 - similarity
+        similarity = sdr_similarity(
+            self.predicted_sdr, self.observed_sdr,
+            symmetrical=True,
+            dense_cache=self.dense_cache
+        )
+        dissimilarity = 1 - similarity
         self.dissimilarity.put(dissimilarity)
 
         self.predicted_sdr = None
