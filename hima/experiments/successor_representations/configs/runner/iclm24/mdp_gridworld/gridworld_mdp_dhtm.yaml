@@ -1,6 +1,6 @@
 log: True
 visualize: False
-project_name: gridworld_pomdp_final
+project_name: gridworld_mdp_reproduce
 run_tag: null
 
 action_inertia: 1
