@@ -9,7 +9,7 @@ import numpy as np
 import numpy.typing as npt
 
 from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
+from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 
 
@@ -101,24 +101,27 @@ class MlpDecoder:
             self.accept_prediction(prediction)
             prediction = self.dense_pred
 
-        sum_k = 1.
-        full_k = 8.
-        sdr_k = 4.
+        full_k = 1.
+        sum_k = 0.
+        sdr_k = 0.
         k_norm = sum_k + full_k + sdr_k
         sum_k, full_k, sdr_k = sum_k / k_norm, full_k / k_norm, sdr_k / k_norm
 
         lr = self.lr / (epoch ** self.power_t)
 
-        loss_derivative = prediction - self.dense_gt
-        self.weights -= np.outer(loss_derivative, full_k * lr * self.dense_input)
+        if full_k > 0.:
+            loss_derivative = prediction - self.dense_gt
+            self.weights -= np.outer(loss_derivative, full_k * lr * self.dense_input)
 
-        sum_loss_derivative = prediction.sum() - self.dense_gt.sum()
-        self.weights -= np.expand_dims(sum_k * lr * sum_loss_derivative * self.dense_input, axis=0)
+        if sum_k > 0.:
+            sum_loss_derivative = prediction.sum() - self.dense_gt.sum()
+            self.weights -= np.expand_dims(sum_k * lr * sum_loss_derivative * self.dense_input, axis=0)
 
-        sdr_prediction = self.to_sdr(prediction)
-        self.accept_prediction(sdr_prediction)
-        sdr_loss_derivative = self.dense_pred - self.dense_gt
-        self.weights -= np.outer(sdr_loss_derivative, sdr_k * lr * self.dense_input)
+        if sdr_k > 0.:
+            sdr_prediction = self.to_sdr(prediction)
+            self.accept_prediction(sdr_prediction)
+            sdr_loss_derivative = self.dense_pred - self.dense_gt
+            self.weights -= np.outer(sdr_loss_derivative, sdr_k * lr * self.dense_input)
 
         if self.collect_errors:
             self.errors.append(np.abs(loss_derivative).mean())
@@ -163,11 +166,7 @@ class MlpDecoder:
 
     def accept_input(self, sdr: AnySparseSdr):
         """Accept new input and move to the next time step"""
-        if isinstance(sdr, RateSdr):
-            values = sdr.values
-            sdr = sdr.sdr
-        else:
-            values = 1.0
+        sdr, values = split_sdr_values(sdr)
 
         # forget prev SDR
         self.dense_input[self.sparse_input] = 0.
@@ -178,11 +177,7 @@ class MlpDecoder:
 
     def accept_prediction(self, sdr: AnySparseSdr):
         """Accept new input and move to the next time step"""
-        if isinstance(sdr, RateSdr):
-            values = sdr.values
-            sdr = sdr.sdr
-        else:
-            values = 1.0
+        sdr, values = split_sdr_values(sdr)
 
         # forget prev SDR
         self.dense_pred[self.sparse_pred] = 0.
@@ -193,11 +188,7 @@ class MlpDecoder:
 
     def accept_ground_truth(self, sdr: AnySparseSdr):
         """Accept new input and move to the next time step"""
-        if isinstance(sdr, RateSdr):
-            values = sdr.values
-            sdr = sdr.sdr
-        else:
-            values = 1.0
+        sdr, values = split_sdr_values(sdr)
 
         # forget prev SDR
         self.dense_gt[self.sparse_gt] = 0.
