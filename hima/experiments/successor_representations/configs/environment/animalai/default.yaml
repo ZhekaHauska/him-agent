@@ -1,4 +1,4 @@
-play: True
+play: False
 useCamera: True
 useRayCasts: False
 timescale: 10 #300

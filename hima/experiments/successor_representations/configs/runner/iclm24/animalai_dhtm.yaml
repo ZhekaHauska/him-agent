@@ -1,6 +1,6 @@
 log: True
 visualize: False
-project_name: animalai_test
+project_name: animalai_reproduce
 run_tag: null
 
 action_inertia: 1
