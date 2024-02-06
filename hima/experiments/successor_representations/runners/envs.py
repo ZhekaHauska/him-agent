@@ -161,6 +161,8 @@ class GridWorldWrapper(BaseEnvironment):
         self.environment = self._start_env(setup)
         self.n_colors = self.environment.n_colors
         self.min_color = np.min(self.environment.unique_colors)
+        self.min_vis_color = np.min(self.environment.colors)
+
         self.n_cells = (
                 (self.environment.observation_radius * 2 + 1) ** 2
         )
@@ -213,10 +215,11 @@ class GridWorldWrapper(BaseEnvironment):
         from PIL import Image
         shift = self.environment.shift
         im = self.environment.colors.copy()
+
         if shift > 0:
             im = im[shift:-shift, shift:-shift]
         plt.figure()
-        plt.imshow(im, cmap='Pastel1', aspect=1, vmin=self.min_color)
+        plt.imshow(im, cmap='Pastel1', aspect=1, vmin=self.min_vis_color)
         plt.axis('off')
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches="tight")

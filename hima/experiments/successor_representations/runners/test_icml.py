@@ -15,7 +15,7 @@ from hima.experiments.successor_representations.runners.visualizers import DHTMV
 from hima.modules.belief.utils import normalize
 
 
-class ICLRunner(BaseRunner):
+class ICMLRunner(BaseRunner):
     @staticmethod
     def make_agent(agent_type, conf):
         if agent_type == 'bio':
@@ -295,7 +295,7 @@ def main(config_path):
     else:
         logger = None
 
-    runner = ICLRunner(logger, config)
+    runner = ICMLRunner(logger, config)
     runner.run()
 
 

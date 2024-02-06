@@ -185,7 +185,8 @@ class BaseRunner:
                 self.reward = 0
                 self.obs = None
                 for frame in range(self.frame_skip + 1):
-                    self.environment.act(self.action)
+                    if self.steps > 0:
+                        self.environment.act(self.action)
                     self.environment.step()
                     self.obs, self.reward, self.is_terminal = self.environment.obs()
 
@@ -223,7 +224,7 @@ class BaseRunner:
                             else:
                                 self.action = self.agent.sample_action()
 
-                self.steps += 1
+                    self.steps += 1
 
                 if self.end_of_episode:
                     self.episodes += 1
