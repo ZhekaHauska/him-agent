@@ -162,6 +162,9 @@ def _resolve_decoder(type_tag):
     if type_tag == 'decoder.mlp':
         from hima.experiments.temporal_pooling.stp.mlp_decoder import MlpDecoder
         return MlpDecoder
+    if type_tag == 'decoder.mlp_torch':
+        from hima.experiments.temporal_pooling.stp.torch_mlp_decoder import MlpDecoder
+        return MlpDecoder
 
 
 def _resolve_runner(type_tag: str):
