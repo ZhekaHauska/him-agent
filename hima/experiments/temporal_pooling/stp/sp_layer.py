@@ -121,6 +121,7 @@ class SpatialPooler:
 
         self.initial_learning_rate = learning_rate
         self.learning_rate = learning_rate
+        self.modulation = 1.0
 
         if sample_winners is None or not sample_winners:
             self.select_winners = self._select_winners
@@ -152,6 +153,8 @@ class SpatialPooler:
 
         rf_size = int(self.initial_rf_sparsity * self.ff_size)
         set_size = isnone(connectable_ff_size, self.ff_size)
+        rf_size = min(rf_size, set_size)
+
         self.rf = sample_for_each_neuron(
             rng=self.rng, n_neurons=self.output_size,
             set_size=set_size, sample_size=rf_size
@@ -376,7 +379,7 @@ class SpatialPooler:
         if self.output_mode == OutputMode.RATE:
             post_rates = np.expand_dims(post_rates, -1)
 
-        lr = modulation * self.learning_rate
+        lr = self.modulation * modulation * self.learning_rate
 
         w = self.weights[neurons]
         dw = lr * post_rates * (pre_rates - post_rates * w)
@@ -496,6 +499,8 @@ class SpatialPooler:
         self.neurogenesis_queue[:] = 0.
         rnd_cnt = 0
 
+        # TODO: optimize thresholds and power scaling;
+        #   also remember cumulative effect of prob during the cycle for frequent neurons
         abs_rate_low, abs_rate_high = np.log(20), np.log(100)
         eff_low, eff_high = np.log(1.5), np.log(20)
 
