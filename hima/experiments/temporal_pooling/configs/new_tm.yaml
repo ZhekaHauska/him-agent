@@ -88,7 +88,7 @@ model:
       on:
         sdr_predicted: TM.predicted_cells.sdr
         sdr_observed: TM.active_cells.sdr
-        both_known: TM.active_cells.sdr
+        both_known: TM.correctly_predicted_cells.sdr
         sequence_finished: sequence_finished
     - name: state_L2.prediction
       tracker: trackers.sdr_prediction
@@ -126,13 +126,13 @@ model:
     - name: state_L1.sp_synaptogenesis
       tracker: trackers.sp_synaptogenesis_concat
       on:
-        sp_computed: TM.state.sdr
+        sp_computed: TM.active_cells.sdr
         sequence_finished: sequence_finished
     # SP Synaptogenesis tracking
     - name: state_L2.sp_synaptogenesis
       tracker: trackers.sp_synaptogenesis_concat
       on:
-        sp_computed: TM2.state.sdr
+        sp_computed: TM2.active_cells.sdr
         sequence_finished: sequence_finished
 
 #track_streams:
@@ -203,16 +203,42 @@ models:
     - compute TM:
         - embed_input.sdr -> TM.feedforward.sdr
         - TM.compute()
+        - TM.compare_with_prediction()
         - TM.active_cells.sdr -> TM.state.sdr
     - learn decoder:
         - embed_input.sdr -> decoder.feedback.sdr
         - decoder.learn()
     - predict input w/ posterior belief:
-        - TM.state.sdr -> decoder.feedforward.sdr
+        - TM.active_cells.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_posterior_prediction.sdr
-        - decoder.learn()
+#        - decoder.learn()
 
+  # prior_state: prior belief state instead of posterior
+  STM1_prior_state:
+    - predict input w/ prior belief:
+        - TM.reset_ff()
+        - TM.predict()
+        - TM.predicted_cells.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> input_prediction.sdr
+    - embed input:
+        - input.sdr -> embed_input.sdr
+    - compute TM:
+        - embed_input.sdr -> TM.feedforward.sdr
+        - TM.predicted_cells.sdr -> TM.state.sdr
+        - TM.compute()
+        - TM.compare_with_prediction()
+        - TM.active_cells.sdr -> TM.state.sdr
+    - learn decoder:
+        - embed_input.sdr -> decoder.feedback.sdr
+        - decoder.learn()
+    - predict input w/ posterior belief:
+        - TM.active_cells.sdr -> decoder.feedforward.sdr
+        - decoder.decode()
+        - decoder.output.sdr -> input_posterior_prediction.sdr
+
+  # cue: pass noisy observation cue to the TM context
   STM1_cue:
     - predict input w/ prior belief:
         - TM.reset_ff()
@@ -297,8 +323,9 @@ models:
         - concat.output.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_posterior_prediction.sdr
-        - decoder.learn()
+#        - decoder.learn()
 
+  # sd: only TM1 prediction is used for decoding
   STM2_sd:
     - predict input w/ prior belief:
         - TM.reset_ff()
@@ -329,7 +356,7 @@ models:
         - TM.state.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_posterior_prediction.sdr
-        - decoder.learn()
+#        - decoder.learn()
 
   STM2_att:
     - predict input w/ prior belief on 1st iter than bootstrap using prediction as input:
@@ -428,16 +455,16 @@ TM:
 #    learning_algo: new
   tm_new2:
     _base_: $_base.spatial_pooler.default_layer
-    initial_rf_to_input_ratio: 5.0
-    initial_max_rf_sparsity: 0.1
+    initial_rf_to_input_ratio: 100.0
+    initial_max_rf_sparsity: 0.6
     target_rf_to_input_ratio: 0.75
     learning_rate: 0.01
-    newborn_pruning_cycle: 10.0
-    newborn_pruning_stages: 0
+    newborn_pruning_cycle: 200.0
+    newborn_pruning_stages: 20
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 20.0
     adapt_to_ff_sparsity: False
-    boosting_k: 0.25
+    boosting_k: 0.5
     output_mode: binary
     learning_algo: new
     normalize_rates: true
@@ -456,6 +483,7 @@ blocks:
     _type_: block.decoder
     decoder:
       _base_: $_base.decoder.mlp
+#      _type_: decoder.mlp_torch
   SE:
     _type_: block.sp
     _base_: $_base.blocks.sp_like
