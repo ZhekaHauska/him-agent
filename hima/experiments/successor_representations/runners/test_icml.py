@@ -10,6 +10,7 @@ from typing import Union, Any
 import numpy as np
 from hima.common.config.base import read_config, override_config
 from hima.common.run.argparse import parse_arg_list
+from hima.common.sdr import sparse_to_dense
 from hima.experiments.successor_representations.runners.base import BaseRunner
 from hima.experiments.successor_representations.runners.visualizers import DHTMVisualizer
 from hima.modules.belief.utils import normalize
@@ -93,6 +94,12 @@ class ICMLRunner(BaseRunner):
                 agent.cortical_column.layer.n_obs_vars, -1
             )
         return obs_rewards
+
+    @property
+    def real_reward(self):
+        im = sparse_to_dense(self.agent.events, shape=self.environment.raw_obs_shape)
+        real_reward = im * self.reward
+        return real_reward
 
     @property
     def state_visited(self):
