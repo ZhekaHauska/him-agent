@@ -252,17 +252,19 @@ class BioHIMA:
             approximate_tail=True,
             save_state=True,
             return_predictions=False,
+            return_sr=False
     ):
         """
             n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
             then this function is equivalent to predict_sr.
         """
         predictions = []
+        sr = np.zeros_like(initial_messages)
 
         if save_state:
             self._make_state_snapshot()
 
-        sr = np.zeros_like(self.observation_messages)
+        sf = np.zeros_like(self.observation_messages)
 
         context_messages = initial_messages
         predicted_observation = initial_prediction
@@ -272,7 +274,10 @@ class BioHIMA:
         for t in range(n_steps):
             early_stop = self._early_stop_planning(predicted_observation)
 
-            sr += predicted_observation * discount
+            sf += predicted_observation * discount
+
+            if return_sr:
+                sr += context_messages * discount
 
             if self.sr_estimate_planning == SrEstimatePlanning.UNIFORM:
                 action_dist = None
@@ -299,15 +304,19 @@ class BioHIMA:
                 break
 
         if approximate_tail:
-            sr += self.predict_sf(context_messages) * discount
+            sf += self.predict_sf(context_messages) * discount
 
         if save_state:
             self._restore_last_snapshot()
 
+        output = [sf, t+1]
+
         if return_predictions:
-            return sr, t+1, predictions
-        else:
-            return sr, t+1
+            output.append(predictions)
+        if return_sr:
+            output.append(sr)
+
+        return output
 
     def predict_sf(self, hidden_vars_dist, area=0):
         if self.srtd is not None:

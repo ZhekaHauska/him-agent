@@ -9,6 +9,8 @@ import numpy as np
 
 from hima.common.lazy_imports import lazy_import
 from typing import Dict, Literal, Optional
+
+from hima.common.sdr import sparse_to_dense
 from hima.modules.belief.utils import normalize
 from scipy.special import rel_entr
 
@@ -660,3 +662,95 @@ class SOMClusters(BaseMetric):
         return np.sum(rel_entr(x, W), axis=-1)
 
 
+class GridworldSR(BaseMetric):
+    def __init__(
+            self, name, att, repr_att, state_att,
+            logger, runner,
+            update_step, log_step, update_period, log_period,
+            grid_shape, max_patterns, state_detection_threshold, activity_lr, lr,
+            norm=False,
+            preparing_period=100,
+            log_dir='/tmp',
+            log_fps=5
+    ):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.att_to_log = att
+        self.repr_att = repr_att
+        self.state_att = state_att
+
+        self.pattern_size = self.get_attr(self.repr_att).shape[0]
+        self.n_states = np.prod(grid_shape)
+        self.grid_shape = grid_shape
+        self.norm = norm
+        self.log_dir = log_dir
+        self.log_fps = log_fps
+
+        self.preparing = True
+        self.preparing_period = preparing_period
+        self.preparing_step = 0
+        self.decoded_patterns = []
+
+        from hima.agents.succesor_representations.striatum import Striatum
+        self.memory = Striatum(
+            self.pattern_size,
+            self.n_states,
+            n_areas=1,
+            max_states=max_patterns,
+            state_detection_threshold=state_detection_threshold,
+            activity_lr=activity_lr,
+            lr=lr
+        )
+
+        self.logger.define_metric(f'{self.name}/n_states', step_metric=self.log_step)
+
+    def update(self):
+        pattern = self.get_attr(self.repr_att).flatten()
+        state = self.get_attr(self.state_att)
+        dense_state = sparse_to_dense(state, size=self.n_states)
+
+        self.memory.predict(pattern, learn=True)
+        self.memory.update_weights(dense_state)
+
+        if not self.preparing:
+            pattern = self.get_attr(self.att_to_log)
+            if self.norm:
+                pattern = normalize(pattern)
+
+            self.decoded_patterns.append(
+                self.memory.predict(pattern.flatten(), learn=False)
+            )
+
+    def log(self, step):
+        log_dict = {
+            f'{self.name}/n_states': len(self.memory.states_in_use),
+            self.log_step: step
+        }
+
+        if len(self.decoded_patterns) > 0:
+            values = np.array(self.decoded_patterns).reshape(
+                (-1, self.grid_shape[0], self.grid_shape[1])
+            )
+            values = (values * 255).astype(np.uint8)
+            gif_path = os.path.join(
+                self.log_dir,
+                f'{self.logger.name}_{self.name}_{step}.gif'
+            )
+            # use new v3 API
+            imageio.v3.imwrite(
+                # mode 'L': gray 8-bit ints; duration = 1000 / fps; loop == 0: infinitely
+                gif_path, values, mode='L', duration=1000 / self.log_fps, loop=0
+            )
+            log_dict[f'{self.name}/trajectory_sr'] = wandb.Video(gif_path)
+
+            self.decoded_patterns.clear()
+            self.preparing = True
+            self.preparing_step = 0
+        else:
+            self.preparing_step += 1
+            if self.preparing_step == self.preparing_period:
+                self.preparing = False
+
+        self.logger.log(
+            log_dict
+        )
