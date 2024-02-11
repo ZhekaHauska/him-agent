@@ -38,6 +38,9 @@ heatmap_metrics:
       agent/obs_reward:
         agg: np.mean
         att: obs_reward
+      agent/real_reward:
+        agg: np.mean
+        att: real_reward
     update_step: episodes
     update_period: 1
     log_step: episodes

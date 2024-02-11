@@ -1,14 +1,14 @@
-#setup:
-#  class: ImageMetrics
-#  params:
-#    metrics:
-#      agent/setup:
-#        att: environment.render
-#    update_step: current_setup_id
-#    update_period: 1
-#    log_step: current_setup_id
-#    log_period: 1
-#    log_fps: 5
+setup:
+  class: ImageMetrics
+  params:
+    metrics:
+      agent/setup:
+        att: environment.render
+    update_step: current_setup_id
+    update_period: 1
+    log_step: current_setup_id
+    log_period: 1
+    log_fps: 5
 
 #heatmap_metrics:
 #  class: HeatmapMetrics
@@ -76,7 +76,7 @@ trajectory:
     update_step: steps
     update_period: 1
     log_step: episodes
-    log_period: 100
+    log_period: 25
 
 
 value_function:
@@ -88,7 +88,7 @@ value_function:
     update_step: steps
     update_period: 1
     log_step: episodes
-    log_period: 100
+    log_period: 25
 #
 #
 #q_function:
@@ -178,3 +178,23 @@ value_function:
 #    update_period: 1
 #    log_step: episodes
 #    log_period: 100
+
+sr_gridworld:
+  class: GridworldSR
+  params:
+    name: sr
+    att: agent.planned_sr
+    repr_att: agent.state_repr
+    state_att: environment.current_state
+    update_step: steps
+    log_step: episodes
+    update_period: 1
+    log_period: 1
+    grid_shape: [ 5, 5 ]
+    max_patterns: 10000
+    state_detection_threshold: 0.1
+    activity_lr: 0.001
+    lr: 0.9
+    norm: False
+    preparing_period: 10
+    log_fps: 2
