@@ -224,8 +224,6 @@ class BaseRunner:
                             else:
                                 self.action = self.agent.sample_action()
 
-                    self.steps += 1
-
                 if self.end_of_episode:
                     self.episodes += 1
                     self.setup_episodes += 1
@@ -236,6 +234,8 @@ class BaseRunner:
                 if self.visualizer is not None and self.visualizing:
                     self.visualizer.step()
                     print(f'step: {self.steps} episode: {self.episodes}')
+
+                self.steps += 1
         else:
             self.environment.close()
 
