@@ -236,17 +236,17 @@ class BioAgentWrapper(BaseAgent):
 
     @property
     def planned_sr(self):
-        _, _, sr = self.agent.generate_sf(
+        _, steps, sr = self.agent.generate_sf(
             self.agent.plan_steps,
             initial_messages=self.agent.cortical_column.layer.internal_forward_messages,
             initial_prediction=self.agent.observation_messages,
             approximate_tail=self.agent.approximate_tail,
             return_sr=True
         )
-        return sr.reshape(
+        return (sr.reshape(
             self.agent.cortical_column.layer.n_hidden_vars,
             -1
-        )
+        ), steps / self.agent.max_plan_steps)
 
     @property
     def state_repr(self):

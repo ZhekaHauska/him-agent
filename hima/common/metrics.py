@@ -713,12 +713,29 @@ class GridworldSR(BaseMetric):
         self.memory.update_weights(dense_state)
 
         if not self.preparing:
-            pattern = self.get_attr(self.att_to_log)
+            pattern, steps = self.get_attr(self.att_to_log)
+
+            steps_int = int(steps * self.grid_shape[0])
+            steps_frac = steps * self.grid_shape[0] - steps_int
+
+            steps = np.pad(
+                np.ones(steps_int),
+                (0, self.grid_shape[0] - steps_int),
+                'constant',
+                constant_values=0
+            )
+            if steps_int < self.grid_shape[0]:
+                steps[steps_int] = steps_frac
+
             if self.norm:
                 pattern = normalize(pattern)
 
+            decoded_pattern = self.memory.predict(pattern.flatten(), learn=False)
+            decoded_pattern = decoded_pattern.reshape(self.grid_shape)
+            steps *= decoded_pattern.max()
+            decoded_pattern = np.column_stack([decoded_pattern, steps[::-1]])
             self.decoded_patterns.append(
-                self.memory.predict(pattern.flatten(), learn=False)
+                decoded_pattern
             )
 
     def log(self, step):
@@ -728,19 +745,12 @@ class GridworldSR(BaseMetric):
         }
 
         if len(self.decoded_patterns) > 0:
-            values = np.array(self.decoded_patterns).reshape(
-                (-1, self.grid_shape[0], self.grid_shape[1])
-            )
-            values = (values * 255).astype(np.uint8)
+            sr = np.array(self.decoded_patterns)
             gif_path = os.path.join(
                 self.log_dir,
                 f'{self.logger.name}_{self.name}_{step}.gif'
             )
-            # use new v3 API
-            imageio.v3.imwrite(
-                # mode 'L': gray 8-bit ints; duration = 1000 / fps; loop == 0: infinitely
-                gif_path, values, mode='L', duration=1000 / self.log_fps, loop=0
-            )
+            self._save_to_gif(gif_path, sr)
             log_dict[f'{self.name}/trajectory_sr'] = wandb.Video(gif_path)
 
             self.decoded_patterns.clear()
@@ -753,4 +763,21 @@ class GridworldSR(BaseMetric):
 
         self.logger.log(
             log_dict
+        )
+
+    def _save_to_gif(self, path, array):
+        values = (
+                (
+                        array / (array.reshape(array.shape[0], -1).max(axis=-1).reshape(-1, 1, 1))
+                 ) * 255
+        ).astype(np.uint8)
+
+        gif_path = os.path.join(
+            self.log_dir,
+            path
+        )
+        # use new v3 API
+        imageio.v3.imwrite(
+            # mode 'L': gray 8-bit ints; duration = 1000 / fps; loop == 0: infinitely
+            gif_path, values, mode='L', duration=1000 / self.log_fps, loop=0
         )
