@@ -13,6 +13,7 @@ from typing import Dict, Literal, Optional
 from hima.common.sdr import sparse_to_dense
 from hima.modules.belief.utils import normalize
 from scipy.special import rel_entr
+import matplotlib.pyplot as plt
 
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
@@ -619,7 +620,7 @@ class SOMClusters(BaseMetric):
 
         log_dict.update(
             {
-                f'{self.name}_clusters': wandb.Image(fig),
+                f'{self.name}/clusters': wandb.Image(fig),
             }
         )
         plt.close('all')
@@ -635,7 +636,7 @@ class SOMClusters(BaseMetric):
         for i in range(classes.size):
             log_dict.update(
                 {
-                    f'{self.name}_activation_{classes[i]}': wandb.Image(
+                    f'{self.name}/activations/class_{classes[i]}': wandb.Image(
                         sns.heatmap(activation_map[:, :, i], cmap='viridis')
                     )
                 }
@@ -644,7 +645,7 @@ class SOMClusters(BaseMetric):
 
         log_dict.update(
             {
-                f'{self.name}_soft_clusters': wandb.Image(
+                f'{self.name}/soft_clusters': wandb.Image(
                     plt.imshow(color_map.astype('uint8'))
                 )
             }
@@ -703,6 +704,7 @@ class GridworldSR(BaseMetric):
         )
 
         self.logger.define_metric(f'{self.name}/n_states', step_metric=self.log_step)
+        self.logger.define_metric(f'{self.name}/av_states_per_pos', step_metric=self.log_step)
 
     def update(self):
         pattern = self.get_attr(self.repr_att).flatten()
@@ -743,6 +745,18 @@ class GridworldSR(BaseMetric):
             f'{self.name}/n_states': len(self.memory.states_in_use),
             self.log_step: step
         }
+
+        if len(self.memory.states_in_use) > 0:
+            weights = self.memory.weights[0, self.memory.states_in_use]
+            pcounts = np.sum(weights, axis=0)
+
+            log_dict[f'{self.name}/av_states_per_pos'] = np.mean(pcounts)
+
+            if self.preparing_step == self.preparing_period:
+                log_dict[f'{self.name}/state_per_pos'] = wandb.Image(sns.heatmap(
+                    pcounts.reshape(self.grid_shape)
+                ))
+                plt.close('all')
 
         if len(self.decoded_patterns) > 0:
             sr = np.array(self.decoded_patterns)
