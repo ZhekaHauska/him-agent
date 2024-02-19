@@ -420,6 +420,7 @@ class FCHMMLayer:
             batch_size: int = 100,
             em_iterations: int = 100,
             alpha: float = 1.0,
+            use_backward_messages: bool = True,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -435,6 +436,7 @@ class FCHMMLayer:
         self.batch_size = batch_size
         self.em_iterations = em_iterations
         self.lr = lr
+        self.use_backward_messages = use_backward_messages
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -501,6 +503,8 @@ class FCHMMLayer:
             self.context_cells_range[1] + self.external_input_size
         )
 
+        self.state_uni_dkl = 0
+
     def set_external_messages(self, messages=None):
         # update external cells
         if messages is not None:
@@ -561,6 +565,7 @@ class FCHMMLayer:
 
         self.prediction_cells = None
         self.prediction_columns = None
+        self.state_uni_dkl = 0
 
     def predict(self, include_context_connections=True, include_internal_connections=False, **_):
         if self.context_messages.size == 0:
@@ -606,6 +611,19 @@ class FCHMMLayer:
                 obs_factor.reshape((self.n_hidden_vars, -1))
             ).flatten()
 
+        n_states = obs_factor.sum(axis=-1)
+        self.state_uni_dkl = (
+                np.log(n_states) +
+                np.sum(
+                    self.internal_forward_messages * np.log(
+                        np.clip(
+                            self.internal_forward_messages, EPS, None
+                        )
+                    ),
+                    axis=-1
+                )
+        )
+
         if learn:
             vars_with_obs = observation // self.n_obs_states
             # FIXME strange bug if "observation %= n_obs_states"
@@ -648,7 +666,13 @@ class FCHMMLayer:
                     )
                     chmm.T = self.transition_probs[i]
                     chmm.Pi_x = self.state_prior[i]
-                    chmm.learn_em_T_Pi_x(x[i], a, n_iter=self.em_iterations, term_early=False)
+                    chmm.learn_em_T_Pi_x(
+                        x[i],
+                        a,
+                        n_iter=self.em_iterations,
+                        term_early=False,
+                        use_backward_msg=self.use_backward_messages
+                    )
 
                     self.transition_stats[i] += self.lr * (
                             chmm.T.copy() - self.transition_stats[i]

@@ -225,7 +225,7 @@ class CHMM(object):
         states = backtraceE(self.T, E, self.n_clones, x, a, mess_fwd)
         return -log2_lik, states
 
-    def learn_em_T_Pi_x(self, x, a, n_iter=100, term_early=True):
+    def learn_em_T_Pi_x(self, x, a, n_iter=100, term_early=True, use_backward_msg=True):
         """Run EM training, keeping E deterministic and fixed, learning T"""
         sys.stdout.flush()
         convergence = []
@@ -241,7 +241,11 @@ class CHMM(object):
                 a,
                 store_messages=True,
             )
-            mess_bwd = backward(self.T, self.n_clones, x, a)
+            if use_backward_msg:
+                mess_bwd = backward(self.T, self.n_clones, x, a)
+            else:
+                mess_bwd = np.ones_like(mess_fwd)
+
             updateC_Pi_x(self.C_Pi_x, self.C, self.T, self.n_clones, mess_fwd, mess_bwd, x, a)
             # M
             self.update_T()
