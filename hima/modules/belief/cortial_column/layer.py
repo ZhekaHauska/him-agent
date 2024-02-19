@@ -410,6 +410,8 @@ class Layer:
 
         assert (self.context_factors is not None) or (self.internal_factors is not None)
 
+        self.state_uni_dkl = 0
+
     def set_external_messages(self, messages=None):
         # update external cells
         if messages is not None:
@@ -618,10 +620,10 @@ class Layer:
 
         messages = normalize(messages * obs_factor, obs_factor)
 
-        if self.replace_uniform_prior:
-            # detect bursting vars
-            bursting_vars_mask = self._detect_bursting_vars(messages, obs_factor)
+        # detect bursting vars
+        bursting_vars_mask = self._detect_bursting_vars(messages, obs_factor)
 
+        if self.replace_uniform_prior:
             # replace priors for bursting vars
             if np.any(bursting_vars_mask):
                 # TODO decrease probability to sample frequently active cells
@@ -644,7 +646,7 @@ class Layer:
             obs_factor: (n_vars, n_states)
         """
         n_states = obs_factor.sum(axis=-1)
-        uni_dkl = (
+        self.state_uni_dkl = (
                 np.log(n_states) +
                 np.sum(
                     messages * np.log(
@@ -656,7 +658,7 @@ class Layer:
                 )
         )
 
-        return uni_dkl < self.bursting_threshold
+        return self.state_uni_dkl < self.bursting_threshold
 
     def _propagate_belief(
             self,
