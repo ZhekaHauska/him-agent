@@ -129,6 +129,7 @@ class BioHIMA:
         self.ss_td_error = SSValue(*lr_td_error)
         self.ss_surprise = SSValue(*lr_surprise)
         self.sf_steps = 0
+        self.state_information = 0
 
         self.seed = seed
         self._rng = np.random.default_rng(seed)
@@ -142,6 +143,7 @@ class BioHIMA:
         self.action_dist = None
         self.action = None
         self.sf_steps = 0
+        self.state_information = 0
 
         self.cortical_column.reset(initial_context_message, initial_external_message)
 
@@ -169,6 +171,7 @@ class BioHIMA:
         if events is not None:
             # predict current events using observed action
             self.cortical_column.observe(events, action, learn=learn)
+            self.state_information = self.cortical_column.layer.state_uni_dkl
             encoded_obs = self.cortical_column.output_sdr.sparse
             self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
         else:
