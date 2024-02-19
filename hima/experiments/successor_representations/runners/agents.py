@@ -256,6 +256,12 @@ class BioAgentWrapper(BaseAgent):
         )
 
     @property
+    def state_information(self):
+        return self.agent.state_information.mean() / np.log(
+            self.agent.cortical_column.layer.cells_per_column
+        )
+
+    @property
     def num_segments(self):
         if isinstance(self.agent.cortical_column.layer, Layer):
             return self.agent.cortical_column.layer.context_factors.connections.numSegments()

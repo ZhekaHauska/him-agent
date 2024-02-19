@@ -665,7 +665,7 @@ class SOMClusters(BaseMetric):
 
 class GridworldSR(BaseMetric):
     def __init__(
-            self, name, att, repr_att, state_att,
+            self, name, att, repr_att, state_att, state_information_att,
             logger, runner,
             update_step, log_step, update_period, log_period,
             grid_shape, max_patterns, state_detection_threshold, activity_lr, lr,
@@ -679,6 +679,7 @@ class GridworldSR(BaseMetric):
         self.att_to_log = att
         self.repr_att = repr_att
         self.state_att = state_att
+        self.state_information_att = state_information_att
 
         self.pattern_size = self.get_attr(self.repr_att).shape[0]
         self.n_states = np.prod(grid_shape)
@@ -715,27 +716,27 @@ class GridworldSR(BaseMetric):
         self.memory.update_weights(dense_state)
 
         if not self.preparing:
+            state_information = self.get_attr(self.state_information_att)
             pattern, steps = self.get_attr(self.att_to_log)
 
-            steps_int = int(steps * self.grid_shape[0])
-            steps_frac = steps * self.grid_shape[0] - steps_int
-
-            steps = np.pad(
-                np.ones(steps_int),
-                (0, self.grid_shape[0] - steps_int),
-                'constant',
-                constant_values=0
-            )
-            if steps_int < self.grid_shape[0]:
-                steps[steps_int] = steps_frac
+            steps_bar = self._scalar_to_bar(steps)
+            state_information_bar = self._scalar_to_bar(state_information)
 
             if self.norm:
                 pattern = normalize(pattern)
 
             decoded_pattern = self.memory.predict(pattern.flatten(), learn=False)
             decoded_pattern = decoded_pattern.reshape(self.grid_shape)
-            steps *= decoded_pattern.max()
-            decoded_pattern = np.column_stack([decoded_pattern, steps[::-1]])
+            max_image_value = decoded_pattern.max()
+
+            decoded_pattern = np.column_stack(
+                [
+                    decoded_pattern,
+                    steps_bar * max_image_value,
+                    state_information_bar * max_image_value,
+                    dense_state.reshape(self.grid_shape) * max_image_value
+                ]
+            )
             self.decoded_patterns.append(
                 decoded_pattern
             )
@@ -778,7 +779,22 @@ class GridworldSR(BaseMetric):
         self.logger.log(
             log_dict
         )
+    
+    def _scalar_to_bar(self, value):
+        value_int = int(value * self.grid_shape[0])
+        value_frac = value * self.grid_shape[0] - value_int
 
+        value_bar = np.pad(
+            np.ones(value_int),
+            (0, self.grid_shape[0] - value_int),
+            'constant',
+            constant_values=0
+        )
+        if value_int < self.grid_shape[0]:
+            value_bar[value_int] = value_frac
+
+        return value_bar[::-1]
+            
     def _save_to_gif(self, path, array):
         values = (
                 (
