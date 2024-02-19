@@ -708,11 +708,11 @@ class GridworldSR(BaseMetric):
         self.logger.define_metric(f'{self.name}/av_states_per_pos', step_metric=self.log_step)
 
     def update(self):
-        pattern = self.get_attr(self.repr_att).flatten()
+        estimated_state = self.get_attr(self.repr_att).flatten()
         state = self.get_attr(self.state_att)
         dense_state = sparse_to_dense(state, size=self.n_states)
 
-        self.memory.predict(pattern, learn=True)
+        decoded_state = self.memory.predict(estimated_state, learn=True)
         self.memory.update_weights(dense_state)
 
         if not self.preparing:
@@ -726,15 +726,19 @@ class GridworldSR(BaseMetric):
                 pattern = normalize(pattern)
 
             decoded_pattern = self.memory.predict(pattern.flatten(), learn=False)
+
             decoded_pattern = decoded_pattern.reshape(self.grid_shape)
-            max_image_value = decoded_pattern.max()
+            decoded_state = decoded_state.reshape(self.grid_shape)
+
+            max_image_value = max(decoded_pattern.max(), 1.0)
 
             decoded_pattern = np.column_stack(
                 [
                     decoded_pattern,
                     steps_bar * max_image_value,
                     state_information_bar * max_image_value,
-                    dense_state.reshape(self.grid_shape) * max_image_value
+                    dense_state.reshape(self.grid_shape) * max_image_value,
+                    decoded_state * max_image_value
                 ]
             )
             self.decoded_patterns.append(
