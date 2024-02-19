@@ -692,6 +692,7 @@ class GridworldSR(BaseMetric):
         self.preparing_period = preparing_period
         self.preparing_step = 0
         self.decoded_patterns = []
+        self.decoded_state_dkl = []
 
         from hima.agents.succesor_representations.striatum import Striatum
         self.memory = Striatum(
@@ -706,6 +707,7 @@ class GridworldSR(BaseMetric):
 
         self.logger.define_metric(f'{self.name}/n_states', step_metric=self.log_step)
         self.logger.define_metric(f'{self.name}/av_states_per_pos', step_metric=self.log_step)
+        self.logger.define_metric(f'{self.name}/decoded_state_dkl', step_metric=self.log_step)
 
     def update(self):
         estimated_state = self.get_attr(self.repr_att).flatten()
@@ -714,6 +716,13 @@ class GridworldSR(BaseMetric):
 
         decoded_state = self.memory.predict(estimated_state, learn=True)
         self.memory.update_weights(dense_state)
+
+        self.decoded_state_dkl.append(
+            rel_entr(
+                dense_state,
+                normalize(decoded_state.reshape(1, -1)).flatten()
+            ).sum()
+        )
 
         if not self.preparing:
             state_information = self.get_attr(self.state_information_att)
@@ -747,9 +756,11 @@ class GridworldSR(BaseMetric):
 
     def log(self, step):
         log_dict = {
-            f'{self.name}/n_states': len(self.memory.states_in_use),
-            self.log_step: step
+            f'{self.name}/n_states': len(self.memory.states_in_use), self.log_step: step,
+            f'{self.name}/decoded_state_dkl': np.mean(self.decoded_state_dkl)
         }
+
+        self.decoded_state_dkl.clear()
 
         if len(self.memory.states_in_use) > 0:
             weights = self.memory.weights[0, self.memory.states_in_use]
