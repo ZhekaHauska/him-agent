@@ -11,7 +11,7 @@ class Striatum:
     def __init__(
             self,
             input_size,
-            output_size,
+            output_sizes,
             n_areas: int = 1,
             max_states: int = 1000,
             state_detection_threshold: float = EPS,
@@ -30,7 +30,7 @@ class Striatum:
         """
         self.seed = seed
         self.input_size = input_size
-        self.output_size = output_size
+        self.output_sizes = output_sizes
         self.n_areas = n_areas
         self.max_states = max_states
         self.lr = lr
@@ -43,7 +43,7 @@ class Striatum:
         self.states_in_use = np.empty(0)
 
         self.state_activity = np.zeros(max_states)
-        self.weights = np.zeros((n_areas, max_states, output_size))
+        self.weights = [np.zeros((max_states, output_size)) for output_size in self.output_sizes]
 
         self.active_states = None
         self.probs = None
@@ -72,7 +72,7 @@ class Striatum:
             if probs[0] > self.state_detection_threshold:
                 new_state = np.argmin(self.state_activity)
                 self.state_activity[new_state] = 1
-                self.weights[area, new_state] = np.zeros(self.output_size)
+                self.weights[area][new_state] = np.zeros(self.output_sizes[area])
 
                 self.receptive_fields[new_state] = cells
 
@@ -87,10 +87,10 @@ class Striatum:
                 )
 
             self.prediction = np.sum(
-                self.weights[area, self.active_states] * self.probs.reshape(-1, 1), axis=0
+                self.weights[area][self.active_states] * self.probs.reshape(-1, 1), axis=0
             )
         else:
-            self.prediction = np.zeros(self.output_size)
+            self.prediction = np.zeros(self.output_sizes[area])
 
         return self.prediction
 
@@ -98,7 +98,7 @@ class Striatum:
         error = target - self.prediction
 
         if len(self.active_states) > 0:
-            self.weights[area, self.active_states] += self.lr * error.reshape(1, -1) * self.probs
+            self.weights[area][self.active_states] += self.lr * error.reshape(1, -1) * self.probs
             self.weights[area] = np.clip(self.weights[area], 0, None)
 
         return np.sum(np.power(error, 2))
