@@ -3,8 +3,6 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from __future__ import annotations
-
 from functools import wraps
 from timeit import default_timer as timer
 

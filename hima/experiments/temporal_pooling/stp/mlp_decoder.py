@@ -75,7 +75,7 @@ class MlpDecoder:
             values = 1. / (1 + np.exp(-values))
         return values
 
-    def _learn(
+    def learn(
             self, input_sdr: AnySparseSdr, gt_sdr: AnySparseSdr,
             prediction: AnySparseSdr | DenseSdr
     ):

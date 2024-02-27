@@ -26,10 +26,15 @@ class MlpDecoder:
     sparse_input: SparseSdr
     dense_input: npt.NDArray[float]
     sparse_gt: SparseSdr
-    dense_gt: npt.NDArray[float]
+    dense_gt_values: npt.NDArray[float]
+    dense_gt_sdr: npt.NDArray[float]
 
     # learning stage tracking
     n_updates: int
+
+    accumulated_loss: float | torch.Tensor
+    accumulated_loss_steps: int | None
+    loss_propagation_schedule: int
 
     def __init__(
             self,
@@ -40,21 +45,21 @@ class MlpDecoder:
             total_updates_required: int = 100_000, epoch_size: int = 4_000,
             collect_errors: bool = False,
             output_mode: str = 'binary',
-            learn_on_sdr: bool = False,
+            loss_propagation_schedule: int = 5,
     ):
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = feedforward_sds
         self.output_sds = output_sds
         self.output_mode = OutputMode[output_mode.upper()]
 
-        shape = (output_sds.size, feedforward_sds.size)
+        shape = (feedforward_sds.size, output_sds.size)
 
         self.lr = learning_rate
         self.sdr_predictor = nn.Sequential(
             nn.Linear(shape[0], shape[1], dtype=float),
             nn.Sigmoid()
         )
-        self.values_predictor = nn.Linear(shape[0], shape[1], dtype=float)
+        self.values_predictor = nn.Linear(shape[1], shape[1], dtype=float)
         self.optim = optim.Adam(
             itertools.chain(
                 self.sdr_predictor.parameters(),
@@ -62,7 +67,9 @@ class MlpDecoder:
             ),
             lr=self.lr
         )
-        self.loss = 0.
+        self.accumulated_loss = 0.
+        self.accumulated_loss_steps = 0
+        self.loss_propagation_schedule = loss_propagation_schedule
 
         self.n_updates = 0
         self.total_updates_required = total_updates_required
@@ -71,7 +78,8 @@ class MlpDecoder:
         self.sparse_input = []
         self.dense_input = np.zeros(self.feedforward_sds.size, dtype=float)
         self.sparse_gt = []
-        self.dense_gt = np.zeros(self.output_sds.size, dtype=float)
+        self.dense_gt_values = np.zeros(self.output_sds.size, dtype=float)
+        self.dense_gt_sdr = np.zeros(self.output_sds.size, dtype=float)
 
         self.collect_errors = collect_errors
         if self.collect_errors:
@@ -84,10 +92,15 @@ class MlpDecoder:
 
     def predict(self):
         x = torch.from_numpy(self.dense_input)
-        sdr = self.sdr_predictor(x)
-        values = sdr
-        # values *= self.values_predictor(x)
-        return values
+        sdr_probs = self.sdr_predictor(x)
+        # sampler = torch.distributions.Bernoulli(probs=sdr_probs)
+        sampler = torch.distributions.RelaxedBernoulli(torch.tensor([1.0]), probs=sdr_probs)
+
+        # sdr = sampler.sample()
+        sdr = sampler.rsample()
+        # values = sdr
+        values = sdr * self.values_predictor(sdr_probs.detach())
+        return sdr_probs, values
 
     def learn(
             self, input_sdr: AnySparseSdr, gt_sdr: AnySparseSdr,
@@ -100,18 +113,39 @@ class MlpDecoder:
             self.accept_input(input_sdr)
             prediction = self.predict()
 
-        target = torch.from_numpy(self.dense_gt)
+        target_values = torch.from_numpy(self.dense_gt_values)
+        target_sdr = torch.from_numpy(self.dense_gt_sdr)
 
         self.optim.zero_grad()
-        loss_func = nn.MSELoss()
-        loss = loss_func(prediction, target)
-        loss.backward()
-        self.optim.step()
+        sdr_loss_func = nn.BCELoss()
+        value_loss_func = nn.MSELoss()
+
+        sdr_probs, values = prediction
+
+        loss = value_loss_func(values, target_values) + sdr_loss_func(sdr_probs, target_sdr)
+
+        self.accumulated_loss += loss
+        self.accumulated_loss_steps += 1
+        self.backpropagate_loss()
 
         if self.collect_errors:
             self.errors.append(loss.item())
 
+    def backpropagate_loss(self):
+        if self.accumulated_loss_steps <= self.loss_propagation_schedule:
+            return
+
+        self.optim.zero_grad()
+        mean_loss = self.accumulated_loss / self.accumulated_loss_steps
+        mean_loss.backward()
+        self.optim.step()
+
+        self.accumulated_loss = 0.
+        self.accumulated_loss_steps = 0
+
     def to_sdr(self, prediction: torch.Tensor) -> AnySparseSdr:
+        if isinstance(prediction, tuple):
+            prediction = prediction[0]
         prediction = prediction.detach().numpy()
 
         n_winners = self.output_sds.active_size
@@ -140,8 +174,10 @@ class MlpDecoder:
         sdr, values = split_sdr_values(sdr)
 
         # forget prev SDR
-        self.dense_gt[self.sparse_gt] = 0.
+        self.dense_gt_values[self.sparse_gt] = 0.
+        self.dense_gt_sdr[self.sparse_gt] = 0.
 
         # set new SDR
         self.sparse_gt = sdr
-        self.dense_gt[self.sparse_gt] = values
+        self.dense_gt_values[self.sparse_gt] = values
+        self.dense_gt_sdr[self.sparse_gt] = 1.
