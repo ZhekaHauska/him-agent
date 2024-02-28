@@ -26,6 +26,10 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 )
 
 
+# Intermediate version of SP during the migration to work with both
+# binary and rate encodings. Previous: sp_rate.py. Current last.
+# New: supports synaptogenesis.
+
 class SpLearningAlgo(Enum):
     OLD = 1
     NEW = auto()

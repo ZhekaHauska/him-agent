@@ -23,6 +23,10 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 )
 
 
+# Intermediate version of SP during the migration to work with both
+# binary and rate encodings. Previous: sp.py. Next: sp_rate.py.
+# Learning is old. New: supports RateSdr I/O.
+
 class SpatialPooler:
     rng: Generator
 

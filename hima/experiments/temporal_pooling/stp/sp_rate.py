@@ -24,6 +24,10 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 )
 
 
+# Intermediate version of SP during the migration to work with both
+# binary and rate encodings. Previous: sp_float.py. Next: sp_layer.py.
+# New: supports new learning algos.
+
 class SpLearningAlgo(Enum):
     OLD = 1
     NEW = auto()
