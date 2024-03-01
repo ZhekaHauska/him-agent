@@ -469,6 +469,43 @@ TM:
     learning_algo: new
     normalize_rates: true
     sample_winners: false
+  tm_new2_mc:
+    # _base_: $_base.spatial_pooler.default_layer_mc
+    _type_: sp.layer_mc
+    seed: ???
+
+    compartments:
+      feedforward:
+        # input
+        feedforward_sds: ???
+      state:
+        # input
+        feedforward_sds: ???
+
+    # shared compartments config
+    initial_rf_to_input_ratio: 100.0
+    initial_max_rf_sparsity: 0.6
+    target_max_rf_sparsity: 0.1
+    target_rf_to_input_ratio: 0.75
+
+    # learning
+    learning_rate: 0.01
+    learning_algo: new
+
+    # newborn
+    newborn_pruning_cycle: 100.0
+    newborn_pruning_stages: 0
+    newborn_pruning_mode: powerlaw
+    prune_grow_cycle: 20.0
+    adapt_to_ff_sparsity: False
+    boosting_k: 0.5
+
+    # output
+    output_sds: ???
+    output_mode: binary
+    normalize_rates: true
+    sample_winners: false
+
   lstm:
     _type_: tm.lstm
     seed: ???
