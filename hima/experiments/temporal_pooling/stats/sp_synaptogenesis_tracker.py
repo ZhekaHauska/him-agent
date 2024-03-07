@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from hima.common.config.base import extracted
 from hima.experiments.temporal_pooling.stats.mc_sp_tracking_aggregator import \
     SpTrackingCompartmentalAggregator
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
@@ -95,6 +96,11 @@ def get_sp_synaptogenesis_tracker(on: dict, **config) -> SpSynaptogenesisTracker
 
     if hasattr(sp, 'compartments'):
         # we deal with multi-compartmental TM/SP => track each compartment separately
+
+        # NB: for multi-compartmental SP, there's no need to track splits
+        # NB2: always avoid mutating config => create a copy without specific keys
+        config, _ = extracted(config, 'track_split')
+
         # noinspection PyTypeChecker
         return SpTrackingCompartmentalAggregator(
             sp=sp, tracker_class=SpSynaptogenesisTracker, **config
