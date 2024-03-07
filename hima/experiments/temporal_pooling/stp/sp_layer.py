@@ -119,6 +119,7 @@ class SpatialPooler:
             slow_trace_decay: float = 0.99, fast_trace_decay: float = 0.95,
     ):
         self.rng = np.random.default_rng(seed)
+        self.comp_name = None
 
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
@@ -334,10 +335,9 @@ class SpatialPooler:
         """
         avg_in_rate = safe_divide(self.dense_input[self.sparse_input].sum(), len(self.sparse_input))
 
-        potentials *= 1 - self.synaptogenesis_score
-        potentials += (
-                self.rng.random(self.output_size) * self.synaptogenesis_score * avg_in_rate
-        )
+        w_noise = self.synaptogenesis_score
+        potentials *= 1 - w_noise
+        potentials += w_noise * self.rng.random(self.output_size) * avg_in_rate
 
     def _select_winners(self):
         n_winners = self.output_sds.active_size
@@ -436,7 +436,7 @@ class SpatialPooler:
         lr = self.modulation * modulation * self.learning_rate
 
         w = self.weights[neurons]
-        dw = lr * post_rates * (pre_rates - post_rates * w)
+        dw = lr * post_rates * (pre_rates - w)
 
         self.weights[neurons] = normalize_weights(w + dw)
 
@@ -464,7 +464,7 @@ class SpatialPooler:
         lr = modulation * self.learning_rate
 
         w = self.weights[neurons]
-        dw = lr * post_rates * (pre_rates - w)
+        dw = lr * post_rates * (pre_rates - post_rates * w)
 
         self.weights[neurons] = normalize_weights(w + dw)
 
@@ -631,7 +631,8 @@ class SpatialPooler:
                 break
 
         if found is None:
-            print('---SYN')
+            tag = self.comp_name or ''
+            print(f'---SYN {tag}')
             return
 
         neuron, syn = found
