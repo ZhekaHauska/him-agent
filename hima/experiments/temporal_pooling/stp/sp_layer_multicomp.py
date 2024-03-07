@@ -111,17 +111,14 @@ class SpatialPooler:
         self.rng = np.random.default_rng(seed)
         print(f'{output_sds=}')
 
-        if global_config is None:
-            ...
-        else:
-            from hima.common.config.global_config import GlobalConfig
-            global_config: GlobalConfig
-            self.compartments = {
-                name: global_config.resolve_object(
-                    compartments_config[name], output_sds=output_sds
-                )
-                for name in compartments
-            }
+        from hima.common.config.global_config import GlobalConfig
+        global_config: GlobalConfig
+        self.compartments = {
+            name: global_config.resolve_object(
+                compartments_config[name], output_sds=output_sds
+            )
+            for name in compartments
+        }
 
         self.compartments_ix = {
             name: i
@@ -132,8 +129,10 @@ class SpatialPooler:
         ])
         self.compartments_weight /= self.compartments_weight.sum()
         for comp_name in self.compartments:
+            self.compartments[comp_name].comp_name = comp_name
             newborn_pruning_cycle = self.compartments[comp_name].newborn_pruning_cycle
             newborn_pruning_stages = self.compartments[comp_name].newborn_pruning_stages
+            prune_grow_cycle = self.compartments[comp_name].prune_grow_cycle
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode[output_mode.upper()]
@@ -200,9 +199,7 @@ class SpatialPooler:
 
     @timed
     def _compute(self, input_sdr: CompartmentsAnySparseSdr, learn: bool) -> AnySparseSdr:
-        assert len(input_sdr) == len(self.compartments), (
-            f'{input_sdr=} | {self.compartments.keys()=}'
-        )
+        self.accept_input(input_sdr, learn=learn)
 
         matched_input_activity = self.match_input(input_sdr, learn)
         self.select_winners()
@@ -212,6 +209,13 @@ class SpatialPooler:
         output_sdr = self.select_output()
         self.accept_output(output_sdr, learn=learn)
         return output_sdr
+
+    def accept_input(self, sdr: CompartmentsAnySparseSdr, *, learn: bool):
+        """Accept new input and move to the next time step"""
+        assert len(sdr) == len(self.compartments), f'{sdr=} | {self.compartments.keys()=}'
+
+        # apply timed decay to neurons' potential
+        self.potentials.fill(0.)
 
     def match_input(self, input_sdr: CompartmentsAnySparseSdr, learn):
         matched_input_activity = {}
