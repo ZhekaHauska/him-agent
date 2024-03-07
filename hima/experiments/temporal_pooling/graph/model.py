@@ -166,7 +166,7 @@ class Model(Stretchable, Stateful, Node):
         # patterns: block.stream.sdr OR block.stream OR stream.sdr OR stream
         name_parts = name.split('.')
         is_sdr = name.endswith('.sdr')
-        is_owned_by_block = len(name_parts) - is_sdr == 2
+        is_owned_by_block = (len(name_parts) - is_sdr) == 2
 
         # get the owning block (and try to register it too)
         block = None

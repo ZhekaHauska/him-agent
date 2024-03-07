@@ -22,6 +22,7 @@ class Block(Stretchable, Stateful):
     family: str = 'base_block'
     name: str
 
+    # define in a class as set, then during init it will be modified to dict[short_name] = stream
     supported_streams: set[str] | dict[str, str] = {}
     model: Model
 
@@ -45,6 +46,7 @@ class Block(Stretchable, Stateful):
         raise NotImplementedError()
 
     def reset(self):
+        """Overload if something needs resetting."""
         for stream_name in self.supported_streams:
             stream = self[stream_name]
             if stream and stream.is_sdr:
@@ -54,8 +56,8 @@ class Block(Stretchable, Stateful):
         return self.name
 
     # ---------------------- Utility methods ----------------------
-    def __getitem__(self, stream_name):
-        return self.model.streams.get(self.supported_streams[stream_name], None)
+    def __getitem__(self, stream_short_name):
+        return self.model.streams.get(self.supported_streams[stream_short_name], None)
 
     def extract_sdr_streams(self, kwargs: TConfig):
         # the block itself has to be registered before starting register its streams
