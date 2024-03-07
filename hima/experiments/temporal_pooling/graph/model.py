@@ -198,18 +198,22 @@ class Model(Stretchable, Stateful, Node):
 
             on[handler_name] = stream
 
-        if not valid:
-            # pop last as it's not valid, i.e. haven't been created
-            non_existed_streams.pop()
+        if valid:
+            tracker = TrackerBlock(model=self, name=name, tracker=tracker, on=on)
+            if tracker.supported:
+                self.trackers[name] = tracker
+                print(f'+ {name} tracker')
+                return
 
-            # not all stream are valid ==> abort: don't create tracker and remove all new streams
-            for stream_name in non_existed_streams:
-                self.streams.pop(stream_name)
-            print(f'- {name} tracker')
-            return
+        # INVALID OR UNSUPPORTED TRACKER
 
-        self.trackers[name] = TrackerBlock(model=self, name=name, tracker=tracker, on=on)
-        print(f'+ {name} tracker')
+        # pop last as it's not valid, i.e. haven't been created
+        non_existed_streams.pop()
+
+        # not all stream are valid ==> abort: don't create tracker and remove all new streams
+        for stream_name in non_existed_streams:
+            self.streams.pop(stream_name)
+        print(f'- {name} tracker')
 
     # =========== Parse API =========
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Callable, TYPE_CHECKING
 
 from hima.common.config.base import TConfig
+from hima.common.utils import prepend_dict_keys
 from hima.experiments.temporal_pooling.graph.global_vars import VARS_TRACKING_ENABLED
 from hima.experiments.temporal_pooling.graph.stream import Stream, SdrStream
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
@@ -42,6 +43,7 @@ class TrackerBlock:
     track: dict[str, list[TTrackerHandler]]
     # each tracker listen special `enabled` stream, which controls trackers' activity
     enabled: Stream
+    supported: bool
 
     # tracker object
     tracker: Any
@@ -50,6 +52,12 @@ class TrackerBlock:
         self.model = model
         self.name = name
         self.tracker = self.model.config.resolve_object(tracker, on=on, model=self.model)
+
+        # some trackers may find they are not supported for current model (=config)
+        self.supported = not hasattr(self.tracker, 'supported') or self.tracker.supported
+        if not self.supported:
+            return
+
         self.enabled = model.streams[VARS_TRACKING_ENABLED]
 
         self.track = {}
@@ -75,10 +83,7 @@ class TrackerBlock:
                 self.model.metrics |= metrics
 
     def personalize_metrics(self, metrics: TMetrics):
-        return {
-            f'{self.name}/{k}': metrics[k]
-            for k in metrics
-        }
+        return prepend_dict_keys(metrics, self.name, separator='/')
 
     @staticmethod
     def get_handler(tracker, handler_name: str) -> TTrackerHandler:

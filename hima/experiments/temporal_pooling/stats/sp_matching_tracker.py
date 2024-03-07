@@ -11,6 +11,8 @@ import numpy as np
 import numpy.typing as npt
 
 from hima.common.utils import isnone
+from hima.experiments.temporal_pooling.stats.mc_sp_tracking_aggregator import \
+    SpTrackingCompartmentalAggregator
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 from hima.experiments.temporal_pooling.stp.sp_utils import (
@@ -32,7 +34,7 @@ class SpMatchingTracker:
             self, sp, step_flush_schedule: int = None, potentials_quantile: float = None
     ):
         self.sp = sp
-        self.supported = getattr(sp, 'get_step_debug_info', None) is not None
+        self.supported = hasattr(sp, 'get_step_debug_info')
         if not self.supported:
             return
 
@@ -50,7 +52,7 @@ class SpMatchingTracker:
         self.recognition_strength.reset()
 
     def on_sp_computed(self, _, ignore: bool) -> TMetrics:
-        if ignore or not self.supported:
+        if ignore:
             return {}
 
         debug_info = self.sp.get_step_debug_info()
@@ -68,7 +70,7 @@ class SpMatchingTracker:
         return {}
 
     def on_sequence_finished(self, _, ignore: bool) -> TMetrics:
-        if ignore or not self.supported:
+        if ignore:
             return {}
 
         if is_infinite(self.step_flush_scheduler):
@@ -95,4 +97,10 @@ def get_sp_matching_tracker(on: dict, **config) -> SpMatchingTracker:
     sp = getattr(tracked_stream.owner, 'sp', None)
     if sp is None:
         sp = getattr(tracked_stream.owner, 'tm', None)
+
+    if hasattr(sp, 'compartments'):
+        # we deal with multi-compartmental TM/SP => track each compartment separately
+        # noinspection PyTypeChecker
+        return SpTrackingCompartmentalAggregator(sp=sp, tracker_class=SpMatchingTracker, **config)
+
     return SpMatchingTracker(sp=sp, **config)

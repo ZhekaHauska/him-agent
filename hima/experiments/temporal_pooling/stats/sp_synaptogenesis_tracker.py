@@ -9,6 +9,8 @@ from typing import Any
 
 import numpy as np
 
+from hima.experiments.temporal_pooling.stats.mc_sp_tracking_aggregator import \
+    SpTrackingCompartmentalAggregator
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     RepeatingCountdown,
@@ -24,7 +26,7 @@ class SpSynaptogenesisTracker:
 
     def __init__(self, sp, step_flush_schedule: int = None, track_split: bool = False):
         self.sp = sp
-        self.supported = getattr(sp, 'get_step_debug_info', None) is not None
+        self.supported = hasattr(sp, 'get_step_debug_info')
         if not self.supported:
             return
 
@@ -35,7 +37,7 @@ class SpSynaptogenesisTracker:
             self.split_size = self.sp.output_sds.size
 
     def on_sp_computed(self, _, ignore: bool) -> TMetrics:
-        if ignore or not self.supported:
+        if ignore:
             return {}
 
         flush_now, self.step_flush_scheduler = tick(self.step_flush_scheduler)
@@ -44,7 +46,7 @@ class SpSynaptogenesisTracker:
         return {}
 
     def on_sequence_finished(self, _, ignore: bool) -> TMetrics:
-        if ignore or not self.supported:
+        if ignore:
             return {}
 
         if is_infinite(self.step_flush_scheduler):
@@ -90,4 +92,12 @@ def get_sp_synaptogenesis_tracker(on: dict, **config) -> SpSynaptogenesisTracker
     sp = getattr(tracked_stream.owner, 'sp', None)
     if sp is None:
         sp = getattr(tracked_stream.owner, 'tm', None)
+
+    if hasattr(sp, 'compartments'):
+        # we deal with multi-compartmental TM/SP => track each compartment separately
+        # noinspection PyTypeChecker
+        return SpTrackingCompartmentalAggregator(
+            sp=sp, tracker_class=SpSynaptogenesisTracker, **config
+        )
+
     return SpSynaptogenesisTracker(sp=sp, **config)
