@@ -165,6 +165,11 @@ class IntRandomEncoder:
                 sample_rate_sdr(rng, sdr, scale=1.0)
                 for sdr in encoding_map
             ]
+            avg_encoding_mass = np.mean([
+                np.sum(sdr.values) / len(sdr.sdr)
+                for sdr in encoding_map
+            ])
+            print(f'Average encoding mass: {avg_encoding_mass:.2f}')
         return encoding_map
 
 
