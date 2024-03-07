@@ -50,6 +50,9 @@ def _resolve_block(type_tag: str):
     if type_tag == 'block.tm_new':
         from hima.experiments.temporal_pooling.blocks.tm_new import NewTemporalMemoryBlock
         return NewTemporalMemoryBlock
+    if type_tag == 'block.tm_new_mc':
+        from hima.experiments.temporal_pooling.blocks.tm_new_mc import NewTemporalMemoryBlock
+        return NewTemporalMemoryBlock
     if type_tag == 'block.lstm':
         from hima.experiments.temporal_pooling.blocks.lstm import LstmBlock
         return LstmBlock
@@ -60,11 +63,6 @@ def _resolve_block(type_tag: str):
 
 def _resolve_temporal_memory(type_tag: str):
     if type_tag == 'tm.base':
-        from hima.experiments.temporal_pooling.stp.temporal_memory import (
-            TemporalMemory
-        )
-        return TemporalMemory
-    if type_tag == 'tm.new':
         from hima.experiments.temporal_pooling.stp.temporal_memory import (
             TemporalMemory
         )

@@ -100,16 +100,16 @@ model:
 
     # SP Matching Tracking
     # L1
-    - name: state_L1.sp_matching.prior
-      tracker: trackers.sp_matching
-      on:
-        sp_computed: TM.predicted_cells.sdr
-        sequence_finished: sequence_finished
-    - name: state_L1.sp_matching.posterior
-      tracker: trackers.sp_matching
-      on:
-        sp_computed: TM.active_cells.sdr
-        sequence_finished: sequence_finished
+#    - name: state_L1.sp_matching.prior
+#      tracker: trackers.sp_matching
+#      on:
+#        sp_computed: TM.predicted_cells.sdr
+#        sequence_finished: sequence_finished
+#    - name: state_L1.sp_matching.posterior
+#      tracker: trackers.sp_matching
+#      on:
+#        sp_computed: TM.active_cells.sdr
+#        sequence_finished: sequence_finished
     # L2
     - name: state_L2.sp_matching.prior
       tracker: trackers.sp_matching
@@ -123,11 +123,11 @@ model:
         sequence_finished: sequence_finished
 
     # SP Synaptogenesis tracking
-    - name: state_L1.sp_synaptogenesis
-      tracker: trackers.sp_synaptogenesis_concat
-      on:
-        sp_computed: TM.active_cells.sdr
-        sequence_finished: sequence_finished
+#    - name: state_L1.sp_synaptogenesis
+#      tracker: trackers.sp_synaptogenesis_concat
+#      on:
+#        sp_computed: TM.active_cells.sdr
+#        sequence_finished: sequence_finished
     # SP Synaptogenesis tracking
     - name: state_L2.sp_synaptogenesis
       tracker: trackers.sp_synaptogenesis_concat
@@ -469,24 +469,22 @@ TM:
     learning_algo: new
     normalize_rates: true
     sample_winners: false
+
   tm_new2_mc:
-    # _base_: $_base.spatial_pooler.default_layer_mc
-    _type_: sp.layer_mc
-    seed: ???
+    _base_: $_base.spatial_pooler.default_layer_mc
 
-    compartments:
+    compartments_config:
       feedforward:
-        # input
-        feedforward_sds: ???
+        _base_: $_base.spatial_pooler.default_layer_mc_db
       state:
-        # input
-        feedforward_sds: ???
+        _base_: $_base.spatial_pooler.default_layer_mc_db
+      context:
+        _base_: $_base.spatial_pooler.default_layer_mc_db
 
-    # shared compartments config
-    initial_rf_to_input_ratio: 100.0
-    initial_max_rf_sparsity: 0.6
-    target_max_rf_sparsity: 0.1
-    target_rf_to_input_ratio: 0.75
+    compartments_weight:
+      feedforward: 1.0
+      state: 1.0
+      context: 1.0
 
     # learning
     learning_rate: 0.01
@@ -497,11 +495,9 @@ TM:
     newborn_pruning_stages: 0
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 20.0
-    adapt_to_ff_sparsity: False
     boosting_k: 0.5
 
     # output
-    output_sds: ???
     output_mode: binary
     normalize_rates: true
     sample_winners: false
