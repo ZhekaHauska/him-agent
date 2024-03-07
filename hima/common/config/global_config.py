@@ -14,6 +14,19 @@ from hima.common.config.referencing import ConfigResolver
 from hima.common.config.types import TTypeResolver, TTypeOrFactory
 
 
+# TODO:
+#  - allow multiple base configs. Allow overrides that override entirely the list or append to it
+#  - improve working with external imports (from another files) and relative imports
+#  - allow recursive config resolution/substitution (e.g. merge nested dicts with resolution)
+#  - allow local base configs (they need to be masked out)
+#  - specify separation of configs: raw base config + overrides, constructed resolved namespace,
+#       visible resolved configs (if it is needed). Which one should be logged?
+#  - solve problem with dynamic overrides order (before or after base config resolution)
+#  - decide, whether we should dynamically induce __init__ params from an object to
+#       understand whether or not it needs common params (seed, global_config, etc.),
+#       and whether we want them to be resolved implicitly or explicitly
+
+
 class GlobalConfig:
     config: TConfig
     config_path: Path
@@ -46,6 +59,10 @@ class GlobalConfig:
             config_type: Type[dict | list] = dict,
             **substitution_registry
     ) -> Any:
+        """
+        Return a new object constructed from its config.
+        It requires resolving an object's requirements — its config and factory method.
+        """
         return self.object_resolver.resolve(
             _config,
             object_type_or_factory=object_type_or_factory,
@@ -59,6 +76,9 @@ class GlobalConfig:
             config_type: Type[dict | list] = dict,
             **substitution_registry
     ) -> tuple[TConfig, TTypeOrFactory]:
+        """
+        Resolve and return requirements for construction a new object w/o constructing it.
+        """
         return self.object_resolver.resolve_requirements(
             _config,
             object_type_or_factory=object_type_or_factory,

@@ -68,7 +68,8 @@ class Sds:
         )
 
     def __eq__(self, other):
-        assert isinstance(other, Sds)
+        if not isinstance(other, Sds):
+            return False
         return self.size == other.size and self.active_size == other.active_size
 
     def __repr__(self):

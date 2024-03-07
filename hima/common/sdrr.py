@@ -75,6 +75,7 @@ class RateSdr:
 
 # Aggregate type for functions that support both representations.
 AnySparseSdr = Union[SparseSdr, RateSdr]
+CompartmentsAnySparseSdr = dict[str, AnySparseSdr]
 
 
 class OutputMode(Enum):
