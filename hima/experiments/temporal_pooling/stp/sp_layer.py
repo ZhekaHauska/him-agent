@@ -389,7 +389,7 @@ class SpatialPooler:
         self.strongest_winner = strongest_winner
 
     def reinforce_winners(self, matched_input_activity, learn: bool):
-        if not learn:
+        if not learn or len(self.sparse_input) == 0:
             return
 
         self.stdp(self.winners, matched_input_activity[self.winners])
