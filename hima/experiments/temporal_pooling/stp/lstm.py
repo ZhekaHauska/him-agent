@@ -13,8 +13,6 @@ import torch.optim as optim
 from hima.common.sdr import sparse_to_dense, SparseSdr, DenseSdr
 from hima.common.utils import safe_divide
 
-torch.autograd.set_detect_anomaly(True)
-
 
 THiddenState = tuple[torch.Tensor, torch.Tensor]
 

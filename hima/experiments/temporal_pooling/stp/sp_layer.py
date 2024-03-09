@@ -179,9 +179,6 @@ class SpatialPooler:
         )
         self.rand_weights = np.zeros(self.output_size)
 
-        if not self.is_newborn_phase:
-            self.on_end_newborn_phase()
-
         self.synaptogenesis_countdown = make_repeating_counter(self.newborn_pruning_schedule)
         self.synaptogenesis_cnt = 0
         self.synaptogenesis_score = np.zeros(self.output_size, dtype=float)
@@ -220,6 +217,9 @@ class SpatialPooler:
             size=self.output_size, exp_decay=fast_trace_decay
         )
         self.fast_output_trace.put(self.output_sds.sparsity)
+
+        if not self.is_newborn_phase:
+            self.on_end_newborn_phase()
 
     def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
@@ -312,7 +312,6 @@ class SpatialPooler:
             self.shrink_receptive_field()
         else:
             self.prune_grow_synapses()
-            pass
 
     def match_current_input(self, with_neurons: np.ndarray = None) -> npt.NDArray[float]:
         rf = self.rf if with_neurons is None else self.rf[with_neurons]
@@ -848,8 +847,13 @@ class SpatialPooler:
         return self.newborn_pruning_stage < self.newborn_pruning_stages
 
     def _state_str(self) -> str:
-        return f'{self.rf_sparsity:.4f} | {self.rf_size} | {self.learning_rate:.3f}' \
-               f' | {self.boosting_k:.2f}'
+        return (
+            f'{self.rf_sparsity:.4f}'
+            f' | {self.rf_size}'
+            f' | {self.learning_rate:.3f}'
+            f' | {self.boosting_k:.2f}'
+            f' | {self.synaptogenesis_countdown[0]}'
+        )
 
     @property
     def feedforward_rate(self):
