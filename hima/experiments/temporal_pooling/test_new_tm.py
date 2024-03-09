@@ -111,14 +111,10 @@ class NewTmExperiment:
 
         for epoch in range(self.iterate.epochs):
             self.print_with_timestamp(f'Epoch {epoch}')
+            # if epoch >= 50:
+            #     self.model.streams[VARS_LEARN].set(False)
             _, elapsed_time = self.train_epoch()
 
-        if self.logger:
-            try:
-                self.logger.config.update(self.config.config, allow_val_change=True)
-            except:
-                # quick-n-dirty hack to remedy DryWandbLogger's inability to do this :)
-                pass
         self.print_with_timestamp('<==')
 
     def run_by_epoch(self):
@@ -133,14 +129,6 @@ class NewTmExperiment:
 
         self.print_with_timestamp(f'Epoch {self.progress.epoch + 1}')
         _, elapsed_time = self.train_epoch()
-
-        if self.progress.epoch == self.iterate.epochs and self.logger:
-            try:
-                self.logger.config.update(self.config.config, allow_val_change=True)
-            except:
-                # quick-n-dirty hack to remedy DryWandbLogger's inability to do this :)
-                pass
-        self.print_with_timestamp('<==')
 
     @timed
     def train_epoch(self):

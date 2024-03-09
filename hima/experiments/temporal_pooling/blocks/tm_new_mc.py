@@ -118,9 +118,7 @@ class NewTemporalMemoryBlock(Block):
         learn = self.model.streams[VARS_LEARN].get()
         compartments_input = self.prepare_input(use_ff=True, use_context=True, use_state=True)
 
-        # self.tm.modulation = 0.2
         output_sdr = self.tm.compute(compartments_input, learn=learn)
-        # self.tm.modulation = 1.0
         self[ACTIVE_CELLS].set(output_sdr)
 
     def predict(self):
