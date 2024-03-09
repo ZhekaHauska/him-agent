@@ -5,8 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from copy import copy
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -15,7 +13,6 @@ import torch.optim.lr_scheduler as lr_scheduler
 from tqdm import tqdm
 
 from hima.common.sdr import sparse_to_dense
-from hima.modules.belief.utils import normalize
 
 TLstmHiddenState = tuple[torch.Tensor, torch.Tensor]
 
@@ -274,6 +271,7 @@ class LstmLayer:
         if messages is not None:
             self.external_messages = messages
         elif self.external_input_size != 0:
+            from hima.modules.belief.utils import normalize
             self.external_messages = normalize(
                 np.zeros(self.external_input_size).reshape(self.n_external_vars, -1)
             ).flatten()
@@ -285,9 +283,6 @@ class LstmLayer:
             self.internal_state = messages
         elif self.context_input_size != 0:
             assert False, f"Below is incorrect, implement it!"
-            # self.context_messages = normalize(
-            #     np.zeros(self.context_input_size).reshape(self.n_context_vars, -1)
-            # ).flatten()
 
     def make_state_snapshot(self):
         return (
