@@ -62,7 +62,7 @@ class SpatialPooler:
     # rf: npt.NDArray[int]
     # weights: npt.NDArray[float]
 
-    neurogenesis_countdown: RepeatingCountdown
+    synaptogenesis_countdown: RepeatingCountdown
     # newborn stage
     newborn_pruning_mode: SpNewbornPruningMode
     newborn_pruning_cycle: float
@@ -159,10 +159,10 @@ class SpatialPooler:
         self.prune_grow_schedule = int(self.prune_grow_cycle / self.output_sds.sparsity)
         self.base_boosting_k = boosting_k
         self.boosting_k = self.base_boosting_k
-        self.neurogenesis_countdown = make_repeating_counter(self.newborn_pruning_schedule)
 
-        if not self.is_newborn_phase:
-            self.on_end_newborn_phase()
+        self.synaptogenesis_countdown = make_repeating_counter(self.newborn_pruning_schedule)
+        self.synaptogenesis_cnt = 0
+        self.synaptogenesis_score = np.zeros(self.output_size, dtype=float)
 
         self.winners = np.empty(0, dtype=int)
         self.winners_value = 1.0
@@ -184,12 +184,12 @@ class SpatialPooler:
         )
         self.fast_output_trace.put(self.output_sds.sparsity)
 
-        self.neurogenesis_cnt = 0
-        self.neurogenesis_queue = np.zeros(self.output_size, dtype=float)
-
         # synchronize selected attributes for compartments with the main SP
         for comp_name in self.compartments:
             self.compartments[comp_name].output_mode = self.output_mode
+
+        if not self.is_newborn_phase:
+            self.on_end_newborn_phase()
 
     def compute(self, input_sdr: CompartmentsAnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
@@ -199,7 +199,7 @@ class SpatialPooler:
 
     @timed
     def _compute(self, input_sdr: CompartmentsAnySparseSdr, learn: bool) -> AnySparseSdr:
-        self.accept_input(input_sdr, learn=learn)
+        self.accept_input(input_sdr)
 
         matched_input_activity = self.match_input(input_sdr, learn)
         self.select_winners()
@@ -210,7 +210,7 @@ class SpatialPooler:
         self.accept_output(output_sdr, learn=learn)
         return output_sdr
 
-    def accept_input(self, sdr: CompartmentsAnySparseSdr, *, learn: bool):
+    def accept_input(self, sdr: CompartmentsAnySparseSdr):
         """Accept new input and move to the next time step"""
         assert len(sdr) == len(self.compartments), f'{sdr=} | {self.compartments.keys()=}'
 
@@ -341,7 +341,7 @@ class SpatialPooler:
         self.health_check()
 
         # self.rng.binomial(1, p=self.neurogenesis_queue)
-        self.neurogenesis_queue[:] = 0.
+        self.synaptogenesis_score[:] = 0.
         rnd_cnt = 0
 
         # TODO: optimize thresholds and power scaling;
@@ -375,12 +375,12 @@ class SpatialPooler:
             f'{self.output_entropy():.3f}'
             f' | {self.recognition_strength:.1f}'
             f' | {self.health_check_results["avg(rfe_out)"]:.3f}'
-            f' | {self.neurogenesis_cnt}'
+            f' | {self.synaptogenesis_cnt}'
             f' | {rnd_cnt}'
-            f' | {np.sum(self.neurogenesis_queue):.2f}'
+            f' | {np.sum(self.synaptogenesis_score):.2f}'
         )
 
-        self.neurogenesis_cnt = 0
+        self.synaptogenesis_cnt = 0
         self.decay_stat_trackers()
 
     def apply_synaptogenesis_to_metric(
@@ -403,14 +403,14 @@ class SpatialPooler:
                 self.rand_weights[neurons], probs[neurons]
             )
 
-        self.neurogenesis_queue[neurons] = np.maximum(
-            self.neurogenesis_queue[neurons], probs[neurons]
+        self.synaptogenesis_score[neurons] = np.maximum(
+            self.synaptogenesis_score[neurons], probs[neurons]
         )
         return cnt
 
     def try_grow_synapses_to_input(self, neurons: SparseSdr):
         sampled_neurons = neurons[
-            self.rng.random(neurons.size) < self.neurogenesis_queue[neurons]
+            self.rng.random(neurons.size) < self.synaptogenesis_score[neurons]
         ]
         if sampled_neurons.size == 0:
             return
@@ -431,8 +431,8 @@ class SpatialPooler:
             return
 
         neuron, syn = found
-        self.neurogenesis_queue[neuron] = 0.
-        self.neurogenesis_cnt += 1
+        self.synaptogenesis_score[neuron] = 0.
+        self.synaptogenesis_cnt += 1
 
         to_change_ix = np.argmin(self.weights[neuron])
         self.assign_new_synapses(neuron, to_change_ix, syn)
@@ -578,7 +578,7 @@ class SpatialPooler:
 
     def on_end_newborn_phase(self):
         self.boosting_k = 0.
-        self.neurogenesis_countdown = make_repeating_counter(self.prune_grow_schedule)
+        self.synaptogenesis_countdown = make_repeating_counter(self.prune_grow_schedule)
         print(f'Become adult: {self._state_str()}')
 
     def get_active_rf(self, weights):
