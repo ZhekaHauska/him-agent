@@ -2,7 +2,7 @@ _type_: stp_experiment.tm_sequence_learning
 project: stp.new_tm.test_text
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 
-seed: 1313
+seed: 1337
 run_all: True
 reset_tm: False
 iterate:
@@ -100,16 +100,16 @@ model:
 
     # SP Matching Tracking
     # L1
-#    - name: state_L1.sp_matching.prior
-#      tracker: trackers.sp_matching
-#      on:
-#        sp_computed: TM.predicted_cells.sdr
-#        sequence_finished: sequence_finished
-#    - name: state_L1.sp_matching.posterior
-#      tracker: trackers.sp_matching
-#      on:
-#        sp_computed: TM.active_cells.sdr
-#        sequence_finished: sequence_finished
+    - name: state_L1.sp_matching.prior
+      tracker: trackers.sp_matching
+      on:
+        sp_computed: TM.predicted_cells.sdr
+        sequence_finished: sequence_finished
+    - name: state_L1.sp_matching.posterior
+      tracker: trackers.sp_matching
+      on:
+        sp_computed: TM.active_cells.sdr
+        sequence_finished: sequence_finished
     # L2
     - name: state_L2.sp_matching.prior
       tracker: trackers.sp_matching
@@ -123,11 +123,11 @@ model:
         sequence_finished: sequence_finished
 
     # SP Synaptogenesis tracking
-#    - name: state_L1.sp_synaptogenesis
-#      tracker: trackers.sp_synaptogenesis_concat
-#      on:
-#        sp_computed: TM.active_cells.sdr
-#        sequence_finished: sequence_finished
+    - name: state_L1.sp_synaptogenesis
+      tracker: trackers.sp_synaptogenesis_concat
+      on:
+        sp_computed: TM.active_cells.sdr
+        sequence_finished: sequence_finished
     # SP Synaptogenesis tracking
     - name: state_L2.sp_synaptogenesis
       tracker: trackers.sp_synaptogenesis_concat
@@ -276,15 +276,16 @@ models:
     - compute TM:
         - embed_input.sdr -> TM.feedforward.sdr
         - TM.compute()
+        - TM.compare_with_prediction()
         - TM.active_cells.sdr -> TM.state.sdr
     - learn decoder:
         - embed_input.sdr -> decoder.feedback.sdr
         - decoder.learn()
     - predict input w/ posterior belief:
-        - TM.state.sdr -> decoder.feedforward.sdr
+        - TM.active_cells.sdr -> decoder.feedforward.sdr
         - decoder.decode()
         - decoder.output.sdr -> input_posterior_prediction.sdr
-        - decoder.learn()
+#        - decoder.learn()
 
   STM2:
     - predict input w/ prior belief:
@@ -470,29 +471,36 @@ TM:
     normalize_rates: true
     sample_winners: false
 
+  # config for an MC STM compartment
+  tm_new2_mc_db:
+    _base_: $_base.spatial_pooler.default_layer_mc_db
+
+  # config for a whole MC STM
   tm_new2_mc:
     _base_: $_base.spatial_pooler.default_layer_mc
 
     compartments_config:
       feedforward:
-        _base_: $_base.spatial_pooler.default_layer_mc_db
+        _base_: TM.tm_new2_mc_db
+        target_rf_to_input_ratio: 0.5
       state:
-        _base_: $_base.spatial_pooler.default_layer_mc_db
+        _base_: TM.tm_new2_mc_db
+        target_rf_to_input_ratio: 0.34
       context:
-        _base_: $_base.spatial_pooler.default_layer_mc_db
+        _base_: TM.tm_new2_mc_db
 
     compartments_weight:
-      feedforward: 1.0
-      state: 1.0
-      context: 1.0
+      feedforward: 2.0
+      state: 3.0
+      context: 2.0
 
     # learning
-    learning_rate: 0.01
+    learning_rate: 0.001
     learning_algo: new
 
     # newborn
     newborn_pruning_cycle: 100.0
-    newborn_pruning_stages: 0
+    newborn_pruning_stages: 20
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 20.0
     boosting_k: 0.5
@@ -574,22 +582,22 @@ trackers:
   sdr:
     _type_: tracker.sdr
     on: ???
-    step_flush_schedule: 400
+    step_flush_schedule: 2000
   tm:
     _type_: tracker.tm
     on: ???
   sdr_prediction:
     _type_: tracker.sdr_prediction
     on: ???
-    step_flush_schedule: 400
+    step_flush_schedule: 2000
   sp_matching:
     _type_: tracker.sp_matching
     on: ???
-    step_flush_schedule: 400
+    step_flush_schedule: 2000
   sp_synaptogenesis:
     _type_: tracker.sp_synaptogenesis
     on: ???
-    step_flush_schedule: 400
+    step_flush_schedule: 2000
     track_split: False
   sp_synaptogenesis_concat:
     _base_: sp_synaptogenesis
