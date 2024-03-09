@@ -498,17 +498,10 @@ TM:
     learning_rate: 0.001
     learning_algo: new
 
-    # newborn
-    newborn_pruning_cycle: 100.0
-    newborn_pruning_stages: 20
-    newborn_pruning_mode: powerlaw
-    prune_grow_cycle: 20.0
-    boosting_k: 0.5
-
     # output
-    output_mode: binary
+    output_mode: rate
     normalize_rates: true
-    sample_winners: false
+    sample_winners: 2.0
 
   lstm:
     _type_: tm.lstm

@@ -22,7 +22,6 @@ from hima.common.timer import timed
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     boosting, RepeatingCountdown, make_repeating_counter
 )
@@ -45,42 +44,24 @@ class SpatialPooler:
     """A competitive network (as meant by Rolls)."""
     rng: Generator
 
+    # compartments
     compartments: dict
     compartments_ix: dict[str, int]
     compartments_weight: npt.NDArray[float]
 
-    # I/O settings
-    # feedforward_sds: Sds
-    # adapt_to_ff_sparsity: bool
+    # potentiation and learning
+    potentials: np.ndarray
+    learning_rate: float
+    synaptogenesis_countdown: RepeatingCountdown
 
+    # output
     output_sds: Sds
     output_mode: OutputMode
-
-    # initial_rf_sparsity: float
-    # target_max_rf_sparsity: float
-    # target_rf_to_input_ratio: float
-    # rf: npt.NDArray[int]
-    # weights: npt.NDArray[float]
-
-    synaptogenesis_countdown: RepeatingCountdown
-    # newborn stage
-    newborn_pruning_mode: SpNewbornPruningMode
-    newborn_pruning_cycle: float
-    newborn_pruning_stages: int
-    newborn_pruning_schedule: int
-    newborn_pruning_stage: int
-    prune_grow_cycle: float
-    #   boosting. It is active only during newborn stage
-    base_boosting_k: float
-    boosting_k: float
-
-    initial_learning_rate: float
-    learning_rate: float
+    normalize_rates: bool
 
     sample_winners_frac: float
     winners: SparseSdr
     strongest_winner: int | None
-    potentials: np.ndarray
 
     # stats
     #   average computation time
@@ -94,18 +75,12 @@ class SpatialPooler:
             self, *, global_config, seed: int,
             compartments: list[str], compartments_config: dict[str, dict],
             compartments_weight: dict[str, float],
-            # output
-            output_sds: Sds, output_mode: str,
             # learning
             learning_rate: float, learning_algo: str,
-            # newborn phase
-            newborn_pruning_cycle: float, newborn_pruning_stages: int,
-            newborn_pruning_mode: str, boosting_k: float,
-            # mature phase
-            prune_grow_cycle: float,
-            # additional optional params
-            normalize_rates: bool = True, sample_winners: float | None = None,
-            # rand_weights_ratio: 0.7, rand_weights_noise: 0.01,
+            synaptogenesis_cycle: float,
+            # output
+            output_sds: Sds, output_mode: str, normalize_rates: bool = True,
+            sample_winners: float | None = None,
             slow_trace_decay: float = 0.99, fast_trace_decay: float = 0.95,
     ):
         self.rng = np.random.default_rng(seed)
@@ -130,16 +105,12 @@ class SpatialPooler:
         self.compartments_weight /= self.compartments_weight.sum()
         for comp_name in self.compartments:
             self.compartments[comp_name].comp_name = comp_name
-            newborn_pruning_cycle = self.compartments[comp_name].newborn_pruning_cycle
-            newborn_pruning_stages = self.compartments[comp_name].newborn_pruning_stages
-            prune_grow_cycle = self.compartments[comp_name].prune_grow_cycle
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode[output_mode.upper()]
         self.normalize_rates = normalize_rates
 
         self.learning_algo = SpLearningAlgo[learning_algo.upper()]
-
         self.initial_learning_rate = learning_rate
         self.learning_rate = learning_rate
         self.modulation = 1.0
@@ -149,25 +120,15 @@ class SpatialPooler:
         else:
             self.select_winners = self._sample_winners
             self.sample_winners_frac = sample_winners
-
-        self.newborn_pruning_mode = SpNewbornPruningMode[newborn_pruning_mode.upper()]
-        self.newborn_pruning_cycle = newborn_pruning_cycle
-        self.newborn_pruning_schedule = int(self.newborn_pruning_cycle / self.output_sds.sparsity)
-        self.newborn_pruning_stages = newborn_pruning_stages
-        self.newborn_pruning_stage = 0
-        self.prune_grow_cycle = prune_grow_cycle
-        self.prune_grow_schedule = int(self.prune_grow_cycle / self.output_sds.sparsity)
-        self.base_boosting_k = boosting_k
-        self.boosting_k = self.base_boosting_k
-
-        self.synaptogenesis_countdown = make_repeating_counter(self.newborn_pruning_schedule)
-        self.synaptogenesis_cnt = 0
-        self.synaptogenesis_score = np.zeros(self.output_size, dtype=float)
-
         self.winners = np.empty(0, dtype=int)
         self.winners_value = 1.0
         self.strongest_winner = None
         self.potentials = np.zeros(self.output_size)
+
+        self.synaptogenesis_schedule = int(synaptogenesis_cycle / self.output_sds.sparsity)
+        self.synaptogenesis_countdown = make_repeating_counter(self.synaptogenesis_schedule)
+        self.synaptogenesis_cnt = 0
+        self.synaptogenesis_score = np.zeros(self.output_size, dtype=float)
 
         # stats collection
         self.health_check_results = {}
@@ -578,7 +539,7 @@ class SpatialPooler:
 
     def on_end_newborn_phase(self):
         self.boosting_k = 0.
-        self.synaptogenesis_countdown = make_repeating_counter(self.prune_grow_schedule)
+        self.synaptogenesis_countdown = make_repeating_counter(self.synaptogenesis_schedule)
         print(f'Become adult: {self._state_str()}')
 
     def get_active_rf(self, weights):
@@ -613,7 +574,7 @@ class SpatialPooler:
 
     @property
     def is_newborn_phase(self):
-        return self.newborn_pruning_stage < self.newborn_pruning_stages
+        return False
 
     def _state_str(self) -> str:
         return (

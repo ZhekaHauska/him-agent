@@ -385,12 +385,8 @@ spatial_pooler:
     # learning
     learning_rate: 0.01
     learning_algo: new
-    # newborn
-    newborn_pruning_cycle: 100.0
-    newborn_pruning_stages: 20
-    newborn_pruning_mode: powerlaw
-    prune_grow_cycle: 20.0
-    boosting_k: 0.25
+    synaptogenesis_cycle: 20.0
+
     # output
     output_sds: ???
     output_mode: binary
