@@ -15,6 +15,14 @@ from torch import nn, optim
 from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
+from hima.common.utils import safe_divide
+from hima.modules.baselines.lstm import to_numpy, symexp
+
+
+class SymExpModule(nn.Module):
+    # noinspection PyMethodMayBeStatic
+    def forward(self, x):
+        return symexp(x)
 
 
 class MlpDecoder:
@@ -57,9 +65,12 @@ class MlpDecoder:
         self.lr = learning_rate
         self.sdr_predictor = nn.Sequential(
             nn.Linear(shape[0], shape[1], dtype=float),
+            SymExpModule(),
             nn.Sigmoid()
         )
-        self.values_predictor = nn.Linear(shape[1], shape[1], dtype=float)
+        self.values_predictor = nn.Sequential(
+            nn.Linear(shape[1], shape[1], dtype=float),
+        )
         self.optim = optim.Adam(
             itertools.chain(
                 self.sdr_predictor.parameters(),
@@ -93,13 +104,18 @@ class MlpDecoder:
     def predict(self):
         x = torch.from_numpy(self.dense_input)
         sdr_probs = self.sdr_predictor(x)
-        # sampler = torch.distributions.Bernoulli(probs=sdr_probs)
-        sampler = torch.distributions.RelaxedBernoulli(torch.tensor([1.0]), probs=sdr_probs)
 
+        # sampler = torch.distributions.Bernoulli(probs=sdr_probs)
         # sdr = sampler.sample()
-        sdr = sampler.rsample()
+
+        # sampler = torch.distributions.RelaxedBernoulli(torch.tensor([1.0]), probs=sdr_probs)
+        # sdr = sampler.rsample()
+
         # values = sdr
-        values = sdr * self.values_predictor(sdr_probs.detach())
+        # values = sdr * self.values_predictor(sdr_probs.detach())
+        # return sdr_probs, values
+
+        values = self.values_predictor(sdr_probs.detach())
         return sdr_probs, values
 
     def learn(
@@ -144,17 +160,30 @@ class MlpDecoder:
         self.accumulated_loss_steps = 0
 
     def to_sdr(self, prediction: torch.Tensor) -> AnySparseSdr:
-        if isinstance(prediction, tuple):
-            prediction = prediction[0]
-        prediction = prediction.detach().numpy()
+        sdr, values = prediction
+        sdr = to_numpy(sdr)
+        values = to_numpy(values)
 
         n_winners = self.output_sds.active_size
-        winners = np.argpartition(prediction, -n_winners)[-n_winners:]
+
+        # NB: sample winners by the probability
+        # NB2: add noise to simplify the case when there are no winners or less than needed
+        # sdr = sdr + 1e-4
+        # winners = self.rng.choice(
+        #     self.output_sds.size, size=n_winners, p=sdr/sdr.sum(), replace=False
+        # )
+        # winners.sort()
+
+        # NB: select winners by the constant threshold
+        # winners = sdr > 0.5
+
+        # NB: select winners with the highest probability
+        winners = np.argpartition(sdr, -n_winners)[-n_winners:]
         winners.sort()
-        winners = winners[prediction[winners] > 0]
+        winners = winners[sdr[winners] > 0]
 
         if self.output_mode == OutputMode.RATE:
-            values = np.clip(prediction[winners], 0., 1.)
+            values = np.clip(values[winners], 0., 1.)
             return RateSdr(winners, values=values)
         return winners
 
