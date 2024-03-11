@@ -22,8 +22,9 @@ from hima.common.timer import timed
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.sp_layer import define_winners
 from hima.experiments.temporal_pooling.stp.sp_utils import (
-    boosting, RepeatingCountdown, make_repeating_counter
+    RepeatingCountdown, make_repeating_counter
 )
 
 
@@ -115,11 +116,9 @@ class SpatialPooler:
         self.learning_rate = learning_rate
         self.modulation = 1.0
 
-        if sample_winners is None or not sample_winners:
-            self.select_winners = self._select_winners
-        else:
-            self.select_winners = self._sample_winners
-            self.sample_winners_frac = sample_winners
+        self.sample_winners = sample_winners is not None and sample_winners > 0.
+        self.sample_winners_frac = sample_winners if self.sample_winners else 0.
+
         self.winners = np.empty(0, dtype=int)
         self.winners_value = 1.0
         self.strongest_winner = None
@@ -149,9 +148,6 @@ class SpatialPooler:
         for comp_name in self.compartments:
             self.compartments[comp_name].output_mode = self.output_mode
 
-        if not self.is_newborn_phase:
-            self.on_end_newborn_phase()
-
     def compute(self, input_sdr: CompartmentsAnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
         output_sdr, run_time = self._compute(input_sdr, learn)
@@ -180,7 +176,6 @@ class SpatialPooler:
 
     def match_input(self, input_sdr: CompartmentsAnySparseSdr, learn):
         matched_input_activity = {}
-        delta_potentials = np.zeros_like(self.potentials)
 
         for comp_name in self.compartments:
             compartment = self.compartments[comp_name]
@@ -190,10 +185,8 @@ class SpatialPooler:
                 input_sdr[comp_name], learn=learn
             )
             # NB: compartment potentials contain only current time step induced potentials
-            delta_potentials += compartment_weight * compartment.potentials
+            self.potentials += compartment_weight * compartment.potentials
 
-        # NB: boosting is a neuron-level effect, thus we apply it here
-        self.potentials += self.apply_boosting(delta_potentials)
         return matched_input_activity
 
     def broadcast_winners(self):
@@ -223,13 +216,16 @@ class SpatialPooler:
     def try_activate_neurogenesis(self, learn):
         raise NotImplementedError('Not implemented yet')
 
-    def apply_boosting(self, overlaps):
-        if self.is_newborn_phase and self.boosting_k > 1e-2:
-            # boosting
-            boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
-            # FIXME: normalize boosting alpha over neurons
-            overlaps = overlaps * boosting_alpha
-        return overlaps
+    def select_winners(self):
+        if self.sample_winners:
+            winners, strongest_winner = self._sample_winners()
+        else:
+            winners, strongest_winner = self._select_winners()
+
+        self.winners, self.winners_value = define_winners(
+            potentials=self.potentials, winners=winners, output_mode=self.output_mode,
+            normalize_rates=self.normalize_rates, strongest_winner=self.strongest_winner
+        )
 
     def _select_winners(self):
         n_winners = self.output_sds.active_size
@@ -237,15 +233,7 @@ class SpatialPooler:
         winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
         self.strongest_winner = cast(int, winners[np.argmax(self.potentials[winners])])
         winners.sort()
-
-        self.winners = winners[self.potentials[winners] > 0]
-        if self.output_mode == OutputMode.RATE:
-            self.winners_value = self.potentials[self.winners].copy()
-            if self.normalize_rates:
-                self.winners_value = safe_divide(
-                    self.winners_value,
-                    cast(float, self.potentials[self.strongest_winner])
-                )
+        return winners, self.strongest_winner
 
     def _sample_winners(self):
         n_winners = self.output_sds.active_size
@@ -262,15 +250,7 @@ class SpatialPooler:
             p=safe_divide(probs, norm)
         )
         winners.sort()
-
-        self.winners = winners[self.potentials[winners] > 0]
-        if self.output_mode == OutputMode.RATE:
-            self.winners_value = self.potentials[self.winners].copy()
-            if self.normalize_rates:
-                self.winners_value = safe_divide(
-                    self.winners_value,
-                    cast(float, self.potentials[self.strongest_winner])
-                )
+        return winners, self.strongest_winner
 
     def select_output(self):
         if self.output_mode == OutputMode.RATE:
@@ -295,114 +275,6 @@ class SpatialPooler:
         self.fast_output_trace.put(value, sdr)
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
-        raise NotImplementedError('Not implemented yet')
-
-    def prune_grow_synapses(self):
-        # NB: usually we work in log-space => log_ prefix is mostly omit for vars
-        self.health_check()
-
-        # self.rng.binomial(1, p=self.neurogenesis_queue)
-        self.synaptogenesis_score[:] = 0.
-        rnd_cnt = 0
-
-        # TODO: optimize thresholds and power scaling;
-        #   also remember cumulative effect of prob during the cycle for frequent neurons
-        abs_rate_low, abs_rate_high = np.log(20), np.log(100)
-        eff_low, eff_high = np.log(1.5), np.log(20)
-
-        # Step 1: deal with absolute rates: sleepy input RF and output
-        # TODO: consider increasing random potential part for them
-        rnd_cnt += self.apply_synaptogenesis_to_metric(
-            self.slow_health_check_results['ln(nrfe_in)'],
-            abs_rate_low, abs_rate_high,
-            prob_power=2.0,
-            apply_random_synaptogenesis=True
-        )
-        rnd_cnt += self.apply_synaptogenesis_to_metric(
-            self.health_check_results['ln(op)'],
-            abs_rate_low, abs_rate_high,
-            prob_power=2.0,
-            apply_random_synaptogenesis=True
-        )
-
-        # Step 2: deal with sleepy output
-        rnd_cnt += self.apply_synaptogenesis_to_metric(
-            self.health_check_results['ln(nrfe_out)'],
-            eff_low, eff_high,
-            prob_power=1.5,
-        )
-
-        print(
-            f'{self.output_entropy():.3f}'
-            f' | {self.recognition_strength:.1f}'
-            f' | {self.health_check_results["avg(rfe_out)"]:.3f}'
-            f' | {self.synaptogenesis_cnt}'
-            f' | {rnd_cnt}'
-            f' | {np.sum(self.synaptogenesis_score):.2f}'
-        )
-
-        self.synaptogenesis_cnt = 0
-        self.decay_stat_trackers()
-
-    def apply_synaptogenesis_to_metric(
-            self, metric: npt.NDArray[float], low: float, high: float,
-            prob_power: float = 1.5,
-            apply_random_synaptogenesis: bool = False
-    ):
-        probs = (-metric - low) / (high - low)
-        np.clip(probs, 0., 1., out=probs)
-        np.power(probs, prob_power, out=probs)
-
-        neurons = np.flatnonzero(probs > 1e-3)
-        cnt = 0
-        # if apply_random_synaptogenesis:
-        #     sampled_indices = neurons[self.rng.random(neurons.size) < probs[neurons]]
-        #     self.try_grow_synapses_to_input(sampled_indices)
-        #     cnt = sampled_indices.size
-        if apply_random_synaptogenesis:
-            self.rand_weights[neurons] = np.maximum(
-                self.rand_weights[neurons], probs[neurons]
-            )
-
-        self.synaptogenesis_score[neurons] = np.maximum(
-            self.synaptogenesis_score[neurons], probs[neurons]
-        )
-        return cnt
-
-    def try_grow_synapses_to_input(self, neurons: SparseSdr):
-        sampled_neurons = neurons[
-            self.rng.random(neurons.size) < self.synaptogenesis_score[neurons]
-        ]
-        if sampled_neurons.size == 0:
-            return
-
-        self.rng.shuffle(sampled_neurons)
-
-        found = None
-        in_set = set(self.sparse_input)
-        for neuron in sampled_neurons:
-            to_choose_from = list(in_set - set(self.rf[neuron]))
-            if to_choose_from:
-                syn = self.rng.choice(to_choose_from)
-                found = neuron, syn
-                break
-
-        if found is None:
-            print('---SYN')
-            return
-
-        neuron, syn = found
-        self.synaptogenesis_score[neuron] = 0.
-        self.synaptogenesis_cnt += 1
-
-        to_change_ix = np.argmin(self.weights[neuron])
-        self.assign_new_synapses(neuron, to_change_ix, syn)
-
-    def assign_new_synapses(
-            self, neurons: npt.NDArray[int] | int,
-            to_change_ix: npt.NDArray[int] | int,
-            new_synapses: npt.NDArray[int] | int
-    ):
         raise NotImplementedError('Not implemented yet')
 
     def health_check(self):
@@ -537,37 +409,6 @@ class SpatialPooler:
             'std(ln(nrfe_out))': appx_std_log_nrfe_out,
         }
 
-    def on_end_newborn_phase(self):
-        self.boosting_k = 0.
-        self.synaptogenesis_countdown = make_repeating_counter(self.synaptogenesis_schedule)
-        print(f'Become adult: {self._state_str()}')
-
-    def get_active_rf(self, weights):
-        raise NotImplementedError('Not implemented yet')
-
-    def get_target_rf_sparsity(self):
-        raise NotImplementedError('Not implemented yet')
-
-    @property
-    def ff_size(self):
-        raise NotImplementedError('Not implemented yet')
-
-    @property
-    def ff_avg_active_size(self):
-        raise NotImplementedError('Not implemented yet')
-
-    @property
-    def ff_avg_sparsity(self):
-        return self.ff_avg_active_size / self.ff_size
-
-    @property
-    def rf_size(self) -> int:
-        raise NotImplementedError('Not implemented yet')
-
-    @property
-    def rf_sparsity(self):
-        return self.rf_size / self.ff_size
-
     @property
     def output_size(self):
         return self.output_sds.size
@@ -575,14 +416,6 @@ class SpatialPooler:
     @property
     def is_newborn_phase(self):
         return False
-
-    def _state_str(self) -> str:
-        return (
-            # f'{self.rf_sparsity:.4f}'
-            # f' | {self.rf_size}'
-            f' | {self.learning_rate:.3f}'
-            f' | {self.boosting_k:.2f}'
-        )
 
     @property
     def feedforward_rate(self):
@@ -614,12 +447,3 @@ class SpatialPooler:
         self.slow_recognition_strength_trace.reset()
 
         self.fast_output_trace.reset()
-
-
-def normalize_weights(weights: npt.NDArray[float]):
-    normalizer = np.abs(weights)
-    if weights.ndim == 2:
-        normalizer = normalizer.sum(axis=1, keepdims=True)
-    else:
-        normalizer = normalizer.sum()
-    return np.clip(weights / normalizer, 0., 1)

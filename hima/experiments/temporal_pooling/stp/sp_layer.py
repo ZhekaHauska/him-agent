@@ -261,7 +261,8 @@ class SpatialPooler:
         delta_potentials = (matched_input_activity * self.weights).sum(axis=1)
         # NB: synaptogenesis-induced noisy potentiation is a matter of each individual compartment!
         self.apply_noisy_potentiation(delta_potentials)
-        # NB: however, boosting is a neuron-level effect — thus, we don't apply it in a compartment
+        # NB: apply newborn-phase boosting, which is a compartment-level effect
+        self.apply_boosting(delta_potentials)
 
         # NB2: potentials time-accumulation is a matter of neuron, not its compartments
         # thus, we always override the potentials each time step
@@ -429,8 +430,7 @@ class SpatialPooler:
         pre_rates = pre_synaptic_activity
         # post_rates = self.winners_value
         post_rates = self.potentials[neurons]
-        if self.output_mode == OutputMode.RATE:
-            post_rates = np.expand_dims(post_rates, -1)
+        post_rates = np.expand_dims(post_rates, -1)
 
         lr = self.modulation * modulation * self.learning_rate
 
@@ -456,9 +456,9 @@ class SpatialPooler:
             return
 
         pre_rates = pre_synaptic_activity
-        post_rates = self.winners_value
-        if self.output_mode == OutputMode.RATE:
-            post_rates = np.expand_dims(self.winners_value, -1)
+        # post_rates = self.winners_value
+        post_rates = self.potentials[neurons]
+        post_rates = np.expand_dims(post_rates, -1)
 
         lr = modulation * self.learning_rate
 
@@ -904,3 +904,16 @@ def normalize_weights(weights: npt.NDArray[float]):
     else:
         normalizer = normalizer.sum()
     return np.clip(weights / normalizer, 0., 1)
+
+
+def define_winners(potentials, winners, output_mode, normalize_rates, strongest_winner=None):
+    winners = winners[potentials[winners] > 0]
+
+    if output_mode == OutputMode.RATE:
+        winners_value = potentials[winners].copy()
+        if normalize_rates:
+            winners_value = safe_divide(winners_value, potentials[strongest_winner])
+    else:
+        winners_value = 1.0
+
+    return winners, winners_value
