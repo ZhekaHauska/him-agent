@@ -17,19 +17,14 @@ from hima.experiments.temporal_pooling.stats.metrics import TMetrics, sdr_simila
 class SdrPredictionTracker:
     sds: Sds
     step_flush_schedule: int | None
-    symmetrical_dissimilarity: bool
 
     miss_rate: MeanValue[float]
     imprecision: MeanValue[float]
     prediction_volume: MeanValue[float]
     dissimilarity: MeanValue[float]
 
-    def __init__(
-            self, sds: Sds,
-            symmetrical_dissimilarity: bool = True, step_flush_schedule: int = None
-    ):
+    def __init__(self, sds: Sds, step_flush_schedule: int = None):
         self.sds = sds
-        self.symmetrical_dissimilarity = symmetrical_dissimilarity
         self.step_flush_schedule = step_flush_schedule
 
         self.dense_cache = np.zeros(sds.size, dtype=float)
@@ -64,21 +59,28 @@ class SdrPredictionTracker:
 
         pr_set_sdr, gt_set_sdr = set(pr_sdr), set(gt_sdr)
 
-        recall = sdr_similarity(pr_set_sdr, gt_set_sdr, symmetrical=False)
+        # NB: recall/miss_rate and precision/imprecision are BINARY metrics
+        recall = sdr_similarity(
+            pr_set_sdr, gt_set_sdr,
+            symmetrical=False, dense_cache=self.dense_cache
+        )
         miss_rate = 1 - recall
         self.miss_rate.put(miss_rate)
 
-        precision = sdr_similarity(gt_set_sdr, pr_set_sdr, symmetrical=False)
+        precision = sdr_similarity(
+            gt_set_sdr, pr_set_sdr,
+            symmetrical=False, dense_cache=self.dense_cache
+        )
         imprecision = 1 - precision
         self.imprecision.put(imprecision)
 
         prediction_volume = safe_divide(len(pr_sdr), self.sds.active_size)
         self.prediction_volume.put(prediction_volume)
 
+        # NB: ...while similarity/dissimilarity is RATE metric [if sdrs are rate sdrs]
         similarity = sdr_similarity(
             self.predicted_sdr, self.observed_sdr,
-            symmetrical=True,
-            dense_cache=self.dense_cache
+            symmetrical=True, dense_cache=self.dense_cache
         )
         dissimilarity = 1 - similarity
         self.dissimilarity.put(dissimilarity)

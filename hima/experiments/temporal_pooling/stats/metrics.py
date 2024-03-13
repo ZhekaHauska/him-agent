@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from typing import Any
 
+import numba
 import numpy as np
 import numpy.typing as npt
 
@@ -85,6 +86,7 @@ def _sdr_similarity_for_sets(x1: SetSdr, x2: SetSdr, symmetrical: bool = False) 
     return safe_divide(overlap, norm)
 
 
+@numba.jit(nopython=True, cache=True)
 def _sdr_similarity(
         x1: SparseSdr, x2: SparseSdr, dense_cache: npt.NDArray[float], symmetrical: bool = False
 ) -> float:
@@ -102,12 +104,9 @@ def _sdr_similarity(
     # clear it
     dense_cache[x2] = 0
 
-    sim = safe_divide(overlap, len(x2))
-    sim = max(min(sim, 1.), 0.)
-
+    sim = _normalize_distance(overlap, len(x2))
     if symmetrical:
-        sim_ = safe_divide(overlap, len(x1))
-        sim_ = max(min(sim_, 1.), 0.)
+        sim_ = _normalize_distance(overlap, len(x1))
         sim = (sim + sim_) / 2
 
     return sim
@@ -129,27 +128,43 @@ def _sdrr_similarity(
     Optimized for SDRs represented with arrays. For fast computations, it utilizes
     a zeroed-out dense SDR array (will be cleared after using before returning the result).
     """
-    if len(x1.sdr) == 0 or len(x2.sdr) == 0:
+    return _sdrr_similarity_numba(
+        x1.sdr, x1.values, x2.sdr, x2.values,
+        dense_cache=dense_cache, symmetrical=symmetrical
+    )
+
+
+@numba.jit(nopython=True, cache=True)
+def _sdrr_similarity_numba(
+        x1_sdr: npt.NDArray[int], x1_values: npt.NDArray[float],
+        x2_sdr: npt.NDArray[int], x2_values: npt.NDArray[float],
+        dense_cache: npt.NDArray[float], symmetrical: bool = False
+) -> float:
+    """
+    Optimized for SDRs represented with arrays. For fast computations, it utilizes
+    a zeroed-out dense SDR array (will be cleared after using before returning the result).
+    """
+    if len(x1_sdr) == 0 or len(x2_sdr) == 0:
         # we define that empty SDRs aren't similar to anything, even to each other
         return 0.
 
     # NB: sym(pred, gt) — recall; sym(gt, pred) — precision.
 
-    dense_cache[x2.sdr] = x2.values
-    norm = np.sum(x2.values)
+    dense_cache[x2_sdr] = x2_values
+    norm = np.sum(x2_values)
     if np.isclose(norm, 0.):
         return 0.
 
     if symmetrical:
-        norm_ = np.sum(x1.values)
+        norm_ = np.sum(x1_values)
         if np.isclose(norm_, 0.):
             return 0.
 
-    dense_cache[x1.sdr] -= x1.values
+    dense_cache[x1_sdr] -= x1_values
 
     # we define non-symmetrical distance as: d(x1, x2) = |x1 - x2| / |x2|
-    dense_cache[x2.sdr] = np.abs(dense_cache[x2.sdr])
-    raw_distance = np.sum(dense_cache[x2.sdr])
+    dense_cache[x2_sdr] = np.abs(dense_cache[x2_sdr])
+    raw_distance = np.sum(dense_cache[x2_sdr])
 
     # I clip all intermediate results to [0, 1] to avoid incorrect results for cases
     # like [1, 1, 1] vs [<<1, <<1, <<1] —> which would get one of non-symmetrical
@@ -158,26 +173,37 @@ def _sdrr_similarity(
     # E.g. [1, 1, 1] vs [0.1, 0.1, 0.1] should give us a similarity ~= 0.1. It gives us
     # a symmetrical similarity = 0.1 / 2 with intermediate clipping, which is a good enough.
     # NB: this problem is relevant only for rate SDRs with significantly different masses.
-    distance = safe_divide(raw_distance, norm)
-    distance = max(min(distance, 1.), 0.)
+    distance = _normalize_distance(raw_distance, norm)
 
     if symmetrical:
         # symmetrical distance is an average of two non-symmetrical distances
-        dense_cache[x1.sdr] = np.abs(dense_cache[x1.sdr])
-        raw_distance = np.sum(dense_cache[x1.sdr])
+        dense_cache[x1_sdr] = np.abs(dense_cache[x1_sdr])
+        raw_distance = np.sum(dense_cache[x1_sdr])
 
         # noinspection PyUnboundLocalVariable
-        distance_ = safe_divide(raw_distance, norm_)
-        distance_ = max(min(distance_, 1.), 0.)
-
+        distance_ = _normalize_distance(raw_distance, norm_)
         distance = (distance + distance_) / 2
 
     # clear cache
-    dense_cache[x2.sdr] = 0
-    dense_cache[x1.sdr] = 0
+    dense_cache[x2_sdr] = 0
+    dense_cache[x1_sdr] = 0
 
     result = 1 - distance
     return result
+
+
+@numba.jit(nopython=True, cache=True)
+def _normalize_distance(dist: float, norm: float) -> float:
+    """Safely divide distance by norm and clip it to [0, 1]. Auxiliary function for sim funcs."""
+    if np.isclose(norm, 0.):
+        return 0.
+
+    dist /= norm
+    if dist < 0.:
+        dist = 0.
+    elif dist > 1.:
+        dist = 1.
+    return dist
 
 
 # ==================== Sdr [sequence] similarity ====================
