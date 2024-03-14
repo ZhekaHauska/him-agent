@@ -81,7 +81,6 @@ block:
   # you can omit specifying this common base as _base_.
   # it is added just for clarity that each block has these attributes
   base:
-    id: ???
     name: ???
 
 blocks:
@@ -376,6 +375,7 @@ spatial_pooler:
     sample_winners: false
     normalize_rates: true
 
+  # MultiCompartment SP
   default_layer_mc:
     _type_: sp.layer_mc
     global_config: ???
@@ -397,7 +397,8 @@ spatial_pooler:
     sample_winners: false
     normalize_rates: true
 
-  default_layer_mc_db:
+  # Compartment for MultiCompartment SP
+  default_layer_compartment:
     _type_: sp.layer
     seed: ???
     # input

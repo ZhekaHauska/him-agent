@@ -24,7 +24,7 @@ from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_layer import define_winners
 from hima.experiments.temporal_pooling.stp.sp_utils import (
-    RepeatingCountdown, make_repeating_counter
+    RepeatingCountdown, make_repeating_counter, tick
 )
 
 
@@ -206,13 +206,10 @@ class SpatialPooler:
                 matched_input_activity[comp_name], learn
             )
 
+    # noinspection PyMethodMayBeStatic
     def get_step_debug_info(self):
-        return {
-            'potentials': np.sort(self.potentials),
-            'recognition_strength': self.potentials[self.winners],
-            # 'weights': self.weights,
-            # 'rf': self.rf
-        }
+        # its existence is required for trackers
+        return {}
 
     def try_activate_neurogenesis(self, learn):
         if not learn:
@@ -222,9 +219,8 @@ class SpatialPooler:
         if not is_now:
             return
 
-        if self.is_newborn_phase:
-            self.shrink_receptive_field()
-        else:
+        are_all_mature = not any(compartment.is_newborn_phase for compartment in self.compartments)
+        if are_all_mature:
             self.prune_grow_synapses()
 
     def select_winners(self):

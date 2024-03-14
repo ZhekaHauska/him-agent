@@ -9,8 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from hima.common.config.base import TConfig, extracted
-from hima.common.config.values import resolve_init_params
+from hima.common.config.base import TConfig
 from hima.common.sdr_encoders import SdrConcatenator
 from hima.common.sdrr import split_sdr_values, RateSdr
 from hima.experiments.temporal_pooling.graph.block import Block
@@ -25,7 +24,7 @@ CORRECTLY_PREDICTED_CELLS = 'correctly_predicted_cells.sdr'
 PREDICTED_AND_ACTIVE_CELLS = 'predicted_and_active_cells.sdr'
 
 
-class NewTemporalMemoryBlock(Block):
+class SpatialTemporalMemoryBlock(Block):
     family = 'temporal_memory'
     supported_streams = {
         FEEDFORWARD, CONTEXT, STATE,
@@ -34,11 +33,17 @@ class NewTemporalMemoryBlock(Block):
 
     tm: Any | TConfig
 
-    def __init__(self, tm: TConfig, learn_during_prediction: bool, **kwargs):
+    def __init__(
+            self, tm: TConfig, learn_during_prediction: bool,
+            forbid_initial_state_connections: bool = False,
+            **kwargs
+    ):
         super().__init__(**kwargs)
         self.learn_during_prediction = learn_during_prediction
+        self.forbid_initial_state_connections = forbid_initial_state_connections
         self.use_context = False
         self.tm = self.model.config.config_resolver.resolve(tm, config_type=dict)
+        self.sdr_concatenator = None
 
         self.register_stream(PREDICTED_AND_ACTIVE_CELLS)
 
@@ -59,37 +64,23 @@ class NewTemporalMemoryBlock(Block):
     def compile(self):
         self.use_context = self[CONTEXT] is not None
 
-        sds_map = {
-            FEEDFORWARD: self[FEEDFORWARD].sds,
-            STATE: self[STATE].sds
-        }
+        sds_list = [self[FEEDFORWARD].sds]
         if self.use_context:
-            sds_map[CONTEXT] = self[CONTEXT].sds
+            sds_list.append(self[CONTEXT].sds)
+        sds_list.append(self[STATE].sds)
 
-        required_compartments = {
-            to_compartment_name(compartment): sds_map[compartment]
-            for compartment in sds_map
-        }
+        self.sdr_concatenator = SdrConcatenator(sds_list)
+        if self.forbid_initial_state_connections:
+            connectable_ff_size = self.sdr_concatenator.output_sds.size - self[STATE].sds.size
+        else:
+            connectable_ff_size = None
 
-        tm_config, tm_factory = self.model.config.resolve_object_requirements(
-            self.tm, output_sds=self[STATE].sds, compartments=required_compartments.keys()
+        self.tm = self.model.config.resolve_object(
+            self.tm,
+            feedforward_sds=self.sdr_concatenator.output_sds,
+            output_sds=self[STATE].sds,
+            connectable_ff_size=connectable_ff_size
         )
-
-        tm_config, compartments_config = extracted(tm_config, 'compartments_config')
-
-        # NB: it iterates over only the required compartments
-        tm_config['compartments_config'] = {
-            compartment: resolve_init_params(
-                # before resolving init params, we need to resolve the config itself
-                self.model.config.config_resolver.resolve(
-                    compartments_config[compartment], config_type=dict,
-                ),
-                feedforward_sds=required_compartments[compartment]
-            )
-            for compartment in required_compartments
-        }
-
-        self.tm = tm_factory(**tm_config)
 
     def reset(self):
         super().reset()
@@ -98,16 +89,13 @@ class NewTemporalMemoryBlock(Block):
         ff_sdr = self[FEEDFORWARD].get() if use_ff else []
         state_sdr = self[STATE].get() if use_state else []
 
-        compartments_input = {
-            to_compartment_name(FEEDFORWARD): ff_sdr,
-            to_compartment_name(STATE): state_sdr
-        }
-
         if self.use_context:
             context_sdr = self[CONTEXT].get() if use_context else []
-            compartments_input[to_compartment_name(CONTEXT)] = context_sdr
+            sdrs = [ff_sdr, context_sdr, state_sdr]
+        else:
+            sdrs = [ff_sdr, state_sdr]
 
-        return compartments_input
+        return self.sdr_concatenator.concatenate(*sdrs)
 
     # =========== API ==========
     def reset_ff(self):
@@ -116,16 +104,18 @@ class NewTemporalMemoryBlock(Block):
 
     def compute(self):
         learn = self.model.streams[VARS_LEARN].get()
-        compartments_input = self.prepare_input(use_ff=True, use_context=True, use_state=True)
+        full_ff_sdr = self.prepare_input(use_ff=True, use_context=True, use_state=True)
 
-        output_sdr = self.tm.compute(compartments_input, learn=learn)
+        # self.tm.modulation = 0.2
+        output_sdr = self.tm.compute(full_ff_sdr, learn=learn)
+        # self.tm.modulation = 1.0
         self[ACTIVE_CELLS].set(output_sdr)
 
     def predict(self):
         learn = self.model.streams[VARS_LEARN].get() and self.learn_during_prediction
-        compartments_input = self.prepare_input(use_ff=True, use_context=True, use_state=True)
+        full_ff_sdr = self.prepare_input(use_ff=True, use_context=True, use_state=True)
 
-        output_sdr = self.tm.compute(compartments_input, learn=learn)
+        output_sdr = self.tm.compute(full_ff_sdr, learn=learn)
         self[PREDICTED_CELLS].set(output_sdr)
 
     def set_predicted_cells(self):
@@ -163,13 +153,7 @@ class NewTemporalMemoryBlock(Block):
         overlap_sdr = set(pred_sdr) & set(act_sdr)
         mask = np.array([i for i, x in enumerate(pred_sdr) if x in overlap_sdr], dtype=int)
         pred_sdr = pred_sdr[mask]
-
-        if not isinstance(pred_values, float):
-            pred_values = pred_values[mask]
+        pred_values = pred_values[mask]
 
         rate_sdr = RateSdr(pred_sdr, pred_values)
         self[CORRECTLY_PREDICTED_CELLS].set(rate_sdr)
-
-
-def to_compartment_name(name: str) -> str:
-    return name[:-4]

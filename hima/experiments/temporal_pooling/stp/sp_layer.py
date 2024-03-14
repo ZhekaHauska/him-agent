@@ -309,7 +309,7 @@ class SpatialPooler:
         if self.is_newborn_phase:
             self.shrink_receptive_field()
         else:
-            self.prune_grow_synapses()
+            self.activate_synaptogenesis()
 
     def match_current_input(self, with_neurons: np.ndarray = None) -> npt.NDArray[float]:
         rf = self.rf if with_neurons is None else self.rf[with_neurons]
@@ -533,7 +533,7 @@ class SpatialPooler:
 
         print(f'{self.output_entropy():.3f} | {self.recognition_strength:.1f}')
 
-    def prune_grow_synapses(self):
+    def activate_synaptogenesis(self):
         # NB: usually we work in log-space => log_ prefix is mostly omit for vars
         self.health_check()
 

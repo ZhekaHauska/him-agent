@@ -403,6 +403,7 @@ SE:
 
 TM:
   tm:
+    # built on HTM TM
     _base_: $_base.temporal_memory.default
     cells_per_column: 8
     activation_threshold_basal: .9
@@ -412,10 +413,10 @@ TM:
     predicted_segment_decrement_basal: 0.004
     max_synapses_per_segment_basal: 2.1
     max_segments_per_cell_basal: 16
-  tm_new:
+  stm_sp:
+    # built on a simple older SP versions
     _base_: $_base.spatial_pooler.default
     _type_: sp.float
-#    _type_: sp.sdrr
 #    _type_: sp.sdrr
     initial_rf_to_input_ratio: 100.0
     initial_max_rf_sparsity: 0.5
@@ -428,8 +429,9 @@ TM:
     adapt_to_ff_sparsity: False
     boosting_k: 0.2
     output_mode: rate
-#    learning_algo: new
-  tm_new2:
+
+  stm:
+    # built on the latest SP layer version
     _base_: $_base.spatial_pooler.default_layer
     initial_rf_to_input_ratio: 100.0
     initial_max_rf_sparsity: 0.6
@@ -446,23 +448,23 @@ TM:
     normalize_rates: true
     sample_winners: false
 
-  # config for an MC STM compartment
-  tm_new2_mc_db:
-    _base_: $_base.spatial_pooler.default_layer_mc_db
+  stm_compartment:
+    # config for a compartment of a multi-compartmental STM (stm_mc)
+    _base_: $_base.spatial_pooler.default_layer_compartment
 
-  # config for a whole MC STM
-  tm_new2_mc:
+  stm_mc:
+    # built on the multi-compartmental SP layer version
     _base_: $_base.spatial_pooler.default_layer_mc
 
     compartments_config:
       feedforward:
-        _base_: TM.tm_new2_mc_db
+        _base_: TM.stm_compartment
         target_rf_to_input_ratio: 4.0
       state:
-        _base_: TM.tm_new2_mc_db
+        _base_: TM.stm_compartment
         target_rf_to_input_ratio: 6.0
       context:
-        _base_: TM.tm_new2_mc_db
+        _base_: TM.stm_compartment
 
     compartments_weight:
       feedforward: 4.0

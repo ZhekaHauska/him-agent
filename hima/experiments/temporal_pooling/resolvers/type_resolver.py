@@ -47,12 +47,12 @@ def _resolve_block(type_tag: str):
     if type_tag == 'block.tm':
         from hima.experiments.temporal_pooling.blocks.tm import TemporalMemoryBlock
         return TemporalMemoryBlock
-    if type_tag == 'block.tm_new':
-        from hima.experiments.temporal_pooling.blocks.tm_new import NewTemporalMemoryBlock
-        return NewTemporalMemoryBlock
-    if type_tag == 'block.tm_new_mc':
-        from hima.experiments.temporal_pooling.blocks.tm_new_mc import NewTemporalMemoryBlock
-        return NewTemporalMemoryBlock
+    if type_tag == 'block.stm':
+        from hima.experiments.temporal_pooling.blocks.stm import SpatialTemporalMemoryBlock
+        return SpatialTemporalMemoryBlock
+    if type_tag == 'block.stm_mc':
+        from hima.experiments.temporal_pooling.blocks.stm_mc import SpatialTemporalMemoryBlock
+        return SpatialTemporalMemoryBlock
     if type_tag == 'block.lstm':
         from hima.experiments.temporal_pooling.blocks.lstm import LstmBlock
         return LstmBlock
