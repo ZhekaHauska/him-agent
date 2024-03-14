@@ -160,31 +160,6 @@ diff_stats:
 
 data: datas.text_sequences
 
-datas:
-  synthetic_sequences:
-    _base_: $_base.dataset.synthetic_sequences.general
-    alphabet_size: 50
-    encoder:
-      _base_: $_base.encoder.random.fixed_sds
-      sds: [ 200, 10 ]
-  dvc_sequences:
-    _base_: $_base.dataset.dvc_sequences
-    sequential: True
-  code_sequences:
-    _base_: $_base.dataset.text_sequences
-    encoder:
-      _base_: $_base.encoder.random.fixed_sds
-      sds: [ 600, 18 ]
-    sequential: True
-  text_sequences:
-    _base_: $_base.dataset.text_sequences
-    filepath: ~/data/text/text8.txt
-    max_size_hint: 1_000_000
-    encoder:
-      _base_: $_base.encoder.random.fixed_sds
-      sds: [ 200, 10 ]
-    sequential: True
-
 
 models:
   +SE: $_base.models.+SE
@@ -463,7 +438,7 @@ TM:
     newborn_pruning_cycle: 200.0
     newborn_pruning_stages: 20
     newborn_pruning_mode: powerlaw
-    prune_grow_cycle: 20.0
+    synaptogenesis_cycle: 20.0
     adapt_to_ff_sparsity: False
     boosting_k: 0.5
     output_mode: binary
@@ -485,7 +460,7 @@ TM:
         target_rf_to_input_ratio: 4.0
       state:
         _base_: TM.tm_new2_mc_db
-        target_rf_to_input_ratio: 5.0
+        target_rf_to_input_ratio: 6.0
       context:
         _base_: TM.tm_new2_mc_db
 
@@ -495,7 +470,7 @@ TM:
       context: 2.0
 
     # learning
-    learning_rate: 0.001
+    learning_rate: 0.003
     learning_algo: new
 
     # output
@@ -534,6 +509,31 @@ blocks:
     _base_: $_base.blocks.tm_like
     tm:
       _base_: TM.tm
+
+datas:
+  synthetic_sequences:
+    _base_: $_base.dataset.synthetic_sequences.general
+    alphabet_size: 50
+    encoder:
+      _base_: $_base.encoder.random.fixed_sds
+      sds: [ 200, 10 ]
+  dvc_sequences:
+    _base_: $_base.dataset.dvc_sequences
+    sequential: True
+  code_sequences:
+    _base_: $_base.dataset.text_sequences
+    encoder:
+      _base_: $_base.encoder.random.fixed_sds
+      sds: [ 600, 18 ]
+    sequential: True
+  text_sequences:
+    _base_: $_base.dataset.text_sequences
+    filepath: ~/data/text/text8.txt
+    max_size_hint: 1_000_000
+    encoder:
+      _base_: $_base.encoder.random.fixed_sds
+      sds: [ 200, 10 ]
+    sequential: True
 
 stats_and_metrics:
   mae_normalization: no

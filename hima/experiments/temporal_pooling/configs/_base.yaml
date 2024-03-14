@@ -354,18 +354,22 @@ spatial_pooler:
     feedforward_sds: ???
     connectable_ff_size: ???
     adapt_to_ff_sparsity: False
+
     initial_max_rf_sparsity: 0.1
     initial_rf_to_input_ratio: 5.0
     target_max_rf_sparsity: 0.1
     target_rf_to_input_ratio: 0.5
+
     # learning
     learning_rate: 0.01
     learning_algo: new
+    synaptogenesis_cycle: 20.0
+
     newborn_pruning_cycle: 10.0
     newborn_pruning_stages: 5
     newborn_pruning_mode: powerlaw
-    prune_grow_cycle: 20.0
     boosting_k: 0.25
+
     # output
     output_sds: ???
     output_mode: binary
@@ -400,24 +404,27 @@ spatial_pooler:
     feedforward_sds: ???
     connectable_ff_size: ...
     adapt_to_ff_sparsity: False
+
     initial_rf_to_input_ratio: 100.0
     initial_max_rf_sparsity: 0.6
     target_max_rf_sparsity: 0.1
     target_rf_to_input_ratio: 0.75
+
     # learning
     learning_rate: 0.01
     learning_algo: new
+    synaptogenesis_cycle: 5.0
+
     newborn_pruning_cycle: 50.0
     newborn_pruning_stages: 20
     newborn_pruning_mode: powerlaw
-    prune_grow_cycle: 5.0
     boosting_k: 0.25
+
     # output
     output_sds: ???
     output_mode: binary
     sample_winners: false
     normalize_rates: true
-
 
 spatial_temporal_pooler:
   default:

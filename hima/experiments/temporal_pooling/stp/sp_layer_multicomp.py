@@ -53,6 +53,7 @@ class SpatialPooler:
     # potentiation and learning
     potentials: np.ndarray
     learning_rate: float
+    modulation: float
     synaptogenesis_countdown: RepeatingCountdown
 
     # output
@@ -60,9 +61,10 @@ class SpatialPooler:
     output_mode: OutputMode
     normalize_rates: bool
 
-    sample_winners_frac: float
     winners: SparseSdr
     strongest_winner: int | None
+    sample_winners: bool
+    sample_winners_frac: float
 
     # stats
     #   average computation time
@@ -111,18 +113,17 @@ class SpatialPooler:
         self.output_mode = OutputMode[output_mode.upper()]
         self.normalize_rates = normalize_rates
 
+        self.potentials = np.zeros(self.output_size)
         self.learning_algo = SpLearningAlgo[learning_algo.upper()]
         self.initial_learning_rate = learning_rate
         self.learning_rate = learning_rate
         self.modulation = 1.0
 
-        self.sample_winners = sample_winners is not None and sample_winners > 0.
-        self.sample_winners_frac = sample_winners if self.sample_winners else 0.
-
         self.winners = np.empty(0, dtype=int)
         self.winners_value = 1.0
         self.strongest_winner = None
-        self.potentials = np.zeros(self.output_size)
+        self.sample_winners = sample_winners is not None and sample_winners > 0.
+        self.sample_winners_frac = sample_winners if self.sample_winners else 0.
 
         self.synaptogenesis_schedule = int(synaptogenesis_cycle / self.output_sds.sparsity)
         self.synaptogenesis_countdown = make_repeating_counter(self.synaptogenesis_schedule)
@@ -214,7 +215,17 @@ class SpatialPooler:
         }
 
     def try_activate_neurogenesis(self, learn):
-        raise NotImplementedError('Not implemented yet')
+        if not learn:
+            return
+
+        is_now, self.synaptogenesis_countdown = tick(self.synaptogenesis_countdown)
+        if not is_now:
+            return
+
+        if self.is_newborn_phase:
+            self.shrink_receptive_field()
+        else:
+            self.prune_grow_synapses()
 
     def select_winners(self):
         if self.sample_winners:

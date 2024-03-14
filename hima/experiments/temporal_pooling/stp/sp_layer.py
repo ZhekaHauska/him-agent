@@ -40,13 +40,28 @@ class SpatialPooler:
     """A competitive network (as meant by Rolls)."""
     rng: Generator
 
-    # I/O settings
+    # input
     feedforward_sds: Sds
     adapt_to_ff_sparsity: bool
+    # input cache
+    sparse_input: SparseSdr
+    dense_input: DenseSdr
 
+    # potentiation and learning
+    potentials: np.ndarray
+    learning_rate: float
+    modulation: float
+
+    # output
     output_sds: Sds
     output_mode: OutputMode
 
+    winners: SparseSdr
+    strongest_winner: int | None
+    sample_winners: bool
+    sample_winners_frac: float
+
+    # connections
     initial_rf_sparsity: float
     target_max_rf_sparsity: float
     target_rf_to_input_ratio: float
@@ -55,34 +70,21 @@ class SpatialPooler:
 
     # newborn stage
     newborn_pruning_mode: SpNewbornPruningMode
-    newborn_pruning_cycle: float
     newborn_pruning_stages: int
     newborn_pruning_schedule: int
     newborn_pruning_stage: int
-    prune_grow_cycle: float
     #   boosting. It is active only during newborn stage
     base_boosting_k: float
     boosting_k: float
 
-    initial_learning_rate: float
-    learning_rate: float
-
     # synaptogenesis
+    synaptogenesis_schedule: int
     #   synaptogenesis score recalculation scheduler — defines the length of one cycle
     synaptogenesis_countdown: RepeatingCountdown
     #   tracks the number of synaptogenesis events in a cycle
     synaptogenesis_cnt: int
     #   synaptogenesis score is the willingness (~= probability) of a neuron to grow new synapses
     synaptogenesis_score: npt.NDArray[float]
-
-    # cache
-    sparse_input: SparseSdr
-    dense_input: DenseSdr
-
-    sample_winners_frac: float
-    winners: SparseSdr
-    strongest_winner: int | None
-    potentials: np.ndarray
 
     # stats
     #   average computation time
@@ -111,7 +113,7 @@ class SpatialPooler:
             newborn_pruning_cycle: float, newborn_pruning_stages: int,
             newborn_pruning_mode: str, boosting_k: float,
             # mature phase
-            prune_grow_cycle: float,
+            synaptogenesis_cycle: float,
             # additional optional params
             normalize_rates: bool = True, sample_winners: float | None = None,
             connectable_ff_size: int = False,
@@ -123,31 +125,31 @@ class SpatialPooler:
 
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
+        self.sparse_input = np.empty(0, dtype=int)
+        # use float not only to generalize to Rate SDR, but also to eliminate
+        # inevitable int-to-float converting when we multiply it by weights
+        self.dense_input = np.zeros(self.ff_size, dtype=float)
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode[output_mode.upper()]
         self.normalize_rates = normalize_rates
 
+        self.potentials = np.zeros(self.output_size)
         self.learning_algo = SpLearningAlgo[learning_algo.upper()]
-        self.stdp = self.get_learning_algos()[self.learning_algo]
-
-        self.initial_learning_rate = learning_rate
         self.learning_rate = learning_rate
+        self.stdp = self.get_learning_algos()[self.learning_algo]
         self.modulation = 1.0
 
-        if sample_winners is None or not sample_winners:
-            self.select_winners = self._select_winners
-        else:
-            self.select_winners = self._sample_winners
-            self.sample_winners_frac = sample_winners
+        self.winners = np.empty(0, dtype=int)
+        self.winners_value = 1.0
+        self.strongest_winner = None
+        self.sample_winners = sample_winners is not None and sample_winners > 0.
+        self.sample_winners_frac = sample_winners if self.sample_winners else 0.
 
         self.newborn_pruning_mode = SpNewbornPruningMode[newborn_pruning_mode.upper()]
-        self.newborn_pruning_cycle = newborn_pruning_cycle
-        self.newborn_pruning_schedule = int(self.newborn_pruning_cycle / self.output_sds.sparsity)
+        self.newborn_pruning_schedule = int(newborn_pruning_cycle / self.output_sds.sparsity)
         self.newborn_pruning_stages = newborn_pruning_stages
         self.newborn_pruning_stage = 0
-        self.prune_grow_cycle = prune_grow_cycle
-        self.prune_grow_schedule = int(self.prune_grow_cycle / self.output_sds.sparsity)
         self.base_boosting_k = boosting_k
         self.boosting_k = self.base_boosting_k
 
@@ -179,18 +181,13 @@ class SpatialPooler:
         )
         self.rand_weights = np.zeros(self.output_size)
 
+        self.synaptogenesis_schedule = int(synaptogenesis_cycle / self.output_sds.sparsity)
+        # NB: synaptogenesis is active only during mature phase, thus initially
+        # this scheduler represents newborn schedule, and then it is replaced
+        # with mature synaptogenesis schedule (see on_end_newborn_phase)
         self.synaptogenesis_countdown = make_repeating_counter(self.newborn_pruning_schedule)
         self.synaptogenesis_cnt = 0
         self.synaptogenesis_score = np.zeros(self.output_size, dtype=float)
-
-        self.sparse_input = []
-        # use float not only to generalize to float-SDR, but also to eliminate
-        # inevitable int-to-float converting when we multiply it by weights
-        self.dense_input = np.zeros(self.ff_size, dtype=float)
-        self.winners = []
-        self.winners_value = 1.0
-        self.strongest_winner = None
-        self.potentials = np.zeros(self.output_size)
 
         # stats collection
         self.health_check_results = {}
@@ -339,21 +336,24 @@ class SpatialPooler:
         potentials *= 1 - w_noise
         potentials += w_noise * self.rng.random(self.output_size) * avg_in_rate
 
+    def select_winners(self):
+        if self.sample_winners:
+            winners, strongest_winner = self._sample_winners()
+        else:
+            winners, strongest_winner = self._select_winners()
+
+        self.winners, self.winners_value = define_winners(
+            potentials=self.potentials, winners=winners, output_mode=self.output_mode,
+            normalize_rates=self.normalize_rates, strongest_winner=self.strongest_winner
+        )
+
     def _select_winners(self):
         n_winners = self.output_sds.active_size
 
         winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
         self.strongest_winner = cast(int, winners[np.argmax(self.potentials[winners])])
         winners.sort()
-
-        self.winners = winners[self.potentials[winners] > 0]
-        if self.output_mode == OutputMode.RATE:
-            self.winners_value = self.potentials[self.winners].copy()
-            if self.normalize_rates:
-                self.winners_value = safe_divide(
-                    self.winners_value,
-                    cast(float, self.potentials[self.strongest_winner])
-                )
+        return winners, self.strongest_winner
 
     def _sample_winners(self):
         n_winners = self.output_sds.active_size
@@ -370,15 +370,7 @@ class SpatialPooler:
             p=safe_divide(probs, norm)
         )
         winners.sort()
-
-        self.winners = winners[self.potentials[winners] > 0]
-        if self.output_mode == OutputMode.RATE:
-            self.winners_value = self.potentials[self.winners].copy()
-            if self.normalize_rates:
-                self.winners_value = safe_divide(
-                    self.winners_value,
-                    cast(float, self.potentials[self.strongest_winner])
-                )
+        return winners, self.strongest_winner
 
     def accept_winners(
             self, winners: SparseSdr,
@@ -527,9 +519,6 @@ class SpatialPooler:
         self.rf = gather_rows(self.rf, keep_connections_i)
         self.weights = normalize_weights(
             gather_rows(self.weights, keep_connections_i)
-        )
-        self.learning_rate = self.newborn_linear_progress(
-            initial=self.initial_learning_rate, target=0.2 * self.initial_learning_rate
         )
         self.boosting_k = self.newborn_linear_progress(
             initial=self.base_boosting_k, target=0.
@@ -792,7 +781,7 @@ class SpatialPooler:
 
     def on_end_newborn_phase(self):
         self.boosting_k = 0.
-        self.synaptogenesis_countdown = make_repeating_counter(self.prune_grow_schedule)
+        self.synaptogenesis_countdown = make_repeating_counter(self.synaptogenesis_schedule)
         print(f'Become adult: {self._state_str()}')
 
     def get_active_rf(self, weights):
