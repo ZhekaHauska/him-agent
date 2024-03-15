@@ -251,9 +251,6 @@ class SpatialPooler:
 
     @timed
     def _match_input(self, input_sdr: AnySparseSdr, learn: bool):
-        self.accept_input(input_sdr, learn=learn)
-        self.try_activate_synaptogenesis(learn)
-
         matched_input_activity = self.match_current_input()
         delta_potentials = (matched_input_activity * self.weights).sum(axis=1)
         # NB: synaptogenesis-induced noisy potentiation is a matter of each individual compartment!
@@ -309,7 +306,7 @@ class SpatialPooler:
         if self.is_newborn_phase:
             self.shrink_receptive_field()
         else:
-            self.activate_synaptogenesis()
+            self.recalculate_synaptogenesis_score()
 
     def match_current_input(self, with_neurons: np.ndarray = None) -> npt.NDArray[float]:
         rf = self.rf if with_neurons is None else self.rf[with_neurons]
@@ -386,7 +383,7 @@ class SpatialPooler:
 
         self.stdp(self.winners, matched_input_activity[self.winners])
         if not self.is_newborn_phase:
-            self.try_grow_synapses_to_input(self.winners)
+            self.activate_synaptogenesis_step(self.winners)
 
     def _stdp(
             self, neurons: SparseSdr, pre_synaptic_activity: npt.NDArray[float],
@@ -533,7 +530,7 @@ class SpatialPooler:
 
         print(f'{self.output_entropy():.3f} | {self.recognition_strength:.1f}')
 
-    def activate_synaptogenesis(self):
+    def recalculate_synaptogenesis_score(self):
         # NB: usually we work in log-space => log_ prefix is mostly omit for vars
         self.health_check()
 
@@ -600,7 +597,7 @@ class SpatialPooler:
         )
         return cnt
 
-    def try_grow_synapses_to_input(self, neurons: SparseSdr):
+    def activate_synaptogenesis_step(self, neurons: SparseSdr):
         sampled_neurons = neurons[
             self.rng.random(neurons.size) < self.synaptogenesis_score[neurons]
         ]
@@ -648,28 +645,41 @@ class SpatialPooler:
         self.weights[neurons] = normalize_weights(self.weights[neurons])
 
     def health_check(self):
+        # current Input Rate
         in_rate = self.fast_feedforward_trace.get()
+        # Target Input Rate: average rate of each presynaptic neuron
         target_in_rate = in_rate.sum() / self.ff_size
 
-        # relative to target input rate
+        # NB: Most of the following metrics are relative to some target metric
+        # NB2: log-space is used to make the metrics more linear (easier plots and separation)
+
+        # IP (Input Popularity): the relative frequency of each presynaptic neuron
         ip = in_rate / target_in_rate
         log_ip = np.log(ip)
 
-        # relative to target input rate
+        # RFE^in (Receptive Field Efficiency for matching input):
+        # how well each neuron's RF tuned to the input's distribution
         rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
         avg_rfe_in = rfe_in.mean()
+        # NRFE^in (Normalized RFE^in): RFE^in relative to its average
         nrfe_in = rfe_in / avg_rfe_in
         log_nrfe_in = np.log(nrfe_in)
 
+        # current Output Rate
         out_rate = self.fast_output_trace.get()
+        # Target Output Rate: average rate of each postsynaptic neuron
+        # NB: for binary output = sparsity, but for rate output this does not hold
         target_out_rate = out_rate.sum() / self.output_size
 
-        # relative to target output rate
+        # OP (Output Popularity): the relative frequency of each postsynaptic neuron
         op = out_rate / target_out_rate
         log_op = np.log(op)
 
+        # RFE^out (Receptive Field Efficiency for activating neuron):
+        # how well each neuron's RF tuning translates to the neuron's activation
         rfe_out = op / rfe_in
         avg_rfe_out = rfe_out.mean()
+        # NRFE^out (Normalized RFE^out): RFE^out relative to its average
         nrfe_out = rfe_out / avg_rfe_out
         log_nrfe_out = np.log(nrfe_out)
 
@@ -680,6 +690,8 @@ class SpatialPooler:
             'avg(rfe_out)': avg_rfe_out,
             'ln(nrfe_out)': log_nrfe_out,
         }
+
+        # NB: for synaptogenesis it is better to track both fast and slow pacing stats
 
         in_rate = self.slow_feedforward_trace.get()
         target_in_rate = in_rate.sum() / self.ff_size
@@ -699,50 +711,33 @@ class SpatialPooler:
         }
 
     def get_health_check_stats(self, ff_trace, out_trace):
-        # TODO:
-        #   - Input's popularity IP — how specified input sdr represents the whole input
-        #       in terms of popularity:
-        #       ip[sdr] = in_rate[sdr].mean() / target_in_rate
-        #   - Input Rate SDR popularity IRP — the same, but taking into account
-        #       current Rate SDR rates:
-        #       irp[sdr] = in_rate[sdr] * rate_sdr / target_in_rate
-        #   - RF's efficiency RFE_i:
-        #       rfe_i = in_rate[rf_i] * w_i
-        #   - RFE^in_i:
-        #       rfe^in_i = rfe_i / target_in_rate
-        #   - Normalized RFE^in_i:
-        #       nrfe^in_i = rfe^in_i / rfe^in.mean()
-        #   - Learning Potential LP_i:
-        #       lp_i = rfe^in_i / ip[rf_i] = rfe_i / in_rate[rf_i].mean()
-        #   - Average IP:
-        #       aip = ip[RF].mean()
-        #   - Average LP:
-        #       avg_lp = lp[RF].mean()
-        #   - Output popularity OP_i:
-        #       op_i = out_rate_i / target_out_rate
-        #   - RFE^out_i:
-        #       rfe^out_i = op_i / rfe^in_i
-        #   - Normalized RFE^out_i:
-        #       nrfe^out_i = rfe^out_i / rfe^out.mean()
+        # NB: the following metrics are from the health_check method + some additional
+        # helpful metrics for analysis
 
-        # TODO: check normalization — do I need it?
         in_rate = ff_trace.get()
         target_in_rate = in_rate.sum() / self.ff_size
 
-        # relative to target input rate
         ip = in_rate / target_in_rate
         log_ip = np.log(ip)
 
-        # relative to target input rate
         rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
         avg_rfe_in = rfe_in.mean()
         nrfe_in = rfe_in / avg_rfe_in
         log_nrfe_in = np.log(nrfe_in)
 
+        # RFP^in (Receptive Field Popularity):
+        # NB: compared to RFE^in, it uses the "uniformly distributed weights" instead of
+        # real weights.
+        # NB2: alone, avg RFP^in shows how much neurons connect to the strong (=frequent) input.
+        # Ideally, this value should NOT be very high, because this means that the neurons
+        # are not selective enough, and just connect to the most frequent input.
         rfp_in = np.mean(ip[self.rf], axis=1)
         avg_rfp_in = rfp_in.mean()
         log_rfp_in = np.log(rfp_in)
 
+        # LP (Learning Potential):
+        # how well each neuron's RF weights are tuned relative to "un-tuned" uniform weights
+        # NB: if below 1, then the neuron's learning performs worse than no learning.
         lp = rfe_in / rfp_in
         avg_lp = lp.mean()
         log_lp = np.log(lp)
@@ -750,7 +745,6 @@ class SpatialPooler:
         out_rate = out_trace.get()
         target_out_rate = out_rate.sum() / self.output_size
 
-        # relative to target output rate
         op = out_rate / target_out_rate
         log_op = np.log(op)
 
@@ -758,8 +752,10 @@ class SpatialPooler:
         avg_rfe_out = rfe_out.mean()
         nrfe_out = rfe_out / avg_rfe_out
         log_nrfe_out = np.log(nrfe_out)
+        # NB: very rough approximate of the STD[log(nrfe_out)] — enough to see dynamics and scale
         appx_std_log_nrfe_out = np.mean(np.abs(log_nrfe_out))
 
+        # for plotting, clip values to avoid uninformative plot scales
         min_ln = np.log(1/10)
         return {
             'ln(ip)': np.maximum(log_ip, min_ln),
@@ -799,12 +795,16 @@ class SpatialPooler:
 
     def newborn_linear_progress(self, initial, target):
         newborn_phase_progress = self.newborn_pruning_stage / self.newborn_pruning_stages
+        # linear decay rule
         return initial + newborn_phase_progress * (target - initial)
 
-    def newborn_powerlaw_progress(self, current, target):
+    def newborn_powerlaw_progress(self, initial, target):
         steps_left = self.newborn_pruning_stages - self.newborn_pruning_stage + 1
         current = self.rf_sparsity
+        # what decay is needed to reach the target in the remaining steps
+        # NB: recalculate each step to exclude rounding errors
         decay = np.power(target / current, 1 / steps_left)
+        # exponential decay rule
         return current * decay
 
     @property

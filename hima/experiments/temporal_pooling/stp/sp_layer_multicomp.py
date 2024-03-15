@@ -157,7 +157,8 @@ class SpatialPooler:
 
     @timed
     def _compute(self, input_sdr: CompartmentsAnySparseSdr, learn: bool) -> AnySparseSdr:
-        self.accept_input(input_sdr)
+        self.accept_input(input_sdr, learn=learn)
+        self.try_activate_synaptogenesis(learn)
 
         matched_input_activity = self.match_input(input_sdr, learn)
         self.select_winners()
@@ -168,9 +169,11 @@ class SpatialPooler:
         self.accept_output(output_sdr, learn=learn)
         return output_sdr
 
-    def accept_input(self, sdr: CompartmentsAnySparseSdr):
+    def accept_input(self, sdr: CompartmentsAnySparseSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
         assert len(sdr) == len(self.compartments), f'{sdr=} | {self.compartments.keys()=}'
+        for comp_name in self.compartments:
+            self.compartments[comp_name].accept_input(sdr[comp_name], learn=learn)
 
         # apply timed decay to neurons' potential
         self.potentials.fill(0.)
@@ -211,7 +214,7 @@ class SpatialPooler:
         # its existence is required for trackers
         return {}
 
-    def try_activate_neurogenesis(self, learn):
+    def try_activate_synaptogenesis(self, learn):
         if not learn:
             return
 
@@ -219,9 +222,12 @@ class SpatialPooler:
         if not is_now:
             return
 
-        are_all_mature = not any(compartment.is_newborn_phase for compartment in self.compartments)
+        are_all_mature = not any(
+            compartment.is_newborn_phase
+            for compartment in self.compartments.values()
+        )
         if are_all_mature:
-            self.prune_grow_synapses()
+            self.recalculate_synaptogenesis_score()
 
     def select_winners(self):
         if self.sample_winners:
@@ -284,19 +290,96 @@ class SpatialPooler:
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         raise NotImplementedError('Not implemented yet')
 
+    def recalculate_synaptogenesis_score(self):
+        # NB: usually we work in log-space => log_ prefix is mostly omit for vars
+        self.health_check()
+
+        self.synaptogenesis_score[:] = 0.
+        rnd_cnt = 0
+
+        # TODO: optimize thresholds and power scaling;
+        #   also remember cumulative effect of prob during the cycle for frequent neurons
+        abs_rate_low, abs_rate_high = np.log(20), np.log(100)
+        eff_low, eff_high = np.log(1.5), np.log(20)
+
+        # Step 1: deal with absolute rates: sleepy input RF and output
+        # TODO: consider increasing random potential part for them
+        rnd_cnt += self.apply_synaptogenesis_to_metric(
+            self.slow_health_check_results['ln(nrfe_in)'],
+            abs_rate_low, abs_rate_high,
+            prob_power=2.0,
+            apply_random_synaptogenesis=True
+        )
+        rnd_cnt += self.apply_synaptogenesis_to_metric(
+            self.health_check_results['ln(op)'],
+            abs_rate_low, abs_rate_high,
+            prob_power=2.0,
+            apply_random_synaptogenesis=True
+        )
+
+        # Step 2: deal with sleepy output
+        rnd_cnt += self.apply_synaptogenesis_to_metric(
+            self.health_check_results['ln(nrfe_out)'],
+            eff_low, eff_high,
+            prob_power=1.5,
+        )
+
+        self.synaptogenesis_cnt = 0
+        for compartment in self.compartments.values():
+            compartment.synaptogenesis_score[:] = self.synaptogenesis_score
+
+            self.synaptogenesis_cnt += compartment.synaptogenesis_cnt
+            compartment.synaptogenesis_cnt = 0
+
+            compartment.decay_stat_trackers()
+
+        print(
+            f'+ {self.output_entropy():.3f}'
+            f' | {self.recognition_strength:.1f}'
+            f' | {self.health_check_results["avg(rfe_out)"]:.3f}'
+            f' | {self.synaptogenesis_cnt}'
+            f' | {np.sum(self.synaptogenesis_score):.2f}'
+        )
+
+        self.synaptogenesis_cnt = 0
+        self.decay_stat_trackers()
+
+    def apply_synaptogenesis_to_metric(
+            self, metric: npt.NDArray[float], low: float, high: float,
+            prob_power: float = 1.5,
+            apply_random_synaptogenesis: bool = False
+    ):
+        probs = (-metric - low) / (high - low)
+        np.clip(probs, 0., 1., out=probs)
+        np.power(probs, prob_power, out=probs)
+
+        neurons = np.flatnonzero(probs > 1e-3)
+        cnt = 0
+
+        self.synaptogenesis_score[neurons] = np.maximum(
+            self.synaptogenesis_score[neurons], probs[neurons]
+        )
+        return cnt
+
     def health_check(self):
-        in_rate = self.fast_feedforward_trace.get()
-        target_in_rate = in_rate.sum() / self.ff_size
+        nrfe_in_compartment = []
+        for compartment in self.compartments.values():
+            # Part 1: fast metrics
+            in_rate = compartment.fast_feedforward_trace.get()
+            target_in_rate = in_rate.sum() / compartment.ff_size
 
-        # relative to target input rate
-        ip = in_rate / target_in_rate
-        log_ip = np.log(ip)
+            # relative to target input rate
+            ip = in_rate / target_in_rate
 
-        # relative to target input rate
-        rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
-        avg_rfe_in = rfe_in.mean()
-        nrfe_in = rfe_in / avg_rfe_in
-        log_nrfe_in = np.log(nrfe_in)
+            # relative to target input rate
+            rfe_in = np.sum(ip[compartment.rf] * compartment.weights, axis=1)
+            avg_rfe_in = rfe_in.mean()
+            nrfe_in = rfe_in / avg_rfe_in
+
+            nrfe_in_compartment.append(nrfe_in)
+
+        avg_nrfe_in = np.prod(np.stack(nrfe_in_compartment), axis=0)
+        log_avg_nrfe_in = np.log(avg_nrfe_in)
 
         out_rate = self.fast_output_trace.get()
         target_out_rate = out_rate.sum() / self.output_size
@@ -305,116 +388,44 @@ class SpatialPooler:
         op = out_rate / target_out_rate
         log_op = np.log(op)
 
-        rfe_out = op / rfe_in
+        rfe_out = op / avg_nrfe_in
         avg_rfe_out = rfe_out.mean()
         nrfe_out = rfe_out / avg_rfe_out
         log_nrfe_out = np.log(nrfe_out)
 
         self.health_check_results = {
-            'ln(ip)': log_ip,
+            'ln(nrfe_in)': log_avg_nrfe_in,
             'ln(op)': log_op,
-            'ln(nrfe_in)': log_nrfe_in,
             'avg(rfe_out)': avg_rfe_out,
             'ln(nrfe_out)': log_nrfe_out,
         }
 
-        in_rate = self.slow_feedforward_trace.get()
-        target_in_rate = in_rate.sum() / self.ff_size
+        nrfe_in_compartment = []
+        for compartment in self.compartments.values():
+            # Part 2: slow metrics
+            in_rate = compartment.slow_feedforward_trace.get()
+            target_in_rate = in_rate.sum() / compartment.ff_size
 
-        # relative to target input rate
-        ip = in_rate / target_in_rate
+            # relative to target input rate
+            ip = in_rate / target_in_rate
 
-        # relative to target input rate
-        rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
-        avg_rfe_in = rfe_in.mean()
-        nrfe_in = rfe_in / avg_rfe_in
-        log_nrfe_in = np.log(nrfe_in)
+            # relative to target input rate
+            rfe_in = np.sum(ip[compartment.rf] * compartment.weights, axis=1)
+            avg_rfe_in = rfe_in.mean()
+            nrfe_in = rfe_in / avg_rfe_in
+
+            nrfe_in_compartment.append(nrfe_in)
+
+        avg_nrfe_in = np.prod(np.stack(nrfe_in_compartment), axis=0)
+        log_avg_nrfe_in = np.log(avg_nrfe_in)
 
         self.slow_health_check_results = {
-            'ln(ip)': log_ip,
-            'ln(nrfe_in)': log_nrfe_in,
+            # 'ln(ip)': log_ip,
+            'ln(nrfe_in)': log_avg_nrfe_in,
         }
 
     def get_health_check_stats(self, ff_trace, out_trace):
-        # TODO:
-        #   - Input's popularity IP — how specified input sdr represents the whole input
-        #       in terms of popularity:
-        #       ip[sdr] = in_rate[sdr].mean() / target_in_rate
-        #   - Input Rate SDR popularity IRP — the same, but taking into account
-        #       current Rate SDR rates:
-        #       irp[sdr] = in_rate[sdr] * rate_sdr / target_in_rate
-        #   - RF's efficiency RFE_i:
-        #       rfe_i = in_rate[rf_i] * w_i
-        #   - RFE^in_i:
-        #       rfe^in_i = rfe_i / target_in_rate
-        #   - Normalized RFE^in_i:
-        #       nrfe^in_i = rfe^in_i / rfe^in.mean()
-        #   - Learning Potential LP_i:
-        #       lp_i = rfe^in_i / ip[rf_i] = rfe_i / in_rate[rf_i].mean()
-        #   - Average IP:
-        #       aip = ip[RF].mean()
-        #   - Average LP:
-        #       avg_lp = lp[RF].mean()
-        #   - Output popularity OP_i:
-        #       op_i = out_rate_i / target_out_rate
-        #   - RFE^out_i:
-        #       rfe^out_i = op_i / rfe^in_i
-        #   - Normalized RFE^out_i:
-        #       nrfe^out_i = rfe^out_i / rfe^out.mean()
-
-        # TODO: check normalization — do I need it?
-        in_rate = ff_trace.get()
-        target_in_rate = in_rate.sum() / self.ff_size
-
-        # relative to target input rate
-        ip = in_rate / target_in_rate
-        log_ip = np.log(ip)
-
-        # relative to target input rate
-        rfe_in = np.sum(ip[self.rf] * self.weights, axis=1)
-        avg_rfe_in = rfe_in.mean()
-        nrfe_in = rfe_in / avg_rfe_in
-        log_nrfe_in = np.log(nrfe_in)
-
-        rfp_in = np.mean(ip[self.rf], axis=1)
-        avg_rfp_in = rfp_in.mean()
-        log_rfp_in = np.log(rfp_in)
-
-        lp = rfe_in / rfp_in
-        avg_lp = lp.mean()
-        log_lp = np.log(lp)
-
-        out_rate = out_trace.get()
-        target_out_rate = out_rate.sum() / self.output_size
-
-        # relative to target output rate
-        op = out_rate / target_out_rate
-        log_op = np.log(op)
-
-        rfe_out = op / rfe_in
-        avg_rfe_out = rfe_out.mean()
-        nrfe_out = rfe_out / avg_rfe_out
-        log_nrfe_out = np.log(nrfe_out)
-        appx_std_log_nrfe_out = np.mean(np.abs(log_nrfe_out))
-
-        min_ln = np.log(1/10)
-        return {
-            'ln(ip)': np.maximum(log_ip, min_ln),
-            'ln(op)': np.maximum(log_op, min_ln),
-
-            'avg(rfe_in)': avg_rfe_in,
-            'ln(nrfe_in)': np.maximum(log_nrfe_in, min_ln),
-
-            'avg(rfp_in)': avg_rfp_in,
-            'ln(rfp_in)': log_rfp_in,
-
-            'avg(lp)': avg_lp,
-            'ln(lp)': log_lp,
-
-            'avg(rfe_out)': avg_rfe_out,
-            'ln(nrfe_out)': np.maximum(log_nrfe_out, min_ln),
-            'std(ln(nrfe_out))': appx_std_log_nrfe_out,
-        }
+        raise NotImplementedError('Not implemented yet')
 
     @property
     def output_size(self):
@@ -425,10 +436,6 @@ class SpatialPooler:
         return False
 
     @property
-    def feedforward_rate(self):
-        raise NotImplementedError('Not implemented yet')
-
-    @property
     def output_rate(self):
         return self.slow_output_trace.get()
 
@@ -436,10 +443,6 @@ class SpatialPooler:
     def output_relative_rate(self):
         target_rate = self.output_sds.sparsity
         return self.output_rate / target_rate
-
-    @property
-    def rf_match_trace(self):
-        raise NotImplementedError('Not implemented yet')
 
     def output_entropy(self):
         return entropy(self.output_rate, sds=self.output_sds)
