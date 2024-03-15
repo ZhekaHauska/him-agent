@@ -408,7 +408,7 @@ spatial_pooler:
 
     initial_rf_to_input_ratio: 100.0
     initial_max_rf_sparsity: 0.6
-    target_max_rf_sparsity: 0.1
+    target_max_rf_sparsity: 0.6
     target_rf_to_input_ratio: 0.75
 
     # learning
