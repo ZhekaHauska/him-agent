@@ -73,6 +73,11 @@ class IntBucketEncoder:
 
     def encode(self, x: int) -> SparseSdr:
         """Encodes value x to sparse SDR format using bucket-based non-overlapping encoding."""
+        if isinstance(x, (list, np.ndarray)):
+            return np.stack([
+                self.encode(_x) for _x in x
+            ])
+
         assert x is None or x == self.ALL or 0 <= x < self.n_values, \
             f'Value must be in [0, {self.n_values}] or {self.ALL} or None; got {x}'
 
