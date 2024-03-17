@@ -30,17 +30,18 @@ class TextSequences:
             max_size_hint: int = None
     ):
         self.n_sequences = n_sequences
-        dataset, alphabet_size = self._read_dataset(filepath, max_size_hint)
+        dataset, alphabet_size, mapping = self._read_dataset(filepath, max_size_hint)
         ds_size = len(dataset)
         print(f'Text dataset size: {ds_size} | Alphabet size: {alphabet_size}')
 
         self.encoder = global_config.resolve_object(encoder, n_values=alphabet_size)
         self.sds = self.encoder.output_sds
+        self.char_mapping = mapping
 
         self.sequences = []
         i_sequence = 0
         rng = np.random.default_rng(seed)
-        while len(self.sequences) < n_sequences or i_sequence > 100_000:
+        while len(self.sequences) < n_sequences:
             if sequential:
                 start = i_sequence*sequence_length % ds_size
             else:
@@ -69,10 +70,10 @@ class TextSequences:
         chars = set(text)
         mapping = {
             c: i
-            for i, c in enumerate(chars)
+            for i, c in enumerate(sorted(chars))
         }
 
         alphabet_size = len(chars)
         dataset = np.array([mapping[c] for c in text])
-        return dataset, alphabet_size
+        return dataset, alphabet_size, mapping
 
