@@ -3,15 +3,12 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Union, Optional
+from typing import Optional
 
 import numpy as np
 from htm.bindings.sdr import SDR
 
 from hima.common.metrics import get_surprise
-from hima.modules.baselines.hmm import FCHMMLayer
-from hima.modules.baselines.lstm import LstmLayer
-from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.belief.cortial_column.layer import Layer
 from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
 
@@ -23,7 +20,7 @@ class CorticalColumn:
     """
     def __init__(
             self,
-            layer: Union[Layer, FCHMMLayer, LstmLayer, RwkvLayer],
+            layer: Layer,
             encoder: Optional[SPEnsemble],
             decoder: Optional[SPDecoder]
     ):
@@ -71,7 +68,7 @@ class CorticalColumn:
             self.output_sdr.sparse = self.input_sdr.sparse
 
         self.layer.observe(self.output_sdr.sparse, learn=learn)
-        self.layer.set_context_messages(self.layer.internal_forward_messages)
+        self.layer.set_context_messages(self.layer.internal_messages)
 
         self.surprise = 0
         encoded_obs = self.output_sdr.sparse
