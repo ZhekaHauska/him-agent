@@ -343,7 +343,7 @@ class DHTM:
                     "Context override will not work as context and internal sizes are different."
                 )
 
-        self.internal_forward_messages = np.zeros(
+        self.internal_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
@@ -357,7 +357,7 @@ class DHTM:
         )
 
         self.internal_cells_activity = np.zeros_like(
-            self.internal_forward_messages
+            self.internal_messages
         )
 
         self.prediction_cells = None
@@ -390,6 +390,11 @@ class DHTM:
 
         self.state_uni_dkl = 0
 
+        self.observation_messages_buffer = list()
+        self.external_messages_buffer = list()
+        self.forward_messages_buffer = list()
+        self.backward_messages_buffer = list()
+
     def set_external_messages(self, messages=None):
         # update external cells
         if messages is not None:
@@ -411,7 +416,7 @@ class DHTM:
     def make_state_snapshot(self):
         return (
             # mutable attributes:
-            self.internal_forward_messages.copy(),
+            self.internal_messages.copy(),
             # immutable attributes:
             self.external_messages,
             self.context_messages,
@@ -424,7 +429,7 @@ class DHTM:
             return
 
         (
-            self.internal_forward_messages,
+            self.internal_messages,
             self.external_messages,
             self.context_messages,
             self.prediction_cells,
@@ -432,10 +437,14 @@ class DHTM:
         ) = snapshot
 
         # explicitly copy mutable attributes:
-        self.internal_forward_messages = self.internal_forward_messages.copy()
+        self.internal_messages = self.internal_messages.copy()
 
     def reset(self):
-        self.internal_forward_messages = np.zeros(
+        if self.lr > 0:
+            self._backward_pass()
+            self._update_segments()
+
+        self.internal_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
@@ -455,6 +464,14 @@ class DHTM:
         self.prediction_cells = None
         self.prediction_columns = None
 
+        self.clear_buffers()
+
+    def clear_buffers(self):
+        self.observation_messages_buffer.clear()
+        self.external_messages_buffer.clear()
+        self.forward_messages_buffer.clear()
+        self.backward_messages_buffer.clear()
+
     def predict(self, **_):
         messages = np.zeros(self.total_cells)
         messages[
@@ -473,7 +490,7 @@ class DHTM:
             self.inverse_temp_context,
         )
 
-        self.prediction_cells = self.internal_forward_messages.copy()
+        self.prediction_cells = self.internal_messages.copy()
 
         self.prediction_columns = self.prediction_cells.reshape(
             -1, self.cells_per_column
@@ -485,33 +502,53 @@ class DHTM:
 
     def observe(
             self,
-            observation: np.ndarray,
+            observation_messages: np.ndarray,
             learn: bool = True
     ):
         """
             observation: pattern in sparse representation
         """
-        # update messages
-        self._update_posterior(observation)
-
-        # update connections
         if learn and self.lr > 0:
-            # sample cells from messages (1-step Monte-Carlo learning)
-            if (
-                    self.override_context
-                    and
-                    (self.context_active_cells.size == self.internal_active_cells.size)
-                    and
-                    (len(self.internal_active_cells.sparse) > 0)
-            ):
-                self.context_active_cells.sparse = self.internal_active_cells.sparse
-            else:
-                self.context_active_cells.sparse = self._sample_cells(
-                    self.context_messages.reshape(self.n_context_vars, -1)
-                )
+            # save t-1 messages
+            self.observation_messages_buffer.append(self.observation_messages.copy())
+            self.external_messages_buffer.append(self.external_messages.copy())
+            self.forward_messages_buffer.append(self.context_messages.copy())
+
+        # update messages
+        self.observation_messages = observation_messages
+        self.internal_messages = self._get_posterior()
+
+        self.timestep += 1
+
+    def _backward_pass(self):
+        for observation_messages, external_messages in zip(
+                self.observation_messages_buffer[::-1],
+                self.external_messages_buffer[::-1]
+        ):
+            self.observation_messages = observation_messages
+            self.internal_messages = self._get_posterior()
+            self.backward_messages_buffer.append(self.internal_messages.copy())
+
+            self.set_context_messages(self.internal_messages.copy())
+            self.set_external_messages(external_messages)
+            self.predict()
+
+    def _update_segments(self):
+        for forward_messages, external_messages, backward_messages in zip(
+            self.forward_messages_buffer[:-1],
+            self.external_messages_buffer[:-1],
+            self.backward_messages_buffer[1:]
+        ):
+            self.context_messages = forward_messages
+            self.external_messages = external_messages
+            self.internal_messages = backward_messages
+
+            self.context_active_cells.sparse = self._sample_cells(
+                self.context_messages.reshape(self.n_context_vars, -1)
+            )
 
             self.internal_active_cells.sparse = self._sample_cells(
-                self.internal_forward_messages.reshape(self.n_hidden_vars, -1)
+                self.internal_messages.reshape(self.n_hidden_vars, -1)
             )
 
             if len(self.external_messages) > 0:
@@ -519,21 +556,19 @@ class DHTM:
                     self.external_messages.reshape(self.n_external_vars, -1)
                 )
 
-            # learn context segments
-            # use context cells and external cells to predict internal cells
             (
                 self.cells_to_grow_new_context_segments,
                 self.new_context_segments
-             ) = self._learn(
+            ) = self._learn(
                 np.concatenate(
                     [
                         (
-                            self.context_cells_range[0] +
-                            self.context_active_cells.sparse
+                                self.context_cells_range[0] +
+                                self.context_active_cells.sparse
                         ),
                         (
-                            self.external_cells_range[0] +
-                            self.external_active_cells.sparse
+                                self.external_cells_range[0] +
+                                self.external_active_cells.sparse
                         )
                     ]
                 ),
@@ -546,14 +581,10 @@ class DHTM:
                     self.internal_active_cells.dense - self.internal_cells_activity
             )
 
-        self.timestep += 1
+    def _get_posterior(self):
+        obs_factor = np.repeat(self.observation_messages, self.cells_per_column)
 
-    def _update_posterior(self, observation):
-        self.observation_messages = sparse_to_dense(observation, size=self.input_sdr_size)
-        cells = self._get_cells_for_observation(observation)
-        obs_factor = sparse_to_dense(cells, like=self.internal_forward_messages)
-
-        messages = self.internal_forward_messages.reshape(self.n_hidden_vars, -1)
+        messages = self.internal_messages.reshape(self.n_hidden_vars, -1)
         obs_factor = obs_factor.reshape(self.n_hidden_vars, -1)
 
         messages = normalize(messages * obs_factor, obs_factor)
@@ -576,7 +607,7 @@ class DHTM:
 
                 messages[bursting_vars_mask] = bursting_factor
 
-        self.internal_forward_messages = messages.flatten()
+        return messages.flatten()
 
     def _detect_bursting_vars(self, messages, obs_factor):
         """
@@ -705,7 +736,7 @@ class DHTM:
 
         assert ~np.any(np.isnan(next_messages))
 
-        self.internal_forward_messages = next_messages
+        self.internal_messages = next_messages
 
     def _learn(
             self,
@@ -1128,7 +1159,7 @@ class DHTM:
                 cmap = colormap.Colormap().get_cmap_heat()
                 factor_score = n_segments / n_segments.max()
                 var_score = entropy(
-                    self.internal_forward_messages.reshape((self.n_hidden_vars, -1)),
+                    self.internal_messages.reshape((self.n_hidden_vars, -1)),
                     axis=-1
                 )
                 var_score /= (EPS + var_score.max())
