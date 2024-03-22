@@ -16,8 +16,14 @@ class Layer:
     input_sdr_size: int
     context_input_size: int
     external_input_size: int
+    n_obs_vars: int
+    n_obs_states: int
+    n_hidden_vars: int
+    n_hidden_states: int
     n_context_vars: int
+    n_context_states: int
     n_external_vars: int
+    n_external_states: int
     prediction_columns: np.ndarray | None
     prediction_cells: np.ndarray | None
     internal_messages: np.ndarray

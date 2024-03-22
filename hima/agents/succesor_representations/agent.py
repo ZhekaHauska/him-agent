@@ -108,7 +108,7 @@ class BioHIMA:
         self.observation_messages = np.zeros_like(self.observation_rewards)
 
         # state backups for model-free TD
-        self.previous_state = self.cortical_column.layer.internal_forward_messages.copy()
+        self.previous_state = self.cortical_column.layer.internal_messages.copy()
         self.previous_observation = np.zeros_like(self.observation_rewards)
 
         # TODO move it to Striatum class
@@ -129,7 +129,6 @@ class BioHIMA:
         self.ss_td_error = SSValue(*lr_td_error)
         self.ss_surprise = SSValue(*lr_surprise)
         self.sf_steps = 0
-        self.state_information = 0
 
         self.seed = seed
         self._rng = np.random.default_rng(seed)
@@ -143,11 +142,10 @@ class BioHIMA:
         self.action_dist = None
         self.action = None
         self.sf_steps = 0
-        self.state_information = 0
 
         self.cortical_column.reset(initial_context_message, initial_external_message)
 
-        self.previous_state = self.cortical_column.layer.internal_forward_messages.copy()
+        self.previous_state = self.cortical_column.layer.internal_messages.copy()
         self.previous_observation = np.zeros_like(self.observation_rewards)
 
     def sample_action(self):
@@ -171,7 +169,6 @@ class BioHIMA:
         if events is not None:
             # predict current events using observed action
             self.cortical_column.observe(events, action, learn=learn)
-            self.state_information = self.cortical_column.layer.state_uni_dkl
             encoded_obs = self.cortical_column.output_sdr.sparse
             self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
         else:
@@ -295,7 +292,7 @@ class BioHIMA:
 
             self.cortical_column.predict(context_messages, external_messages=action_dist)
 
-            context_messages = self.cortical_column.layer.internal_forward_messages.copy()
+            context_messages = self.cortical_column.layer.internal_messages.copy()
             predicted_observation = self.cortical_column.layer.prediction_columns
 
             discount *= self.gamma
@@ -342,7 +339,7 @@ class BioHIMA:
     def td_update_sf(self):
         target_sf, _ = self.generate_sf(
             self.td_steps,
-            initial_messages=self.cortical_column.layer.internal_forward_messages,
+            initial_messages=self.cortical_column.layer.internal_messages,
             initial_prediction=self.observation_messages,
             approximate_tail=True,
         )
@@ -396,7 +393,7 @@ class BioHIMA:
     def update_planned_sf(self):
         target_sf, self.sf_steps = self.generate_sf(
             self.plan_steps,
-            initial_messages=self.cortical_column.layer.internal_forward_messages,
+            initial_messages=self.cortical_column.layer.internal_messages,
             initial_prediction=self.observation_messages,
             approximate_tail=False,
         )
@@ -405,7 +402,7 @@ class BioHIMA:
 
     @property
     def current_state(self):
-        return self.cortical_column.layer.internal_forward_messages
+        return self.cortical_column.layer.internal_messages
 
     @property
     def action_value_estimate(self):
@@ -593,14 +590,14 @@ class LstmBioHima(BioHIMA):
 
             self.cortical_column.predict(context_messages, external_messages=action_dist)
 
-            context_messages = self.cortical_column.layer.internal_forward_messages.copy()
+            context_messages = self.cortical_column.layer.internal_messages.copy()
             predicted_observation = self.cortical_column.layer.prediction_columns
 
             # THE ONLY ADDED CHANGE TO HIMA: explicitly observe predicted_observation
             self.cortical_column.layer.observe(predicted_observation, learn=False)
             # setting context is needed for action evaluation further on
             self.cortical_column.layer.set_context_messages(
-                self.cortical_column.layer.internal_forward_messages
+                self.cortical_column.layer.internal_messages
             )
             # ======
 
@@ -640,5 +637,5 @@ class LstmBioHima(BioHIMA):
     @property
     def current_state(self):
         return to_numpy(self._extract_state_from_context(
-            self.cortical_column.layer.internal_forward_messages
+            self.cortical_column.layer.internal_messages
         ))

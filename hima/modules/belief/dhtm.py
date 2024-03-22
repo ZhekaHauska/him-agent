@@ -182,51 +182,7 @@ class BioDHTM(Layer):
 
         assert (self.context_factors is not None) or (self.internal_factors is not None)
 
-        self.state_uni_dkl = 0
-
-    def set_external_messages(self, messages=None):
-        # update external cells
-        if messages is not None:
-            self.external_messages = messages
-        elif self.external_input_size != 0:
-            self.external_messages = normalize(
-                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
-            ).flatten()
-
-    def set_context_messages(self, messages=None):
-        # update external cells
-        if messages is not None:
-            self.context_messages = messages
-        elif self.context_input_size != 0:
-            self.context_messages = normalize(
-                np.zeros(self.context_input_size).reshape((self.n_context_vars, -1))
-            ).flatten()
-
-    def make_state_snapshot(self):
-        return (
-            # mutable attributes:
-            self.internal_forward_messages.copy(),
-            # immutable attributes:
-            self.external_messages,
-            self.context_messages,
-            self.prediction_cells,
-            self.prediction_columns
-        )
-
-    def restore_last_snapshot(self, snapshot):
-        if snapshot is None:
-            return
-
-        (
-            self.internal_forward_messages,
-            self.external_messages,
-            self.context_messages,
-            self.prediction_cells,
-            self.prediction_columns
-        ) = snapshot
-
-        # explicitly copy mutable attributes:
-        self.internal_forward_messages = self.internal_forward_messages.copy()
+        self.state_information = 0
 
     def reset(self):
         self.internal_forward_messages = np.zeros(
@@ -418,7 +374,7 @@ class BioDHTM(Layer):
             obs_factor: (n_vars, n_states)
         """
         n_states = obs_factor.sum(axis=-1)
-        self.state_uni_dkl = (
+        self.state_information = (
                 np.log(n_states) +
                 np.sum(
                     messages * np.log(
@@ -430,7 +386,7 @@ class BioDHTM(Layer):
                 )
         )
 
-        return self.state_uni_dkl < self.bursting_threshold
+        return self.state_information < self.bursting_threshold
 
     def _propagate_belief(
             self,
@@ -1029,9 +985,6 @@ class DHTM(Layer):
             cell_activation_threshold: float = EPS,
             developmental_period: int = 10000,
             cells_activity_lr: float = 0.1,
-            replace_prior: bool = False,
-            bursting_threshold: float = EPS,
-            override_context: bool = True,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -1055,9 +1008,6 @@ class DHTM(Layer):
         self.external_vars_boost = external_vars_boost
         self.unused_vars_boost = unused_vars_boost
         self.cells_activity_lr = cells_activity_lr
-        self.replace_uniform_prior = replace_prior
-        self.bursting_threshold = bursting_threshold
-        self.override_context = override_context
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1090,12 +1040,6 @@ class DHTM(Layer):
         self.internal_active_cells = SDR(self.internal_cells)
         self.external_active_cells = SDR(self.external_input_size)
         self.context_active_cells = SDR(self.context_input_size)
-
-        if self.override_context:
-            if self.internal_active_cells.size != self.context_active_cells.size:
-                raise Warning(
-                    "Context override will not work as context and internal sizes are different."
-                )
 
         self.internal_messages = np.zeros(
             self.internal_cells,
@@ -1142,56 +1086,12 @@ class DHTM(Layer):
         self.cells_to_grow_new_context_segments = np.empty(0)
         self.new_context_segments = np.empty(0)
 
-        self.state_uni_dkl = 0
+        self.state_information = 0
 
         self.observation_messages_buffer = list()
         self.external_messages_buffer = list()
         self.forward_messages_buffer = list()
         self.backward_messages_buffer = list()
-
-    def set_external_messages(self, messages=None):
-        # update external cells
-        if messages is not None:
-            self.external_messages = messages
-        elif self.external_input_size != 0:
-            self.external_messages = normalize(
-                np.zeros(self.external_input_size).reshape((self.n_external_vars, -1))
-            ).flatten()
-
-    def set_context_messages(self, messages=None):
-        # update external cells
-        if messages is not None:
-            self.context_messages = messages
-        elif self.context_input_size != 0:
-            self.context_messages = normalize(
-                np.zeros(self.context_input_size).reshape((self.n_context_vars, -1))
-            ).flatten()
-
-    def make_state_snapshot(self):
-        return (
-            # mutable attributes:
-            self.internal_messages.copy(),
-            # immutable attributes:
-            self.external_messages,
-            self.context_messages,
-            self.prediction_cells,
-            self.prediction_columns
-        )
-
-    def restore_last_snapshot(self, snapshot):
-        if snapshot is None:
-            return
-
-        (
-            self.internal_messages,
-            self.external_messages,
-            self.context_messages,
-            self.prediction_cells,
-            self.prediction_columns
-        ) = snapshot
-
-        # explicitly copy mutable attributes:
-        self.internal_messages = self.internal_messages.copy()
 
     def reset(self):
         if self.lr > 0:
@@ -1343,45 +1243,7 @@ class DHTM(Layer):
 
         messages = normalize(messages * obs_factor, obs_factor)
 
-        # detect bursting vars
-        bursting_vars_mask = self._detect_bursting_vars(messages, obs_factor)
-
-        if self.replace_uniform_prior:
-            # replace priors for bursting vars
-            if np.any(bursting_vars_mask):
-                # TODO decrease probability to sample frequently active cells
-                # TODO decrease probability to sample cells with many segments
-                bursting_factor = obs_factor[bursting_vars_mask]
-                winners = self._sample_cells(normalize(bursting_factor))
-                bursting_factor = sparse_to_dense(
-                    winners,
-                    size=bursting_factor.size,
-                    dtype=bursting_factor.dtype
-                ).reshape(bursting_factor.shape)
-
-                messages[bursting_vars_mask] = bursting_factor
-
         return messages.flatten()
-
-    def _detect_bursting_vars(self, messages, obs_factor):
-        """
-            messages: (n_vars, n_states)
-            obs_factor: (n_vars, n_states)
-        """
-        n_states = obs_factor.sum(axis=-1)
-        self.state_uni_dkl = (
-                np.log(n_states) +
-                np.sum(
-                    messages * np.log(
-                        np.clip(
-                            messages, EPS, None
-                        )
-                    ),
-                    axis=-1
-                )
-        )
-
-        return self.state_uni_dkl < self.bursting_threshold
 
     def _propagate_belief(
             self,

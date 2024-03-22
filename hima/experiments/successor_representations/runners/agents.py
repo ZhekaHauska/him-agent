@@ -8,7 +8,8 @@ from __future__ import annotations
 from hima.experiments.successor_representations.runners.base import BaseAgent
 from hima.common.sdr import sparse_to_dense
 from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima
-from hima.modules.belief.cortial_column.cortical_column import CorticalColumn, Layer
+from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
+from hima.modules.belief.dhtm import BioDHTM, DHTM
 from hima.modules.baselines.lstm import LstmLayer
 from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.baselines.hmm import FCHMMLayer
@@ -71,13 +72,16 @@ class BioAgentWrapper(BaseAgent):
 
         if self.layer_type == 'fchmm':
             layer = FCHMMLayer(**layer_conf)
-        elif self.layer_type == 'dhtm':
+        elif self.layer_type in {'dhtm', 'biodhtm'}:
             layer_conf['n_context_states'] = (
                     n_obs_states * layer_conf['cells_per_column']
             )
             layer_conf['n_context_vars'] = n_obs_vars * layer_conf['n_hidden_vars_per_obs_var']
             layer_conf['n_external_vars'] = 1
-            layer = Layer(**layer_conf)
+            if self.layer_type == 'dhtm':
+                layer = DHTM(**layer_conf)
+            else:
+                layer = BioDHTM(**layer_conf)
         elif self.layer_type == 'lstm':
             layer_conf['n_external_vars'] = 1
             layer = LstmLayer(**layer_conf)
@@ -225,7 +229,7 @@ class BioAgentWrapper(BaseAgent):
     def planned_sf(self):
         sf, steps = self.agent.generate_sf(
             self.agent.plan_steps,
-            initial_messages=self.agent.cortical_column.layer.internal_forward_messages,
+            initial_messages=self.agent.cortical_column.layer.internal_messages,
             initial_prediction=self.agent.observation_messages,
             approximate_tail=self.agent.approximate_tail,
         )
@@ -238,7 +242,7 @@ class BioAgentWrapper(BaseAgent):
     def planned_sr(self):
         _, steps, sr = self.agent.generate_sf(
             self.agent.plan_steps,
-            initial_messages=self.agent.cortical_column.layer.internal_forward_messages,
+            initial_messages=self.agent.cortical_column.layer.internal_messages,
             initial_prediction=self.agent.observation_messages,
             approximate_tail=self.agent.approximate_tail,
             return_sr=True
@@ -250,20 +254,14 @@ class BioAgentWrapper(BaseAgent):
 
     @property
     def state_repr(self):
-        return self.agent.cortical_column.layer.internal_forward_messages.reshape(
+        return self.agent.cortical_column.layer.internal_messages.reshape(
             self.agent.cortical_column.layer.n_hidden_vars,
             -1
         )
 
     @property
-    def state_information(self):
-        return self.agent.state_information.mean() / np.log(
-            self.agent.cortical_column.layer.cells_per_column
-        )
-
-    @property
     def num_segments(self):
-        if isinstance(self.agent.cortical_column.layer, Layer):
+        if hasattr(self.agent.cortical_column.layer, 'context_factors'):
             return self.agent.cortical_column.layer.context_factors.connections.numSegments()
         else:
             return 0
