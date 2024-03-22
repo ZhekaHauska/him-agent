@@ -1117,6 +1117,7 @@ class DHTM(Layer):
 
         self.prediction_cells = None
         self.prediction_columns = None
+        self.observation_messages = None
 
         self.clear_buffers()
 
@@ -1156,17 +1157,24 @@ class DHTM(Layer):
 
     def observe(
             self,
-            observation_messages: np.ndarray,
+            observation: np.ndarray,
             learn: bool = True
     ):
         """
             observation: pattern in sparse representation
         """
+        observation_messages = sparse_to_dense(
+            observation,
+            size=self.input_sdr_size,
+            dtype=REAL64_DTYPE
+        )
+
         if learn and self.lr > 0:
             # save t-1 messages
-            self.observation_messages_buffer.append(self.observation_messages.copy())
-            self.external_messages_buffer.append(self.external_messages.copy())
-            self.forward_messages_buffer.append(self.context_messages.copy())
+            if self.observation_messages is not None:
+                self.observation_messages_buffer.append(self.observation_messages.copy())
+                self.external_messages_buffer.append(self.external_messages.copy())
+                self.forward_messages_buffer.append(self.context_messages.copy())
 
         # update messages
         self.observation_messages = observation_messages
@@ -1236,7 +1244,9 @@ class DHTM(Layer):
             )
 
     def _get_posterior(self):
-        obs_factor = np.repeat(self.observation_messages, self.cells_per_column)
+        observation = np.flatnonzero(self.observation_messages)
+        cells = self._get_cells_for_observation(observation)
+        obs_factor = sparse_to_dense(cells, like=self.internal_messages)
 
         messages = self.internal_messages.reshape(self.n_hidden_vars, -1)
         obs_factor = obs_factor.reshape(self.n_hidden_vars, -1)
@@ -1244,6 +1254,33 @@ class DHTM(Layer):
         messages = normalize(messages * obs_factor, obs_factor)
 
         return messages.flatten()
+
+    def _get_cells_for_observation(self, obs_states):
+        vars_for_obs_states = obs_states // self.n_obs_states
+        obs_states_per_var = obs_states - vars_for_obs_states * self.n_obs_states
+
+        hid_vars = (
+                np.tile(np.arange(self.n_hidden_vars_per_obs_var), len(vars_for_obs_states)) +
+                vars_for_obs_states * self.n_hidden_vars_per_obs_var
+        )
+        hid_columns = (
+                np.repeat(obs_states_per_var, self.n_hidden_vars_per_obs_var) +
+                self.n_obs_states * hid_vars
+        )
+
+        all_vars = np.arange(self.n_hidden_vars)
+        vars_without_states = all_vars[np.isin(all_vars, hid_vars, invert=True)]
+
+        cells_for_empty_vars = self._get_cells_in_vars(vars_without_states)
+
+        cells_in_columns = (
+                (
+                        hid_columns * self.cells_per_column
+                ).reshape((-1, 1)) +
+                np.arange(self.cells_per_column, dtype=UINT_DTYPE)
+        ).flatten()
+
+        return np.concatenate([cells_for_empty_vars, cells_in_columns])
 
     def _propagate_belief(
             self,
