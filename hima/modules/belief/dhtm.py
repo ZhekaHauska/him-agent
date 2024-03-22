@@ -118,7 +118,7 @@ class BioDHTM(Layer):
                     "Context override will not work as context and internal sizes are different."
                 )
 
-        self.internal_forward_messages = np.zeros(
+        self.internal_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
@@ -132,7 +132,7 @@ class BioDHTM(Layer):
         )
 
         self.internal_cells_activity = np.zeros_like(
-            self.internal_forward_messages
+            self.internal_messages
         )
 
         self.prediction_cells = None
@@ -185,7 +185,7 @@ class BioDHTM(Layer):
         self.state_information = 0
 
     def reset(self):
-        self.internal_forward_messages = np.zeros(
+        self.internal_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
@@ -230,14 +230,14 @@ class BioDHTM(Layer):
         # step 2: update predictions based on internal and external connections
         # block context and external messages
         if include_internal_connections and self.enable_internal_connections:
-            previous_internal_messages = self.internal_forward_messages.copy()
+            previous_internal_messages = self.internal_messages.copy()
 
             messages = np.zeros(self.total_cells)
 
             messages[
                 self.internal_cells_range[0]:
                 self.internal_cells_range[1]
-            ] = self.internal_forward_messages
+            ] = self.internal_messages
 
             self._propagate_belief(
                 messages,
@@ -246,14 +246,14 @@ class BioDHTM(Layer):
             )
 
             # consolidate previous and new messages
-            self.internal_forward_messages *= previous_internal_messages
-            self.internal_forward_messages = normalize(
-                self.internal_forward_messages.reshape(
+            self.internal_messages *= previous_internal_messages
+            self.internal_messages = normalize(
+                self.internal_messages.reshape(
                     (self.n_hidden_vars, self.n_hidden_states)
                 )
             ).flatten()
 
-        self.prediction_cells = self.internal_forward_messages.copy()
+        self.prediction_cells = self.internal_messages.copy()
 
         self.prediction_columns = self.prediction_cells.reshape(
             -1, self.cells_per_column
@@ -291,7 +291,7 @@ class BioDHTM(Layer):
                 )
 
             self.internal_active_cells.sparse = self._sample_cells(
-                self.internal_forward_messages.reshape(self.n_hidden_vars, -1)
+                self.internal_messages.reshape(self.n_hidden_vars, -1)
             )
 
             if len(self.external_messages) > 0:
@@ -341,9 +341,9 @@ class BioDHTM(Layer):
     def _update_posterior(self, observation):
         self.observation_messages = sparse_to_dense(observation, size=self.input_sdr_size)
         cells = self._get_cells_for_observation(observation)
-        obs_factor = sparse_to_dense(cells, like=self.internal_forward_messages)
+        obs_factor = sparse_to_dense(cells, like=self.internal_messages)
 
-        messages = self.internal_forward_messages.reshape(self.n_hidden_vars, -1)
+        messages = self.internal_messages.reshape(self.n_hidden_vars, -1)
         obs_factor = obs_factor.reshape(self.n_hidden_vars, -1)
 
         messages = normalize(messages * obs_factor, obs_factor)
@@ -366,7 +366,7 @@ class BioDHTM(Layer):
 
                 messages[bursting_vars_mask] = bursting_factor
 
-        self.internal_forward_messages = messages.flatten()
+        self.internal_messages = messages.flatten()
 
     def _detect_bursting_vars(self, messages, obs_factor):
         """
@@ -495,7 +495,7 @@ class BioDHTM(Layer):
 
         assert ~np.any(np.isnan(next_messages))
 
-        self.internal_forward_messages = next_messages
+        self.internal_messages = next_messages
 
     def _learn(
             self,
@@ -920,7 +920,7 @@ class BioDHTM(Layer):
                 cmap = colormap.Colormap().get_cmap_heat()
                 factor_score = n_segments / n_segments.max()
                 var_score = entropy(
-                    self.internal_forward_messages.reshape((self.n_hidden_vars, -1)),
+                    self.internal_messages.reshape((self.n_hidden_vars, -1)),
                     axis=-1
                 )
                 var_score /= (EPS + var_score.max())

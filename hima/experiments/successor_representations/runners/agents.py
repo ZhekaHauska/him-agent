@@ -138,7 +138,7 @@ class BioAgentWrapper(BaseAgent):
             self.initial_action = -1
             self.initial_context = np.empty(0)
             self.initial_external_message = np.empty(0)
-        elif self.layer_type == 'dhtm':
+        elif self.layer_type in {'dhtm', 'biodhtm'}:
             self.initial_action = 0
             self.initial_context = sparse_to_dense(
                 np.arange(
