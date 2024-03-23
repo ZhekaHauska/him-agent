@@ -10,18 +10,13 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from hima.common.sdr import SparseSdr
+from hima.common.sdr_sampling import sample_sdr, sample_rate_sdr
 from hima.common.sdrr import AnySparseSdr, RateSdr, OutputMode
 from hima.common.sds import Sds, TSdsShortNotation
 from hima.common.utils import isnone
-from hima.common.sdr_sampling import sample_sdr, sample_rate_sdr
 
 INT_TYPE = "int64"
 UINT_DTYPE = "uint32"
-
-
-# TODO:
-#   1. Support caching for bucket encoder
 
 
 class IntBucketEncoder:
@@ -41,10 +36,15 @@ class IntBucketEncoder:
     n_values: int
     output_sds: Sds
 
+    encoding_map: list[AnySparseSdr]
+
     _bucket_size: int
     _buckets_step: int
 
-    def __init__(self, n_values: int, bucket_size: int, buckets_step: int = None):
+    def __init__(
+            self, n_values: int, bucket_size: int, buckets_step: int = None,
+            output_mode: str = 'binary', seed: int = None
+    ):
         """
         Initializes encoder.
 
@@ -62,6 +62,9 @@ class IntBucketEncoder:
             size=sds_size,
             active_size=self._bucket_size
         )
+        self.output_mode = OutputMode[output_mode.upper()]
+
+        self.encoding_map = self._make_encoding_map(seed=seed, n_values=n_values)
 
     @property
     def output_sdr_size(self) -> int:
@@ -71,27 +74,41 @@ class IntBucketEncoder:
     def n_active_bits(self) -> int:
         return self.output_sds.active_size
 
-    def encode(self, x: int) -> SparseSdr:
-        """Encodes value x to sparse SDR format using bucket-based non-overlapping encoding."""
+    def encode(
+            self, x: int | list[int] | np.ndarray
+    ) -> AnySparseSdr | list[AnySparseSdr]:
+        """
+        Encodes value x to sparse SDR format using random overlapping encoding.
+        It is vectorized, so an array-like x is accepted too.
+        """
         if isinstance(x, (list, np.ndarray)):
-            return np.stack([
-                self.encode(_x) for _x in x
-            ])
-
-        assert x is None or x == self.ALL or 0 <= x < self.n_values, \
-            f'Value must be in [0, {self.n_values}] or {self.ALL} or None; got {x}'
-
-        if x is None:
-            return np.array([], dtype=int)
-        if x == self.ALL:
-            return np.arange(self.output_sdr_size, dtype=int)
-
-        left = self._bucket_starting_pos(x)
-        right = left + self._bucket_size
-        return np.arange(left, right, dtype=int)
+            return [self.encoding_map[i] for i in x]
+        return self.encoding_map[x]
 
     def _bucket_starting_pos(self, i):
         return i * self._buckets_step
+
+    def _make_encoding_map(self, seed: int, n_values) -> list:
+        rng = np.random.default_rng(seed=seed)
+
+        def encode_sdr(x):
+            left = self._bucket_starting_pos(x)
+            right = left + self._bucket_size
+            return np.arange(left, right, dtype=int)
+
+        def encode_rate_sdr(sdr):
+            return sample_rate_sdr(rng, sdr, scale=1.0)
+
+        encoding_map = [encode_sdr(x) for x in range(n_values)]
+        if self.output_mode == OutputMode.RATE:
+            encoding_map = [encode_rate_sdr(sdr) for sdr in encoding_map]
+            avg_encoding_mass = np.mean([
+                np.sum(sdr.values) / len(sdr.sdr)
+                for sdr in encoding_map
+            ])
+            print(f'Average encoding mass: {avg_encoding_mass:.2f}')
+
+        return encoding_map
 
 
 class IntRandomEncoder:
@@ -102,8 +119,7 @@ class IntRandomEncoder:
     """
 
     output_sds: Sds
-
-    encoding_map: np.array
+    encoding_map: list[AnySparseSdr]
 
     def __init__(
             self, n_values: int, seed: int,
@@ -128,9 +144,7 @@ class IntRandomEncoder:
         self.output_sds = Sds.make(sds)
         self.output_mode = OutputMode[output_mode.upper()]
 
-        self.encoding_map = self._make_encoding_map(
-            seed=seed, n_values=n_values, sds=self.output_sds, output_mode=self.output_mode
-        )
+        self.encoding_map = self._make_encoding_map(seed=seed, n_values=n_values)
 
     @property
     def output_sdr_size(self) -> int:
@@ -142,7 +156,7 @@ class IntRandomEncoder:
 
     @property
     def n_values(self) -> int:
-        return self.encoding_map.shape[0]
+        return len(self.encoding_map)
 
     def encode(
             self, x: int | list[int] | np.ndarray
@@ -151,30 +165,31 @@ class IntRandomEncoder:
         Encodes value x to sparse SDR format using random overlapping encoding.
         It is vectorized, so an array-like x is accepted too.
         """
-        if self.output_mode == OutputMode.BINARY:
-            return self.encoding_map[x]
-
-        # Rate SDR
         if isinstance(x, (list, np.ndarray)):
             return [self.encoding_map[i] for i in x]
+
         return self.encoding_map[x]
 
-    @staticmethod
     def _make_encoding_map(
-            seed: int, n_values, sds, output_mode: OutputMode
-    ) -> np.ndarray:
+            self, seed: int, n_values
+    ) -> list:
         rng = np.random.default_rng(seed=seed)
-        encoding_map = np.array([sample_sdr(rng, sds) for _ in range(n_values)], dtype=int)
-        if output_mode == OutputMode.RATE:
-            encoding_map = [
-                sample_rate_sdr(rng, sdr, scale=1.0)
-                for sdr in encoding_map
-            ]
+
+        def encode_sdr():
+            return sample_sdr(rng, self.output_sds)
+
+        def encode_rate_sdr(sdr):
+            return sample_rate_sdr(rng, sdr, scale=1.0)
+
+        encoding_map = [encode_sdr() for _ in range(n_values)]
+        if self.output_mode == OutputMode.RATE:
+            encoding_map = [encode_rate_sdr(sdr) for sdr in encoding_map]
             avg_encoding_mass = np.mean([
                 np.sum(sdr.values) / len(sdr.sdr)
                 for sdr in encoding_map
             ])
             print(f'Average encoding mass: {avg_encoding_mass:.2f}')
+
         return encoding_map
 
 
