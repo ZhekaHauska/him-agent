@@ -9,7 +9,11 @@ from typing import Optional
 
 import numpy as np
 from numba import jit
+from numpy import typing as npt
 from numpy.random import Generator
+
+from hima.common.sdrr import OutputMode
+from hima.common.utils import safe_divide
 
 
 def gather_rows(arr_2d: np.ndarray, indices: np.ndarray):
@@ -78,3 +82,25 @@ def tick(countdown: RepeatingCountdown) -> tuple[bool, RepeatingCountdown]:
     if ticks_left == 0:
         return True, make_repeating_counter(initial_ticks)
     return False, (ticks_left, initial_ticks)
+
+
+def normalize_weights(weights: npt.NDArray[float]):
+    normalizer = np.abs(weights)
+    if weights.ndim == 2:
+        normalizer = normalizer.sum(axis=1, keepdims=True)
+    else:
+        normalizer = normalizer.sum()
+    return np.clip(weights / normalizer, 0., 1)
+
+
+def define_winners(potentials, winners, output_mode, normalize_rates, strongest_winner=None):
+    winners = winners[potentials[winners] > 0]
+
+    if output_mode == OutputMode.RATE:
+        winners_value = potentials[winners].copy()
+        if normalize_rates:
+            winners_value = safe_divide(winners_value, potentials[strongest_winner])
+    else:
+        winners_value = 1.0
+
+    return winners, winners_value

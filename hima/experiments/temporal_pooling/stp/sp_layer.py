@@ -15,14 +15,13 @@ from numpy.random import Generator
 from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
-from hima.common.utils import safe_divide, isnone
 from hima.common.timer import timed
+from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
+from hima.experiments.temporal_pooling.stp.newborn_stage_controller import NewbornStageController
 from hima.experiments.temporal_pooling.stp.sp_utils import (
-    boosting, gather_rows,
-    sample_for_each_neuron, RepeatingCountdown, tick, make_repeating_counter
+    RepeatingCountdown, tick, make_repeating_counter, normalize_weights, define_winners
 )
 
 
@@ -69,13 +68,7 @@ class SpatialPooler:
     weights: npt.NDArray[float]
 
     # newborn stage
-    newborn_pruning_mode: SpNewbornPruningMode
-    newborn_pruning_stages: int
-    newborn_pruning_schedule: int
-    newborn_pruning_stage: int
-    #   boosting. It is active only during newborn stage
-    base_boosting_k: float
-    boosting_k: float
+    newborn_stage_controller: NewbornStageController
 
     # synaptogenesis
     synaptogenesis_schedule: int
@@ -125,6 +118,7 @@ class SpatialPooler:
 
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
+        self.is_empty_input = True
         self.sparse_input = np.empty(0, dtype=int)
         # use float not only to generalize to Rate SDR, but also to eliminate
         # inevitable int-to-float converting when we multiply it by weights
@@ -146,36 +140,22 @@ class SpatialPooler:
         self.sample_winners = sample_winners is not None and sample_winners > 0.
         self.sample_winners_frac = sample_winners if self.sample_winners else 0.
 
-        self.newborn_pruning_mode = SpNewbornPruningMode[newborn_pruning_mode.upper()]
-        self.newborn_pruning_schedule = int(newborn_pruning_cycle / self.output_sds.sparsity)
-        self.newborn_pruning_stages = newborn_pruning_stages
-        self.newborn_pruning_stage = 0
-        self.base_boosting_k = boosting_k
-        self.boosting_k = self.base_boosting_k
-
-        self.target_rf_to_input_ratio = target_rf_to_input_ratio
-        self.target_max_rf_sparsity = target_max_rf_sparsity
-
-        if self.is_newborn_phase:
-            self.initial_rf_sparsity = min(
-                initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
-                initial_max_rf_sparsity
-            )
-        else:
-            self.initial_rf_sparsity = self.get_target_rf_sparsity()
-
-        rf_size = int(self.initial_rf_sparsity * self.ff_size)
-        if not isinstance(connectable_ff_size, int):
-            connectable_ff_size = None
-        set_size = isnone(connectable_ff_size, self.ff_size)
-        rf_size = min(rf_size, set_size)
-
-        self.rf = sample_for_each_neuron(
-            rng=self.rng, n_neurons=self.output_size,
-            set_size=set_size, sample_size=rf_size
+        self.newborn_stage_controller = NewbornStageController(
+            sp=self, newborn_pruning_cycle=newborn_pruning_cycle,
+            newborn_pruning_stages=newborn_pruning_stages,
+            newborn_pruning_mode=newborn_pruning_mode, boosting_k=boosting_k,
+            initial_max_rf_sparsity=initial_max_rf_sparsity,
+            target_max_rf_sparsity=target_max_rf_sparsity,
+            initial_rf_to_input_ratio=initial_rf_to_input_ratio,
+            target_rf_to_input_ratio=target_rf_to_input_ratio,
+            connectable_ff_size=connectable_ff_size
         )
+        # TODO: temporarily it is set by newborn stage controller, to be fixed
+        # self.rf = sample_for_each_neuron(
+        #     rng=self.rng, n_neurons=self.output_size,
+        #     set_size=set_size, sample_size=rf_size
+        # )
 
-        print(f'SP.layer init shape: {self.rf.shape} to {set_size}')
         self.weights = normalize_weights(
             self.rng.normal(loc=1.0, scale=0.0001, size=self.rf.shape)
         )
@@ -185,7 +165,9 @@ class SpatialPooler:
         # NB: synaptogenesis is active only during mature phase, thus initially
         # this scheduler represents newborn schedule, and then it is replaced
         # with mature synaptogenesis schedule (see on_end_newborn_phase)
-        self.synaptogenesis_countdown = make_repeating_counter(self.newborn_pruning_schedule)
+        self.synaptogenesis_countdown = make_repeating_counter(
+            self.newborn_stage_controller.newborn_pruning_schedule
+        )
         self.synaptogenesis_cnt = 0
         self.synaptogenesis_score = np.zeros(self.output_size, dtype=float)
 
@@ -215,6 +197,7 @@ class SpatialPooler:
         )
         self.fast_output_trace.put(self.output_sds.sparsity)
 
+        print(self.synaptogenesis_countdown)
         if not self.is_newborn_phase:
             self.on_end_newborn_phase()
 
@@ -243,14 +226,14 @@ class SpatialPooler:
 
         return output_sdr
 
-    def match_input(self, input_sdr: AnySparseSdr, learn: bool = False):
+    def match_input(self):
         """Compute the output SDR."""
-        matched_input_activity, run_time = self._match_input(input_sdr, learn)
+        matched_input_activity, run_time = self._match_input()
         self.computation_speed.put(run_time)
         return matched_input_activity
 
     @timed
-    def _match_input(self, input_sdr: AnySparseSdr, learn: bool):
+    def _match_input(self):
         matched_input_activity = self.match_current_input()
         delta_potentials = (matched_input_activity * self.weights).sum(axis=1)
         # NB: synaptogenesis-induced noisy potentiation is a matter of each individual compartment!
@@ -276,6 +259,7 @@ class SpatialPooler:
         # set new SDR
         self.sparse_input = sdr
         self.dense_input[self.sparse_input] = value
+        self.is_empty_input = len(sdr) == 0
 
         # For SP, an online learning is THE MOST natural operation mode.
         # We treat the opposite case as the special mode, which only partly affects SP state.
@@ -300,6 +284,7 @@ class SpatialPooler:
             return
 
         is_now, self.synaptogenesis_countdown = tick(self.synaptogenesis_countdown)
+        print(self.synaptogenesis_countdown)
         if not is_now:
             return
 
@@ -313,11 +298,7 @@ class SpatialPooler:
         return self.dense_input[rf]
 
     def apply_boosting(self, overlaps):
-        if self.is_newborn_phase and self.boosting_k > 1e-2:
-            # boosting
-            boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
-            # FIXME: normalize boosting alpha over neurons
-            overlaps *= boosting_alpha
+        self.newborn_stage_controller.apply_boosting(overlaps)
 
     def apply_noisy_potentiation(self, potentials):
         """
@@ -483,45 +464,7 @@ class SpatialPooler:
         self.stdp(feedback_sdr, fb_match_mask, modulation)
 
     def shrink_receptive_field(self):
-        self.newborn_pruning_stage += 1
-
-        if self.newborn_pruning_mode == SpNewbornPruningMode.LINEAR:
-            new_sparsity = self.newborn_linear_progress(
-                initial=self.initial_rf_sparsity, target=self.get_target_rf_sparsity()
-            )
-        elif self.newborn_pruning_mode == SpNewbornPruningMode.POWERLAW:
-            new_sparsity = self.newborn_powerlaw_progress(
-                current=self.rf_sparsity, target=self.get_target_rf_sparsity()
-            )
-        else:
-            raise ValueError(f'Pruning mode {self.newborn_pruning_mode} is not supported')
-
-        if new_sparsity > self.rf_sparsity:
-            # if feedforward sparsity is tracked, then it may change and lead to RF increase
-            # ==> leave RF as is
-            return
-
-        # probabilities to keep connection
-        threshold = .5 / self.rf_size
-        keep_prob = np.power(np.abs(self.weights) / threshold + 0.1, 2.0)
-        keep_prob /= keep_prob.sum(axis=1, keepdims=True)
-
-        # sample what connections to keep for each neuron independently
-        new_rf_size = round(new_sparsity * self.ff_size)
-        keep_connections_i = sample_for_each_neuron(
-            rng=self.rng, n_neurons=self.output_size,
-            set_size=self.rf_size, sample_size=new_rf_size, probs_2d=keep_prob
-        )
-
-        self.rf = gather_rows(self.rf, keep_connections_i)
-        self.weights = normalize_weights(
-            gather_rows(self.weights, keep_connections_i)
-        )
-        self.boosting_k = self.newborn_linear_progress(
-            initial=self.base_boosting_k, target=0.
-        )
-        print(f'Prune newborns: {self._state_str()}')
-
+        self.newborn_stage_controller.shrink_receptive_field()
         self.decay_stat_trackers()
 
         if not self.is_newborn_phase:
@@ -776,36 +719,15 @@ class SpatialPooler:
         }
 
     def on_end_newborn_phase(self):
-        self.boosting_k = 0.
         self.synaptogenesis_countdown = make_repeating_counter(self.synaptogenesis_schedule)
-        print(f'Become adult: {self._state_str()}')
+        print(f'Become adult: {self.sng_state_str()}')
 
     def get_active_rf(self, weights):
         w_thr = 1 / self.rf_size
         return weights >= w_thr
 
     def get_target_rf_sparsity(self):
-        ff_sparsity = (
-            self.ff_avg_sparsity if self.adapt_to_ff_sparsity else self.feedforward_sds.sparsity
-        )
-        return min(
-            self.target_rf_to_input_ratio * ff_sparsity,
-            self.target_max_rf_sparsity,
-        )
-
-    def newborn_linear_progress(self, initial, target):
-        newborn_phase_progress = self.newborn_pruning_stage / self.newborn_pruning_stages
-        # linear decay rule
-        return initial + newborn_phase_progress * (target - initial)
-
-    def newborn_powerlaw_progress(self, initial, target):
-        steps_left = self.newborn_pruning_stages - self.newborn_pruning_stage + 1
-        current = self.rf_sparsity
-        # what decay is needed to reach the target in the remaining steps
-        # NB: recalculate each step to exclude rounding errors
-        decay = np.power(target / current, 1 / steps_left)
-        # exponential decay rule
-        return current * decay
+        return self.newborn_stage_controller.get_target_rf_sparsity()
 
     @property
     def ff_size(self):
@@ -833,14 +755,14 @@ class SpatialPooler:
 
     @property
     def is_newborn_phase(self):
-        return self.newborn_pruning_stage < self.newborn_pruning_stages
+        return self.newborn_stage_controller.is_newborn_phase
 
-    def _state_str(self) -> str:
+    def sng_state_str(self) -> str:
         return (
             f'{self.rf_sparsity:.4f}'
             f' | {self.rf_size}'
             f' | {self.learning_rate:.3f}'
-            f' | {self.boosting_k:.2f}'
+            f' | {self.newborn_stage_controller.boosting_k:.2f}'
             f' | {self.synaptogenesis_countdown[0]}'
         )
 
@@ -884,25 +806,3 @@ class SpatialPooler:
             SpLearningAlgo.NEW: self._stdp_new,
             SpLearningAlgo.NEW_SQ: self._stdp_new_squared
         }
-
-
-def normalize_weights(weights: npt.NDArray[float]):
-    normalizer = np.abs(weights)
-    if weights.ndim == 2:
-        normalizer = normalizer.sum(axis=1, keepdims=True)
-    else:
-        normalizer = normalizer.sum()
-    return np.clip(weights / normalizer, 0., 1)
-
-
-def define_winners(potentials, winners, output_mode, normalize_rates, strongest_winner=None):
-    winners = winners[potentials[winners] > 0]
-
-    if output_mode == OutputMode.RATE:
-        winners_value = potentials[winners].copy()
-        if normalize_rates:
-            winners_value = safe_divide(winners_value, potentials[strongest_winner])
-    else:
-        winners_value = 1.0
-
-    return winners, winners_value
