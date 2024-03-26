@@ -1093,6 +1093,27 @@ class DHTM(Layer):
         self.forward_messages_buffer = list()
         self.backward_messages_buffer = list()
 
+        # instead of deliberately saving prior
+        # we use fixed initial messages
+        self.initial_forward_messages = sparse_to_dense(
+            np.arange(
+                self.n_hidden_vars
+            ) * self.n_hidden_states,
+            like=self.context_messages
+        )
+        self.initial_backward_messages = sparse_to_dense(
+            np.arange(
+                self.n_hidden_vars
+            ) * self.n_hidden_states + 1,
+            like=self.context_messages
+        )
+        self.initial_external_messages = sparse_to_dense(
+            np.arange(
+                self.n_external_vars
+            ) * self.n_external_states,
+            like=self.external_messages
+        )
+
     def reset(self):
         if self.lr > 0:
             self._backward_pass()
