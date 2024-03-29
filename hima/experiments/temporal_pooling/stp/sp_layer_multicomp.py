@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from enum import Enum, auto
-from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -23,7 +22,7 @@ from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
-    RepeatingCountdown, make_repeating_counter, tick, define_winners
+    RepeatingCountdown, make_repeating_counter, tick
 )
 
 
@@ -54,7 +53,7 @@ class SpatialPooler:
     potentials: np.ndarray
     learning_rate: float
     modulation: float
-    synaptogenesis_countdown: RepeatingCountdown
+    synaptogenesis_stats_update_countdown: RepeatingCountdown
 
     # output
     output_sds: Sds
@@ -130,10 +129,18 @@ class SpatialPooler:
         self.sample_winners = sample_winners is not None and sample_winners > 0.
         self.sample_winners_frac = sample_winners if self.sample_winners else 0.
 
-        self.synaptogenesis_schedule = int(synaptogenesis_cycle / self.output_sds.sparsity)
-        self.synaptogenesis_countdown = make_repeating_counter(self.synaptogenesis_schedule)
-        self.synaptogenesis_cnt = 0
+        self.synaptogenesis_stats_update_schedule = int(
+            synaptogenesis_cycle / self.output_sds.sparsity
+        )
+        self.synaptogenesis_stats_update_countdown = make_repeating_counter(
+            self.synaptogenesis_stats_update_schedule
+        )
+        self.synaptogenesis_event_prob = np.clip(
+            5.0 / synaptogenesis_cycle, 0.0, 1.0
+        )
         self.synaptogenesis_score = np.zeros(self.output_size, dtype=float)
+        self.synaptogenesis_cnt = 0
+        self.synaptogenesis_cnt_successful = 0
 
         # stats collection
         self.health_check_results = {}
@@ -167,7 +174,6 @@ class SpatialPooler:
     @timed
     def _compute(self, input_sdr: CompartmentsAnySparseSdr, learn: bool) -> AnySparseSdr:
         self.accept_input(input_sdr, learn=learn)
-        self.try_activate_synaptogenesis(learn)
 
         matched_input_activity = self.match_input()
         self.select_winners()
@@ -176,6 +182,9 @@ class SpatialPooler:
 
         output_sdr = self.select_output()
         self.accept_output(output_sdr, learn=learn)
+
+        self.try_activate_synaptogenesis(learn)
+
         return output_sdr
 
     def predict(self, input_sdr: CompartmentsAnySparseSdr) -> AnySparseSdr:
@@ -261,7 +270,11 @@ class SpatialPooler:
         if not learn:
             return
 
-        is_now, self.synaptogenesis_countdown = tick(self.synaptogenesis_countdown)
+        self.try_activate_synaptogenesis_step()
+
+        is_now, self.synaptogenesis_stats_update_countdown = tick(
+            self.synaptogenesis_stats_update_countdown
+        )
         if not is_now:
             return
 
@@ -318,12 +331,46 @@ class SpatialPooler:
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         raise NotImplementedError('Not implemented yet')
 
+    def try_activate_synaptogenesis_step(self):
+        avg_winner_recognition_str = self.slow_recognition_strength_trace.get()
+        if len(self.winners) > 0:
+            winner_recognition_str = max(self.potentials[self.winners].mean(), 1e-6)
+        else:
+            winner_recognition_str = avg_winner_recognition_str
+
+        beta = avg_winner_recognition_str / winner_recognition_str
+        sng_prob = min(1.0, beta * self.synaptogenesis_event_prob)
+
+        if self.rng.random() >= sng_prob:
+            return
+
+        # select the winner for the synaptogenesis
+        ix_enabled = np.flatnonzero(self.synaptogenesis_score)
+        if len(ix_enabled) == 0:
+            return
+
+        noisy_potentials = np.abs(self.rng.normal(
+            loc=self.potentials[ix_enabled],
+            scale=self.synaptogenesis_score[ix_enabled]
+        ))
+        sng_winner = ix_enabled[np.argmax(noisy_potentials)]
+
+        # select the compartment for the synaptogenesis
+        nrfe_in_compartment = self.health_check_results['nrfe_in_cmp'][:, sng_winner]
+        compartment_probs = 1 / nrfe_in_compartment
+        compartment_probs /= compartment_probs.sum()
+        compartments = list(self.compartments.values())
+        compartment = self.rng.choice(compartments, p=compartment_probs)
+
+        success = compartment.activate_synaptogenesis_step(sng_winner)
+        self.synaptogenesis_cnt += 1
+        self.synaptogenesis_cnt_successful += int(success)
+
     def recalculate_synaptogenesis_score(self):
         # NB: usually we work in log-space => log_ prefix is mostly omit for vars
         self.health_check()
 
         self.synaptogenesis_score[:] = 0.
-        rnd_cnt = 0
 
         # TODO: optimize thresholds and power scaling;
         #   also remember cumulative effect of prob during the cycle for frequent neurons
@@ -332,65 +379,50 @@ class SpatialPooler:
 
         # Step 1: deal with absolute rates: sleepy input RF and output
         # TODO: consider increasing random potential part for them
-        rnd_cnt += self.apply_synaptogenesis_to_metric(
+        self.apply_synaptogenesis_to_metric(
             self.slow_health_check_results['ln(nrfe_in)'],
             abs_rate_low, abs_rate_high,
             prob_power=2.0,
-            apply_random_synaptogenesis=True
-        )
-        rnd_cnt += self.apply_synaptogenesis_to_metric(
-            self.health_check_results['ln(op)'],
-            abs_rate_low, abs_rate_high,
-            prob_power=2.0,
-            apply_random_synaptogenesis=True
         )
 
         # Step 2: deal with sleepy output
-        rnd_cnt += self.apply_synaptogenesis_to_metric(
+        self.apply_synaptogenesis_to_metric(
             self.health_check_results['ln(nrfe_out)'],
             eff_low, eff_high,
             prob_power=1.5,
         )
 
-        self.synaptogenesis_cnt = 0
-        for compartment in self.compartments.values():
-            compartment.synaptogenesis_score[:] = self.synaptogenesis_score
-
-            self.synaptogenesis_cnt += compartment.synaptogenesis_cnt
-            compartment.synaptogenesis_cnt = 0
-
-            compartment.decay_stat_trackers()
-
         print(
             f'+ {self.output_entropy():.3f}'
             f' | {self.recognition_strength:.1f}'
             f' | {self.health_check_results["avg(rfe_out)"]:.3f}'
-            f' | {self.synaptogenesis_cnt}'
+            f' || {self.synaptogenesis_cnt}'
+            f' | {safe_divide(self.synaptogenesis_cnt_successful, self.synaptogenesis_cnt):.2f}'
             f' | {np.sum(self.synaptogenesis_score):.2f}'
-            f' | {self.activation_threshold:.2f}'
+            f' || {self.activation_threshold:.2f}'
             f' | {self.slow_output_sdr_size_trace.get():.1f}'
             f' | {self.slow_output_size_trace.get():.2f}'
         )
 
         self.synaptogenesis_cnt = 0
+        self.synaptogenesis_cnt_successful = 0
+
         self.decay_stat_trackers()
+        for compartment in self.compartments.values():
+            compartment.decay_stat_trackers()
 
     def apply_synaptogenesis_to_metric(
-            self, metric: npt.NDArray[float], low: float, high: float,
-            prob_power: float = 1.5,
-            apply_random_synaptogenesis: bool = False
+            self, metric: npt.NDArray[float], low: float, high: float, prob_power: float = 1.5,
     ):
         probs = (-metric - low) / (high - low)
         np.clip(probs, 0., 1., out=probs)
         np.power(probs, prob_power, out=probs)
 
         neurons = np.flatnonzero(probs > 1e-3)
-        cnt = 0
 
         self.synaptogenesis_score[neurons] = np.maximum(
             self.synaptogenesis_score[neurons], probs[neurons]
         )
-        return cnt
 
     def health_check(self):
         nrfe_in_compartment = []
@@ -409,7 +441,8 @@ class SpatialPooler:
 
             nrfe_in_compartment.append(nrfe_in)
 
-        avg_nrfe_in = np.prod(np.stack(nrfe_in_compartment), axis=0)
+        nrfe_in_compartment = np.stack(nrfe_in_compartment)
+        avg_nrfe_in = np.prod(nrfe_in_compartment, axis=0)
         log_avg_nrfe_in = np.log(avg_nrfe_in)
 
         out_rate = self.fast_output_trace.get()
@@ -425,6 +458,7 @@ class SpatialPooler:
         log_nrfe_out = np.log(nrfe_out)
 
         self.health_check_results = {
+            'nrfe_in_cmp': nrfe_in_compartment,
             'ln(nrfe_in)': log_avg_nrfe_in,
             'ln(op)': log_op,
             'avg(rfe_out)': avg_rfe_out,
@@ -476,7 +510,7 @@ class SpatialPooler:
         return self.output_rate / target_rate
 
     def output_entropy(self):
-        return entropy(self.output_rate, sds=self.output_sds)
+        return entropy(self.output_rate)
 
     @property
     def recognition_strength(self):

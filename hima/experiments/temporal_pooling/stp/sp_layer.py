@@ -119,10 +119,12 @@ class SpatialPooler:
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
         self.is_empty_input = True
+        self.is_bound_input = False
         self.sparse_input = np.empty(0, dtype=int)
         # use float not only to generalize to Rate SDR, but also to eliminate
         # inevitable int-to-float converting when we multiply it by weights
         self.dense_input = np.zeros(self.ff_size, dtype=float)
+        self.noise_input = 0.
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode[output_mode.upper()]
@@ -169,8 +171,8 @@ class SpatialPooler:
         self.synaptogenesis_countdown = make_repeating_counter(
             self.newborn_stage_controller.newborn_pruning_schedule
         )
-        self.synaptogenesis_cnt = 0
         self.synaptogenesis_score = np.zeros(self.output_size, dtype=float)
+        self.synaptogenesis_cnt = 0
 
         # stats collection
         self.health_check_results = {}
@@ -243,7 +245,7 @@ class SpatialPooler:
         delta_potentials = (matched_input_activity * self.weights).sum(axis=1)
 
         # NB: synaptogenesis-induced noisy potentiation is a matter of each individual compartment!
-        # self.apply_noisy_potentiation(delta_potentials)
+        self.apply_noisy_potentiation(delta_potentials)
 
         # NB: apply newborn-phase boosting, which is a compartment-level effect
         # self.apply_boosting(delta_potentials)
@@ -261,8 +263,18 @@ class SpatialPooler:
 
         # TODO: L2 norm
         l2_value = np.sqrt(np.sum(value**2))
-        if not self.is_empty_input and not np.isclose(l2_value, 1.0):
+        self.is_bound_input &= l2_value <= 1.0 + 1e-6
+
+        # NB: in case input stream is not a Rate SDR, we should normalize it
+        should_normalize = not self.is_bound_input and not np.isclose(l2_value, 0.)
+        if not self.is_empty_input and should_normalize:
             value /= l2_value
+
+        # NB: in case of Rate SDR, we induce a noise level — the rest of the input mass
+        if self.is_bound_input:
+            self.noise_input = 1. - l2_value
+        else:
+            self.noise_input = 0.
 
         # forget prev SDR
         self.dense_input[self.sparse_input] = 0.
@@ -320,11 +332,14 @@ class SpatialPooler:
         are more efficient in average (hence, less synaptogenesis score) to have less
         noise mass, while in opposite case this mass is bigger.
         """
-        avg_in_rate = safe_divide(self.dense_input[self.sparse_input].sum(), len(self.sparse_input))
+        if np.isclose(self.noise_input, 0.):
+            return
 
-        w_noise = self.synaptogenesis_score
-        potentials *= 1 - w_noise
-        potentials += w_noise * self.rng.random(self.output_size) * avg_in_rate
+        if self.noise_input < 0.2:
+            return
+
+        w_noise = self.noise_input / self.output_size**0.7
+        potentials += self.rng.normal(loc=w_noise, scale=w_noise, size=self.output_size)
 
     def select_winners(self):
         if self.sample_winners:
@@ -377,8 +392,8 @@ class SpatialPooler:
         # TODO: add LTD
 
         self.stdp(self.winners, matched_input_activity[self.winners])
-        if not self.is_newborn_phase:
-            self.activate_synaptogenesis_step(self.winners)
+        # if not self.is_newborn_phase:
+        #     self.activate_synaptogenesis_step(self.winners)
 
     def _stdp(
             self, neurons: SparseSdr, pre_synaptic_activity: npt.NDArray[float],
@@ -557,35 +572,16 @@ class SpatialPooler:
         )
         return cnt
 
-    def activate_synaptogenesis_step(self, neurons: SparseSdr):
-        sampled_neurons = neurons[
-            self.rng.random(neurons.size) < self.synaptogenesis_score[neurons]
-        ]
-        if sampled_neurons.size == 0:
-            return
-
-        self.rng.shuffle(sampled_neurons)
-
-        found = None
+    def activate_synaptogenesis_step(self, neuron):
         in_set = set(self.sparse_input)
-        for neuron in sampled_neurons:
-            to_choose_from = list(in_set - set(self.rf[neuron]))
-            if to_choose_from:
-                syn = self.rng.choice(to_choose_from)
-                found = neuron, syn
-                break
+        to_choose_from = list(in_set - set(self.rf[neuron]))
+        if not to_choose_from:
+            return False
 
-        if found is None:
-            tag = self.comp_name or ''
-            print(f'---SYN {tag}')
-            return
-
-        neuron, syn = found
-        self.synaptogenesis_score[neuron] = 0.
-        self.synaptogenesis_cnt += 1
-
+        syn = self.rng.choice(to_choose_from)
         to_change_ix = np.argmin(self.weights[neuron])
         self.assign_new_synapses(neuron, to_change_ix, syn)
+        return True
 
     def resample_synapses(self, neurons: npt.NDArray[int]):
         ip = np.exp(self.slow_health_check_results['ln(ip)'])
