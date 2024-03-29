@@ -127,6 +127,7 @@ class SpatialPooler:
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode[output_mode.upper()]
         self.normalize_rates = normalize_rates
+        self.activation_threshold = 0.
 
         self.potentials = np.zeros(self.output_size)
         self.learning_algo = SpLearningAlgo[learning_algo.upper()]
@@ -197,6 +198,10 @@ class SpatialPooler:
         )
         self.fast_output_trace.put(self.output_sds.sparsity)
 
+        # NB: threshold trackers
+        self.slow_output_size_trace = MeanValue(exp_decay=slow_trace_decay)
+        self.slow_output_sdr_size_trace = MeanValue(exp_decay=slow_trace_decay)
+
         print(self.synaptogenesis_countdown)
         if not self.is_newborn_phase:
             self.on_end_newborn_phase()
@@ -236,10 +241,12 @@ class SpatialPooler:
     def _match_input(self):
         matched_input_activity = self.match_current_input()
         delta_potentials = (matched_input_activity * self.weights).sum(axis=1)
+
         # NB: synaptogenesis-induced noisy potentiation is a matter of each individual compartment!
-        self.apply_noisy_potentiation(delta_potentials)
+        # self.apply_noisy_potentiation(delta_potentials)
+
         # NB: apply newborn-phase boosting, which is a compartment-level effect
-        self.apply_boosting(delta_potentials)
+        # self.apply_boosting(delta_potentials)
 
         # NB2: potentials time-accumulation is a matter of neuron, not its compartments
         # thus, we always override the potentials each time step
@@ -250,6 +257,12 @@ class SpatialPooler:
     def accept_input(self, sdr: AnySparseSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
         sdr, value = split_sdr_values(sdr)
+        self.is_empty_input = len(sdr) == 0
+
+        # TODO: L2 norm
+        l2_value = np.sqrt(np.sum(value**2))
+        if not self.is_empty_input and not np.isclose(l2_value, 1.0):
+            value /= l2_value
 
         # forget prev SDR
         self.dense_input[self.sparse_input] = 0.
@@ -259,7 +272,6 @@ class SpatialPooler:
         # set new SDR
         self.sparse_input = sdr
         self.dense_input[self.sparse_input] = value
-        self.is_empty_input = len(sdr) == 0
 
         # For SP, an online learning is THE MOST natural operation mode.
         # We treat the opposite case as the special mode, which only partly affects SP state.
@@ -362,6 +374,8 @@ class SpatialPooler:
         if not learn or len(self.sparse_input) == 0:
             return
 
+        # TODO: add LTD
+
         self.stdp(self.winners, matched_input_activity[self.winners])
         if not self.is_newborn_phase:
             self.activate_synaptogenesis_step(self.winners)
@@ -456,6 +470,9 @@ class SpatialPooler:
         )
 
         self.fast_output_trace.put(value, sdr)
+
+        self.slow_output_sdr_size_trace.put(len(sdr))
+        self.slow_output_size_trace.put(value.sum())
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         # feedback SDR is the SP neurons that should be reinforced or punished
@@ -740,6 +757,14 @@ class SpatialPooler:
     @property
     def ff_avg_sparsity(self):
         return self.ff_avg_active_size / self.ff_size
+
+    @property
+    def out_avg_active_size(self):
+        return round(self.slow_output_size_trace.get())
+
+    @property
+    def out_avg_sparsity(self):
+        return self.out_avg_active_size / self.output_size
 
     @property
     def rf_size(self) -> int:

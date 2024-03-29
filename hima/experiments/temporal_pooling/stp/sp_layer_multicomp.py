@@ -22,9 +22,8 @@ from hima.common.timer import timed
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.sp_layer import define_winners
 from hima.experiments.temporal_pooling.stp.sp_utils import (
-    RepeatingCountdown, make_repeating_counter, tick
+    RepeatingCountdown, make_repeating_counter, tick, define_winners
 )
 
 
@@ -49,6 +48,7 @@ class SpatialPooler:
     compartments: dict
     compartments_ix: dict[str, int]
     compartments_weight: npt.NDArray[float]
+    product_weight: float
 
     # potentiation and learning
     potentials: np.ndarray
@@ -76,7 +76,7 @@ class SpatialPooler:
 
     def __init__(
             self, *, global_config, seed: int,
-            compartments: list[str], compartments_config: dict[str, dict],
+            compartments: list[str], compartments_config: dict[str, dict], product_weight: float,
             compartments_weight: dict[str, float],
             # learning
             learning_rate: float, learning_algo: str,
@@ -108,17 +108,22 @@ class SpatialPooler:
         self.compartments_weight /= self.compartments_weight.sum()
         for comp_name in self.compartments:
             self.compartments[comp_name].comp_name = comp_name
+        self.product_weight = product_weight
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode[output_mode.upper()]
         self.normalize_rates = normalize_rates
 
         self.potentials = np.zeros(self.output_size)
+        # aux cache for multiplicative potentials
+        self.prod_potentials = np.ones(self.output_size)
         self.learning_algo = SpLearningAlgo[learning_algo.upper()]
         self.initial_learning_rate = learning_rate
         self.learning_rate = learning_rate
         self.modulation = 1.0
 
+        self.raw_logits = np.zeros(self.output_size)
+        self.activation_threshold = 0.0
         self.winners = np.empty(0, dtype=int)
         self.winners_value = 1.0
         self.strongest_winner = None
@@ -145,6 +150,10 @@ class SpatialPooler:
         )
         self.fast_output_trace.put(self.output_sds.sparsity)
 
+        # NB: threshold trackers
+        self.slow_output_size_trace = MeanValue(exp_decay=slow_trace_decay)
+        self.slow_output_sdr_size_trace = MeanValue(exp_decay=slow_trace_decay)
+
         # synchronize selected attributes for compartments with the main SP
         for comp_name in self.compartments:
             self.compartments[comp_name].output_mode = self.output_mode
@@ -160,13 +169,31 @@ class SpatialPooler:
         self.accept_input(input_sdr, learn=learn)
         self.try_activate_synaptogenesis(learn)
 
-        matched_input_activity = self.match_input(input_sdr, learn)
+        matched_input_activity = self.match_input()
         self.select_winners()
         self.broadcast_winners()
         self.reinforce_winners(matched_input_activity, learn)
 
         output_sdr = self.select_output()
         self.accept_output(output_sdr, learn=learn)
+        return output_sdr
+
+    def predict(self, input_sdr: CompartmentsAnySparseSdr) -> AnySparseSdr:
+        """Compute the output SDR."""
+        output_sdr, run_time = self._predict(input_sdr)
+        self.computation_speed.put(run_time)
+        return output_sdr
+
+    @timed
+    def _predict(self, input_sdr: CompartmentsAnySparseSdr) -> AnySparseSdr:
+        self.accept_input(input_sdr, learn=False)
+
+        self.match_input()
+        self.select_winners()
+        self.broadcast_winners()
+
+        output_sdr = self.select_output()
+        self.accept_output(output_sdr, learn=False)
         return output_sdr
 
     def accept_input(self, sdr: CompartmentsAnySparseSdr, *, learn: bool):
@@ -177,23 +204,35 @@ class SpatialPooler:
 
         # apply timed decay to neurons' potential
         self.potentials.fill(0.)
+        # ff_sdr, _ = split_sdr_values(sdr['feedforward'])
+        # if len(ff_sdr) > 0:
+        #     self.potentials *= 0.5
+        # else:
+        #     self.potentials.fill(0.)
 
-    def match_input(self, input_sdr: CompartmentsAnySparseSdr, learn):
+    def match_input(self):
         matched_input_activity = {}
 
+        self.prod_potentials.fill(self.product_weight)
         for comp_name in self.compartments:
             compartment = self.compartments[comp_name]
             compartment_weight = self.compartments_weight[self.compartments_ix[comp_name]]
 
-            matched_input_activity[comp_name] = compartment.match_input(
-                input_sdr[comp_name], learn=learn
-            )
+            matched_input_activity[comp_name] = compartment.match_input()
             # NB: compartment potentials contain only current time step induced potentials
             self.potentials += compartment_weight * compartment.potentials
+            self.prod_potentials *= compartment.potentials
+
+        self.potentials *= 1 - self.product_weight
+        self.potentials += self.prod_potentials
 
         return matched_input_activity
 
     def broadcast_winners(self):
+        self.strongest_winner = None
+        if len(self.winners) > 0:
+            self.strongest_winner = self.winners[np.argmax(self.winners_value)]
+
         for comp_name in self.compartments:
             self.compartments[comp_name].accept_winners(
                 winners=self.winners, winners_value=self.winners_value,
@@ -203,6 +242,10 @@ class SpatialPooler:
     def reinforce_winners(self, matched_input_activity, learn: bool):
         if not learn:
             return
+
+        n_winners = len(self.winners)
+        sign = 1. if n_winners > self.output_sds.active_size else -1.
+        self.activation_threshold += sign * self.learning_rate / 10
 
         for comp_name in self.compartments:
             self.compartments[comp_name].reinforce_winners(
@@ -230,40 +273,22 @@ class SpatialPooler:
             self.recalculate_synaptogenesis_score()
 
     def select_winners(self):
-        if self.sample_winners:
-            winners, strongest_winner = self._sample_winners()
-        else:
-            winners, strongest_winner = self._select_winners()
+        self.winners, self.winners_value = self._select_winners_by_threshold()
 
-        self.winners, self.winners_value = define_winners(
-            potentials=self.potentials, winners=winners, output_mode=self.output_mode,
-            normalize_rates=self.normalize_rates, strongest_winner=self.strongest_winner
-        )
+    def _select_winners_by_threshold(self):
+        logits = self.potentials ** 2
+        l2_logits = logits.sum()
+        if not np.isclose(l2_logits, 0.):
+            logits /= l2_logits
 
-    def _select_winners(self):
-        n_winners = self.output_sds.active_size
+        winners = np.flatnonzero(logits > self.activation_threshold)
+        winners_value = logits[winners]
 
-        winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
-        self.strongest_winner = cast(int, winners[np.argmax(self.potentials[winners])])
-        winners.sort()
-        return winners, self.strongest_winner
+        # NB: output normalization???
+        # if len(winners) > 0:
+        #     winners_value /= winners_value.sum()
 
-    def _sample_winners(self):
-        n_winners = self.output_sds.active_size
-
-        n_pot_winners = min(round(self.sample_winners_frac*n_winners), self.potentials.size)
-        pot_winners = np.argpartition(self.potentials, -n_pot_winners)[-n_pot_winners:]
-        self.strongest_winner = cast(int, pot_winners[np.argmax(self.potentials[pot_winners])])
-
-        probs = self.potentials[pot_winners]**2 + 1e-10
-        norm = np.sum(probs)
-
-        winners = self.rng.choice(
-            pot_winners, size=n_winners, replace=False,
-            p=safe_divide(probs, norm)
-        )
-        winners.sort()
-        return winners, self.strongest_winner
+        return winners, winners_value
 
     def select_output(self):
         if self.output_mode == OutputMode.RATE:
@@ -286,6 +311,9 @@ class SpatialPooler:
         )
 
         self.fast_output_trace.put(value, sdr)
+
+        self.slow_output_sdr_size_trace.put(len(sdr))
+        self.slow_output_size_trace.put(value.sum())
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         raise NotImplementedError('Not implemented yet')
@@ -339,6 +367,9 @@ class SpatialPooler:
             f' | {self.health_check_results["avg(rfe_out)"]:.3f}'
             f' | {self.synaptogenesis_cnt}'
             f' | {np.sum(self.synaptogenesis_score):.2f}'
+            f' | {self.activation_threshold:.2f}'
+            f' | {self.slow_output_sdr_size_trace.get():.1f}'
+            f' | {self.slow_output_size_trace.get():.2f}'
         )
 
         self.synaptogenesis_cnt = 0
