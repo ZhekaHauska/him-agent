@@ -11,7 +11,6 @@ import numpy as np
 
 from hima.common.config.base import TConfig, extracted
 from hima.common.config.values import resolve_init_params
-from hima.common.sdr_encoders import SdrConcatenator
 from hima.common.sdrr import split_sdr_values, RateSdr
 from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.global_vars import VARS_LEARN
@@ -122,10 +121,10 @@ class SpatialTemporalMemoryBlock(Block):
         self[ACTIVE_CELLS].set(output_sdr)
 
     def predict(self):
-        learn = self.model.streams[VARS_LEARN].get() and self.learn_during_prediction
+        # learn = self.model.streams[VARS_LEARN].get() and self.learn_during_prediction
         compartments_input = self.prepare_input(use_ff=True, use_context=True, use_state=True)
 
-        output_sdr = self.tm.compute(compartments_input, learn=learn)
+        output_sdr = self.tm.predict(compartments_input)
         self[PREDICTED_CELLS].set(output_sdr)
 
     def set_predicted_cells(self):
