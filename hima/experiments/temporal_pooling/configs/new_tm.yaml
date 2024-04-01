@@ -459,20 +459,25 @@ TM:
     compartments_config:
       feedforward:
         _base_: TM.stm_compartment
-        target_rf_to_input_ratio: 4.0
+        target_rf_to_input_ratio: 0.4
+#        target_rf_to_input_ratio: 10.0
       state:
         _base_: TM.stm_compartment
-        target_rf_to_input_ratio: 6.0
+        target_rf_to_input_ratio: 0.4
+#        target_rf_to_input_ratio: 15.0
       context:
         _base_: TM.stm_compartment
+        target_rf_to_input_ratio: 0.4
+#        target_rf_to_input_ratio: 15.0
 
+    product_weight: 0.5
     compartments_weight:
       feedforward: 4.0
       state: 3.0
       context: 2.0
 
     # learning
-    learning_rate: 0.003
+    learning_rate: 0.002
     learning_algo: new
 
     # output
@@ -533,8 +538,11 @@ datas:
     filepath: ~/data/text/text8.txt
     max_size_hint: 1_000_000
     encoder:
-      _base_: $_base.encoder.random.fixed_sds
-      sds: [ 200, 10 ]
+      _base_: $_base.encoder.bucket
+      n_values: 27
+      bucket_size: 5
+#      _base_: $_base.encoder.random.fixed_sds
+#      sds: [ 200, 10 ]
     sequential: True
 
 stats_and_metrics:
@@ -577,22 +585,22 @@ trackers:
   sdr:
     _type_: tracker.sdr
     on: ???
-    step_flush_schedule: 2000
+    step_flush_schedule: 4000
   tm:
     _type_: tracker.tm
     on: ???
   sdr_prediction:
     _type_: tracker.sdr_prediction
     on: ???
-    step_flush_schedule: 2000
+    step_flush_schedule: 4000
   sp_matching:
     _type_: tracker.sp_matching
     on: ???
-    step_flush_schedule: 2000
+    step_flush_schedule: 4000
   sp_synaptogenesis:
     _type_: tracker.sp_synaptogenesis
     on: ???
-    step_flush_schedule: 2000
+    step_flush_schedule: 4000
     track_split: False
   sp_synaptogenesis_concat:
     _base_: sp_synaptogenesis
