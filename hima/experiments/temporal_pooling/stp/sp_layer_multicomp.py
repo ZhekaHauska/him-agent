@@ -18,9 +18,10 @@ from hima.common.sdrr import (
 )
 from hima.common.sds import Sds
 from hima.common.timer import timed
-from hima.common.utils import safe_divide
+from hima.common.utils import safe_divide, softmax
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.sp_layer import SpLearningAlgo
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     RepeatingCountdown, make_repeating_counter, tick
 )
@@ -30,10 +31,6 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 # binary and rate encodings. Previous: sp_rate.py. Current last.
 # New: supports synaptogenesis.
 
-class SpLearningAlgo(Enum):
-    OLD = 1
-    NEW = auto()
-    NEW_SQ = auto()
 
 # TODO:
 #   - [ ] SdrCache (dense+sparse datastruct)
@@ -58,12 +55,9 @@ class SpatialPooler:
     # output
     output_sds: Sds
     output_mode: OutputMode
-    normalize_rates: bool
 
     winners: SparseSdr
-    strongest_winner: int | None
-    sample_winners: bool
-    sample_winners_frac: float
+    winners_value: float | npt.NDArray[float]
 
     # stats
     #   average computation time
@@ -75,15 +69,14 @@ class SpatialPooler:
 
     def __init__(
             self, *, global_config, seed: int,
-            compartments: list[str], compartments_config: dict[str, dict], product_weight: float,
+            compartments: list[str], compartments_config: dict[str, dict],
             compartments_weight: dict[str, float],
+            product_weight: float,
             # learning
-            learning_rate: float, learning_algo: str,
+            learning_rate: float,
             synaptogenesis_cycle: float,
             # output
-            output_sds: Sds, output_mode: str, normalize_rates: bool = True,
-            sample_winners: float | None = None,
-            slow_trace_decay: float = 0.99, fast_trace_decay: float = 0.95,
+            output_sds: Sds, output_mode: str,
     ):
         self.rng = np.random.default_rng(seed)
         print(f'{output_sds=}')
@@ -111,13 +104,10 @@ class SpatialPooler:
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode[output_mode.upper()]
-        self.normalize_rates = normalize_rates
 
         self.potentials = np.zeros(self.output_size)
         # aux cache for multiplicative potentials
         self.prod_potentials = np.ones(self.output_size)
-        self.learning_algo = SpLearningAlgo[learning_algo.upper()]
-        self.initial_learning_rate = learning_rate
         self.learning_rate = learning_rate
         self.modulation = 1.0
 
@@ -125,9 +115,6 @@ class SpatialPooler:
         self.activation_threshold = 0.0
         self.winners = np.empty(0, dtype=int)
         self.winners_value = 1.0
-        self.strongest_winner = None
-        self.sample_winners = sample_winners is not None and sample_winners > 0.
-        self.sample_winners_frac = sample_winners if self.sample_winners else 0.
 
         self.synaptogenesis_stats_update_schedule = int(
             synaptogenesis_cycle / self.output_sds.sparsity
@@ -239,14 +226,9 @@ class SpatialPooler:
         return matched_input_activity
 
     def broadcast_winners(self):
-        self.strongest_winner = None
-        if len(self.winners) > 0:
-            self.strongest_winner = self.winners[np.argmax(self.winners_value)]
-
         for comp_name in self.compartments:
             self.compartments[comp_name].accept_winners(
-                winners=self.winners, winners_value=self.winners_value,
-                strongest_winner=self.strongest_winner
+                winners=RateSdr(self.winners, self.winners_value)
             )
 
     def reinforce_winners(self, matched_input_activity, learn: bool):
@@ -290,12 +272,13 @@ class SpatialPooler:
         self.winners, self.winners_value = self._select_winners_by_threshold()
 
     def _select_winners_by_threshold(self):
-        logits = self.potentials ** 2
-        l2_logits = logits.sum()
-        if not np.isclose(l2_logits, 0.):
-            logits /= l2_logits
+        # logits = self.potentials ** 2
+        # l2_logits = logits.sum()
+        # if not np.isclose(l2_logits, 0.):
+        #     logits /= l2_logits
 
-        winners = np.flatnonzero(logits > self.activation_threshold)
+        logits = softmax(self.potentials)
+        winners = np.flatnonzero(logits >= self.activation_threshold)
         winners_value = logits[winners]
 
         # NB: output normalization???

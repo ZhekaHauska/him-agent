@@ -81,6 +81,7 @@ TM:
   stm_compartment:
     # config for a compartment of a multi-compartmental STM (stm_mc)
     _base_: $_stm_base.spatial_pooler.default_layer_compartment
+    learning_algo: new_sq
 
   stm_mc:
     # built on the multi-compartmental SP layer version
@@ -100,7 +101,7 @@ TM:
 #        rf_to_input_ratio: 0.4
         rf_to_input_ratio: 15.0
 
-    product_weight: 0.5
+    product_weight: 0.0
     compartments_weight:
       feedforward: 4.0
       state: 3.0
@@ -108,12 +109,9 @@ TM:
 
     # learning
     learning_rate: 0.002
-    learning_algo: new
 
     # output
     output_mode: rate
-    normalize_rates: true
-    sample_winners: 2.0
 
 model:
   global_config: ???
@@ -226,15 +224,17 @@ blocks:
     _type_: block.decoder
     decoder: $_stm_base.decoder.mlp
   TM:
-    _type_: block.tm
+    _type_: block.stm_mc
     _base_: $_stm_base.blocks.tm_like
+    learn_during_prediction: false
     tm:
-      _base_: TM.tm
+      _base_: TM.stm_mc
   TM2:
-    _type_: block.tm
+    _type_: block.stm_mc
     _base_: $_stm_base.blocks.tm_like
+    learn_during_prediction: false
     tm:
-      _base_: TM.tm
+      _base_: TM.stm_mc
 
 datas:
   synthetic_sequences:

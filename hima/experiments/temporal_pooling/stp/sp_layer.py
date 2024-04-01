@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from enum import Enum, auto
-from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -16,12 +15,10 @@ from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.timer import timed
-from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
-    RepeatingCountdown, tick, make_repeating_counter, define_winners,
-    sample_for_each_neuron
+    RepeatingCountdown, tick, make_repeating_counter, sample_for_each_neuron
 )
 
 
@@ -168,8 +165,8 @@ class SpatialPooler:
         )
 
         # NB: threshold trackers
-        self.slow_output_size_trace = MeanValue(lr=slow_lr)
-        self.slow_output_sdr_size_trace = MeanValue(lr=slow_lr)
+        self.slow_output_size_trace = MeanValue(lr=fast_lr)
+        self.slow_output_sdr_size_trace = MeanValue(lr=fast_lr)
 
         print(self.synaptogenesis_countdown)
 
@@ -210,7 +207,7 @@ class SpatialPooler:
         delta_potentials = (matched_input_activity * self.weights).sum(axis=1)
 
         # NB: synaptogenesis-induced noisy potentiation is a matter of each individual compartment!
-        self.apply_noisy_potentiation(delta_potentials)
+        # self.apply_noisy_potentiation(delta_potentials)
 
         # NB: apply newborn-phase boosting, which is a compartment-level effect
         # self.apply_boosting(delta_potentials)
@@ -264,7 +261,7 @@ class SpatialPooler:
     def get_step_debug_info(self):
         return {
             'potentials': np.sort(self.potentials),
-            'recognition_strength': self.potentials[self.winners],
+            'recognition_strength': self.potentials[self.winners.sdr],
             'weights': self.weights,
             'rf': self.rf
         }
@@ -287,9 +284,6 @@ class SpatialPooler:
         rf = self.rf if with_neurons is None else self.rf[with_neurons]
         return self.dense_input[rf]
 
-    def apply_boosting(self, overlaps):
-        self.newborn_stage_controller.apply_boosting(overlaps)
-
     def apply_noisy_potentiation(self, potentials):
         """
         Apply random noise to the neurons' potentials. Mutates the input array.
@@ -298,7 +292,6 @@ class SpatialPooler:
         are more efficient in average (hence, less synaptogenesis score) to have less
         noise mass, while in opposite case this mass is bigger.
         """
-        return
         if np.isclose(self.noise_input, 0.):
             return
 
@@ -308,49 +301,8 @@ class SpatialPooler:
         w_noise = self.noise_input / self.output_size**0.7
         potentials += self.rng.normal(loc=w_noise, scale=w_noise, size=self.output_size)
 
-    def select_winners(self):
-        if self.sample_winners:
-            winners, strongest_winner = self._sample_winners()
-        else:
-            winners, strongest_winner = self._select_winners()
-
-        self.winners, self.winners_value = define_winners(
-            potentials=self.potentials, winners=winners, output_mode=self.output_mode,
-            normalize_rates=self.normalize_rates, strongest_winner=self.strongest_winner
-        )
-
-    def _select_winners(self):
-        n_winners = self.output_sds.active_size
-
-        winners = np.argpartition(self.potentials, -n_winners)[-n_winners:]
-        self.strongest_winner = cast(int, winners[np.argmax(self.potentials[winners])])
-        winners.sort()
-        return winners, self.strongest_winner
-
-    def _sample_winners(self):
-        n_winners = self.output_sds.active_size
-
-        n_pot_winners = min(round(self.sample_winners_frac*n_winners), self.potentials.size)
-        pot_winners = np.argpartition(self.potentials, -n_pot_winners)[-n_pot_winners:]
-        self.strongest_winner = cast(int, pot_winners[np.argmax(self.potentials[pot_winners])])
-
-        probs = self.potentials[pot_winners]**2 + 1e-10
-        norm = np.sum(probs)
-
-        winners = self.rng.choice(
-            pot_winners, size=n_winners, replace=False,
-            p=safe_divide(probs, norm)
-        )
-        winners.sort()
-        return winners, self.strongest_winner
-
-    def accept_winners(
-            self, winners: SparseSdr,
-            winners_value: float | npt.NDArray[float], strongest_winner: int
-    ):
+    def accept_winners(self, winners: RateSdr):
         self.winners = winners
-        self.winners_value = winners_value
-        self.strongest_winner = strongest_winner
 
     def reinforce_winners(self, matched_input_activity, learn: bool):
         if not learn or len(self.sparse_input) == 0:
@@ -358,7 +310,7 @@ class SpatialPooler:
 
         # TODO: add LTD
 
-        self.stdp(self.winners, matched_input_activity[self.winners])
+        self.stdp(self.winners, matched_input_activity[self.winners.sdr])
         # if not self.is_newborn_phase:
         #     self.activate_synaptogenesis_step(self.winners)
 
@@ -390,12 +342,14 @@ class SpatialPooler:
         pre_synaptic_activity: dense array n_neurons x RF_size with their synaptic activations
         modulation: a modulation coefficient for the update step
         """
+        neurons, rates = split_sdr_values(neurons)
+
         if len(neurons) == 0:
             return
 
         pre_rates = pre_synaptic_activity
-        # post_rates = self.winners_value
-        post_rates = self.potentials[neurons]
+        post_rates = rates
+        # post_rates = self.potentials[neurons]
         post_rates = np.expand_dims(post_rates, -1)
 
         lr = self.modulation * modulation * self.learning_rate
@@ -418,12 +372,14 @@ class SpatialPooler:
         pre_synaptic_activity: dense array n_neurons x RF_size with their synaptic activations
         modulation: a modulation coefficient for the update step
         """
+        neurons, rates = split_sdr_values(neurons)
+
         if len(neurons) == 0:
             return
 
         pre_rates = pre_synaptic_activity
-        # post_rates = self.winners_value
-        post_rates = self.potentials[neurons]
+        post_rates = rates
+        # post_rates = self.potentials[neurons]
         post_rates = np.expand_dims(post_rates, -1)
 
         lr = modulation * self.learning_rate
@@ -434,8 +390,6 @@ class SpatialPooler:
         self.weights[neurons] = normalize_weights(w + dw)
 
     def select_output(self):
-        if self.output_mode == OutputMode.RATE:
-            return RateSdr(self.winners, values=self.winners_value)
         return self.winners
 
     def accept_output(self, sdr: SparseSdr, *, learn: bool):

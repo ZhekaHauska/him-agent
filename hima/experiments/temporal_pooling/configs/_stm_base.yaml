@@ -176,14 +176,11 @@ spatial_pooler:
 
     # learning
     learning_rate: 0.01
-    learning_algo: new
     synaptogenesis_cycle: 20.0
 
     # output
     output_sds: ???
     output_mode: binary
-    sample_winners: false
-    normalize_rates: true
 
   # Compartment for MultiCompartment SP
   default_layer_compartment:
