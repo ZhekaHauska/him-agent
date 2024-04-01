@@ -12,7 +12,7 @@ from hima.common.sdr import SparseSdr
 from hima.common.sdrr import split_sdr_values
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
+from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy, TMetrics
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     RepeatingCountdown,
@@ -22,8 +22,8 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 
 class SdrTracker:
     sds: Sds
-    step_flush_scheduler: RepeatingCountdown
-    aggregate_flush_scheduler: RepeatingCountdown
+    step_flush_countdown: RepeatingCountdown
+    aggregate_flush_countdown: RepeatingCountdown
 
     # NB: ..._relative_rate means relative to the expected sds active size
 
@@ -38,25 +38,27 @@ class SdrTracker:
             self, sds: Sds, step_flush_schedule: int = None, aggregate_flush_schedule: int = None
     ):
         self.sds = sds
-        self.step_flush_scheduler = make_repeating_counter(step_flush_schedule)
-        self.aggregate_flush_scheduler = make_repeating_counter(aggregate_flush_schedule)
+        self.step_flush_countdown = make_repeating_counter(step_flush_schedule)
+        self.aggregate_flush_countdown = make_repeating_counter(aggregate_flush_schedule)
 
         self.prev_sdr = set()
-        self.sdr_size = MeanValue()
-        self.sym_similarity = MeanValue()
-        self.histogram = MeanValue(size=self.sds.size)
-        self.histogram.put(self.sds.sparsity)
+        fast_lr = LearningRateParam(window=1_000)
+        slow_lr = LearningRateParam(window=10_000)
 
+        self.sdr_size = MeanValue(lr=fast_lr)
+        self.sym_similarity = MeanValue(lr=fast_lr)
+        self.histogram = MeanValue(
+            size=self.sds.size, lr=slow_lr, initial_value=self.sds.sparsity
+        )
         self.union = set()
 
     def _reset_step_metrics(self):
-        self.sdr_size.reset()
-        self.sym_similarity.reset()
+        # self.sdr_size.reset(hard=True)
+        # self.sym_similarity.reset(hard=True)
+        pass
 
     def _reset_aggregate_metrics(self):
-        self.histogram.reset()
-        self.histogram.put(self.sds.sparsity)
-
+        # self.histogram.reset(hard=True)
         self.union.clear()
 
     def on_sdr_updated(self, sdr: SparseSdr, ignore: bool) -> TMetrics:
@@ -79,11 +81,11 @@ class SdrTracker:
         self.prev_sdr = sdr
 
         metrics = {}
-        flush_step_now, self.step_flush_scheduler = tick(self.step_flush_scheduler)
+        flush_step_now, self.step_flush_countdown = tick(self.step_flush_countdown)
         if flush_step_now:
             metrics |= self.flush_step_metrics()
 
-        flush_aggregate_now, self.aggregate_flush_scheduler = tick(self.aggregate_flush_scheduler)
+        flush_aggregate_now, self.aggregate_flush_countdown = tick(self.aggregate_flush_countdown)
         if flush_aggregate_now:
             metrics |= self.flush_aggregate_metrics()
 
@@ -94,9 +96,9 @@ class SdrTracker:
             return {}
 
         metrics = {}
-        if is_infinite(self.step_flush_scheduler):
+        if is_infinite(self.step_flush_countdown):
             metrics |= self.flush_step_metrics()
-        if is_infinite(self.aggregate_flush_scheduler):
+        if is_infinite(self.aggregate_flush_countdown):
             metrics |= self.flush_aggregate_metrics()
         return metrics
 

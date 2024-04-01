@@ -13,7 +13,7 @@ import numpy.typing as npt
 from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stats.mc_sp_tracking_aggregator import \
     SpTrackingCompartmentalAggregator
-from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
+from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     RepeatingCountdown,
@@ -23,7 +23,7 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 
 class SpMatchingTracker:
     sp: Any
-    step_flush_scheduler: RepeatingCountdown
+    countdown: RepeatingCountdown
 
     potentials_quantile: float
 
@@ -38,18 +38,21 @@ class SpMatchingTracker:
         if not self.supported:
             return
 
-        self.step_flush_scheduler = make_repeating_counter(step_flush_schedule)
+        self.countdown = make_repeating_counter(step_flush_schedule)
 
         potentials_quantile = isnone(potentials_quantile, 3*sp.output_sds.sparsity)
         self.potentials_size = round(potentials_quantile * sp.output_sds.size)
-        self.potentials = MeanValue(size=self.potentials_size)
 
-        self.recognition_strength = MeanValue()
+        lr = LearningRateParam(window=10_000)
+        self.potentials = MeanValue(size=self.potentials_size, lr=lr)
+        self.recognition_strength = MeanValue(lr=lr)
+
         self.target_rf_size = round(sp.get_target_rf_sparsity() * sp.feedforward_sds.size)
 
     def _reset_aggregate_metrics(self):
-        self.potentials.reset()
-        self.recognition_strength.reset()
+        # self.potentials.reset(hard=True)
+        # self.recognition_strength.reset(hard=True)
+        pass
 
     def on_sp_computed(self, _, ignore: bool) -> TMetrics:
         if ignore:
@@ -64,7 +67,7 @@ class SpMatchingTracker:
             recognition_strength.mean() if len(recognition_strength) > 0 else 0.
         )
 
-        flush_now, self.step_flush_scheduler = tick(self.step_flush_scheduler)
+        flush_now, self.countdown = tick(self.countdown)
         if flush_now:
             return self.flush_aggregate_metrics()
         return {}
@@ -73,7 +76,7 @@ class SpMatchingTracker:
         if ignore:
             return {}
 
-        if is_infinite(self.step_flush_scheduler):
+        if is_infinite(self.countdown):
             return self.flush_aggregate_metrics()
         return {}
 

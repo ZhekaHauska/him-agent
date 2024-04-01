@@ -10,13 +10,18 @@ import numpy as np
 from hima.common.sdrr import AnySparseSdr, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.stats.mean_value import MeanValue
+from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics, sdr_similarity
+from hima.experiments.temporal_pooling.stp.sp_utils import (
+    RepeatingCountdown,
+    make_repeating_counter, tick, is_infinite
+)
 
 
 class SdrPredictionTracker:
     sds: Sds
     step_flush_schedule: int | None
+    countdown: RepeatingCountdown
 
     miss_rate: MeanValue[float]
     imprecision: MeanValue[float]
@@ -25,16 +30,17 @@ class SdrPredictionTracker:
 
     def __init__(self, sds: Sds, step_flush_schedule: int = None):
         self.sds = sds
-        self.step_flush_schedule = step_flush_schedule
+        self.countdown = make_repeating_counter(step_flush_schedule)
 
         self.dense_cache = np.zeros(sds.size, dtype=float)
         self.predicted_sdr = []
         self.observed_sdr = []
 
-        self.miss_rate = MeanValue()
-        self.imprecision = MeanValue()
-        self.prediction_volume = MeanValue()
-        self.dissimilarity = MeanValue()
+        lr = LearningRateParam(window=1_000)
+        self.miss_rate = MeanValue(lr=lr)
+        self.imprecision = MeanValue(lr=lr)
+        self.prediction_volume = MeanValue(lr=lr)
+        self.dissimilarity = MeanValue(lr=lr)
 
     def on_sdr_predicted(self, sdr: AnySparseSdr, ignore: bool) -> TMetrics:
         if ignore:
@@ -88,7 +94,8 @@ class SdrPredictionTracker:
         self.predicted_sdr = None
         self.observed_sdr = None
 
-        if self.miss_rate.n_steps == self.step_flush_schedule:
+        is_now, self.countdown = tick(self.countdown)
+        if is_now:
             return self.flush_step_metrics()
         return {}
 
@@ -96,14 +103,11 @@ class SdrPredictionTracker:
         if ignore:
             return {}
 
-        if self.step_flush_schedule is None:
+        if is_infinite(self.countdown):
             return self.flush_step_metrics()
         return {}
 
     def flush_step_metrics(self) -> TMetrics:
-        if self.miss_rate.n_steps == 0:
-            return {}
-
         miss_rate = self.miss_rate.get()
         imprecision = self.imprecision.get()
         f1_score = safe_divide(
@@ -122,10 +126,7 @@ class SdrPredictionTracker:
         return metrics
 
     def _reset_step_metrics(self):
-        self.miss_rate.reset()
-        self.imprecision.reset()
-        self.prediction_volume.reset()
-        self.dissimilarity.reset()
+        pass
 
 
 def get_sdr_prediction_tracker(on: dict, **config) -> SdrPredictionTracker:

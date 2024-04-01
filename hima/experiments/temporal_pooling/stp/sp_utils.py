@@ -5,8 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 from numba import jit
 from numpy import typing as npt
@@ -64,7 +62,7 @@ RepeatingCountdown = tuple[int, int]
 
 
 @jit(inline='always')
-def make_repeating_counter(ticks: int) -> RepeatingCountdown:
+def make_repeating_counter(ticks: int | None) -> RepeatingCountdown:
     if ticks is None:
         ticks = -1
     return ticks, ticks

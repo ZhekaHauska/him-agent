@@ -191,6 +191,25 @@ spatial_pooler:
     seed: ???
     # input
     feedforward_sds: ???
+
+    rf_sparsity: 0.6
+    rf_to_input_ratio: 0.75
+
+    # learning
+    learning_rate: 0.01
+    learning_algo: new
+    synaptogenesis_cycle: 5.0
+
+    # output
+    output_sds: ???
+    output_mode: binary
+
+  # Compartment for MultiCompartment SP
+  default_layer_compartment_bckp:
+    _type_: sp.layer
+    seed: ???
+    # input
+    feedforward_sds: ???
     connectable_ff_size: ...
     adapt_to_ff_sparsity: False
 
@@ -249,6 +268,7 @@ decoder:
     epoch_size: 1_000
     total_updates_required: 1_000_000
     collect_errors: False
+    output_mode: rate
   torch_mlp:
     _base_: mlp
     _type_: decoder.mlp_torch
