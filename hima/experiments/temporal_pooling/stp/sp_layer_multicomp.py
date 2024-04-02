@@ -47,7 +47,7 @@ class SpatialPooler:
     product_weight: float
 
     # potentiation and learning
-    potentials: np.ndarray
+    potentials: npt.NDArray[float]
     learning_rate: float
     modulation: float
     synaptogenesis_stats_update_countdown: RepeatingCountdown
@@ -56,6 +56,8 @@ class SpatialPooler:
     output_sds: Sds
     output_mode: OutputMode
 
+    activation_threshold: float
+    activation_threshold_learn_countdown: RepeatingCountdown
     winners: SparseSdr
     winners_value: float | npt.NDArray[float]
 
@@ -113,6 +115,7 @@ class SpatialPooler:
 
         self.raw_logits = np.zeros(self.output_size)
         self.activation_threshold = 0.0
+        self._predict_mode = False
         self.winners = np.empty(0, dtype=int)
         self.winners_value = 1.0
 
@@ -135,6 +138,7 @@ class SpatialPooler:
 
         slow_lr = LearningRateParam(window=400_000)
         fast_lr = LearningRateParam(window=40_000)
+        very_fast_lr = LearningRateParam(window=400)
 
         self.computation_speed = MeanValue(lr=slow_lr)
         self.slow_recognition_strength_trace = MeanValue(lr=slow_lr)
@@ -147,7 +151,12 @@ class SpatialPooler:
 
         # NB: threshold trackers
         self.slow_output_size_trace = MeanValue(lr=slow_lr)
-        self.slow_output_sdr_size_trace = MeanValue(lr=slow_lr)
+        self.fast_output_sdr_size_trace = MeanValue(
+            lr=very_fast_lr, initial_value=self.output_sds.active_size
+        )
+        self.activation_threshold_learn_countdown = make_repeating_counter(
+            self.fast_output_sdr_size_trace.safe_window
+        )
 
         # synchronize selected attributes for compartments with the main SP
         for comp_name in self.compartments:
@@ -159,8 +168,15 @@ class SpatialPooler:
         self.computation_speed.put(run_time)
         return output_sdr
 
+    def predict(self, input_sdr: CompartmentsAnySparseSdr) -> AnySparseSdr:
+        """Compute the output SDR."""
+        output_sdr, run_time = self._predict(input_sdr)
+        self.computation_speed.put(run_time)
+        return output_sdr
+
     @timed
     def _compute(self, input_sdr: CompartmentsAnySparseSdr, learn: bool) -> AnySparseSdr:
+        self._predict_mode = False
         self.accept_input(input_sdr, learn=learn)
 
         matched_input_activity = self.match_input()
@@ -175,14 +191,9 @@ class SpatialPooler:
 
         return output_sdr
 
-    def predict(self, input_sdr: CompartmentsAnySparseSdr) -> AnySparseSdr:
-        """Compute the output SDR."""
-        output_sdr, run_time = self._predict(input_sdr)
-        self.computation_speed.put(run_time)
-        return output_sdr
-
     @timed
     def _predict(self, input_sdr: CompartmentsAnySparseSdr) -> AnySparseSdr:
+        self._predict_mode = True
         self.accept_input(input_sdr, learn=False)
 
         self.match_input()
@@ -235,10 +246,6 @@ class SpatialPooler:
         if not learn:
             return
 
-        n_winners = len(self.winners)
-        sign = 1. if n_winners > self.output_sds.active_size else -1.
-        self.activation_threshold += sign * self.learning_rate / 10
-
         for comp_name in self.compartments:
             self.compartments[comp_name].reinforce_winners(
                 matched_input_activity[comp_name], learn
@@ -272,12 +279,13 @@ class SpatialPooler:
         self.winners, self.winners_value = self._select_winners_by_threshold()
 
     def _select_winners_by_threshold(self):
-        # logits = self.potentials ** 2
-        # l2_logits = logits.sum()
-        # if not np.isclose(l2_logits, 0.):
-        #     logits /= l2_logits
+        logits = self.potentials ** 2
+        l2_logits = logits.sum()
+        if not np.isclose(l2_logits, 0.):
+            logits /= l2_logits
 
-        logits = softmax(self.potentials)
+        # logits = softmax(self.potentials)
+
         winners = np.flatnonzero(logits >= self.activation_threshold)
         winners_value = logits[winners]
 
@@ -297,20 +305,29 @@ class SpatialPooler:
             self.compartments[comp_name].accept_output(sdr, learn=learn)
 
         sdr, value = split_sdr_values(sdr)
-        if not learn or sdr.shape[0] == 0:
+        if not learn:
             return
 
         # update winners activation stats
         self.slow_output_trace.put(value, sdr)
+
         # FIXME: make two metrics: for pre-weighting, post weighting delta
-        self.slow_recognition_strength_trace.put(
-            self.potentials[sdr].mean()
-        )
+        avg_winner_potential = self.potentials[sdr].mean() if len(sdr) > 0 else 0.
+        self.slow_recognition_strength_trace.put(avg_winner_potential)
 
         self.fast_output_trace.put(value, sdr)
 
-        self.slow_output_sdr_size_trace.put(len(sdr))
+        self.fast_output_sdr_size_trace.put(len(sdr))
         self.slow_output_size_trace.put(value.sum())
+
+        is_now, self.activation_threshold_learn_countdown = tick(
+            self.activation_threshold_learn_countdown
+        )
+        if is_now:
+            n_winners = self.fast_output_sdr_size_trace.get()
+            # print(f'{len(self.winners)} | {n_winners:.1f} | {self.activation_threshold:.5f}')
+            err = np.clip(n_winners - self.output_sds.active_size, -5.0,5.0)
+            self.activation_threshold += err * 0.0001
 
     def process_feedback(self, feedback_sdr: SparseSdr, modulation: float = 1.0):
         raise NotImplementedError('Not implemented yet')
@@ -384,16 +401,12 @@ class SpatialPooler:
             f' | {safe_divide(self.synaptogenesis_cnt_successful, self.synaptogenesis_cnt):.2f}'
             f' | {np.sum(self.synaptogenesis_score):.2f}'
             f' || {self.activation_threshold:.2f}'
-            f' | {self.slow_output_sdr_size_trace.get():.1f}'
+            f' | {self.fast_output_sdr_size_trace.get():.1f}'
             f' | {self.slow_output_size_trace.get():.2f}'
         )
 
         self.synaptogenesis_cnt = 0
         self.synaptogenesis_cnt_successful = 0
-
-        self.decay_stat_trackers()
-        for compartment in self.compartments.values():
-            compartment.decay_stat_trackers()
 
     def apply_synaptogenesis_to_metric(
             self, metric: npt.NDArray[float], low: float, high: float, prob_power: float = 1.5,

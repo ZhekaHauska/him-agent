@@ -81,7 +81,7 @@ TM:
   stm_compartment:
     # config for a compartment of a multi-compartmental STM (stm_mc)
     _base_: $_stm_base.spatial_pooler.default_layer_compartment
-    learning_algo: new_sq
+    learning_algo: new
 
   stm_mc:
     # built on the multi-compartmental SP layer version

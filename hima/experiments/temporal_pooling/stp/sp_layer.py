@@ -43,7 +43,7 @@ class SpatialPooler:
     dense_input: DenseSdr
 
     # potentiation and learning
-    potentials: np.ndarray
+    potentials: npt.NDArray[float]
     learning_rate: float
     modulation: float
 
@@ -109,7 +109,7 @@ class SpatialPooler:
         self.output_mode = OutputMode[output_mode.upper()]
         self.activation_threshold = 0.
 
-        self.potentials = np.zeros(self.output_size)
+        self.potentials = np.zeros(self.output_size, dtype=float)
         self.learning_algo = SpLearningAlgo[learning_algo.upper()]
         self.learning_rate = learning_rate
         self.stdp = self.get_learning_algos()[self.learning_algo]
@@ -176,6 +176,12 @@ class SpatialPooler:
         self.computation_speed.put(run_time)
         return output_sdr
 
+    def match_input(self):
+        """Compute the output SDR."""
+        matched_input_activity, run_time = self._match_input()
+        self.computation_speed.put(run_time)
+        return matched_input_activity
+
     @timed
     def _compute(self, input_sdr: AnySparseSdr, learn: bool) -> AnySparseSdr:
         self.accept_input(input_sdr, learn=learn)
@@ -194,12 +200,6 @@ class SpatialPooler:
         self.accept_output(output_sdr, learn=learn)
 
         return output_sdr
-
-    def match_input(self):
-        """Compute the output SDR."""
-        matched_input_activity, run_time = self._match_input()
-        self.computation_speed.put(run_time)
-        return matched_input_activity
 
     @timed
     def _match_input(self):
@@ -258,14 +258,6 @@ class SpatialPooler:
 
         self.slow_feedforward_size_trace.put(len(sdr))
 
-    def get_step_debug_info(self):
-        return {
-            'potentials': np.sort(self.potentials),
-            'recognition_strength': self.potentials[self.winners.sdr],
-            'weights': self.weights,
-            'rf': self.rf
-        }
-
     def try_activate_synaptogenesis(self, learn):
         if not learn:
             return
@@ -309,13 +301,11 @@ class SpatialPooler:
             return
 
         # TODO: add LTD
-
+        # noinspection PyTypeChecker
         self.stdp(self.winners, matched_input_activity[self.winners.sdr])
-        # if not self.is_newborn_phase:
-        #     self.activate_synaptogenesis_step(self.winners)
 
     def _stdp(
-            self, neurons: SparseSdr, pre_synaptic_activity: npt.NDArray[float],
+            self, neurons: RateSdr, pre_synaptic_activity: npt.NDArray[float],
             modulation: float = 1.0
     ):
         if len(neurons) == 0:
@@ -330,7 +320,7 @@ class SpatialPooler:
         self.weights[neurons] = normalize_weights(w + dw_matched)
 
     def _stdp_new(
-            self, neurons: SparseSdr, pre_synaptic_activity: npt.NDArray[float],
+            self, neurons: RateSdr, pre_synaptic_activity: npt.NDArray[float],
             modulation: float = 1.0
     ):
         """
@@ -360,7 +350,7 @@ class SpatialPooler:
         self.weights[neurons] = normalize_weights(w + dw)
 
     def _stdp_new_squared(
-            self, neurons: SparseSdr, pre_synaptic_activity: npt.NDArray[float],
+            self, neurons: RateSdr, pre_synaptic_activity: npt.NDArray[float],
             modulation: float = 1.0
     ):
         """
@@ -378,14 +368,13 @@ class SpatialPooler:
             return
 
         pre_rates = pre_synaptic_activity
-        post_rates = rates
-        # post_rates = self.potentials[neurons]
-        post_rates = np.expand_dims(post_rates, -1)
+        post_rates = np.expand_dims(rates, -1)
+        lin_act = np.expand_dims(self.potentials[neurons], -1)
 
         lr = modulation * self.learning_rate
 
         w = self.weights[neurons]
-        dw = lr * post_rates * (pre_rates - post_rates * w)
+        dw = lr * post_rates * (pre_rates - lin_act * w)
 
         self.weights[neurons] = normalize_weights(w + dw)
 
@@ -415,16 +404,6 @@ class SpatialPooler:
         fb_match_mask = self.match_current_input(with_neurons=feedback_sdr)
         # noinspection PyArgumentList
         self.stdp(feedback_sdr, fb_match_mask, modulation)
-
-    def shrink_receptive_field(self):
-        self.newborn_stage_controller.shrink_receptive_field()
-        self.decay_stat_trackers()
-
-        if not self.is_newborn_phase:
-            # it is ended
-            self.on_end_newborn_phase()
-
-        print(f'{self.output_entropy():.3f} | {self.recognition_strength:.1f}')
 
     def recalculate_synaptogenesis_score(self):
         # NB: usually we work in log-space => log_ prefix is mostly omit for vars
@@ -470,7 +449,6 @@ class SpatialPooler:
         )
 
         self.synaptogenesis_cnt = 0
-        self.decay_stat_trackers()
 
     def apply_synaptogenesis_to_metric(
             self, metric: npt.NDArray[float], low: float, high: float,
@@ -503,14 +481,6 @@ class SpatialPooler:
         to_change_ix = np.argmin(self.weights[neuron])
         self.assign_new_synapses(neuron, to_change_ix, syn)
         return True
-
-    def resample_synapses(self, neurons: npt.NDArray[int]):
-        ip = np.exp(self.slow_health_check_results['ln(ip)'])
-        ff_sample_distr = ip / ip.sum()
-        new_synapses = self.rng.choice(self.ff_size, size=neurons.size, p=ff_sample_distr)
-        to_change_ix = np.argmin(self.weights[neurons], axis=1)
-
-        self.assign_new_synapses(neurons, to_change_ix, new_synapses)
 
     def assign_new_synapses(
             self, neurons: npt.NDArray[int] | int,
@@ -652,14 +622,6 @@ class SpatialPooler:
             'std(ln(nrfe_out))': appx_std_log_nrfe_out,
         }
 
-    def on_end_newborn_phase(self):
-        self.synaptogenesis_countdown = make_repeating_counter(self.synaptogenesis_schedule)
-        print(f'Become adult: {self.sng_state_str()}')
-
-    def get_active_rf(self, weights):
-        w_thr = 1 / self.rf_size
-        return weights >= w_thr
-
     def get_target_rf_sparsity(self):
         return self.rf_sparsity
 
@@ -706,6 +668,14 @@ class SpatialPooler:
             f' | {self.learning_rate:.3f}'
             f' | {self.synaptogenesis_countdown[0]}'
         )
+
+    def get_step_debug_info(self):
+        return {
+            'potentials': np.sort(self.potentials),
+            'recognition_strength': self.potentials[self.winners.sdr],
+            'weights': self.weights,
+            'rf': self.rf
+        }
 
     @property
     def feedforward_rate(self):
