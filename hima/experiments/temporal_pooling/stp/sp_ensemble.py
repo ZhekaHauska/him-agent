@@ -84,7 +84,8 @@ class SpatialPoolerGroupedWrapper(SpatialPoolerGrouped):
         if isinstance(input_sdr, SDR):
             input_sdr = input_sdr.sparse.copy()
 
-        result = super().compute(input_sdr, learn=learn)
+        for _ in range(int(self.modulation)):
+            result = super().compute(input_sdr, learn=learn)
 
         if output_sdr is not None:
             output_sdr.sparse = result

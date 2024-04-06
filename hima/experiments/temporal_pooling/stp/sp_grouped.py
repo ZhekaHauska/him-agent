@@ -47,6 +47,7 @@ class SpatialPoolerGrouped(SpatialPooler):
         self.group_shifts = np.arange(self.n_groups) * self.group_size
         self.cross_group_inhibition_scale = cross_group_inhibition_scale
         self.sub_winners = []
+        self.modulation = 1.0
 
     def select_winners(self, learn=False):
         overlaps_grouped = self.potentials.reshape(self.n_groups, -1)
