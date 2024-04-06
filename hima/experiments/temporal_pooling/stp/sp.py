@@ -258,11 +258,11 @@ class SpatialPooler:
     def shrink_receptive_field(self):
         self.newborn_pruning_stage += 1
 
-        if self.newborn_pruning_mode == 'linear':
+        if self.newborn_pruning_mode == SpNewbornPruningMode.LINEAR:
             new_sparsity = self.newborn_linear_progress(
                 initial=self.initial_rf_sparsity, target=self.get_target_rf_sparsity()
             )
-        elif self.newborn_pruning_mode == 'powerlaw':
+        elif self.newborn_pruning_mode == SpNewbornPruningMode.POWERLAW:
             new_sparsity = self.newborn_powerlaw_progress(
                 current=self.rf_sparsity, target=self.get_target_rf_sparsity()
             )
@@ -307,7 +307,7 @@ class SpatialPooler:
     def prune_grow_synapses(self):
         # FIXME: implement prune/grow
         print(
-            f'{self.output_entropy():.3f}'
+            f'{self.output_entropy:.3f}'
             f' | {self.recognition_strength:.1f}'
         )
 
@@ -393,6 +393,7 @@ class SpatialPooler:
     def rf_match_trace(self):
         return self.feedforward_trace[self.rf]
 
+    @property
     def output_entropy(self):
         return entropy(self.output_rate, sds=self.output_sds)
 
