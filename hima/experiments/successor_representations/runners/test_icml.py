@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import pickle
 import sys
 import os
 from typing import Union, Any
@@ -94,6 +95,10 @@ class ICMLRunner(BaseRunner):
                 agent.cortical_column.layer.n_obs_vars, -1
             )
         return obs_rewards
+
+    @property
+    def real_reward(self):
+        return self.agent.real_reward.reshape(self.environment.raw_obs_shape)
 
     @property
     def real_reward(self):
@@ -223,6 +228,29 @@ class ICMLRunner(BaseRunner):
     @property
     def sf_diff(self):
         return np.mean(self.agent.predicted_sf - self.agent.planned_sf)
+
+    def save_encoder(self, path):
+        with open(
+            os.path.join(path,
+             f'{self.logger.name}_{self.episodes}episodes_sp.pkl'),
+            'wb'
+        ) as file:
+            pickle.dump(
+            {
+                    'encoder': self.agent.agent.cortical_column.encoder,
+                    'camera': self.agent.camera,
+                    'decoder': self.agent.agent.cortical_column.decoder
+                },
+                file=file
+            )
+
+    def load_encoder_state(self, file_path):
+        with open(file_path, 'rb') as file:
+            state_dict = pickle.load(file)
+
+        self.agent.agent.cortical_column.encoder = state_dict['encoder']
+        self.agent.agent.cortical_column.decoder = state_dict['decoder']
+        self.agent.camera = state_dict['camera']
 
 
 def main(config_path):
