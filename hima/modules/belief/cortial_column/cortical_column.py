@@ -28,6 +28,10 @@ class CorticalColumn:
         self.encoder = encoder
         self.decoder = decoder
 
+        self.learn_layer = True
+        self.learn_encoder = True
+        self.learn_decoder = True
+
         self.predicted_image = None
         self.surprise = 0
 
@@ -50,24 +54,24 @@ class CorticalColumn:
             external_messages = None
 
         self.layer.set_external_messages(external_messages)
-        self.layer.predict(learn=learn)
+        self.layer.predict(learn=learn and self.learn_layer)
 
         self.input_sdr.sparse = local_input
 
         if self.decoder is not None:
             self.predicted_image = self.decoder.decode(
-                self.layer.prediction_columns, learn=learn, correct_obs=self.input_sdr.dense
+                self.layer.prediction_columns, learn=learn and self.learn_decoder, correct_obs=self.input_sdr.dense
             )
         else:
             self.predicted_image = self.layer.prediction_columns
 
         # observe real outcome and optionally learn using prediction error
         if self.encoder is not None:
-            self.encoder.compute(self.input_sdr, learn, self.output_sdr)
+            self.encoder.compute(self.input_sdr, learn and self.learn_encoder, self.output_sdr)
         else:
             self.output_sdr.sparse = self.input_sdr.sparse
 
-        self.layer.observe(self.output_sdr.sparse, learn=learn)
+        self.layer.observe(self.output_sdr.sparse, learn=learn and self.learn_layer)
         self.layer.set_context_messages(self.layer.internal_messages)
 
         self.surprise = 0
