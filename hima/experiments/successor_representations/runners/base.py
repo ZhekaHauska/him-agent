@@ -15,7 +15,7 @@ class BaseAgent:
     initial_action: int | None
     state_value: float
 
-    def observe(self, events, action):
+    def observe(self, events, action, reward=0):
         raise NotImplementedError
 
     def sample_action(self):
@@ -198,7 +198,7 @@ class BaseRunner:
                         break
 
                 # observe events_t and action_{t-1}
-                self.agent.observe(self.obs, self.action)
+                self.agent.observe(self.obs, self.action, self.reward)
                 self.agent.reinforce(self.reward)
 
                 if not self.end_of_episode:

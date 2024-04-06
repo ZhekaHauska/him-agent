@@ -51,6 +51,8 @@ class BioAgentWrapper(BaseAgent):
         self.camera_mode = conf['camera_mode']
         self.events = None
         self.steps = 0
+        self.reward_attention = conf['reward_attention']
+        self.real_reward = np.zeros(np.prod(conf['raw_obs_shape']))
 
         if self.camera_mode is not None:
             self.camera = DVS(conf['raw_obs_shape'], self.camera_mode, self.seed)
@@ -160,7 +162,7 @@ class BioAgentWrapper(BaseAgent):
             self.initial_context = self.agent.cortical_column.layer.context_messages
             self.initial_external_message = None
 
-    def observe(self, obs, action):
+    def observe(self, obs, action, reward=0):
         if self.reset_context_period is not None:
             if self.steps % self.reset_context_period == 0:
                 self.agent.cortical_column.layer.context_messages = self.initial_context
@@ -171,6 +173,12 @@ class BioAgentWrapper(BaseAgent):
             self.events = self.camera.capture(obs)
         else:
             self.events = obs
+
+        modulation = max(
+            self.reward_attention * int(reward > 0), 1
+        )
+        self.real_reward[self.events] += reward * modulation
+        self.agent.cortical_column.encoder.modulation = modulation
 
         return self.agent.observe((self.events, action), learn=True)
 
