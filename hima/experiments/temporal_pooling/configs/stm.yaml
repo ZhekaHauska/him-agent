@@ -81,7 +81,7 @@ TM:
   stm_compartment:
     # config for a compartment of a multi-compartmental STM (stm_mc)
     _base_: $_stm_base.spatial_pooler.default_layer_compartment
-    learning_algo: new
+    learning_algo: new_sq
 
   stm_mc:
     # built on the multi-compartmental SP layer version
@@ -90,12 +90,12 @@ TM:
     compartments_config:
       feedforward:
         _base_: TM.stm_compartment
-#        rf_to_input_ratio: 0.4
-        rf_to_input_ratio: 10.0
+        rf_to_input_ratio: 3.0
+#        rf_to_input_ratio: 2.0
       state:
         _base_: TM.stm_compartment
-#        rf_to_input_ratio: 0.4
-        rf_to_input_ratio: 15.0
+        rf_to_input_ratio: 3.0
+#        rf_to_input_ratio: 2.0
       context:
         _base_: TM.stm_compartment
 #        rf_to_input_ratio: 0.4
@@ -103,7 +103,7 @@ TM:
 
     product_weight: 0.0
     compartments_weight:
-      feedforward: 4.0
+      feedforward: 2.0
       state: 3.0
       context: 2.0
 
@@ -222,7 +222,9 @@ blocks:
     _type_: block.concatenator
   decoder:
     _type_: block.decoder
-    decoder: $_stm_base.decoder.mlp
+    decoder:
+      _base_: $_stm_base.decoder.mlp
+      output_mode: rate
   TM:
     _type_: block.stm_mc
     _base_: $_stm_base.blocks.tm_like
@@ -260,7 +262,7 @@ datas:
       _base_: $_stm_base.encoder.bucket
       n_values: 27
       bucket_size: 5
-      output_mode: binary
+      output_mode: rate
     sequential: True
   text_sequences_rnd:
     _base_: $_stm_base.dataset.text_sequences

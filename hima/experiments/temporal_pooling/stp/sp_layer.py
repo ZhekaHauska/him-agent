@@ -231,7 +231,7 @@ class SpatialPooler:
         should_normalize = not self.is_bound_input and not np.isclose(l2_value, 0.)
         should_normalize = True
         if not self.is_empty_input and should_normalize:
-            value /= l2_value
+            value = value / l2_value
 
         # NB: in case of Rate SDR, we induce a noise level — the rest of the input mass
         if self.is_bound_input:
@@ -720,16 +720,17 @@ class SpatialPooler:
 
 
 def normalize_weights(weights: npt.NDArray[float], power=2):
-    normalizer = np.abs(weights)
-    if power > 1:
-        normalizer = normalizer ** 2
+    if power == 2:
+        normalizer = np.square(weights)
+    else:
+        normalizer = np.abs(weights)
 
     if weights.ndim == 2:
         normalizer = normalizer.sum(axis=1, keepdims=True)
     else:
         normalizer = normalizer.sum()
 
-    if power > 1:
-        normalizer = normalizer ** (1 / power)
+    if power == 2:
+        normalizer = np.sqrt(normalizer)
 
     return np.clip(weights / normalizer, 0., 1)

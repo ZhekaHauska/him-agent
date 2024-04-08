@@ -282,11 +282,16 @@ class SpatialPooler:
         logits = self.potentials ** 2
         l2_logits = logits.sum()
         if not np.isclose(l2_logits, 0.):
-            logits /= l2_logits
+            logits /= np.sqrt(l2_logits)
 
         # logits = softmax(self.potentials)
 
-        winners = np.flatnonzero(logits >= self.activation_threshold)
+        if self._predict_mode:
+            threshold = 0.01
+        else:
+            threshold = self.activation_threshold
+
+        winners = np.flatnonzero(logits >= threshold)
         winners_value = logits[winners]
 
         # NB: output normalization???
