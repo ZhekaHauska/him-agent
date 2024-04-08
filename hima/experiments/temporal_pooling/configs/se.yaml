@@ -1,4 +1,4 @@
-_type_: stp_experiment.sp_encoder
+_type_: stp_experiment.se
 project: stp.sp_encoder_mnist
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 

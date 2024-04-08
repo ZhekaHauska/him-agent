@@ -61,7 +61,7 @@ class AttractionConfig:
         self.learn_in_attraction = learn_in_attraction
 
 
-class SpEncoderExperiment:
+class SpatialEncoderExperiment:
     training: TrainConfig
     attraction: AttractionConfig
     testing: TestConfig

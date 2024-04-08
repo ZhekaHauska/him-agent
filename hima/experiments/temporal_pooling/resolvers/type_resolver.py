@@ -172,9 +172,12 @@ def _resolve_runner(type_tag: str):
     if type_tag == 'stp_experiment.synthetic_sequences':
         from hima.experiments.temporal_pooling.test_stp import StpExperiment
         return StpExperiment
-    if type_tag == 'stp_experiment.tm_sequence_learning':
-        from hima.experiments.temporal_pooling.test_new_tm import NewTmExperiment
+    if type_tag == 'stp_experiment.stm':
+        from hima.experiments.temporal_pooling.test_stm import NewTmExperiment
         return NewTmExperiment
+    if type_tag == 'stp_experiment.se':
+        from hima.experiments.temporal_pooling.test_se_mnist import SpatialEncoderExperiment
+        return SpatialEncoderExperiment
     if type_tag == 'stp_experiment.neurogenesis':
         from hima.experiments.temporal_pooling.test_neurogenesis import NeurogenesisExperiment
         return NeurogenesisExperiment
@@ -194,7 +197,7 @@ def _resolve_runner(type_tag: str):
         )
         return SpAttractorExperiment
     if type_tag == 'stp_experiment.sp_encoder':
-        from hima.experiments.temporal_pooling.test_encoder_mnist import (
+        from hima.experiments.temporal_pooling.test_dhtm_encoder_mnist import (
             SpEncoderExperiment
         )
         return SpEncoderExperiment
