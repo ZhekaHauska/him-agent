@@ -131,6 +131,9 @@ class SdrTracker:
         return metrics
 
 
-def get_sdr_tracker(on: dict, **config) -> SdrTracker:
+def get_sdr_tracker(on: dict = None, **config) -> SdrTracker:
+    if on is None:
+        return SdrTracker(**config)
+
     tracked_stream = on['sdr_updated']
     return SdrTracker(sds=tracked_stream.sds, **config)

@@ -898,10 +898,17 @@ class SpatialPooler:
         self.output_sds = output_sds
         self.output_sdr_size = output_sds.size
 
+        if len(feedforward_sds.shape) != len(output_sds.shape):
+            ff_shape = (feedforward_sds.size, )
+            out_shape = (output_sds.size, )
+        else:
+            ff_shape = feedforward_sds.shape
+            out_shape = output_sds.shape
+
         permanence_increase, permanence_decrease = synapse_permanence_deltas
         self._spatial_pooler = HtmSpatialPooler(
-            inputDimensions=feedforward_sds.shape,
-            columnDimensions=output_sds.shape,
+            inputDimensions=ff_shape,
+            columnDimensions=out_shape,
             potentialRadius=feedforward_sds.size,
             potentialPct=potential_synapses_ratio,
             globalInhibition=True,

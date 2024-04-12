@@ -1,40 +1,40 @@
 _type_: stp_experiment.se
-project: stp.sp_encoder_mnist
+project: stp.se_mnist
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 
 seed: 42
+output_sds: [400, 10]
+setup: setups.binary_basic_sp
+
 train:
-  _base_: train_setups.small
+  n_epochs: 5
+#  n_steps: 5_000
+  n_steps: ...
 test:
-  _base_: test_setups.small
+  eval_schedule: 5
+  n_epochs: 5
 
-encoder: sp.encoder
-decoder: naive
-decoder_noise: 0.00008
-plot_sample: False
-
-envs:
-  random_bits:
-    sds: [64, 0.375]
-    similarity_range: [0, 1]
+classifier:
+  feedforward_sds: ???
+  n_classes: ???
+  learning_rate: 0.003
+  collect_losses: 1000
 
 sp:
-  encoder:
+  htm_sp:
+    _type_: sp.htm
+    seed: ???
+    feedforward_sds: ???
+    output_sds: ???
+    potential_synapses_ratio: 0.6
+    synapse_permanence_deltas: [0.1, 0.01]
+    connected_permanence_threshold: 0.5
+    boost_strength: 0.5
+    boost_sliding_window: 10_000
+    expected_normal_overlap_frequency: 0.001
+  basic_sp:
     _base_: _common_base
-    output_sds: [500, 5]
-    target_rf_to_input_ratio: 0.3
-
-  grouped:
-    _type_: sp.grouped
-    _base_: _common_base
-    output_sds: [500, 5]
-    target_rf_to_input_ratio: 0.3
-
-  ensemble:
-    _type_: sp.ensemble
-    _base_: _common_base
-    n_sp: 5
-    output_sds: [100, 1]
+    output_sds: ???
     target_rf_to_input_ratio: 0.3
 
   _common_base:
@@ -51,20 +51,20 @@ sp:
     adapt_to_ff_sparsity: True
     boosting_k: 1.0
 
-train_setups:
-  full:
-    n_epochs: 20
-    n_steps: 1000
-  mid:
-    n_epochs: 10
-    n_steps: 1000
-  small:
-    n_epochs: 2
-    n_steps: 1000
+setups:
+  binary_htm_sp:
+    encoder: sp.htm_sp
+    input_mode: binary
+  binary_basic_sp:
+    encoder: sp.basic_sp
+    input_mode: binary
+#  rate_basic_sp:
+#    encoder: sp.basic_sp
+#    input_mode: rate
 
-test_setups:
-  small:
-    items_per_class: 20
+sdr_tracker:
+  _type_: tracker.sdr
+  sds: ???
 
 wandb_init:
   _base_: $_base.wandb_init

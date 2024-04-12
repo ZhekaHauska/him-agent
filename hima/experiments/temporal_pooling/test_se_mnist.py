@@ -3,21 +3,29 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
-from hima.common.sdr import SparseSdr, sparse_to_dense
+from hima.common.sdrr import OutputMode, split_sdr_values, AnySparseSdr
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
-from hima.common.utils import isnone, safe_divide, prepend_dict_keys
-from hima.experiments.sequence.runners.utils import get_surprise_2
-from hima.experiments.temporal_pooling.data.mnist import MnistDataset
+from hima.common.utils import isnone, prepend_dict_keys
+from hima.experiments.temporal_pooling.data.mnist_ext import MnistDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
+from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
+from hima.experiments.temporal_pooling.stp.mlp_classifier_torch import MlpClassifier
+from hima.experiments.temporal_pooling.stp.sp_utils import (
+    make_repeating_counter,
+    RepeatingCountdown, tick
+)
 from hima.experiments.temporal_pooling.utils import resolve_random_seed
 
 wandb = lazy_import('wandb')
@@ -27,43 +35,33 @@ pd = lazy_import('pandas')
 
 class TrainConfig:
     n_epochs: int
-    n_steps: int
+    n_steps: int | None
 
-    def __init__(self, n_epochs: int, n_steps: int):
+    def __init__(self, n_epochs: int, n_steps: int | None = None):
         self.n_epochs = n_epochs
         self.n_steps = n_steps
 
 
-class EpochStats:
-    states: list[SparseSdr]
-    decode_errors: list[float]
-    decode_surprise: list[float]
-
-    def __init__(self):
-        self.states = []
-        self.decode_errors = []
-        self.decode_surprise = []
-
-
 class TestConfig:
-    items_per_class: int
+    eval_countdown: RepeatingCountdown
+    n_epochs: int
 
-    def __init__(self, items_per_class: int):
-        self.items_per_class = items_per_class
+    def __init__(self, eval_schedule: int, n_epochs: int):
+        self.eval_countdown = make_repeating_counter(eval_schedule)
+        self.n_epochs = n_epochs
+
+    def tick(self):
+        now, self.eval_countdown = tick(self.eval_countdown)
+        return now
 
 
-class AttractionConfig:
-    n_steps: int
-    learn_in_attraction: bool
-
-    def __init__(self, n_steps: int, learn_in_attraction: bool):
-        self.n_steps = n_steps
-        self.learn_in_attraction = learn_in_attraction
+class EpochStats:
+    def __init__(self):
+        pass
 
 
 class SpatialEncoderExperiment:
     training: TrainConfig
-    attraction: AttractionConfig
     testing: TestConfig
 
     input_sds: Sds
@@ -73,12 +71,12 @@ class SpatialEncoderExperiment:
 
     def __init__(
             self, config: TConfig, config_path: Path,
-            log: bool, seed: int,
+            log: bool, seed: int, output_sds: Sds,
             train: TConfig, test: TConfig,
-            encoder: TConfig, decoder: str, decoder_noise: float,
+            setup: TConfig, classifier: TConfig,
+            sdr_tracker: TConfig,
             project: str = None,
             wandb_init: TConfig = None,
-            plot_sample: bool = False,
             **_
     ):
         self.init_time = timer()
@@ -96,302 +94,142 @@ class SpatialEncoderExperiment:
         self.seed = resolve_random_seed(seed)
         self.rng = np.random.default_rng(self.seed)
 
-        self.data = MnistDataset()
+        setup = self.config.config_resolver.resolve(setup, config_type=dict)
+        encoder, input_mode = self._get_setup(**setup)
+        self.input_mode = OutputMode[input_mode.upper()]
+        self.is_binary = self.input_mode == OutputMode.BINARY
+
+        self.data = MnistDataset(binary=self.is_binary)
 
         self.input_sds = self.data.output_sds
-        self.encoder = self.config.resolve_object(encoder, feedforward_sds=self.input_sds)
-        self.decoder = make_decoder(self.encoder, decoder)
+        self.output_sds = Sds.make(output_sds)
 
-        self.decoder_noise = decoder_noise
+        self.encoder = self.config.resolve_object(
+            encoder, feedforward_sds=self.input_sds, output_sds=self.output_sds
+        )
+        self.n_classes = self.data.n_classes
+        self.classifier: MlpClassifier = self.config.resolve_object(
+            classifier, object_type_or_factory=MlpClassifier,
+            feedforward_sds=self.output_sds, n_classes=self.n_classes
+        )
 
         print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
-        self.output_sds = self.encoder.output_sds
+        print(f'Classif: {self.classifier.feedforward_sds} -> {self.classifier.n_classes}')
 
         self.training = self.config.resolve_object(train, object_type_or_factory=TrainConfig)
         self.testing = self.config.resolve_object(test, object_type_or_factory=TestConfig)
-        self.stats = None
 
-        self.plot_sample = plot_sample
+        self.sdr_tracker: SdrTracker = self.config.resolve_object(sdr_tracker, sds=self.output_sds)
+
+        self.classify_loss = []
+
+        self.i_train_epoch = 0
 
     def run(self):
         self.print_with_timestamp('==> Run')
-        # self.define_metrics()
 
-        for epoch in range(1, self.training.n_epochs + 1):
-            self.print_with_timestamp(f'Epoch {epoch}')
+        self.i_train_epoch = 0
+        self.test_epoch()
+
+        while self.i_train_epoch < self.training.n_epochs:
+            self.i_train_epoch += 1
+            self.print_with_timestamp(f'Epoch {self.i_train_epoch}')
             self.train_epoch()
-            self.log_progress(epoch)
 
-        # self.log_final_results()
+            if self.testing.tick() or self.i_train_epoch == 1:
+                self.test_epoch()
+            # self.log_progress(epoch)
 
     def train_epoch(self):
-        sample_indices = self.rng.choice(self.data.n_images, size=self.training.n_steps)
+        n_steps = self.training.n_steps
+
+        sample_indices: npt.NDArray[int]
+        if n_steps is not None:
+            sample_indices = self.rng.choice(self.data.n_images, size=n_steps)
+        else:
+            sample_indices = self.rng.permutation(self.data.n_images)
+            n_steps = self.data.n_images
 
         self.stats = EpochStats()
-        for step in range(1, self.training.n_steps + 1):
-            sample_ind = sample_indices[step - 1]
+        for step in range(1, n_steps + 1):
+            # noinspection PyTypeChecker
+            sample_ind: int = sample_indices[step - 1]
             self.process_sample(sample_ind, learn=True)
 
     def test_epoch(self):
-        ...
+        print(f'==> Test after {self.i_train_epoch}')
+        encoded_sdrs = [
+            self.process_sample(i, learn=False)
+            for i in range(self.data.n_images)
+        ]
+        for i in range(self.data.n_images):
+            self.sdr_tracker.on_sdr_updated(encoded_sdrs[i], ignore=False)
 
-    def noisy(self, x):
-        noisy = x + np.abs(self.rng.normal(scale=self.decoder_noise, size=x.shape))
-        s = noisy.sum()
-        return safe_divide(noisy, s)
+        metrics = {}
+        metrics |= self.sdr_tracker.on_sequence_finished(None, ignore=False)
+
+        metrics |= self.eval_with_ensemble(encoded_sdrs)
+
+        metrics = personalize_metrics(metrics, 'eval')
+        self.log_progress(metrics)
+        print('<== Test')
+
+    def eval_with_ensemble(self, encoded_sdrs: list[AnySparseSdr]):
+        classifier = self.train_ensemble_classifier(encoded_sdrs)
+        accuracy = 0.
+        for i in range(self.data.n_images):
+            target_cls = self.data.target[i]
+            encoded_sdr = encoded_sdrs[i]
+
+            sdr, rates = split_sdr_values(encoded_sdr)
+            prediction = np.mean(classifier[sdr] * rates[:, None], axis=0)
+            accuracy += prediction.argmax() == target_cls
+
+        accuracy /= self.data.n_images
+
+        print(f'Accuracy: {accuracy:.3%}')
+        return {
+            'ens_accuracy': accuracy,
+        }
+
+    def train_ensemble_classifier(self, encoded_sdrs: list[AnySparseSdr]):
+        classifier = np.zeros((self.output_sds.size, self.n_classes))
+        cls_counter = np.zeros(self.n_classes)
+
+        for i in range(self.data.n_images):
+            target_cls = self.data.target[i]
+            encoded_sdr = encoded_sdrs[i]
+
+            sdr, rates = split_sdr_values(encoded_sdr)
+            classifier[sdr, target_cls] += rates
+            cls_counter[target_cls] += 1
+
+        neuron_norm = classifier.sum(axis=1)
+        mask = neuron_norm > 0
+        classifier[mask] /= classifier.sum(axis=1)[mask, None]
+        return classifier
 
     def process_sample(self, obs_ind: int, learn: bool):
-        obs = self.data.sdrs[obs_ind]
-        dense_obs = self.data.dense_sdrs[obs_ind]
+        obs_sdr = self.data.get_sdr(obs_ind)
+        encoded_sdr = self.encoder.compute(obs_sdr, learn=learn)
+        return encoded_sdr
 
-        state = self.encoder.compute(obs, learn=learn)
-        dense_state = sparse_to_dense(state, size=self.output_sds.size)
-
-        state_probs = self.noisy(dense_state)
-
-        decoded_obs = self.decoder.decode(state_probs, learn=learn, correct_obs=dense_obs)
-        error = np.abs(dense_obs - decoded_obs).mean()
-        surprise = get_surprise_2(decoded_obs, obs)
-
-        # self.stats.states.append(state)
-        self.stats.decode_errors.append(error)
-        self.stats.decode_surprise.append(surprise)
-
-    def plot_sample_diff(self):
-        obs_ind = self.rng.choice(self.data.n_images)
-        obs = self.data.sdrs[obs_ind]
-        dense_obs = self.data.dense_sdrs[obs_ind].astype(float).reshape(self.data.image_shape)
-
-        state = self.encoder.compute(obs, learn=False)
-        dense_state = sparse_to_dense(state, size=self.output_sds.size)
-
-        state_probs = self.noisy(dense_state)
-
-        decoded_obs = self.decoder.decode(state_probs).reshape(self.data.image_shape)
-        error = np.abs(dense_obs - decoded_obs).mean()
-
-        if self.plot_sample:
-            w = self.encoder.weights[state[0]].reshape(-1, 1)
-            w = np.repeat(w, 10, axis=1)
-
-            from hima.common.plot_utils import plot_grid_images
-            plot_grid_images(
-                images=[dense_obs, decoded_obs, w],
-                titles=['Orig', 'Decoded', '[0].w'],
-                show=True,
-                with_value_text_flags=[True, True, True],
-                cols_per_row=3
-            )
-        return np.hstack([dense_obs, decoded_obs])
-
-    def log_progress(self, epoch: int):
+    def log_progress(self, metrics: dict):
         if self.logger is None:
             return
 
-        sample_prediction = self.plot_sample_diff()
+        self.logger.log(metrics, step=self.i_train_epoch)
 
-        avg_sparsity = self.encoder.ff_avg_active_size / self.encoder.feedforward_sds.size
-        mae = np.array(self.stats.decode_errors).mean()
-        main_metrics = dict(
-            mae=mae,
-            nmae=mae / avg_sparsity,
-            surprise=np.array(self.stats.decode_surprise).mean(),
-            entropy=self.encoder.output_entropy(),
-        )
-        main_metrics = personalize_metrics(main_metrics, 'main')
-        print(main_metrics)
-
-        if isinstance(self.log, bool):
-            images = dict(
-                sample_prediction=wandb.Image(sample_prediction)
-            )
-            personalize_metrics(images, 'img')
-            main_metrics |= images
-
-        self.logger.log(
-            main_metrics,
-            step=epoch
-        )
-
-    def log_final_results(self):
-        if self.logger is None:
-            return
-
-        import matplotlib.pyplot as plt
-
-        episode = self.training.n_epochs
-
-        trajectories, targets = self.generate_trajectories()
-        similarities, relative_similarity, class_counts, sim_matrices = self.analyse_trajectories(
-            trajectories=trajectories, targets=targets
-        )
-
-        similarities = np.array(similarities)
-        in_sim = similarities[:, 0]
-
-        start_images = [x[0] for x in trajectories]
-        dense_start_images = np.zeros(
-            (len(start_images), self.encoder.feedforward_sds.size),
-            dtype='float32'
-        )
-        for im_id, x in enumerate(start_images):
-            dense_start_images[im_id, x] = 1
-
-        trajectories = np.array(
-            [x[1:] for x in trajectories]
-        )
-
-        for j in range(relative_similarity.shape[0]):
-            out_sim = similarities[:, j]
-            hist, x, y = np.histogram2d(in_sim, out_sim)
-            x, y = np.meshgrid(x, y)
-
-            self.logger.log(
-                {
-                    'main_metrics/relative_similarity': relative_similarity[j].mean(),
-                    'convergence/io_hist': wandb.Image(
-                        plt.pcolormesh(x, y, hist.T)
-                    )
-                },
-                step=episode
-            )
-
-            for cls in range(10):
-                self.logger.log(
-                    {
-                        f'relative_similarity/class {cls}': relative_similarity[j, cls]
-                    },
-                    step=episode
-                )
-
-    def generate_trajectories(self):
-        targets = []
-        trajectories = []
-
-        for _ in range(self.testing.n_trajectories):
-            trajectory = []
-
-            image, cls = self.env.obs(return_class=True)
-            self.env.step()
-
-            pattern = self.preprocess(image)
-            trajectory.append(pattern)
-
-            for attr_step in range(self.testing.items_per_class):
-                if self.encoder is not None and attr_step == 0:
-                    pattern = self.encoder.compute(pattern, learn=False)
-                else:
-                    pattern = self.attractor.compute(
-                        pattern, self.testing.learn_attractor_in_loop
-                    )
-
-                trajectory.append(pattern)
-
-            trajectories.append(trajectory)
-            targets.append(cls)
-        return trajectories, targets
-
-    def analyse_trajectories(self, trajectories, targets):
-        similarities = list()
-        sim_matrices = np.zeros((self.testing.items_per_class + 1, 10, 10))
-        class_counts = np.zeros((10, 10))
-
-        # generate non-repetitive trajectory pairs
-        pair1 = np.repeat(
-            np.arange(len(trajectories) - self.testing.pairs_per_trajectory),
-            self.testing.pairs_per_trajectory
-        )
-        pair2 = np.tile(
-            np.arange(self.testing.pairs_per_trajectory) + 1,
-            len(trajectories) - self.testing.pairs_per_trajectory
-        ) + pair1
-
-        for p1, p2 in zip(pair1, pair2):
-            similarity = list()
-            cls1 = targets[p1]
-            cls2 = targets[p2]
-            class_counts[cls1, cls2] += 1
-            class_counts[cls2, cls1] += 1
-
-            for att_step, x in enumerate(zip(trajectories[p1], trajectories[p2])):
-                sim = self.similarity(x[0], x[1])
-
-                sim_matrices[att_step, cls1, cls2] += sim
-                sim_matrices[att_step, cls2, cls1] += sim
-
-                similarity.append(sim)
-
-            similarities.append(similarity)
-
-        sim_matrices /= class_counts
-        # divide each row in each matrix by its diagonal element
-        relative_similarity = (
-            sim_matrices / np.diagonal(sim_matrices, axis1=1, axis2=2)[:, :, None]
-        ).mean(axis=-1)
-
-        return similarities, relative_similarity, class_counts, sim_matrices
-
-    def attract(self, steps, pattern, learn=False):
-        trajectory = list()
-
-        if self.encoder is not None:
-            pattern = self.encoder.compute(pattern, learn=False)
-
-        trajectory.append(pattern)
-        for step in range(steps):
-            pattern = self.attractor.compute(pattern, learn)
-            trajectory.append(pattern)
-
-        return trajectory
 
     @staticmethod
-    def similarity(x1, x2):
-        return safe_divide(np.count_nonzero(np.isin(x1, x2)), x2.size)
+    def _get_setup(encoder: TConfig, input_mode: str):
+        return encoder, input_mode
 
     def print_with_timestamp(self, *args, cond: bool = True):
         if not cond:
             return
         print_with_timestamp(self.init_time, *args)
 
-    def define_metrics(self):
-        if self.logger is None:
-            return
-
-        self.logger.define_metric(
-            name='main_metrics/relative_similarity',
-            step_metric='iteration'
-        )
-        self.logger.define_metric(
-            name='convergence/io_hist',
-            step_metric='iteration'
-        )
-        self.logger.define_metric(
-            name='som/clusters',
-            step_metric='iteration'
-        )
-
-        for cls in range(10):
-            self.logger.define_metric(
-                name=f'relative_similarity/class {cls}',
-                step_metric='iteration'
-            )
-
 
 def personalize_metrics(metrics: dict, prefix: str):
     return prepend_dict_keys(metrics, prefix, separator='/')
-
-
-def make_decoder(encoder, decoder):
-    if decoder == 'naive':
-        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerDecoder
-        return SpatialPoolerDecoder(encoder)
-    elif decoder == 'learned':
-        from hima.experiments.temporal_pooling.stp.sp_decoder import SpatialPoolerLearnedDecoder
-        return SpatialPoolerLearnedDecoder(encoder, (200, 200))
-    elif decoder == 'learned_input':
-        from hima.experiments.temporal_pooling.stp.sp_decoder import (
-            SpatialPoolerLearnedOverNaiveDecoder
-        )
-        return SpatialPoolerLearnedOverNaiveDecoder(encoder)
-    else:
-        raise ValueError(f'Decoder {decoder} is not supported')
