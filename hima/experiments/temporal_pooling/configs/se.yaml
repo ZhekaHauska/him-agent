@@ -3,21 +3,21 @@ project: stp.se_mnist
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 
 seed: 42
-output_sds: [400, 10]
+output_sds: [2000, 40]
+#output_sds: [400, 10]
 setup: setups.binary_basic_sp
 
 train:
   n_epochs: 5
-#  n_steps: 5_000
-  n_steps: ...
 test:
-  eval_schedule: 5
-  n_epochs: 5
+  eval_schedule: 1
+  n_epochs: 10
+  batch_size: 64
 
 classifier:
   feedforward_sds: ???
   n_classes: ???
-  learning_rate: 0.003
+  learning_rate: 0.001
   collect_losses: 1000
 
 sp:
@@ -36,6 +36,9 @@ sp:
     _base_: _common_base
     output_sds: ???
     target_rf_to_input_ratio: 0.3
+#    target_rf_to_input_ratio: 2.0
+    newborn_pruning_cycle: 40.0
+    newborn_pruning_stages: 20
 
   _common_base:
     _base_: $_base.spatial_pooler.default

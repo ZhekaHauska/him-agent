@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
+from tqdm import tqdm, trange
 
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
@@ -35,20 +36,20 @@ pd = lazy_import('pandas')
 
 class TrainConfig:
     n_epochs: int
-    n_steps: int | None
 
-    def __init__(self, n_epochs: int, n_steps: int | None = None):
+    def __init__(self, n_epochs: int):
         self.n_epochs = n_epochs
-        self.n_steps = n_steps
 
 
 class TestConfig:
     eval_countdown: RepeatingCountdown
     n_epochs: int
+    batch_size: int
 
-    def __init__(self, eval_schedule: int, n_epochs: int):
+    def __init__(self, eval_schedule: int, n_epochs: int, batch_size: int):
         self.eval_countdown = make_repeating_counter(eval_schedule)
         self.n_epochs = n_epochs
+        self.batch_size = batch_size
 
     def tick(self):
         now, self.eval_countdown = tick(self.eval_countdown)
@@ -99,7 +100,7 @@ class SpatialEncoderExperiment:
         self.input_mode = OutputMode[input_mode.upper()]
         self.is_binary = self.input_mode == OutputMode.BINARY
 
-        self.data = MnistDataset(binary=self.is_binary)
+        self.data = MnistDataset(seed=seed, binary=self.is_binary)
 
         self.input_sds = self.data.output_sds
         self.output_sds = Sds.make(output_sds)
@@ -108,21 +109,14 @@ class SpatialEncoderExperiment:
             encoder, feedforward_sds=self.input_sds, output_sds=self.output_sds
         )
         self.n_classes = self.data.n_classes
-        self.classifier: MlpClassifier = self.config.resolve_object(
-            classifier, object_type_or_factory=MlpClassifier,
-            feedforward_sds=self.output_sds, n_classes=self.n_classes
-        )
+        self.classifier: TConfig = classifier
 
         print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
-        print(f'Classif: {self.classifier.feedforward_sds} -> {self.classifier.n_classes}')
 
         self.training = self.config.resolve_object(train, object_type_or_factory=TrainConfig)
         self.testing = self.config.resolve_object(test, object_type_or_factory=TestConfig)
 
         self.sdr_tracker: SdrTracker = self.config.resolve_object(sdr_tracker, sds=self.output_sds)
-
-        self.classify_loss = []
-
         self.i_train_epoch = 0
 
     def run(self):
@@ -138,79 +132,124 @@ class SpatialEncoderExperiment:
 
             if self.testing.tick() or self.i_train_epoch == 1:
                 self.test_epoch()
-            # self.log_progress(epoch)
 
     def train_epoch(self):
-        n_steps = self.training.n_steps
-
-        sample_indices: npt.NDArray[int]
-        if n_steps is not None:
-            sample_indices = self.rng.choice(self.data.n_images, size=n_steps)
-        else:
-            sample_indices = self.rng.permutation(self.data.n_images)
-            n_steps = self.data.n_images
-
-        self.stats = EpochStats()
-        for step in range(1, n_steps + 1):
-            # noinspection PyTypeChecker
-            sample_ind: int = sample_indices[step - 1]
-            self.process_sample(sample_ind, learn=True)
+        data = self.data.train
+        for ix in tqdm(self.rng.permutation(data.n_images)):
+            sdr = data.get_sdr(ix)
+            self.encoder.compute(sdr, learn=True)
 
     def test_epoch(self):
+        def encode_dataset(data):
+            encoded_sdrs = []
+            for sample_ix in range(data.n_images):
+                obs_sdr = data.get_sdr(sample_ix)
+                enc_sdr = self.encoder.compute(obs_sdr, learn=False)
+                self.sdr_tracker.on_sdr_updated(enc_sdr, ignore=False)
+                encoded_sdrs.append(enc_sdr)
+            return encoded_sdrs
+
         print(f'==> Test after {self.i_train_epoch}')
-        encoded_sdrs = [
-            self.process_sample(i, learn=False)
-            for i in range(self.data.n_images)
-        ]
-        for i in range(self.data.n_images):
-            self.sdr_tracker.on_sdr_updated(encoded_sdrs[i], ignore=False)
+
+        train_encoded_sdrs = encode_dataset(self.data.train)
+        test_encoded_sdrs = encode_dataset(self.data.test)
 
         metrics = {}
         metrics |= self.sdr_tracker.on_sequence_finished(None, ignore=False)
-
-        metrics |= self.eval_with_ensemble(encoded_sdrs)
+        metrics |= self.eval_with_ensemble(train_encoded_sdrs, test_encoded_sdrs)
+        metrics |= self.eval_with_mlp(train_encoded_sdrs, test_encoded_sdrs)
 
         metrics = personalize_metrics(metrics, 'eval')
         self.log_progress(metrics)
         print('<== Test')
 
-    def eval_with_ensemble(self, encoded_sdrs: list[AnySparseSdr]):
-        classifier = self.train_ensemble_classifier(encoded_sdrs)
+    def eval_with_ensemble(self, train_sdrs: list[AnySparseSdr], test_sdrs: list[AnySparseSdr]):
+        print('Evaluating with ensemble')
+        classifier = self.train_ensemble_classifier(train_sdrs)
         accuracy = 0.
-        for i in range(self.data.n_images):
-            target_cls = self.data.target[i]
-            encoded_sdr = encoded_sdrs[i]
+
+        data = self.data.test
+        for i in range(data.n_images):
+            target_cls = data.targets[i]
+            encoded_sdr = test_sdrs[i]
 
             sdr, rates = split_sdr_values(encoded_sdr)
             prediction = np.mean(classifier[sdr] * rates[:, None], axis=0)
             accuracy += prediction.argmax() == target_cls
 
-        accuracy /= self.data.n_images
+        accuracy /= data.n_images
 
         print(f'Accuracy: {accuracy:.3%}')
         return {
             'ens_accuracy': accuracy,
         }
 
-    def train_ensemble_classifier(self, encoded_sdrs: list[AnySparseSdr]):
-        classifier = np.zeros((self.output_sds.size, self.n_classes))
-        cls_counter = np.zeros(self.n_classes)
+    def eval_with_mlp(self, train_sdrs: list[AnySparseSdr], test_sdrs: list[AnySparseSdr]):
+        print('Evaluating with MLP')
+        classifier = self.train_mlp_classifier(train_sdrs)
+        accuracy = 0.
+        dense_sdr = np.zeros(self.output_sds.size)
 
-        for i in range(self.data.n_images):
-            target_cls = self.data.target[i]
-            encoded_sdr = encoded_sdrs[i]
+        data = self.data.test
+        for i in range(data.n_images):
+            target_cls = data.targets[i]
+            sdr, rates = split_sdr_values(test_sdrs[i])
+            dense_sdr[sdr] = rates
+
+            prediction = classifier.predict(dense_sdr)
+            accuracy += prediction.argmax() == target_cls
+            dense_sdr[sdr] = 0.
+
+        accuracy /= data.n_images
+
+        loss = np.mean(classifier.losses)
+
+        print(f'Accuracy: {accuracy:.3%} | Loss: {loss:.3f}')
+        return {
+            'mlp_accuracy': accuracy,
+            'mlp_loss': loss,
+        }
+
+    def train_ensemble_classifier(self, train_enc_sdrs: list[AnySparseSdr]):
+        classifier = np.zeros((self.output_sds.size, self.n_classes))
+        data = self.data.train
+        for i in range(data.n_images):
+            target_cls = data.targets[i]
+            encoded_sdr = train_enc_sdrs[i]
 
             sdr, rates = split_sdr_values(encoded_sdr)
             classifier[sdr, target_cls] += rates
-            cls_counter[target_cls] += 1
 
         neuron_norm = classifier.sum(axis=1)
         mask = neuron_norm > 0
         classifier[mask] /= classifier.sum(axis=1)[mask, None]
         return classifier
 
-    def process_sample(self, obs_ind: int, learn: bool):
-        obs_sdr = self.data.get_sdr(obs_ind)
+    def train_mlp_classifier(self, train_enc_sdrs: list[AnySparseSdr]):
+        classifier: MlpClassifier = self.config.resolve_object(
+            self.classifier, object_type_or_factory=MlpClassifier,
+            feedforward_sds=self.output_sds, n_classes=self.n_classes
+        )
+
+        data = self.data.train
+        for _ in trange(self.testing.n_epochs):
+            indices = self.rng.permutation(data.n_images)
+            batched_indices = np.array_split(indices, len(indices) // self.testing.batch_size)
+
+            for batch_ix in batched_indices:
+                batch = np.zeros((len(batch_ix), self.output_sds.size))
+                for i, encoded_sdr_ix in enumerate(batch_ix):
+                    encoded_sdr_ix: int
+                    sdr, rates = split_sdr_values(train_enc_sdrs[encoded_sdr_ix])
+                    batch[i, sdr] = rates
+
+                target_cls = data.targets[batch_ix]
+                classifier.learn(batch, target_cls)
+
+        return classifier
+
+    def process_sample(self, data, obs_ind: int, learn: bool):
+        obs_sdr = data.get_sdr(obs_ind)
         encoded_sdr = self.encoder.compute(obs_sdr, learn=learn)
         return encoded_sdr
 

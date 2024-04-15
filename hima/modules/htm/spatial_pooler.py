@@ -934,7 +934,7 @@ class SpatialPooler:
             learn=learn,
             output=self._cached_output_sdr
         )
-        return np.array(self._cached_output_sdr.sparse, copy=True)
+        return np.array(self._cached_output_sdr.sparse, copy=True, dtype=int)
 
     @property
     def n_active_bits(self):
