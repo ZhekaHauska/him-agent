@@ -98,10 +98,6 @@ class ICMLRunner(BaseRunner):
 
     @property
     def real_reward(self):
-        return self.agent.real_reward.reshape(self.environment.raw_obs_shape)
-
-    @property
-    def real_reward(self):
         im = sparse_to_dense(self.agent.events, shape=self.environment.raw_obs_shape)
         real_reward = im * self.reward
         return real_reward
