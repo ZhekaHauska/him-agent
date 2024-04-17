@@ -51,8 +51,7 @@ class BioAgentWrapper(BaseAgent):
         self.camera_mode = conf['camera_mode']
         self.events = None
         self.steps = 0
-        self.reward_attention = conf['reward_attention']
-        self.real_reward = np.zeros(np.prod(conf['raw_obs_shape']))
+        self.reward_attention = conf.get('reward_attention', None)
 
         if self.camera_mode is not None:
             self.camera = DVS(conf['raw_obs_shape'], self.camera_mode, self.seed)
@@ -62,11 +61,6 @@ class BioAgentWrapper(BaseAgent):
         encoder, n_obs_vars, n_obs_states, decoder = self._make_encoder()
 
         layer_conf = self.conf['layer']
-        if 'reset_context_period' in layer_conf:
-            self.reset_context_period = layer_conf.pop('reset_context_period')
-        else:
-            self.reset_context_period = None
-
         layer_conf['n_obs_vars'] = n_obs_vars
         layer_conf['n_obs_states'] = n_obs_states
         layer_conf['n_external_states'] = conf['n_actions']
@@ -138,35 +132,12 @@ class BioAgentWrapper(BaseAgent):
 
         if self.layer_type == 'fchmm':
             self.initial_action = -1
-            self.initial_context = np.empty(0)
-            self.initial_external_message = np.empty(0)
         elif self.layer_type in {'dhtm', 'biodhtm'}:
             self.initial_action = 0
-            self.initial_context = sparse_to_dense(
-                np.arange(
-                    self.agent.cortical_column.layer.n_hidden_vars
-                ) * self.agent.cortical_column.layer.n_hidden_states,
-                like=self.agent.cortical_column.layer.context_messages
-            )
-
-            if conf['n_actions'] > 0:
-                self.initial_external_message = sparse_to_dense(
-                    [0],
-                    size=conf['n_actions']
-                )
-            else:
-                self.initial_external_message = None
-
         else:
             self.initial_action = None
-            self.initial_context = self.agent.cortical_column.layer.context_messages
-            self.initial_external_message = None
 
     def observe(self, obs, action, reward=0):
-        if self.reset_context_period is not None:
-            if self.steps % self.reset_context_period == 0:
-                self.agent.cortical_column.layer.context_messages = self.initial_context
-
         self.steps += 1
 
         if self.camera is not None:
@@ -174,11 +145,11 @@ class BioAgentWrapper(BaseAgent):
         else:
             self.events = obs
 
-        modulation = max(
-            self.reward_attention * int(reward > 0), 1
-        )
-        self.real_reward[self.events] += reward * modulation
-        self.agent.cortical_column.encoder.modulation = modulation
+        if self.reward_attention is not None:
+            modulation = max(
+                self.reward_attention * int(reward > 0), 1
+            )
+            self.agent.cortical_column.encoder.modulation = modulation
 
         return self.agent.observe((self.events, action), learn=True)
 
@@ -194,7 +165,7 @@ class BioAgentWrapper(BaseAgent):
         if self.camera is not None:
             self.camera.reset()
 
-        return self.agent.reset(self.initial_context, self.initial_external_message)
+        return self.agent.reset()
 
     def initialize_sf_memory(self):
         memory = self.agent.pattern_memory.weights
@@ -268,9 +239,16 @@ class BioAgentWrapper(BaseAgent):
         )
 
     @property
-    def num_segments(self):
-        if hasattr(self.agent.cortical_column.layer, 'context_factors'):
-            return self.agent.cortical_column.layer.context_factors.connections.numSegments()
+    def num_segments_forward(self):
+        if hasattr(self.agent.cortical_column.layer, 'context_forward_factors'):
+            return self.agent.cortical_column.layer.context_forward_factors.connections.numSegments()
+        else:
+            return 0
+
+    @property
+    def num_segments_backward(self):
+        if hasattr(self.agent.cortical_column.layer, 'context_backward_factors'):
+            return self.agent.cortical_column.layer.context_backward_factors.connections.numSegments()
         else:
             return 0
 

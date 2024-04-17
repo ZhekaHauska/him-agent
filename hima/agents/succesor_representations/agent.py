@@ -133,7 +133,7 @@ class BioHIMA:
         self.seed = seed
         self._rng = np.random.default_rng(seed)
 
-    def reset(self, initial_context_message, initial_external_message):
+    def reset(self):
         assert len(self.state_snapshot_stack) == 0
 
         self.predicted_sf = None
@@ -143,7 +143,7 @@ class BioHIMA:
         self.action = None
         self.sf_steps = 0
 
-        self.cortical_column.reset(initial_context_message, initial_external_message)
+        self.cortical_column.reset()
 
         self.previous_state = self.cortical_column.layer.internal_messages.copy()
         self.previous_observation = np.zeros_like(self.observation_rewards)
