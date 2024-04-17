@@ -965,7 +965,8 @@ class DHTM(Layer):
         Distributed Hebbian Temporal Memory.
         see https://arxiv.org/abs/2310.13391
     """
-    context_factors: Factors
+    context_forward_factors: Factors
+    context_backward_factors: Factors
 
     def __init__(
             self,
@@ -1081,10 +1082,13 @@ class DHTM(Layer):
         context_factors_conf['n_vars'] = self.total_vars
         context_factors_conf['n_hidden_states'] = self.n_hidden_states
         context_factors_conf['n_hidden_vars'] = self.n_hidden_vars
-        self.context_factors = Factors(**context_factors_conf)
+        self.context_forward_factors = Factors(**context_factors_conf)
+        self.context_backward_factors = Factors(**context_factors_conf)
 
-        self.cells_to_grow_new_context_segments = np.empty(0)
-        self.new_context_segments = np.empty(0)
+        self.cells_to_grow_new_context_segments_forward = np.empty(0)
+        self.new_context_segments_forward = np.empty(0)
+        self.cells_to_grow_new_context_segments_backward = np.empty(0)
+        self.new_context_segments_backward = np.empty(0)
 
         self.state_information = 0
 
@@ -1116,6 +1120,12 @@ class DHTM(Layer):
 
     def reset(self):
         if self.lr > 0:
+            # add last step T messages
+            if self.observation_messages is not None:
+                self.observation_messages_buffer.append(self.observation_messages.copy())
+                self.external_messages_buffer.append(None)
+                self.forward_messages_buffer.append(self.internal_messages.copy())
+
             self._backward_pass()
             self._update_segments()
 
@@ -1123,14 +1133,8 @@ class DHTM(Layer):
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
-        self.external_messages = np.zeros(
-            self.external_input_size,
-            dtype=REAL64_DTYPE
-        )
-        self.context_messages = np.zeros(
-            self.context_input_size,
-            dtype=REAL64_DTYPE
-        )
+        self.external_messages = self.initial_external_messages.copy()
+        self.context_messages = self.initial_forward_messages.copy()
 
         self.context_active_cells.sparse = []
         self.internal_active_cells.sparse = []
@@ -1148,7 +1152,10 @@ class DHTM(Layer):
         self.forward_messages_buffer.clear()
         self.backward_messages_buffer.clear()
 
-    def predict(self, **_):
+    def predict(self, context_factors=None, **_):
+        if context_factors is None:
+            context_factors = self.context_forward_factors
+
         messages = np.zeros(self.total_cells)
         messages[
             self.context_cells_range[0]:
@@ -1162,7 +1169,7 @@ class DHTM(Layer):
 
         self._propagate_belief(
             messages,
-            self.context_factors,
+            context_factors,
             self.inverse_temp_context,
         )
 
@@ -1183,19 +1190,26 @@ class DHTM(Layer):
     ):
         """
             observation: pattern in sparse representation
+            forward_pass:
+            h^k+1_t-1  u_t-1
+                    \  |
+            h^k_t-1 - [] - h^k_t
         """
+        if learn and self.lr > 0:
+            # save t-1 messages
+            if self.observation_messages is not None:
+                self.observation_messages_buffer.append(self.observation_messages.copy())
+            else:
+                self.observation_messages_buffer.append(None)
+
+            self.external_messages_buffer.append(self.external_messages.copy())
+            self.forward_messages_buffer.append(self.context_messages.copy())
+
         observation_messages = sparse_to_dense(
             observation,
             size=self.input_sdr_size,
             dtype=REAL64_DTYPE
         )
-
-        if learn and self.lr > 0:
-            # save t-1 messages
-            if self.observation_messages is not None:
-                self.observation_messages_buffer.append(self.observation_messages.copy())
-                self.external_messages_buffer.append(self.external_messages.copy())
-                self.forward_messages_buffer.append(self.context_messages.copy())
 
         # update messages
         self.observation_messages = observation_messages
@@ -1204,32 +1218,42 @@ class DHTM(Layer):
         self.timestep += 1
 
     def _backward_pass(self):
-        for observation_messages, external_messages in zip(
-                self.observation_messages_buffer[::-1],
-                self.external_messages_buffer[::-1]
-        ):
-            self.observation_messages = observation_messages
+        #           u_t   h^k+1_t+1
+        #           |   /
+        #   h^k_t - [] - h^k_t+1
+        self.internal_messages = self.initial_backward_messages.copy()
+        T = len(self.observation_messages_buffer)-1
+        for t in range(T, 0, -1):
+            if t == T:
+                self.set_external_messages(self.initial_external_messages.copy())
+            else:
+                self.set_external_messages(self.external_messages_buffer[t].copy())
+
+            self.set_context_messages(self.internal_messages.copy())
+            self.predict(self.context_backward_factors)
+            self.observation_messages = self.observation_messages_buffer[t].copy()
             self.internal_messages = self._get_posterior()
             self.backward_messages_buffer.append(self.internal_messages.copy())
 
-            self.set_context_messages(self.internal_messages.copy())
-            self.set_external_messages(external_messages)
-            self.predict()
+        self.backward_messages_buffer = self.backward_messages_buffer[::-1]
 
     def _update_segments(self):
-        for forward_messages, external_messages, backward_messages in zip(
-            self.forward_messages_buffer[:-1],
-            self.external_messages_buffer[:-1],
-            self.backward_messages_buffer[1:]
-        ):
-            self.context_messages = forward_messages
-            self.external_messages = external_messages
-            self.internal_messages = backward_messages
+        for t in range(1, len(self.forward_messages_buffer)):
+            self.context_messages = self.forward_messages_buffer[t-1]
+            self.external_messages = self.external_messages_buffer[t-1]
 
+            # combine forward and backward messages
+            self.internal_messages = (
+                    self.forward_messages_buffer[t] * self.backward_messages_buffer[t-1]
+            )
+            self.internal_messages = (
+                normalize(self.internal_messages.reshape(self.n_hidden_vars, -1))
+            ).flatten()
+
+            # sample distributions
             self.context_active_cells.sparse = self._sample_cells(
                 self.context_messages.reshape(self.n_context_vars, -1)
             )
-
             self.internal_active_cells.sparse = self._sample_cells(
                 self.internal_messages.reshape(self.n_hidden_vars, -1)
             )
@@ -1239,24 +1263,53 @@ class DHTM(Layer):
                     self.external_messages.reshape(self.n_external_vars, -1)
                 )
 
+            # grow forward connections
             (
-                self.cells_to_grow_new_context_segments,
-                self.new_context_segments
+                self.cells_to_grow_new_context_segments_forward,
+                self.new_context_segments_forward
             ) = self._learn(
                 np.concatenate(
                     [
                         (
-                                self.context_cells_range[0] +
-                                self.context_active_cells.sparse
+                            self.context_cells_range[0] +
+                            self.context_active_cells.sparse
                         ),
                         (
-                                self.external_cells_range[0] +
-                                self.external_active_cells.sparse
+                            self.external_cells_range[0] +
+                            self.external_active_cells.sparse
                         )
                     ]
                 ),
-                self.internal_active_cells.sparse,
-                self.context_factors,
+                (
+                    self.internal_cells_range[0] +
+                    self.internal_active_cells.sparse
+                ),
+                self.context_forward_factors,
+                prune_segments=(self.timestep % self.developmental_period) == 0
+            )
+
+            # grow backward connection symmetrically
+            (
+                self.cells_to_grow_new_context_segments_backward,
+                self.new_context_segments_backward
+            ) = self._learn(
+                np.concatenate(
+                    [
+                        (
+                            self.internal_cells_range[0] +
+                            self.internal_active_cells.sparse
+                        ),
+                        (
+                            self.external_cells_range[0] +
+                            self.external_active_cells.sparse
+                        )
+                    ]
+                ),
+                (
+                    self.context_cells_range[0] +
+                    self.context_active_cells.sparse
+                ),
+                self.context_backward_factors,
                 prune_segments=(self.timestep % self.developmental_period) == 0
             )
 
