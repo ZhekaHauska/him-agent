@@ -91,10 +91,12 @@ class CorticalColumn:
         else:
             self.predicted_image = self.layer.prediction_columns
 
-    def reset(self, context_messages, external_messages):
+    def reset(self, context_messages=None, external_messages=None):
         self.layer.reset()
-        self.layer.set_context_messages(context_messages)
-        self.layer.set_external_messages(external_messages)
+        if context_messages is not None:
+            self.layer.set_context_messages(context_messages)
+        if external_messages is not None:
+            self.layer.set_external_messages(external_messages)
 
     def make_state_snapshot(self):
         return (
