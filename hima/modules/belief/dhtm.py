@@ -986,6 +986,7 @@ class DHTM(Layer):
             cell_activation_threshold: float = EPS,
             developmental_period: int = 10000,
             cells_activity_lr: float = 0.1,
+            use_backward_messages: bool = False,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -1009,6 +1010,7 @@ class DHTM(Layer):
         self.external_vars_boost = external_vars_boost
         self.unused_vars_boost = unused_vars_boost
         self.cells_activity_lr = cells_activity_lr
+        self.use_backward_messages = use_backward_messages
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1126,7 +1128,8 @@ class DHTM(Layer):
                 self.external_messages_buffer.append(None)
                 self.forward_messages_buffer.append(self.internal_messages.copy())
 
-            self._backward_pass()
+            if self.use_backward_messages:
+                self._backward_pass()
             self._update_segments()
 
         self.internal_messages = np.zeros(
@@ -1243,12 +1246,15 @@ class DHTM(Layer):
             self.external_messages = self.external_messages_buffer[t-1]
 
             # combine forward and backward messages
-            self.internal_messages = (
-                    self.forward_messages_buffer[t] * self.backward_messages_buffer[t-1]
-            )
-            self.internal_messages = (
-                normalize(self.internal_messages.reshape(self.n_hidden_vars, -1))
-            ).flatten()
+            if self.use_backward_messages:
+                self.internal_messages = (
+                        self.forward_messages_buffer[t] * self.backward_messages_buffer[t-1]
+                )
+                self.internal_messages = (
+                    normalize(self.internal_messages.reshape(self.n_hidden_vars, -1))
+                ).flatten()
+            else:
+                self.internal_messages = self.forward_messages_buffer[t].copy()
 
             # sample distributions
             self.context_active_cells.sparse = self._sample_cells(
@@ -1289,29 +1295,30 @@ class DHTM(Layer):
             )
 
             # grow backward connection symmetrically
-            (
-                self.cells_to_grow_new_context_segments_backward,
-                self.new_context_segments_backward
-            ) = self._learn(
-                np.concatenate(
-                    [
-                        (
-                            self.internal_cells_range[0] +
-                            self.internal_active_cells.sparse
-                        ),
-                        (
-                            self.external_cells_range[0] +
-                            self.external_active_cells.sparse
-                        )
-                    ]
-                ),
+            if self.use_backward_messages:
                 (
-                    self.context_cells_range[0] +
-                    self.context_active_cells.sparse
-                ),
-                self.context_backward_factors,
-                prune_segments=(self.timestep % self.developmental_period) == 0
-            )
+                    self.cells_to_grow_new_context_segments_backward,
+                    self.new_context_segments_backward
+                ) = self._learn(
+                    np.concatenate(
+                        [
+                            (
+                                self.internal_cells_range[0] +
+                                self.internal_active_cells.sparse
+                            ),
+                            (
+                                self.external_cells_range[0] +
+                                self.external_active_cells.sparse
+                            )
+                        ]
+                    ),
+                    (
+                        self.context_cells_range[0] +
+                        self.context_active_cells.sparse
+                    ),
+                    self.context_backward_factors,
+                    prune_segments=(self.timestep % self.developmental_period) == 0
+                )
 
             self.internal_cells_activity += self.cells_activity_lr * (
                     self.internal_active_cells.dense - self.internal_cells_activity
