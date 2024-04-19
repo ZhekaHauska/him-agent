@@ -1307,7 +1307,7 @@ class DHTM(Layer):
                     np.concatenate(
                         [
                             (
-                                self.internal_cells_range[0] +
+                                self.context_cells_range[0] +
                                 self.internal_active_cells.sparse
                             ),
                             (
@@ -1317,7 +1317,7 @@ class DHTM(Layer):
                         ]
                     ),
                     (
-                        self.context_cells_range[0] +
+                        self.internal_cells_range[0] +
                         self.context_active_cells.sparse
                     ),
                     self.context_backward_factors,
