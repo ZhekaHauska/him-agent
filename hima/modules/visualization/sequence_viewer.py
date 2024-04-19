@@ -13,15 +13,15 @@ import hvplot.pandas
 import numpy as np
 
 
-class GifViewer:
+class SequenceViewer:
     def __init__(self, directory='./'):
         self.directory = directory
         self.frames = []
 
-        self.files = pn.widgets.FileSelector(directory, file_pattern='*.gif')
+        self.files = pn.widgets.FileSelector(directory)
         self.time_step = pn.widgets.Player(start=0)
         self.window_size = pn.widgets.IntInput(name='window', value=0, start=0)
-        self.res = pn.widgets.IntInput(name='resolution', value=1000, start=50)
+        self.res = pn.widgets.IntInput(name='resolution', value=1000, start=100)
         self.frames = []
 
         self.canvas = pn.bind(
@@ -48,8 +48,16 @@ class GifViewer:
         max_frames = 0
         self.frames = []
         for file in files:
-            gif = imageio.get_reader(file)
-            frames = list(gif)
+            ext = file.split('.')[-1]
+            if ext == 'gif':
+                gif = imageio.get_reader(file)
+                frames = list()
+                for frame in gif:
+                    frames.append(self.preprocess(frame))
+            elif ext == 'npy':
+                frames = np.load(file)
+            else:
+                raise NotImplementedError
 
             self.frames.append(frames)
 
@@ -61,16 +69,16 @@ class GifViewer:
         imgs = []
         for i, frames in enumerate(self.frames):
             for j in range(time_step - window_size, time_step + window_size + 1):
-                if 0 < j < len(frames):
-                    frame = self.preprocess(frames[j])
+                if 0 <= j < len(frames):
+                    frame = frames[j]
                 else:
-                    frame = np.zeros_like(self.preprocess(frames[0]))
+                    frame = np.zeros_like(frames[0])
 
                 aspect = frame.shape[0] / frame.shape[1]
                 img = self.plot_heatmap(
                     frame,
                     res,
-                    int(aspect * res),
+                    max(int(aspect * res), 100),
                     files[i].split('/')[-1]
                 )
                 imgs.append(img)
@@ -99,11 +107,11 @@ class GifViewer:
         im = im.astype('float')
         if len(im.shape) > 2:
             im = im[:, :, channel]
-        im /= im.max()
+        im /= 255
         return im
 
 
 if __name__ == '__main__':
     root_dir = os.environ.get('GIF_VIS_ROOT_DIR', '~/')
-    gv = GifViewer(directory=root_dir)
+    gv = SequenceViewer(directory=root_dir)
     gv.app.show()
