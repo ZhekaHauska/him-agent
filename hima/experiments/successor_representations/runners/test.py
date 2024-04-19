@@ -15,6 +15,7 @@ from hima.common.sdr import sparse_to_dense
 from hima.experiments.successor_representations.runners.base import BaseRunner
 from hima.experiments.successor_representations.runners.visualizers import DHTMVisualizer
 from hima.modules.belief.utils import normalize
+import imageio
 
 
 class ICMLRunner(BaseRunner):
@@ -247,6 +248,44 @@ class ICMLRunner(BaseRunner):
         self.agent.agent.cortical_column.encoder = state_dict['encoder']
         self.agent.agent.cortical_column.decoder = state_dict['decoder']
         self.agent.camera = state_dict['camera']
+
+    def save_buffer(self, path):
+        layer = self.agent.agent.cortical_column.layer
+        cells_per_column = layer.cells_per_column
+
+        obs_buffer = np.array(layer.observation_messages_buffer)
+        ext_buffer = np.array(layer.external_messages_buffer)
+        fwd_buffer = np.array(layer.forward_messages_buffer)
+        bwd_buffer = np.array(layer.backward_messages_buffer)
+
+        if len(obs_buffer) == 0:
+            return
+
+        fwd_buffer = np.transpose(
+            fwd_buffer.reshape(fwd_buffer.shape[0], -1, cells_per_column),
+            (0, 2, 1)
+        )
+        bwd_buffer = np.transpose(
+            bwd_buffer.reshape(bwd_buffer.shape[0], -1, cells_per_column),
+            (0, 2, 1)
+        )
+        ext_buffer = ext_buffer.reshape(ext_buffer.shape[0], 1, -1)
+        obs_buffer = obs_buffer.reshape(obs_buffer.shape[0], 1, -1)
+
+        if self.logger is not None:
+            run_name = self.logger.name
+        else:
+            run_name = str(self.seed)
+
+        for name, array in zip(
+                ['ext', 'obs', 'fwd', 'bwd'],
+                [ext_buffer, obs_buffer, fwd_buffer, bwd_buffer]
+        ):
+            path_name = os.path.join(
+                path,
+                f'{run_name}_{self.episodes}_{name}.npy'
+            )
+            np.save(path_name, array)
 
 
 def main(config_path):
