@@ -1061,9 +1061,9 @@ class DHTM(Layer):
             self.internal_messages
         )
 
-        self.prediction_cells = None
+        self.prediction_cells = np.zeros_like(self.internal_messages)
+        self.observation_messages = np.zeros(self.input_sdr_size)
         self.prediction_columns = None
-        self.observation_messages = None
 
         # cells are numbered in the following order:
         # internal cells | context cells | external cells
@@ -1098,6 +1098,7 @@ class DHTM(Layer):
         self.external_messages_buffer = list()
         self.forward_messages_buffer = list()
         self.backward_messages_buffer = list()
+        self.can_clear_buffers = False
 
         # instead of deliberately saving prior
         # we use fixed initial messages
@@ -1123,14 +1124,16 @@ class DHTM(Layer):
     def reset(self):
         if self.lr > 0:
             # add last step T messages
-            if self.observation_messages is not None:
+            if len(self.observation_messages_buffer) > 0:
                 self.observation_messages_buffer.append(self.observation_messages.copy())
-                self.external_messages_buffer.append(None)
+                self.external_messages_buffer.append(self.initial_external_messages.copy())
                 self.forward_messages_buffer.append(self.internal_messages.copy())
+                # for alignment with backward messages
+                self.forward_messages_buffer.append(self.initial_backward_messages.copy())
 
-            if self.use_backward_messages:
-                self._backward_pass()
-            self._update_segments()
+                if self.use_backward_messages:
+                    self._backward_pass()
+                self._update_segments()
 
         self.internal_messages = np.zeros(
             self.internal_cells,
@@ -1143,11 +1146,9 @@ class DHTM(Layer):
         self.internal_active_cells.sparse = []
         self.external_active_cells.sparse = []
 
-        self.prediction_cells = None
+        self.prediction_cells = np.zeros_like(self.internal_messages)
+        self.observation_messages = np.zeros(self.input_sdr_size)
         self.prediction_columns = None
-        self.observation_messages = None
-
-        self.clear_buffers()
 
     def clear_buffers(self):
         self.observation_messages_buffer.clear()
@@ -1199,12 +1200,12 @@ class DHTM(Layer):
             h^k_t-1 - [] - h^k_t
         """
         if learn and self.lr > 0:
-            # save t-1 messages
-            if self.observation_messages is not None:
-                self.observation_messages_buffer.append(self.observation_messages.copy())
-            else:
-                self.observation_messages_buffer.append(None)
+            if self.can_clear_buffers:
+                self.clear_buffers()
+                self.can_clear_buffers = False
 
+            # save t-1 messages
+            self.observation_messages_buffer.append(self.observation_messages.copy())
             self.external_messages_buffer.append(self.external_messages.copy())
             self.forward_messages_buffer.append(self.context_messages.copy())
 
@@ -1225,6 +1226,8 @@ class DHTM(Layer):
         #           |   /
         #   h^k_t - [] - h^k_t+1
         self.internal_messages = self.initial_backward_messages.copy()
+        self.backward_messages_buffer.append(self.internal_messages.copy())
+
         T = len(self.observation_messages_buffer)-1
         for t in range(T, 0, -1):
             if t == T:
@@ -1237,7 +1240,8 @@ class DHTM(Layer):
             self.observation_messages = self.observation_messages_buffer[t].copy()
             self.internal_messages = self._get_posterior()
             self.backward_messages_buffer.append(self.internal_messages.copy())
-
+        # add forward prior messages and reverse list for alignment with forward messages
+        self.backward_messages_buffer.append(self.initial_forward_messages.copy())
         self.backward_messages_buffer = self.backward_messages_buffer[::-1]
 
     def _update_segments(self):
@@ -1248,7 +1252,7 @@ class DHTM(Layer):
             # combine forward and backward messages
             if self.use_backward_messages:
                 self.internal_messages = (
-                        self.forward_messages_buffer[t] * self.backward_messages_buffer[t-1]
+                        self.forward_messages_buffer[t] * self.backward_messages_buffer[t]
                 )
                 self.internal_messages = (
                     normalize(self.internal_messages.reshape(self.n_hidden_vars, -1))
@@ -1323,6 +1327,7 @@ class DHTM(Layer):
             self.internal_cells_activity += self.cells_activity_lr * (
                     self.internal_active_cells.dense - self.internal_cells_activity
             )
+            self.can_clear_buffers = True
 
     def _get_posterior(self):
         observation = np.flatnonzero(self.observation_messages)
