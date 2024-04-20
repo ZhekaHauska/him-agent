@@ -14,6 +14,7 @@ import numpy as np
 
 
 class SequenceViewer:
+    ordered_files: list
     def __init__(self, directory='./'):
         self.directory = directory
         self.frames = []
@@ -22,6 +23,7 @@ class SequenceViewer:
         self.time_step = pn.widgets.Player(start=0)
         self.window_size = pn.widgets.IntInput(name='window', value=0, start=0)
         self.res = pn.widgets.IntInput(name='resolution', value=1000, start=100)
+        self.ordered_files = []
         self.frames = []
 
         self.canvas = pn.bind(
@@ -40,14 +42,15 @@ class SequenceViewer:
     def show(self):
         return self.app
 
-    def show_frames(self, files, time_step, window_size, res):
-        if len(files) == 0:
+    def show_frames(self, files: list, time_step, window_size, res):
+        self.update_ordered_files(files)
+        if len(self.ordered_files) == 0:
             self.frames = []
             return
 
         max_frames = 0
         self.frames = []
-        for file in files:
+        for file in self.ordered_files:
             ext = file.split('.')[-1]
             if ext == 'gif':
                 gif = imageio.get_reader(file)
@@ -79,7 +82,7 @@ class SequenceViewer:
                     frame,
                     res,
                     max(int(aspect * res), 100),
-                    files[i].split('/')[-1]
+                    self.ordered_files[i].split('/')[-1]
                 )
                 imgs.append(img)
 
@@ -109,6 +112,25 @@ class SequenceViewer:
             im = im[:, :, channel]
         im /= 255
         return im
+
+    def update_ordered_files(self, files):
+        set_ordered_files = set(self.ordered_files)
+        set_files = set(files)
+
+        if set_ordered_files == set_files:
+            return
+
+        if len(set_files) == 0:
+            self.ordered_files.clear()
+            return
+
+        for f in files:
+            if not (f in set_ordered_files):
+                self.ordered_files.append(f)
+
+        for f in self.ordered_files:
+            if not (f in set_files):
+                self.ordered_files.remove(f)
 
 
 if __name__ == '__main__':
