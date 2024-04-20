@@ -103,7 +103,7 @@ class SequenceViewer:
             width=width,
             height=height,
             title=title
-        )
+        ).opts(axiswise=True)
 
     @staticmethod
     def preprocess(im, channel=0):
