@@ -865,3 +865,35 @@ class GridworldSR(BaseMetric):
             f'{self.logger.name}_{self.name}_memory_{self.preparing_step}.npz'
         )
         np.savez(path, states=self.memory.weights[0], sfs=self.memory.weights[1])
+
+
+class ArrayMetrics(BaseMetric):
+    def __init__(self, metrics, logger, runner,
+                 update_step, log_step, update_period, log_period,
+                 log_dir='/tmp'):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+
+        self.metrics = {metric: [] for metric in metrics}
+        self.att_to_log = {
+            metric: params['att']
+            for metric, params in metrics.items()
+        }
+        self.logger = logger
+        self.log_dir = log_dir
+
+    def update(self):
+        for name in self.metrics.keys():
+            value = self.get_attr(self.att_to_log[name])
+            self.metrics[name].append(value)
+
+    def log(self, step):
+        for metric, values in self.metrics.items():
+            arr_path = os.path.join(
+                self.log_dir,
+                f'{self.logger.name}_{metric.split("/")[-1]}_{step}.gif'
+            )
+            np.save(arr_path, np.array(values))
+        self._reset()
+
+    def _reset(self):
+        self.metrics = {metric: [] for metric in self.metrics.keys()}
