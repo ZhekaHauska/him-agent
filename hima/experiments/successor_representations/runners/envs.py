@@ -162,6 +162,8 @@ class GridWorldWrapper(BaseEnvironment):
         self.n_colors = self.environment.n_colors
         self.min_color = np.min(self.environment.unique_colors)
         self.min_vis_color = np.min(self.environment.colors)
+        self.trajectory = []
+        self.is_first_step = True
 
         self.n_cells = (
                 (self.environment.observation_radius * 2 + 1) ** 2
@@ -186,6 +188,11 @@ class GridWorldWrapper(BaseEnvironment):
             obs += (
                 np.arange(self.n_cells)*self.n_colors - self.min_color
             )
+
+        if self.is_first_step:
+            self.trajectory.clear()
+        self.trajectory.append(self.state)
+        self.is_first_step = False
         return obs, reward, is_terminal
 
     def act(self, action):
@@ -198,6 +205,7 @@ class GridWorldWrapper(BaseEnvironment):
 
     def reset(self):
         self.environment.reset(*self.start_position)
+        self.is_first_step = True
 
     def change_setup(self, setup):
         self.environment = self._start_env(setup)
@@ -215,16 +223,33 @@ class GridWorldWrapper(BaseEnvironment):
         from PIL import Image
         shift = self.environment.shift
         im = self.environment.colors.copy()
+        agent_color = max(self.environment.unique_colors) + 0.5
 
         if shift > 0:
             im = im[shift:-shift, shift:-shift]
+
+        im[self.environment.r, self.environment.c] = agent_color
+
         plt.figure()
         plt.imshow(im, cmap='Pastel1', aspect=1, vmin=self.min_vis_color)
         plt.axis('off')
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches="tight")
+        plt.close()
         buf.seek(0)
         im = Image.open(buf)
+        return im
+
+    @property
+    def state(self):
+        shift = self.environment.shift
+        im = self.environment.colors.astype('float32')
+        agent_color = max(self.environment.unique_colors) + 0.5
+
+        if shift > 0:
+            im = im[shift:-shift, shift:-shift]
+
+        im[self.environment.r, self.environment.c] = agent_color
         return im
 
     def _start_env(self, setup):

@@ -257,6 +257,9 @@ class ICMLRunner(BaseRunner):
         ext_buffer = np.array(layer.external_messages_buffer)
         fwd_buffer = np.array(layer.forward_messages_buffer)
         bwd_buffer = np.array(layer.backward_messages_buffer)
+        trajectory = np.array(
+            [np.zeros_like(self.environment.trajectory[0])] + self.environment.trajectory
+        )
 
         if len(obs_buffer) == 0:
             return
@@ -278,8 +281,8 @@ class ICMLRunner(BaseRunner):
             run_name = str(self.seed)
 
         for name, array in zip(
-                ['ext', 'obs', 'fwd', 'bwd'],
-                [ext_buffer, obs_buffer, fwd_buffer, bwd_buffer]
+                ['ext', 'obs', 'fwd', 'bwd', 'traj'],
+                [ext_buffer, obs_buffer, fwd_buffer, bwd_buffer, trajectory]
         ):
             path_name = os.path.join(
                 path,
