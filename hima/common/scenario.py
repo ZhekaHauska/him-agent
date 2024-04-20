@@ -42,6 +42,9 @@ class Scenario:
                 elif operator == 'mod':
                     if (attr % val) == 0:
                         self._execute(event)
+                elif operator == '>':
+                    if attr > val:
+                        self._execute(event)
                 else:
                     raise NotImplemented(f'Operator "{operator}" is not implemented!')
 
