@@ -61,7 +61,9 @@ class SdrDataset:
     def get_sdr(self, ind: int) -> SparseSdr | RateSdr:
         if self.binary:
             return self.binary_sparse_sdrs[ind]
-        return RateSdr(self.sparse_sdrs[ind], values=self.dense_values[ind])
+
+        sdr = self.sparse_sdrs[ind]
+        return RateSdr(sdr, values=self.dense_values[ind][sdr])
 
 
 class MnistDataset:
@@ -79,7 +81,7 @@ class MnistDataset:
         normalizer, train, test = load_mnist(seed)
 
         # NB: to get sdr for rate sdrs
-        threshold = 1.0 / normalizer
+        threshold = 0.05
 
         train_images, train_targets = train
         self.train = SdrDataset(train_images, train_targets, threshold, binary)

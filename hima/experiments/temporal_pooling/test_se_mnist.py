@@ -8,7 +8,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import numpy.typing as npt
 from tqdm import tqdm, trange
 
 from hima.common.config.base import TConfig
@@ -96,7 +95,7 @@ class SpatialEncoderExperiment:
         self.rng = np.random.default_rng(self.seed)
 
         setup = self.config.config_resolver.resolve(setup, config_type=dict)
-        encoder, input_mode = self._get_setup(**setup)
+        encoder, input_mode, second_layer = self._get_setup(**setup)
         self.input_mode = OutputMode[input_mode.upper()]
         self.is_binary = self.input_mode == OutputMode.BINARY
 
@@ -105,13 +104,17 @@ class SpatialEncoderExperiment:
         self.input_sds = self.data.output_sds
         self.output_sds = Sds.make(output_sds)
 
-        self.encoder = self.config.resolve_object(
-            encoder, feedforward_sds=self.input_sds, output_sds=self.output_sds
-        )
+        if encoder is not None:
+            self.encoder = self.config.resolve_object(
+                encoder, feedforward_sds=self.input_sds, output_sds=self.output_sds
+            )
+            print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
+        else:
+            self.encoder = None
+
         self.n_classes = self.data.n_classes
         self.classifier: TConfig = classifier
-
-        print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
+        self.second_layer = second_layer
 
         self.training = self.config.resolve_object(train, object_type_or_factory=TrainConfig)
         self.testing = self.config.resolve_object(test, object_type_or_factory=TestConfig)
@@ -122,8 +125,13 @@ class SpatialEncoderExperiment:
     def run(self):
         self.print_with_timestamp('==> Run')
 
+        if self.encoder is None:
+            self.run_ann()
+            return
+
         self.i_train_epoch = 0
-        self.test_epoch()
+        if self.logger is not None:
+            self.test_epoch()
 
         while self.i_train_epoch < self.training.n_epochs:
             self.i_train_epoch += 1
@@ -188,7 +196,7 @@ class SpatialEncoderExperiment:
         print('Evaluating with MLP')
         classifier = self.train_mlp_classifier(train_sdrs)
         accuracy = 0.
-        dense_sdr = np.zeros(self.output_sds.size)
+        dense_sdr = np.zeros(classifier.feedforward_sds.size)
 
         data = self.data.test
         for i in range(data.n_images):
@@ -201,7 +209,6 @@ class SpatialEncoderExperiment:
             dense_sdr[sdr] = 0.
 
         accuracy /= data.n_images
-
         loss = np.mean(classifier.losses)
 
         print(f'Accuracy: {accuracy:.3%} | Loss: {loss:.3f}')
@@ -228,7 +235,8 @@ class SpatialEncoderExperiment:
     def train_mlp_classifier(self, train_enc_sdrs: list[AnySparseSdr]):
         classifier: MlpClassifier = self.config.resolve_object(
             self.classifier, object_type_or_factory=MlpClassifier,
-            feedforward_sds=self.output_sds, n_classes=self.n_classes
+            feedforward_sds=self.output_sds, n_classes=self.n_classes,
+
         )
 
         data = self.data.train
@@ -237,7 +245,7 @@ class SpatialEncoderExperiment:
             batched_indices = np.array_split(indices, len(indices) // self.testing.batch_size)
 
             for batch_ix in batched_indices:
-                batch = np.zeros((len(batch_ix), self.output_sds.size))
+                batch = np.zeros((len(batch_ix), classifier.feedforward_sds.size))
                 for i, encoded_sdr_ix in enumerate(batch_ix):
                     encoded_sdr_ix: int
                     sdr, rates = split_sdr_values(train_enc_sdrs[encoded_sdr_ix])
@@ -247,6 +255,65 @@ class SpatialEncoderExperiment:
                 classifier.learn(batch, target_cls)
 
         return classifier
+
+    def run_ann(self):
+        self.i_train_epoch = 0
+
+        self.classifier['hidden_layer'] = self.output_sds.size
+        classifier: MlpClassifier = self.config.resolve_object(
+            self.classifier, object_type_or_factory=MlpClassifier,
+            feedforward_sds=self.input_sds, n_classes=self.n_classes,
+
+        )
+
+        def eval_mlp():
+            print(f'==> Test after {self.i_train_epoch}')
+            accuracy = 0.
+            dense_sdr = np.zeros(classifier.feedforward_sds.size)
+
+            test_data = self.data.test
+            for j in range(test_data.n_images):
+                target_cls = test_data.targets[j]
+                sdr, rates = split_sdr_values(test_data.get_sdr(j))
+                dense_sdr[sdr] = rates
+
+                prediction = classifier.predict(dense_sdr)
+                accuracy += prediction.argmax() == target_cls
+                dense_sdr[sdr] = 0.
+
+            accuracy /= test_data.n_images
+            loss = np.mean(classifier.losses)
+
+            print(f'Accuracy: {accuracy:.3%} | Loss: {loss:.3f}')
+            metrics = {
+                'mlp_accuracy': accuracy,
+                'mlp_loss': loss,
+            }
+            metrics = personalize_metrics(metrics, 'eval')
+            self.log_progress(metrics)
+            print('<== Test')
+
+        self.i_train_epoch = 0
+        while self.i_train_epoch < self.training.n_epochs:
+            self.i_train_epoch += 1
+            self.print_with_timestamp(f'Epoch {self.i_train_epoch}')
+
+            data = self.data.train
+            indices = self.rng.permutation(data.n_images)
+            batched_indices = np.array_split(indices, len(indices) // self.testing.batch_size)
+
+            for batch_ix in batched_indices:
+                batch = np.zeros((len(batch_ix), classifier.feedforward_sds.size))
+                for i, sample_ix in enumerate(batch_ix):
+                    sample_ix: int
+                    sdr, rates = split_sdr_values(data.get_sdr(sample_ix))
+                    batch[i, sdr] = rates
+
+                target_cls = data.targets[batch_ix]
+                classifier.learn(batch, target_cls)
+
+            if self.testing.tick() or self.i_train_epoch == 1:
+                eval_mlp()
 
     def process_sample(self, data, obs_ind: int, learn: bool):
         obs_sdr = data.get_sdr(obs_ind)
@@ -261,8 +328,8 @@ class SpatialEncoderExperiment:
 
 
     @staticmethod
-    def _get_setup(encoder: TConfig, input_mode: str):
-        return encoder, input_mode
+    def _get_setup(input_mode: str, encoder: TConfig = None, second_layer: bool = False):
+        return encoder, input_mode, second_layer
 
     def print_with_timestamp(self, *args, cond: bool = True):
         if not cond:

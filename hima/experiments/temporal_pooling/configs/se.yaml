@@ -3,21 +3,22 @@ project: stp.se_mnist
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 
 seed: 42
-output_sds: [2000, 40]
-#output_sds: [400, 10]
+#output_sds: [2000, 40]
+#output_sds: [1000, 20]
+output_sds: [400, 10]
 setup: setups.binary_basic_sp
 
 train:
   n_epochs: 5
 test:
-  eval_schedule: 1
+  eval_schedule: 4
   n_epochs: 10
   batch_size: 64
 
 classifier:
   feedforward_sds: ???
   n_classes: ???
-  learning_rate: 0.001
+  learning_rate: 0.0001
   collect_losses: 1000
 
 sp:
@@ -40,6 +41,25 @@ sp:
     newborn_pruning_cycle: 40.0
     newborn_pruning_stages: 20
 
+  sng_sp:
+    _type_: sp.layer
+    seed: ???
+    # input
+    feedforward_sds: ???
+
+    rf_sparsity: 0.6
+    rf_to_input_ratio: 0.3
+#    rf_to_input_ratio: 0.8
+
+    # learning
+    learning_rate: 0.01
+    learning_algo: new
+    synaptogenesis_cycle: 200.0
+
+    # output
+    output_sds: ???
+    output_mode: binary
+
   _common_base:
     _base_: $_base.spatial_pooler.default
     # input
@@ -61,9 +81,22 @@ setups:
   binary_basic_sp:
     encoder: sp.basic_sp
     input_mode: binary
-#  rate_basic_sp:
-#    encoder: sp.basic_sp
-#    input_mode: rate
+  binary_ann:
+    input_mode: binary
+    second_layer: True
+  rate_ann:
+    input_mode: rate
+    second_layer: True
+  binary_sng_sp:
+    encoder:
+      _base_: sp.sng_sp
+      output_mode: rate
+    input_mode: binary
+  rate_sng_sp:
+    encoder:
+      _base_: sp.sng_sp
+      output_mode: rate
+    input_mode: rate
 
 sdr_tracker:
   _type_: tracker.sdr

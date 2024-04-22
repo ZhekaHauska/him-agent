@@ -43,6 +43,7 @@ class MlpClassifier:
             learning_rate: float,
             seed: int = None,
             collect_losses: int = 0,
+            hidden_layer: bool | int = False
     ):
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = feedforward_sds
@@ -51,9 +52,20 @@ class MlpClassifier:
         shape = (feedforward_sds.size, n_classes)
 
         self.lr = learning_rate
-        self.mlp = nn.Sequential(
-            nn.Linear(shape[0], shape[1], dtype=float),
-        )
+
+        if hidden_layer:
+            layers = [
+                nn.Linear(shape[0], hidden_layer, dtype=float),
+                nn.Tanh(),
+                nn.Linear(hidden_layer, shape[1], dtype=float)
+            ]
+        else:
+            layers = [
+                nn.Linear(shape[0], shape[1], dtype=float),
+            ]
+
+        self.mlp = nn.Sequential(*layers)
+
         self.loss_func = nn.CrossEntropyLoss()
         self.optim = optim.Adam(self.mlp.parameters(), lr=self.lr)
 
