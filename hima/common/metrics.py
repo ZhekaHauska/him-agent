@@ -867,6 +867,60 @@ class GridworldSR(BaseMetric):
         np.savez(path, states=self.memory.weights[0], sfs=self.memory.weights[1])
 
 
+class GridworldStateImage(BaseMetric):
+    def __init__(
+            self, name, repr_att, state_att, normalized,
+            n_states,
+            logger, runner,
+            update_step, log_step, update_period, log_period
+    ):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.normalized = normalized
+        self.repr_att = repr_att
+        self.state_att = state_att
+        self.n_states = n_states
+        self.repr_shape = self.get_attr(self.repr_att).shape
+
+        self.representations = np.zeros((n_states, *self.repr_shape))
+        self.state_visits = np.zeros(n_states)
+
+    def update(self):
+        representation = self.get_attr(self.repr_att)
+        state = self.get_attr(self.state_att)
+
+        self.representations[state] += representation
+        self.state_visits[state] += 1
+
+    def log(self, step):
+        from matplotlib import pyplot as plt
+        if self.normalized:
+            hist = np.divide(
+                        self.representations, self.state_visits.reshape(-1, 1, 1),
+                        where=self.state_visits.reshape(-1, 1, 1) > 0,
+                        out=np.full_like(self.representations, fill_value=np.nan)
+                    )
+        else:
+            hist = self.representations
+
+        log_dict = dict()
+        for i in range(self.n_states):
+            plt.figure()
+            log_dict[f"{self.name}_state_{i}"] = wandb.Image(sns.heatmap(hist[i]))
+            plt.close()
+
+        log_dict[self.log_step] = step
+        self.logger.log(
+            log_dict
+        )
+        plt.close('all')
+        self._reset()
+
+    def _reset(self):
+        self.representations = np.zeros((self.n_states, *self.repr_shape))
+        self.state_visits = np.zeros(self.n_states)
+
+
 class ArrayMetrics(BaseMetric):
     def __init__(self, metrics, logger, runner,
                  update_step, log_step, update_period, log_period,

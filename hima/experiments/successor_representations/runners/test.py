@@ -126,6 +126,12 @@ class ICMLRunner(BaseRunner):
         return values, counts
 
     @property
+    def state_representation(self):
+        internal_messages = self.agent.agent.cortical_column.layer.internal_messages
+        cells_per_column = self.agent.agent.cortical_column.layer.cells_per_column
+        return internal_messages.reshape(-1, cells_per_column).T
+
+    @property
     def q_value(self):
         env = self.environment.environment
         # left, right, up, down
