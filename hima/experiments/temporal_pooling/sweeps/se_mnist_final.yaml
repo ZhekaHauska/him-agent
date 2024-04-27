@@ -1,0 +1,32 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: stp.se_mnist_final
+method: grid
+parameters:
+  seed.:
+    values: [500, 510, 520, 530, 540] #, 550, 560, 570, 580, 590] #, 700, 701, 702, 703, 704, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+    # values: [40, 41, 42, 43, 44] #, 45, 46] #, 47, 48, 49] #, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+
+  log.:
+    value: True
+  output_sds.:
+    value: [2000, 40]
+  train..n_epochs:
+    value: 25
+  test..n_epochs:
+    value: 25
+  test..eval_first:
+    value: 5
+  test..eval_schedule:
+    value: 5
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ../configs/se.yaml

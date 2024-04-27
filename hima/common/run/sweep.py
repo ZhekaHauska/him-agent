@@ -17,7 +17,6 @@ from hima.common.config.base import read_config, extracted
 from hima.common.run.argparse import parse_arg_list
 from hima.common.run.entrypoint import RunParams, run_single_run_experiment
 from hima.common.run.wandb import turn_off_gui_backend_for_matplotlib, set_wandb_sweep_threading
-from hima.common.utils import isnone
 
 
 def run_sweep(

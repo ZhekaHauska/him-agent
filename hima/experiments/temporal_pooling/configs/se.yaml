@@ -9,11 +9,13 @@ output_sds: [400, 10]
 setup: setups.binary_basic_sp
 
 train:
-  n_epochs: 5
-test:
-  eval_schedule: 4
-  n_epochs: 10
+  n_epochs: 20
   batch_size: 64
+  online: False
+test:
+  eval_first: 1
+  eval_schedule: 5
+  n_epochs: 20
 
 classifier:
   feedforward_sds: ???
@@ -83,10 +85,8 @@ setups:
     input_mode: binary
   binary_ann:
     input_mode: binary
-    second_layer: True
   rate_ann:
     input_mode: rate
-    second_layer: True
   binary_sng_sp:
     encoder:
       _base_: sp.sng_sp
