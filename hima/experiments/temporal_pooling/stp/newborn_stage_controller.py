@@ -33,7 +33,7 @@ class NewbornStageController:
 
             initial_max_rf_sparsity: float, target_max_rf_sparsity: float,
             initial_rf_to_input_ratio: float, target_rf_to_input_ratio: float,
-            connectable_ff_size: int = False,
+            connectable_ff_size: int = None,
     ):
         self.sp = sp
 

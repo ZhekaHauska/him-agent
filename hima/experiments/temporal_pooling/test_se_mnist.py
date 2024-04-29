@@ -138,8 +138,8 @@ class SpatialEncoderExperiment:
 
     def run_se_ann(self):
         self.i_train_epoch = 0
-        if self.logger is not None:
-            self.test_epoch_se_ann()
+        # if self.logger is not None:
+        #     self.test_epoch_se_ann()
 
         while self.i_train_epoch < self.training.n_epochs:
             self.i_train_epoch += 1
@@ -185,7 +185,8 @@ class SpatialEncoderExperiment:
         self.train_epoch_ann_classifier(self.full_time_ann_classifier, train_sdrs)
         online_metrics = self.evaluate_ann_classifier(self.full_time_ann_classifier, test_sdrs)
         if not self.training.online:
-            metrics |= personalize_metrics(online_metrics, 'online')
+            online_metrics = personalize_metrics(online_metrics, 'online')
+        metrics |= online_metrics
 
         metrics = personalize_metrics(metrics, 'eval')
         self.log_progress(metrics)
