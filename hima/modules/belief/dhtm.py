@@ -1100,6 +1100,7 @@ class DHTM(Layer):
         self.external_messages_buffer = list()
         self.forward_messages_buffer = list()
         self.backward_messages_buffer = list()
+        self.prior_buffer = list()
         self.can_clear_buffers = False
 
         # instead of deliberately saving prior
@@ -1157,6 +1158,7 @@ class DHTM(Layer):
         self.external_messages_buffer.clear()
         self.forward_messages_buffer.clear()
         self.backward_messages_buffer.clear()
+        self.prior_buffer.clear()
 
     def predict(self, context_factors=None, **_):
         if context_factors is None:
@@ -1206,6 +1208,8 @@ class DHTM(Layer):
                 self.clear_buffers()
                 self.can_clear_buffers = False
 
+            # save t prediction (prior)
+            self.prior_buffer.append(self.internal_messages.copy())
             # save t-1 messages
             self.observation_messages_buffer.append(self.observation_messages.copy())
             self.external_messages_buffer.append(self.external_messages.copy())

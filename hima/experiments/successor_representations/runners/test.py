@@ -259,16 +259,17 @@ class ICMLRunner(BaseRunner):
         layer = self.agent.agent.cortical_column.layer
         cells_per_column = layer.cells_per_column
 
+        if len(layer.observation_messages_buffer) == 0:
+            return
+
         obs_buffer = np.array(layer.observation_messages_buffer)
         ext_buffer = np.array(layer.external_messages_buffer)
         fwd_buffer = np.array(layer.forward_messages_buffer)
         bwd_buffer = np.array(layer.backward_messages_buffer)
+        prior_buffer = np.array([layer.forward_messages_buffer[0]] + layer.prior_buffer)
         trajectory = np.array(
             [np.zeros_like(self.environment.trajectory[0])] + self.environment.trajectory
         )
-
-        if len(obs_buffer) == 0:
-            return
 
         fwd_buffer = np.transpose(
             fwd_buffer.reshape(fwd_buffer.shape[0], -1, cells_per_column),
@@ -276,6 +277,10 @@ class ICMLRunner(BaseRunner):
         )
         bwd_buffer = np.transpose(
             bwd_buffer.reshape(bwd_buffer.shape[0], -1, cells_per_column),
+            (0, 2, 1)
+        )
+        prior_buffer = np.transpose(
+            prior_buffer.reshape(prior_buffer.shape[0], -1, cells_per_column),
             (0, 2, 1)
         )
         ext_buffer = ext_buffer.reshape(ext_buffer.shape[0], 1, -1)
@@ -287,8 +292,8 @@ class ICMLRunner(BaseRunner):
             run_name = str(self.seed)
 
         for name, array in zip(
-                ['ext', 'obs', 'fwd', 'bwd', 'traj'],
-                [ext_buffer, obs_buffer, fwd_buffer, bwd_buffer, trajectory]
+                ['ext', 'obs', 'fwd', 'bwd', 'prior', 'traj'],
+                [ext_buffer, obs_buffer, fwd_buffer, bwd_buffer, prior_buffer, trajectory]
         ):
             path_name = os.path.join(
                 path,
