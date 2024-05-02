@@ -987,6 +987,7 @@ class DHTM(Layer):
             developmental_period: int = 10000,
             cells_activity_lr: float = 0.1,
             use_backward_messages: bool = False,
+            posterior_noise: float = 0.001,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -1011,6 +1012,7 @@ class DHTM(Layer):
         self.unused_vars_boost = unused_vars_boost
         self.cells_activity_lr = cells_activity_lr
         self.use_backward_messages = use_backward_messages
+        self.posterior_noise = posterior_noise
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1245,25 +1247,36 @@ class DHTM(Layer):
         self.backward_messages_buffer = self.backward_messages_buffer[::-1]
 
     def _update_segments(self):
+        self.internal_messages = self.initial_forward_messages.copy()
+        self.internal_active_cells.sparse = self._sample_cells(
+            self.internal_messages.reshape(self.n_hidden_vars, -1)
+        )
         for t in range(1, len(self.forward_messages_buffer)):
-            self.context_messages = self.forward_messages_buffer[t-1]
-            self.external_messages = self.external_messages_buffer[t-1]
+            self.set_external_messages(self.external_messages_buffer[t - 1].copy())
 
-            # combine forward and backward messages
             if self.use_backward_messages:
-                self.internal_messages = (
-                        self.forward_messages_buffer[t] * self.backward_messages_buffer[t]
-                )
+                # update forward messages
+                if t < len(self.observation_messages_buffer):
+                    self.set_context_messages(self.internal_active_cells.dense.astype(REAL64_DTYPE))
+                    self.predict()
+                    self.observation_messages = self.observation_messages_buffer[t].copy()
+                    self.internal_messages = self._get_posterior()
+                else:
+                    # we don't have an observation for initial backward step
+                    # so just copy backward messages
+                    self.internal_messages = self.backward_messages_buffer[t].copy()
+                self.forward_messages_buffer[t] = self.internal_messages.copy()
+                # combine forward and backward messages
+                self.internal_messages *= self.backward_messages_buffer[t]
                 self.internal_messages = (
                     normalize(self.internal_messages.reshape(self.n_hidden_vars, -1))
                 ).flatten()
             else:
+                self.set_context_messages(self.forward_messages_buffer[t-1].copy())
                 self.internal_messages = self.forward_messages_buffer[t].copy()
 
             # sample distributions
-            self.context_active_cells.sparse = self._sample_cells(
-                self.context_messages.reshape(self.n_context_vars, -1)
-            )
+            self.context_active_cells.sparse = self.internal_active_cells.sparse.copy()
             self.internal_active_cells.sparse = self._sample_cells(
                 self.internal_messages.reshape(self.n_hidden_vars, -1)
             )
@@ -1327,7 +1340,8 @@ class DHTM(Layer):
             self.internal_cells_activity += self.cells_activity_lr * (
                     self.internal_active_cells.dense - self.internal_cells_activity
             )
-            self.can_clear_buffers = True
+
+        self.can_clear_buffers = True
 
     def _get_posterior(self):
         observation = np.flatnonzero(self.observation_messages)
@@ -1337,7 +1351,7 @@ class DHTM(Layer):
         messages = self.internal_messages.reshape(self.n_hidden_vars, -1)
         obs_factor = obs_factor.reshape(self.n_hidden_vars, -1)
 
-        messages = normalize(messages * obs_factor, obs_factor)
+        messages = normalize((messages + self.posterior_noise) * obs_factor, obs_factor)
 
         return messages.flatten()
 
