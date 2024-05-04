@@ -1317,7 +1317,7 @@ class DHTM(Layer):
             )
 
             # grow backward connection symmetrically
-            if self.use_backward_messages:
+            if self.grow_backward_connections:
                 (
                     self.cells_to_grow_new_context_segments_backward,
                     self.new_context_segments_backward
