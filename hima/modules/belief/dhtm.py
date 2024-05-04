@@ -1012,6 +1012,7 @@ class DHTM(Layer):
         self.unused_vars_boost = unused_vars_boost
         self.cells_activity_lr = cells_activity_lr
         self.use_backward_messages = use_backward_messages
+        self.grow_backward_connections = use_backward_messages
         self.posterior_noise = posterior_noise
 
         self.cells_per_column = cells_per_column
@@ -1355,7 +1356,7 @@ class DHTM(Layer):
         messages = self.internal_messages.reshape(self.n_hidden_vars, -1)
         obs_factor = obs_factor.reshape(self.n_hidden_vars, -1)
 
-        messages = normalize((messages + self.posterior_noise) * obs_factor, obs_factor)
+        messages = normalize((messages + self.posterior_noise / self.cells_per_column) * obs_factor, obs_factor)
 
         return messages.flatten()
 
