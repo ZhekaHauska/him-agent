@@ -15,6 +15,7 @@ import numpy as np
 
 class SequenceViewer:
     ordered_files: list
+
     def __init__(self, directory='./'):
         self.directory = directory
         self.frames = []
@@ -22,6 +23,7 @@ class SequenceViewer:
         self.files = pn.widgets.FileSelector(directory)
         self.time_step = pn.widgets.Player(start=0)
         self.window_size = pn.widgets.IntInput(name='window', value=0, start=0)
+        self.aspect = pn.widgets.FloatInput(name='aspect', value=1, start=0)
         self.res = pn.widgets.IntInput(name='resolution', value=1000, start=100)
         self.ordered_files = []
         self.frames = []
@@ -31,18 +33,19 @@ class SequenceViewer:
             files=self.files,
             time_step=self.time_step,
             window_size=self.window_size,
-            res=self.res
+            res=self.res,
+            aspect=self.aspect
         )
         self.app = pn.Column(
             self.files,
-            pn.Row(self.time_step, self.window_size, self.res),
+            pn.Row(self.time_step, self.window_size, self.res, self.aspect),
             self.canvas
         )
 
     def show(self):
         return self.app
 
-    def show_frames(self, files: list, time_step, window_size, res):
+    def show_frames(self, files: list, time_step, window_size, res, aspect):
         self.update_ordered_files(files)
         if len(self.ordered_files) == 0:
             self.frames = []
@@ -77,11 +80,10 @@ class SequenceViewer:
                 else:
                     frame = np.zeros_like(frames[0])
 
-                aspect = frame.shape[0] / frame.shape[1]
                 img = self.plot_heatmap(
                     frame,
                     res,
-                    max(int(aspect * res), 100),
+                    max(int(aspect * (frame.shape[0] / frame.shape[1]) * res), 100),
                     self.ordered_files[i].split('/')[-1]
                 )
                 imgs.append(img)
