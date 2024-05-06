@@ -13,9 +13,7 @@ from hima.common.config.base import read_config, override_config
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.experiments.successor_representations.runners.base import BaseRunner
-from hima.experiments.successor_representations.runners.visualizers import DHTMVisualizer
 from hima.modules.belief.utils import normalize
-import imageio
 
 
 class ICMLRunner(BaseRunner):
@@ -52,9 +50,6 @@ class ICMLRunner(BaseRunner):
         else:
             raise NotImplementedError
         return env
-
-    def make_visualizer(self):
-        return DHTMVisualizer(self.agent.agent.cortical_column.layer)
 
     def switch_strategy(self, strategy):
         if strategy == 'random':
