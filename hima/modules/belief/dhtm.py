@@ -5,8 +5,11 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+import json
+
 from hima.modules.belief.utils import softmax, normalize, sample_categorical_variables
 from hima.modules.belief.utils import EPS, UINT_DTYPE, REAL_DTYPE, REAL64_DTYPE
+from hima.modules.belief.utils import get_data, send_string, NumpyEncoder
 from hima.modules.belief.factors import Factors
 from hima.modules.belief.cortial_column.layer import Layer
 from hima.common.sdr import sparse_to_dense
@@ -20,7 +23,10 @@ import numpy as np
 import warnings
 import pygraphviz as pgv
 import colormap
+import socket
 
+HOST = "127.0.0.1"
+PORT = 5555
 
 class BioDHTM(Layer):
     """
@@ -989,6 +995,8 @@ class DHTM(Layer):
             use_backward_messages: bool = False,
             posterior_noise: float = 0.001,
             seed: int = None,
+            visualization_server=(HOST, PORT),
+            visualize=True
     ):
         self._rng = np.random.default_rng(seed)
 
@@ -1125,6 +1133,13 @@ class DHTM(Layer):
             like=self.external_messages
         )
 
+        self.visualize = visualize
+        self.vis_server_address = visualization_server
+        self.vis_server = None
+
+        if self.visualize:
+            self.connect_to_vis_server()
+
     def reset(self):
         if self.lr > 0:
             # add last step T messages
@@ -1153,6 +1168,13 @@ class DHTM(Layer):
         self.prediction_cells = np.zeros_like(self.internal_messages)
         self.observation_messages = np.zeros(self.input_sdr_size)
         self.prediction_columns = None
+
+        # attempt to connect to visualization server
+        if self.visualize and (self.vis_server is None):
+            self.connect_to_vis_server()
+
+        if self.vis_server:
+            self._send_json_dict({'type': 'phase', 'phase': 'inference'})
 
     def clear_buffers(self):
         self.observation_messages_buffer.clear()
@@ -1226,9 +1248,14 @@ class DHTM(Layer):
         self.observation_messages = observation_messages
         self.internal_messages = self._get_posterior()
 
+        if self.vis_server is not None:
+            self._send_state()
+
         self.timestep += 1
 
     def _backward_pass(self):
+        if self.vis_server:
+            self._send_json_dict({'type': 'phase', 'phase': 'backward_pass'})
         #           u_t   h^k+1_t+1
         #           |   /
         #   h^k_t - [] - h^k_t+1
@@ -1247,11 +1274,16 @@ class DHTM(Layer):
             self.observation_messages = self.observation_messages_buffer[t].copy()
             self.internal_messages = self._get_posterior()
             self.backward_messages_buffer.append(self.internal_messages.copy())
+            if self.vis_server:
+                self._send_state()
         # add forward prior messages and reverse list for alignment with forward messages
         self.backward_messages_buffer.append(self.initial_forward_messages.copy())
         self.backward_messages_buffer = self.backward_messages_buffer[::-1]
 
     def _update_segments(self):
+        if self.vis_server:
+            self._send_json_dict({'type': 'phase', 'phase': 'learning'})
+
         self.internal_messages = self.initial_forward_messages.copy()
         self.internal_active_cells.sparse = self._sample_cells(
             self.internal_messages.reshape(self.n_hidden_vars, -1)
@@ -1345,6 +1377,9 @@ class DHTM(Layer):
             self.internal_cells_activity += self.cells_activity_lr * (
                     self.internal_active_cells.dense - self.internal_cells_activity
             )
+
+            if self.vis_server is not None:
+                self._send_state()
 
         self.can_clear_buffers = True
 
@@ -1594,33 +1629,6 @@ class DHTM(Layer):
             segments_to_punish.astype(UINT_DTYPE),
             cells_to_grow_new_segments.astype(UINT_DTYPE)
         )
-
-    def _get_cells_for_observation(self, obs_states):
-        vars_for_obs_states = obs_states // self.n_obs_states
-        obs_states_per_var = obs_states - vars_for_obs_states * self.n_obs_states
-
-        hid_vars = (
-            np.tile(np.arange(self.n_hidden_vars_per_obs_var), len(vars_for_obs_states)) +
-            vars_for_obs_states * self.n_hidden_vars_per_obs_var
-        )
-        hid_columns = (
-            np.repeat(obs_states_per_var, self.n_hidden_vars_per_obs_var) +
-            self.n_obs_states * hid_vars
-        )
-
-        all_vars = np.arange(self.n_hidden_vars)
-        vars_without_states = all_vars[np.isin(all_vars, hid_vars, invert=True)]
-
-        cells_for_empty_vars = self._get_cells_in_vars(vars_without_states)
-
-        cells_in_columns = (
-                (
-                    hid_columns * self.cells_per_column
-                ).reshape((-1, 1)) +
-                np.arange(self.cells_per_column, dtype=UINT_DTYPE)
-            ).flatten()
-
-        return np.concatenate([cells_for_empty_vars, cells_in_columns])
 
     def _get_cells_in_vars(self, variables):
         internal_vars_mask = variables < self.n_hidden_vars
@@ -1901,7 +1909,7 @@ class DHTM(Layer):
         g = pgv.AGraph(strict=False, directed=False)
 
         for factors, type_ in zip(
-            (self.context_factors,),
+            (self.context_forward_factors,),
             ('c',)
         ):
             if factors is not None:
@@ -1955,3 +1963,110 @@ class DHTM(Layer):
 
         g.layout(prog='dot')
         return g.draw(path, format='png')
+
+    def hist2d_segments_per_cell(self):
+        # segments in use -> cells -> unique counts -> 2d hist
+        cells = self.context_forward_factors.connections.mapSegmentsToCells(
+            self.context_forward_factors.segments_in_use
+        )
+
+        cells, counts = np.unique(cells, return_counts=True)
+
+        segments_per_cell = np.zeros(self.internal_cells)
+        segments_per_cell[cells - self.internal_cells_range[0]] = counts
+        return segments_per_cell.reshape(-1, self.cells_per_column).T
+
+    def hist2d_new_segments_cells(self):
+        cells_to_grow_segments = np.zeros(self.internal_cells)
+        cells_to_grow_segments[
+            self.cells_to_grow_new_context_segments_forward - self.internal_cells_range[0]
+        ] = 1
+
+        return cells_to_grow_segments.reshape(-1, self.cells_per_column).T
+
+    def hist2d_new_segments_receptive_fields(self):
+        receptive_fields = self.context_forward_factors.receptive_fields[
+            self.new_context_segments_forward
+        ]
+        cells, counts = np.unique(receptive_fields.flatten(), return_counts=True)
+
+        context_mask = (
+                (self.context_cells_range[0] <= cells) &
+                (cells < self.context_cells_range[1])
+        )
+        external_mask = (
+                (self.external_cells_range[0] <= cells) &
+                (cells < self.external_cells_range[1])
+        )
+
+        context_cells_counts = np.zeros(self.context_input_size)
+        context_cells_counts[
+            cells[context_mask] - self.context_cells_range[0]
+        ] = counts[context_mask]
+        context_cells_counts = context_cells_counts.reshape(-1, self.cells_per_column).T
+
+        external_cells_counts = np.zeros(self.external_input_size)
+        external_cells_counts[
+            cells[external_mask] - self.external_cells_range[0]
+        ] = counts[external_mask]
+        external_cells_counts = external_cells_counts.reshape(1, -1)
+        return context_cells_counts, external_cells_counts
+
+    def connect_to_vis_server(self):
+        self.vis_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        try:
+            self.vis_server.connect(self.vis_server_address)
+            # handshake
+            self._send_json_dict({'type': 'hello'})
+            data = get_data(self.vis_server)
+            print(data)
+
+            if data != 'dhtm':
+                raise socket.error(
+                    f'Handshake failed {self.vis_server_address}: It is not DHTM vis server!'
+                )
+            print(f'Connected to visualization server {self.vis_server_address}!')
+        except socket.error as msg:
+            self.vis_server.close()
+            self.vis_server = None
+            print(f'Failed to connect to the visualization server: {msg}. Proceed.')
+
+    def _send_state(self):
+        data = get_data(self.vis_server)
+        if data == 'skip':
+            self._send_json_dict({'type': 'skip'})
+        elif data == 'close':
+            self.vis_server.close()
+            self.vis_server = None
+            print('Server shutdown. Proceed.')
+        elif data == 'step':
+            data_dict = {'type': 'state'}
+            data_dict['external_messages'] = self.external_messages.reshape(1, -1)
+            data_dict['context_messages'] = self.context_messages.reshape(
+                -1, self.cells_per_column
+            ).T
+            data_dict['prediction_cells'] = self.prediction_cells.reshape(
+                -1, self.cells_per_column
+            ).T
+            data_dict['internal_messages'] = self.internal_messages.reshape(
+                -1, self.cells_per_column
+            ).T
+            data_dict['prediction_columns'] = self.prediction_columns.reshape(
+                1, -1
+            )
+            data_dict['observation_messages'] = self.observation_messages.reshape(
+                1, -1
+            )
+            data_dict['segments_per_cell'] = self.hist2d_segments_per_cell()
+            if len(self.new_context_segments_forward) > 0:
+                data_dict['cells_for_new_segments'] = self.hist2d_new_segments_cells()
+                (
+                    data_dict['context_fields_for_new_segments'],
+                    data_dict['external_fields_for_new_segments']
+                ) = self.hist2d_new_segments_receptive_fields()
+
+            self._send_json_dict(data_dict)
+
+    def _send_json_dict(self, data_dict):
+        send_string(json.dumps(data_dict, cls=NumpyEncoder), self.vis_server)

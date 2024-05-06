@@ -4,6 +4,9 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
+import socket
+import time
+import json
 
 EPS = 1e-24
 INT_TYPE = "int64"
@@ -50,3 +53,36 @@ def sample_categorical_variables(probs, rng: np.random.Generator):
     samples = states[cond].astype(UINT_DTYPE)
 
     return samples
+
+
+def get_data(connection: socket):
+    try:
+        data = None
+        while not data:
+            data = connection.recv(4)
+            time.sleep(0.000001)
+
+        length = int.from_bytes(data, "little")
+        string = ""
+        while (
+                len(string) != length
+        ):  # TODO: refactor as string concatenation could be slow
+            string += connection.recv(length).decode()
+
+        return string
+    except socket.timeout as e:
+        print("timed out", e)
+
+    return None
+
+
+def send_string(string, connection: socket):
+    message = len(string).to_bytes(4, "little") + bytes(string.encode())
+    connection.sendall(message)
+
+
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
