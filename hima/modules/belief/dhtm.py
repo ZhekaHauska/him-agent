@@ -1294,7 +1294,7 @@ class DHTM(Layer):
             if self.use_backward_messages:
                 # update forward messages
                 if t < len(self.observation_messages_buffer):
-                    self.set_context_messages(self.internal_active_cells.dense.astype(REAL64_DTYPE))
+                    self.set_context_messages(self.internal_messages.copy())
                     self.predict()
                     self.observation_messages = self.observation_messages_buffer[t].copy()
                     self.internal_messages = self._get_posterior()
