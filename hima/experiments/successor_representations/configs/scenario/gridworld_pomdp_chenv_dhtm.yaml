@@ -24,3 +24,9 @@
 #  params:
 #    setup: blocked
 #    setup_id: 1
+
+#- condition: ['episodes', '>', 0, 'repeat']
+#  check_every: 'episodes'
+#  action: save_buffer
+#  params:
+#    path: 'logs/messages'
