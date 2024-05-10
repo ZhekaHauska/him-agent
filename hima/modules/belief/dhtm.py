@@ -1173,9 +1173,6 @@ class DHTM(Layer):
         if self.visualize and (self.vis_server is None):
             self.connect_to_vis_server()
 
-        if self.vis_server:
-            self._send_json_dict({'type': 'phase', 'phase': 'inference'})
-
     def clear_buffers(self):
         self.observation_messages_buffer.clear()
         self.external_messages_buffer.clear()
@@ -1249,13 +1246,11 @@ class DHTM(Layer):
         self.internal_messages = self._get_posterior()
 
         if self.vis_server is not None:
-            self._send_state()
+            self._send_state('inference')
 
         self.timestep += 1
 
     def _backward_pass(self):
-        if self.vis_server:
-            self._send_json_dict({'type': 'phase', 'phase': 'backward_pass'})
         #           u_t   h^k+1_t+1
         #           |   /
         #   h^k_t - [] - h^k_t+1
@@ -1275,15 +1270,12 @@ class DHTM(Layer):
             self.internal_messages = self._get_posterior()
             self.backward_messages_buffer.append(self.internal_messages.copy())
             if self.vis_server:
-                self._send_state()
+                self._send_state('backward_pass')
         # add forward prior messages and reverse list for alignment with forward messages
         self.backward_messages_buffer.append(self.initial_forward_messages.copy())
         self.backward_messages_buffer = self.backward_messages_buffer[::-1]
 
     def _update_segments(self):
-        if self.vis_server:
-            self._send_json_dict({'type': 'phase', 'phase': 'learning'})
-
         self.internal_messages = self.initial_forward_messages.copy()
         self.internal_active_cells.sparse = self._sample_cells(
             self.internal_messages.reshape(self.n_hidden_vars, -1)
@@ -1379,7 +1371,7 @@ class DHTM(Layer):
             )
 
             if self.vis_server is not None:
-                self._send_state()
+                self._send_state('learning')
 
         self.can_clear_buffers = True
 
@@ -2032,7 +2024,9 @@ class DHTM(Layer):
             self.vis_server = None
             print(f'Failed to connect to the visualization server: {msg}. Proceed.')
 
-    def _send_state(self):
+    def _send_state(self, phase):
+        self._send_json_dict({'type': 'phase', 'phase': phase})
+
         data = get_data(self.vis_server)
         if data == 'skip':
             self._send_json_dict({'type': 'skip'})

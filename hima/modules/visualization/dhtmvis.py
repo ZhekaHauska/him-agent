@@ -91,51 +91,65 @@ class DHTMVisualizer:
 
     def step(self, event):
         if event.key == 'down':
+            # get phase
+            msg = self._get_json_dict()
+            self._is_phase_changed(msg)
             # send request
             self._send_string('step')
             # get data
             msg = self._get_json_dict()
-            # read phase
-            while msg['type'] != 'state':
-                if msg['type'] == 'phase':
-                    if msg['phase'] != self.phase:
-                        self.n_steps = 0
-                    self.phase = msg['phase']
-                msg = self._get_json_dict()
             self.data = self._convert_to_numpy(msg)
             # draw data
-            self.fig_messages.suptitle(f'phase: {self.phase}; step {self.n_steps}', fontsize=14)
-            self.fig_segments.suptitle(f'phase: {self.phase}; step {self.n_steps}', fontsize=14)
             self._draw()
             self.n_steps += 1
         elif event.key == 'up':
-            self._clear_axes()
+            msg = self._get_json_dict()
+            self._is_phase_changed(msg)
             self._send_string('skip')
-            self.fig_messages.suptitle(f'phase: {self.phase}; step {self.n_steps}', fontsize=14)
-            self.fig_segments.suptitle(f'phase: {self.phase}; step {self.n_steps}', fontsize=14)
-            plt.show()
+            self._get_json_dict()
+            self.data = None
+            # update screen
+            self._draw()
             self.n_steps += 1
         elif event.key == 'x':
             self.close()
         elif event.key == 'right':
             while True:
-                self._send_string('skip')
                 msg = self._get_json_dict()
-                if msg['type'] == 'phase':
-                    if msg['phase'] != self.phase:
-                        self.phase = msg['phase']
-                        self.n_steps = 0
-                        self._clear_axes()
-                        self.fig_messages.suptitle(f'phase: {self.phase}; step {self.n_steps}', fontsize=14)
-                        self.fig_segments.suptitle(f'phase: {self.phase}; step {self.n_steps}', fontsize=14)
-                        plt.show()
-                        break
+                if self._is_phase_changed(msg):
+                    # get data
+                    self._send_string('step')
+                    msg = self._get_json_dict()
+                    self.data = self._convert_to_numpy(msg)
+                    # draw data
+                    self._draw()
+                    self.n_steps += 1
+                    break
+                else:
+                    self._send_string('skip')
+                    self._get_json_dict()
+
+    def _is_phase_changed(self, msg):
+        if msg['phase'] != self.phase:
+            self.n_steps = 0
+            self.phase = msg['phase']
+            return True
+        else:
+            return False
 
     def _draw(self):
-        # update figures
         self._clear_axes()
-        self._update_messages()
-        self._update_segments()
+        # update titles
+        self.fig_messages.suptitle(
+            f'phase: {self.phase}; step {self.n_steps}', fontsize=14
+        )
+        self.fig_segments.suptitle(
+            f'phase: {self.phase}; step {self.n_steps}', fontsize=14
+        )
+        # update figures
+        if self.data is not None:
+            self._update_messages()
+            self._update_segments()
 
         plt.show()
 
