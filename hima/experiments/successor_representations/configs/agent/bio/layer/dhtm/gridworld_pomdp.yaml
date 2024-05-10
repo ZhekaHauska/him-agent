@@ -12,7 +12,7 @@ cells_activity_lr: 0.9
 developmental_period: 30000
 posterior_noise: 0.001
 use_backward_messages: True
-visualize: False
+visualize: false
 
 context_factors_conf:
   n_vars_per_factor: 3
