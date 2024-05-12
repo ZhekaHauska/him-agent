@@ -6,6 +6,11 @@
 import numpy as np
 from copy import copy
 
+import pygame
+import matplotlib.pyplot as plt
+from PIL import Image
+import io
+
 
 class GridWorld:
     def __init__(
@@ -15,6 +20,7 @@ class GridWorld:
             observation_radius=0,
             collision_hint=False,
             collision_reward=0,
+            headless=True,
             seed=None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -29,6 +35,7 @@ class GridWorld:
         self.observation_radius = observation_radius
         self.collision_hint = collision_hint
         self.collision_reward = collision_reward
+        self.headless = headless
 
         self.shift = max(self.observation_radius, 1)
 
@@ -61,6 +68,14 @@ class GridWorld:
         # left, right, up, down
         self.actions = {0, 1, 2, 3}
         self.default_reward = default_reward
+
+        if not self.headless:
+            window_size = self.render().size
+            pygame.init()
+            self.canvas = pygame.display.set_mode(window_size)
+            pygame.display.set_caption('Gridworld')
+        else:
+            self.canvas = None
 
     def reset(self, start_r=None, start_c=None):
         if start_r is None:
@@ -132,6 +147,11 @@ class GridWorld:
             else:
                 self.action_success = True
 
+        if self.canvas is not None:
+            im = self.render()
+            self.canvas.blit(pygame.image.fromstring(im.tobytes(), im.size, im.mode), (0, 0))
+            pygame.display.update()
+
     def _get_obs(self, r, c):
         r += self.shift
         c += self.shift
@@ -139,3 +159,24 @@ class GridWorld:
         end_r, end_c = r + self.observation_radius + 1, c + self.observation_radius + 1
         obs = self.colors[start_r:end_r, start_c:end_c]
         return obs
+
+    def render(self):
+        shift = self.shift
+        im = self.colors.copy()
+        agent_color = max(self.unique_colors) + 0.5
+        min_vis_color = np.min(self.colors)
+
+        if shift > 0:
+            im = im[shift:-shift, shift:-shift]
+
+        im[self.r, self.c] = agent_color
+
+        plt.figure()
+        plt.imshow(im, cmap='Pastel1', aspect=1, vmin=min_vis_color)
+        plt.axis('off')
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches="tight")
+        plt.close()
+        buf.seek(0)
+        im = Image.open(buf)
+        return im
