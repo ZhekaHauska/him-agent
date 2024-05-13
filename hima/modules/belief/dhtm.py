@@ -28,6 +28,7 @@ import socket
 HOST = "127.0.0.1"
 PORT = 5555
 
+
 class BioDHTM(Layer):
     """
         This class represents a layer of the neocortex model.
@@ -993,7 +994,9 @@ class DHTM(Layer):
             developmental_period: int = 10000,
             cells_activity_lr: float = 0.1,
             use_backward_messages: bool = False,
-            posterior_noise: float = 0.001,
+            posterior_noise: float = EPS,
+            noise_gamma: float = 0.7,
+            apply_noise: bool = False,
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1022,6 +1025,8 @@ class DHTM(Layer):
         self.use_backward_messages = use_backward_messages
         self.grow_backward_connections = use_backward_messages
         self.posterior_noise = posterior_noise
+        self.noise_gamma = noise_gamma
+        self.apply_noise = apply_noise
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1104,12 +1109,15 @@ class DHTM(Layer):
         self.new_context_segments_backward = np.empty(0)
 
         self.state_information = 0
+        self.surprise = 0
 
         self.observation_messages_buffer = list()
         self.external_messages_buffer = list()
         self.forward_messages_buffer = list()
         self.backward_messages_buffer = list()
         self.prior_buffer = list()
+        self.surprise_forward_buffer = list()
+        self.surprise_backward_buffer = list()
         self.can_clear_buffers = False
 
         # instead of deliberately saving prior
@@ -1168,6 +1176,8 @@ class DHTM(Layer):
         self.prediction_cells = np.zeros_like(self.internal_messages)
         self.observation_messages = np.zeros(self.input_sdr_size)
         self.prediction_columns = None
+        self.state_information = 0
+        self.surprise = 0
 
         # attempt to connect to visualization server
         if self.visualize and (self.vis_server is None):
@@ -1179,6 +1189,8 @@ class DHTM(Layer):
         self.forward_messages_buffer.clear()
         self.backward_messages_buffer.clear()
         self.prior_buffer.clear()
+        self.surprise_forward_buffer.clear()
+        self.surprise_backward_buffer.clear()
 
     def predict(self, context_factors=None, **_):
         if context_factors is None:
@@ -1230,6 +1242,9 @@ class DHTM(Layer):
 
             # save t prediction (prior)
             self.prior_buffer.append(self.internal_messages.copy())
+            # save t surprise
+            self.surprise = - np.log(self.prediction_columns[observation] + EPS)
+            self.surprise_forward_buffer.append(self.surprise.copy())
             # save t-1 messages
             self.observation_messages_buffer.append(self.observation_messages.copy())
             self.external_messages_buffer.append(self.external_messages.copy())
@@ -1266,6 +1281,12 @@ class DHTM(Layer):
 
             self.set_context_messages(self.internal_messages.copy())
             self.predict(self.context_backward_factors)
+            self.surprise = - np.log(
+                self.prediction_columns[
+                    np.flatnonzero(self.observation_messages)
+                ] + EPS
+            )
+            self.surprise_backward_buffer.append(self.surprise.copy())
             self.observation_messages = self.observation_messages_buffer[t].copy()
             self.internal_messages = self._get_posterior()
             self.backward_messages_buffer.append(self.internal_messages.copy())
@@ -1276,6 +1297,13 @@ class DHTM(Layer):
         self.backward_messages_buffer = self.backward_messages_buffer[::-1]
 
     def _update_segments(self):
+        if self.apply_noise and self.use_backward_messages:
+            noise_level_forward = self._get_noise_level(self.surprise_forward_buffer)
+            noise_level_backward = self._get_noise_level(self.surprise_backward_buffer[::-1])
+        else:
+            noise_level_forward = None
+            noise_level_backward = None
+
         self.internal_messages = self.initial_forward_messages.copy()
         self.internal_active_cells.sparse = self._sample_cells(
             self.internal_messages.reshape(self.n_hidden_vars, -1)
@@ -1289,14 +1317,33 @@ class DHTM(Layer):
                     self.set_context_messages(self.internal_messages.copy())
                     self.predict()
                     self.observation_messages = self.observation_messages_buffer[t].copy()
-                    self.internal_messages = self._get_posterior()
+                    self.internal_messages, obs_factor = self._get_posterior(return_obs_factor=True)
+
+                    if self.apply_noise:
+                        internal_messages = self._apply_noise(
+                            self.internal_messages.reshape(self.n_hidden_vars, -1),
+                            obs_factor.reshape(self.n_hidden_vars, -1) / self.cells_per_column,
+                            noise_level_forward[t]
+                        ).flatten()
+
+                        backward_messages = self._apply_noise(
+                            self.backward_messages_buffer[t].reshape(self.n_hidden_vars, -1),
+                            obs_factor.reshape(self.n_hidden_vars, -1) / self.cells_per_column,
+                            noise_level_backward[t]
+                        ).flatten()
+                    else:
+                        internal_messages = self.internal_messages
+                        backward_messages = self.backward_messages_buffer[t]
                 else:
                     # we don't have an observation for initial backward step
                     # so just copy backward messages
                     self.internal_messages = self.backward_messages_buffer[t].copy()
+                    internal_messages = self.internal_messages
+                    backward_messages = self.backward_messages_buffer[t]
+
                 self.forward_messages_buffer[t] = self.internal_messages.copy()
                 # combine forward and backward messages
-                self.internal_messages *= self.backward_messages_buffer[t]
+                self.internal_messages = internal_messages * backward_messages
                 self.internal_messages = (
                     normalize(self.internal_messages.reshape(self.n_hidden_vars, -1))
                 ).flatten()
@@ -1375,7 +1422,7 @@ class DHTM(Layer):
 
         self.can_clear_buffers = True
 
-    def _get_posterior(self):
+    def _get_posterior(self, return_obs_factor=False):
         observation = np.flatnonzero(self.observation_messages)
         cells = self._get_cells_for_observation(observation)
         obs_factor = sparse_to_dense(cells, like=self.internal_messages)
@@ -1385,7 +1432,10 @@ class DHTM(Layer):
 
         messages = normalize((messages + self.posterior_noise / self.cells_per_column) * obs_factor, obs_factor)
 
-        return messages.flatten()
+        if return_obs_factor:
+            return messages.flatten(), obs_factor.flatten()
+        else:
+            return messages.flatten()
 
     def _get_cells_for_observation(self, obs_states):
         vars_for_obs_states = obs_states // self.n_obs_states
@@ -1413,6 +1463,32 @@ class DHTM(Layer):
         ).flatten()
 
         return np.concatenate([cells_for_empty_vars, cells_in_columns])
+
+    def _get_noise_level(self, surprise):
+        """
+            Returns noise level for each step and each observation variable
+        """
+        noise_level = list()
+        x = np.zeros_like(surprise[0])
+        noise_level.append(x.copy())
+        T = len(surprise)
+        for s in surprise[::-1]:
+            x += s/(s+1)
+            noise_level.append(
+                np.clip(x.copy(), 0, 1)
+            )
+            x *= self.noise_gamma
+        return noise_level[::-1]
+
+    def _apply_noise(self, distribution, noise, noise_level):
+        """
+            distribution (n_vars, n_states): categorical distribution for each variable
+            noise (n_vars, n_states): categorical distribution of noise
+            noise_level (n_vars,): noise level per variable
+        """
+        noised_distribution = (1 - noise_level) * distribution + noise_level * noise
+        noised_distribution = normalize(noised_distribution)
+        return noised_distribution
 
     def _propagate_belief(
             self,
