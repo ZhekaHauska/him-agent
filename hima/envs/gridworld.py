@@ -21,6 +21,7 @@ class GridWorld:
             collision_hint=False,
             collision_reward=0,
             headless=True,
+            random_floor_colors=False,
             seed=None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -28,6 +29,13 @@ class GridWorld:
         self.colors, self.rewards, self.terminals = (
             room[0, :, :], room[1, :, :], room[2, :, :]
         )
+
+        if random_floor_colors:
+            # last color reserved for terminal state
+            # negative colors reserved for obstacles
+            colors = self._rng.integers(0, np.max(self.colors), size=self.colors.shape)
+            floor_mask = ~((self.colors < 0) | (self.terminals == 1))
+            self.colors[floor_mask] = colors[floor_mask]
 
         self.h, self.w = self.colors.shape
 
