@@ -179,8 +179,8 @@ class SpatialEncoderExperiment:
         self.log_progress(self.metrics)
 
     def train_epoch_se(self, train_sdrs):
-        for sdr in tqdm(self.rng.permutation(train_sdrs)):
-            self.encoder.compute(sdr, learn=True)
+        for ix in tqdm(self.rng.permutation(len(train_sdrs))):
+            self.encoder.compute(train_sdrs[ix], learn=True)
 
     def train_epoch_se_ann_online(self, train_sdrs, classifier, targets):
         """Train spatial encoder. Train also ANN classifier in batch-ONLINE mode."""
