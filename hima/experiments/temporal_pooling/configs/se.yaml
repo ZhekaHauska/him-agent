@@ -1,27 +1,29 @@
 _type_: stp_experiment.se
-project: stp.se_mnist
+project: stp.se_mnist_tmp
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 
 seed: 42
 #output_sds: [2000, 40]
-#output_sds: [1000, 20]
-output_sds: [400, 10]
+output_sds: [2000, 25]
+#output_sds: [1000, 16]
+#output_sds: [400, 10]
+#output_sds: [125, 2]
 setup: setups.binary_basic_sp
 
 train:
-  n_epochs: 20
+  n_epochs: 4
   batch_size: 64
-  online: False
+  n_online_epochs: 3
 test:
-  eval_first: 1
+  eval_first: 3
   eval_schedule: 5
-  n_epochs: 20
+  n_epochs: 10
 
 classifier:
   feedforward_sds: ???
   n_classes: ???
-  learning_rate: 0.0001
-  collect_losses: 1000
+  learning_rate: 0.0003
+  collect_losses: 1
 
 sp:
   htm_sp:
@@ -29,52 +31,83 @@ sp:
     seed: ???
     feedforward_sds: ???
     output_sds: ???
-    potential_synapses_ratio: 0.6
-    synapse_permanence_deltas: [0.1, 0.01]
+#    potential_synapses_ratio: 0.05
+#    potential_synapses_ratio: 0.1
+#    potential_synapses_ratio: 0.25
+    potential_synapses_ratio: 1.0
+    synapse_permanence_deltas: [0.14, 0.02]
     connected_permanence_threshold: 0.5
-    boost_strength: 0.5
-    boost_sliding_window: 10_000
-    expected_normal_overlap_frequency: 0.001
+    boost_strength: 7.0
+    boost_sliding_window: 1_500
+    expected_normal_overlap_frequency: 0.2
+    min_activation_threshold: 6
   basic_sp:
     _base_: _common_base
     output_sds: ???
-    target_rf_to_input_ratio: 0.3
+#    target_rf_to_input_ratio: 0.3
+#    newborn_pruning_cycle: 40.0
+#    newborn_pruning_stages: 20
+
+  float_sp:
+    _base_: _common_base
+    _type_: sp.float
+    output_sds: ???
+#    target_rf_to_input_ratio: 0.3
 #    target_rf_to_input_ratio: 2.0
-    newborn_pruning_cycle: 40.0
-    newborn_pruning_stages: 20
+#    newborn_pruning_cycle: 50.0
+#    newborn_pruning_stages: 20
 
   sng_sp:
-    _type_: sp.layer
+    _type_: sp.layer_bckp
     seed: ???
     # input
     feedforward_sds: ???
 
-    rf_sparsity: 0.6
-    rf_to_input_ratio: 0.3
+    # input
+    target_max_rf_sparsity: 0.4
+    initial_rf_to_input_ratio: 8.0
+    # learning
+    newborn_pruning_cycle: 50.0
+    newborn_pruning_stages: 20
+    newborn_pruning_mode: powerlaw
+#    prune_grow_cycle: 200.0
+    adapt_to_ff_sparsity: True
+    boosting_k: 0.5
+
+    initial_max_rf_sparsity: 0.6
+    target_rf_to_input_ratio: 0.3
+
+#    rf_sparsity: 0.6
+#    rf_to_input_ratio: 0.3
 #    rf_to_input_ratio: 0.8
 
     # learning
-    learning_rate: 0.01
+    learning_rate: 0.02
     learning_algo: new
     synaptogenesis_cycle: 200.0
 
     # output
     output_sds: ???
-    output_mode: binary
+    output_mode: rate
 
   _common_base:
     _base_: $_base.spatial_pooler.default
     # input
+#    target_rf_to_input_ratio: 0.3
+    target_rf_to_input_ratio: 0.5
+#    target_rf_to_input_ratio: 2.0
+
     target_max_rf_sparsity: 0.4
+    initial_max_rf_sparsity: 0.6
     initial_rf_to_input_ratio: 8.0
     # learning
-    learning_rate: 0.02
-    newborn_pruning_cycle: 10.0
-    newborn_pruning_stages: 10
+    learning_rate: 0.01
+    newborn_pruning_cycle: 50.0
+    newborn_pruning_stages: 20
     newborn_pruning_mode: powerlaw
-    prune_grow_cycle: 200.0
+    prune_grow_cycle: 1000.0
     adapt_to_ff_sparsity: True
-    boosting_k: 1.0
+    boosting_k: 7.0
 
 setups:
   binary_htm_sp:
@@ -89,12 +122,12 @@ setups:
     input_mode: rate
   binary_sng_sp:
     encoder:
-      _base_: sp.sng_sp
+      _base_: sp.float_sp
       output_mode: rate
     input_mode: binary
   rate_sng_sp:
     encoder:
-      _base_: sp.sng_sp
+      _base_: sp.float_sp
       output_mode: rate
     input_mode: rate
 
