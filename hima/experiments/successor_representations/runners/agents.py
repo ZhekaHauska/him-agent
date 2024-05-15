@@ -18,9 +18,77 @@ from hima.agents.succesor_representations.striatum import Striatum
 from hima.modules.dvs import DVS
 from hima.agents.q.agent import QAgent
 from hima.agents.sr.table import SRAgent
+import os
 
 import numpy as np
 from typing import Literal
+
+
+class DatasetCreatorAgent(BaseAgent):
+    camera: DVS | None
+
+    def __init__(
+            self,
+            dataset_path,
+            raw_obs_shape,
+            camera_mode=None,
+            seed=None,
+            **kwargs
+    ):
+        self.initial_action = None
+        self.state_value = 0
+
+        self.seed = seed
+        self.dataset_path = dataset_path
+        try:
+            os.mkdir(self.dataset_path)
+        except OSError as error:
+            print(error)
+
+        self.raw_obs_shape = raw_obs_shape
+        self.camera_mode = camera_mode
+
+        if self.camera_mode is not None:
+            self.camera = DVS(self.raw_obs_shape, self.camera_mode, self.seed)
+        else:
+            self.camera = None
+
+        self.images = []
+        self.chunk_id = 0
+
+    def observe(self, events, action, reward=0):
+        if self.camera is not None:
+            events = self.camera.capture(events)
+            im = sparse_to_dense(events, shape=self.raw_obs_shape)
+        else:
+            im = events
+
+        self.images.append(im.copy())
+
+    def sample_action(self):
+        return None
+
+    def reinforce(self, reward):
+        return None
+
+    def reset(self):
+        return None
+
+    def save(self):
+        np.save(
+            os.path.join(
+                self.dataset_path,
+                f'data{self.chunk_id}.npy'
+            ),
+            np.array(self.images)
+        )
+        self.chunk_id += 1
+        self.images.clear()
+
+    def print_digest(self):
+        print(f'dataset path: {self.dataset_path}')
+        print(f'image size: {self.raw_obs_shape}; camera mode: {self.camera_mode}')
+        print(f'chunk: {self.chunk_id}; images: {len(self.images)}')
 
 
 class BioAgentWrapper(BaseAgent):

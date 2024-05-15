@@ -31,6 +31,10 @@ class ICMLRunner(BaseRunner):
             from hima.experiments.successor_representations.runners.agents\
                 import SRTableAgentWrapper
             agent = SRTableAgentWrapper(conf)
+        elif agent_type == 'data':
+            from hima.experiments.successor_representations.runners.agents\
+                import DatasetCreatorAgent
+            agent = DatasetCreatorAgent(**conf)
         else:
             raise NotImplementedError
 
@@ -314,7 +318,10 @@ def main(config_path):
     config['agent_type'] = agent_conf_path.split('/')[-2]
     config['agent'] = read_config(agent_conf_path)
 
-    config['metrics'] = read_config(config['run'].pop('metrics_conf'))
+    metrics_conf = config['run'].pop('metrics_conf')
+    if metrics_conf is not None:
+        config['metrics'] = read_config(metrics_conf)
+
     if config['run']['seed'] is None:
         config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
 

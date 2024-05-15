@@ -1,0 +1,18 @@
+log: False
+project_name: animalai_test
+run_tag: null
+
+action_inertia: 1
+frame_skip: 3
+strategies: null
+observe_action: True
+reward_free: True
+
+setup: custom/free10x10.yaml
+
+scenario: 'configs/scenario/gather_data.yaml'
+env_conf: 'configs/environment/animalai/default.yaml'
+agent_conf: 'configs/agent/data/animalai.yaml'
+metrics_conf: null
+
+seed: null

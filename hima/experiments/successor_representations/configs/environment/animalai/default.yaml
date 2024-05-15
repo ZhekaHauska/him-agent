@@ -1,5 +1,6 @@
 play: False
 useCamera: True
+resolution: 64
 useRayCasts: False
 timescale: 10 #300
 targetFrameRate: -1
