@@ -1,7 +1,8 @@
 numpy
 matplotlib
 jupyterlab
-PyYaml
+PyYAML
+ruamel.yaml==0.17.21
 tqdm
 wandb
 imageio
@@ -13,6 +14,9 @@ torch
 torchvision
 torchaudio
 hmmlearn
+MiniSom
+colormap
+numba
 
 # Install also (see `install.md`):
 #   1. Our fork of the htm.core
