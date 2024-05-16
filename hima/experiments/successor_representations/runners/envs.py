@@ -63,7 +63,7 @@ class PinballWrapper(BaseEnvironment):
 
 class AnimalAIWrapper(BaseEnvironment):
     def __init__(self, conf, setup):
-        from animalai.envs.actions import AAIActions
+        from animalai.actions import AAIActions
 
         conf['file_name'] = self._get_exe_path()
         self.conf = conf
@@ -119,7 +119,7 @@ class AnimalAIWrapper(BaseEnvironment):
         self.environment.close()
 
     def _start_env(self, setup):
-        from animalai.envs.environment import AnimalAIEnvironment
+        from animalai.environment import AnimalAIEnvironment
         from mlagents_envs.exception import UnityWorkerInUseException
 
         worker_id = 0
