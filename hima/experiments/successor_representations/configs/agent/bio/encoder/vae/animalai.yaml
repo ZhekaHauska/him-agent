@@ -1,0 +1,10 @@
+checkpoint_path: "/home/evgenio/Activity/him-agent/hima/experiments/successor_representations/configs/agent/bio/encoder/vae/checkpoints/version0.ckpt"
+model_params:
+  in_channels: 1
+  latent_dim: 10
+  categorical_dim: 40
+  temperature: 0.5
+  anneal_rate: 0.00003
+  anneal_interval: 100
+  alpha: 1.0
+
