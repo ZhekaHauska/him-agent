@@ -19,10 +19,11 @@ from hima.common.sdrr import OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, prepend_dict_keys
+from hima.experiments.temporal_pooling.data.dvc_ext import DvcDataset
 from hima.experiments.temporal_pooling.data.mnist_ext import MnistDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
-from hima.experiments.temporal_pooling.stp.mlp_classifier_torch import MlpClassifier
+from hima.experiments.temporal_pooling.stp.mlp_torch import MlpClassifier
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     make_repeating_counter,
     RepeatingCountdown, tick
@@ -78,7 +79,7 @@ class SpatialEncoderExperiment:
             self, config: TConfig, config_path: Path,
             log: bool, seed: int, output_sds: Sds,
             train: TConfig, test: TConfig,
-            setup: TConfig, classifier: TConfig,
+            setup: TConfig, classifier: TConfig, data: str,
             sdr_tracker: TConfig,
             project: str = None,
             wandb_init: TConfig = None,
@@ -104,9 +105,15 @@ class SpatialEncoderExperiment:
         self.input_mode = OutputMode[input_mode.upper()]
         self.is_binary = self.input_mode == OutputMode.BINARY
 
-        self.data = MnistDataset(seed=seed, binary=self.is_binary)
+        if data in ['mnist', 'cifar']:
+            self.data = MnistDataset(seed=seed, binary=self.is_binary, ds=data)
+            self.classification = True
+        else:
+            ds_filepath = Path('~/data/outdoors_walking').expanduser()
+            self.data = DvcDataset(seed=seed, filepath=ds_filepath, binary=self.is_binary)
+            self.classification = False
 
-        self.input_sds = self.data.output_sds
+        self.input_sds = self.data.sds
         self.output_sds = Sds.make(output_sds)
 
         self.training = self.config.resolve_object(train, object_type_or_factory=TrainConfig)
@@ -233,6 +240,7 @@ class SpatialEncoderExperiment:
         accuracy = self.evaluate_ann_classifier(
             kn_ann_classifier, test_sdrs, self.data.test.targets
         )
+        self.print_decoder_quality(accuracy, final_epoch_kn_loss)
 
         # add metrics
         epoch_metrics = self.metrics.setdefault('epochs', {})
@@ -278,7 +286,7 @@ class SpatialEncoderExperiment:
 
         nn_epoch_loss = np.mean(nn_epoch_losses)
         accuracy = self.evaluate_ann_classifier(classifier, test_sdrs, targets)
-        print(f'MLP Accuracy: {accuracy:.3%} | Loss: {nn_epoch_loss:.3f}')
+        self.print_decoder_quality(accuracy, nn_epoch_loss)
 
         epoch_metrics = self.metrics.setdefault('epochs', {})
         epoch_metrics[self.i_train_epoch] = {
@@ -288,6 +296,12 @@ class SpatialEncoderExperiment:
         if self.i_train_epoch == 1:
             step_metrics = self.metrics.setdefault('steps', {})
             step_metrics['1-1_loss'] = nn_epoch_losses
+
+    def print_decoder_quality(self, accuracy, nn_epoch_loss):
+        if self.classification:
+            print(f'MLP Accuracy: {accuracy:.3%} | Loss: {nn_epoch_loss:.3f}')
+        else:
+            print(f'MLP MSE: {accuracy:.3%} | Loss: {nn_epoch_loss:.3f}')
 
     def evaluate_ann_classifier(self, classifier, test_sdrs, targets):
         batched_indices = split_to_batches(len(test_sdrs), self.training.batch_size)
@@ -299,7 +313,10 @@ class SpatialEncoderExperiment:
 
             target_cls = targets[batch_ix]
             prediction = classifier.predict(batch)
-            accuracy += np.count_nonzero(np.argmax(prediction, axis=-1) == target_cls)
+            if self.classification:
+                accuracy += np.count_nonzero(np.argmax(prediction, axis=-1) == target_cls)
+            else:
+                accuracy += np.mean((prediction - target_cls) ** 2)
 
         accuracy /= len(test_sdrs)
         return accuracy
@@ -323,7 +340,8 @@ class SpatialEncoderExperiment:
         feedforward_sds = self.input_sds if self.encoder is None else self.output_sds
         return self.config.resolve_object(
             self.classifier, object_type_or_factory=MlpClassifier,
-            feedforward_sds=feedforward_sds, n_classes=self.n_classes,
+            feedforward_sds=feedforward_sds, output_size=self.n_classes,
+            classification=self.classification
 
         )
 

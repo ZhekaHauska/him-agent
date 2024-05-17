@@ -38,6 +38,7 @@ class SdrDataset:
 
         # Binary SDR
         image_thresholds = np.mean(self.dense_values, axis=-1, keepdims=True)
+        image_thresholds = np.maximum(image_thresholds, threshold)
         self.binary_dense_sdrs = (self.dense_values >= image_thresholds).astype(float)
         self.binary_sparse_sdrs = [np.flatnonzero(img) for img in self.binary_dense_sdrs]
 
@@ -73,15 +74,12 @@ class MnistDataset:
     train: SdrDataset
     test: SdrDataset
 
-    output_sds: Sds
+    sds: Sds
     binary: bool
 
-    def __init__(self, seed: int, binary: bool = True):
+    def __init__(self, seed: int, binary: bool = True, ds: str = 'mnist'):
         self.binary = binary
-        normalizer, train, test = load_mnist(seed)
-
-        # NB: to get sdr for rate sdrs
-        threshold = 0.05
+        normalizer, threshold, train, test = _load_dataset(seed, ds, grayscale=True)
 
         train_images, train_targets = train
         self.train = SdrDataset(train_images, train_targets, threshold, binary)
@@ -90,7 +88,7 @@ class MnistDataset:
         self.test = SdrDataset(test_images, test_targets, threshold, binary)
 
         sparsity = self.train.binary_dense_sdrs.mean() if binary else self.train.dense_values.mean()
-        self.output_sds = Sds(shape=self.image_shape, sparsity=sparsity)
+        self.sds = Sds(shape=self.image_shape, sparsity=sparsity)
 
     @property
     def n_classes(self):
@@ -101,22 +99,36 @@ class MnistDataset:
         return self.train.images.shape[1:]
 
 
-def load_mnist(seed: int, test_size: int | float = 10_000):
+def _load_dataset(
+        seed: int, ds_name: str, test_size: int | float = 10_000, grayscale: bool = True
+):
     from sklearn.datasets import fetch_openml
     from sklearn.model_selection import train_test_split
 
+    supported_datasets = {'mnist': 'mnist_784', 'cifar': 'cifar_10'}
     images, targets = fetch_openml(
-        'mnist_784', version=1, return_X_y=True, as_frame=False,
+        supported_datasets[ds_name], version=1, return_X_y=True, as_frame=False,
         parser='auto'
     )
-    print(f'MNIST LOADED images: {images.shape} | targets: {targets.shape}')
 
     # normalize the images [0, 255] -> [0, 1]
     normalizer = 255.0
     images = images.astype(float) / normalizer
+    if grayscale and ds_name == 'cifar':
+        # convert to grayscale
+        print('CONVERTING CIFAR TO GRAYSCALE')
+        images = images[:, :1024] * 0.30 + images[:, 1024:2048] * 0.59 + images[:, 2048:] * 0.11
+
+    # NB: to get sdr for rate sdrs
+    if ds_name == 'mnist':
+        threshold = 0.05
+    else:
+        threshold = 0.15
+
     targets = targets.astype(int)
+    print(f'{ds_name} LOADED images: {images.shape} | targets: {targets.shape}')
 
     train_images, test_images, train_targets, test_targets = train_test_split(
         images, targets, random_state=seed, test_size=test_size
     )
-    return normalizer, (train_images, train_targets), (test_images, test_targets)
+    return normalizer, threshold, (train_images, train_targets), (test_images, test_targets)
