@@ -5,23 +5,18 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-import itertools
-
 import numpy as np
 import numpy.typing as npt
 import torch
 from torch import nn, optim
 
-from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import safe_divide
-from hima.modules.baselines.lstm import to_numpy, symexp
 
 
 class MlpClassifier:
     feedforward_sds: Sds
-    n_classes: int
+    output_size: int
 
     # cache
     sparse_input: SparseSdr
@@ -39,7 +34,8 @@ class MlpClassifier:
 
     def __init__(
             self,
-            feedforward_sds: Sds, n_classes: int,
+            classification: bool,
+            feedforward_sds: Sds, output_size: int,
             learning_rate: float,
             seed: int = None,
             collect_losses: int = 0,
@@ -47,9 +43,9 @@ class MlpClassifier:
     ):
         self.rng = np.random.default_rng(seed)
         self.feedforward_sds = feedforward_sds
-        self.n_classes = n_classes
+        self.output_size = output_size
 
-        shape = (feedforward_sds.size, n_classes)
+        shape = (feedforward_sds.size, output_size)
 
         self.lr = learning_rate
 
@@ -66,7 +62,11 @@ class MlpClassifier:
 
         self.mlp = nn.Sequential(*layers)
 
-        self.loss_func = nn.CrossEntropyLoss()
+        if classification:
+            self.loss_func = nn.CrossEntropyLoss()
+        else:
+            self.loss_func = nn.MSELoss()
+
         self.optim = optim.Adam(self.mlp.parameters(), lr=self.lr)
 
         self.collect_losses = collect_losses
