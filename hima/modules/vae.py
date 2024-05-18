@@ -4,9 +4,11 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
+import torch
 from torchvae.cat_vae import CategoricalVAE
 from torchvision.transforms import ToTensor
 from hima.common.sdr import sparse_to_dense
+from htm.bindings.sdr import SDR
 
 
 class CatVAE:
@@ -17,7 +19,10 @@ class CatVAE:
         state_dict = {'.'.join(key.split('.')[1:]): value for key, value in state_dict.items()}
 
         self.transform = ToTensor()
+
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.model.load_state_dict(state_dict)
+        self.model = self.model.to(self.device)
         self.model.eval()
 
     def compute(self, input_sdr: SDR, learn: bool, output_sdr: SDR = None):
@@ -28,14 +33,17 @@ class CatVAE:
 
         input_sdr = input_sdr.astype(np.float32)
         input_sdr = self.transform(input_sdr)
-        input_sdr = input_sdr.unsqueeze(0)
+        input_sdr = input_sdr.unsqueeze(0).to(self.device)
 
         with torch.no_grad():
-            z = model.encode(input_sdr)[0]
-            dense = model.reparameterize(z)
+            z = self.model.encode(input_sdr)[0]
+            dense = self.model.reparameterize(z)
         dense = dense.squeeze(0).view(self.model.latent_dim, self.model.categorical_dim)
-        dense = dense.detach().numpy()
-        result = np.argmax(dense, axis=-1)
+        dense = dense.detach().cpu().numpy()
+        result = (
+                np.argmax(dense, axis=-1) +
+                np.arange(self.model.latent_dim) * self.model.categorical_dim
+        )
 
         if output_sdr is not None:
             output_sdr.sparse = result
