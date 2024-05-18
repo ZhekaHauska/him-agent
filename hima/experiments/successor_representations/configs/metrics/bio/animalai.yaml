@@ -8,9 +8,12 @@ scalar_metrics:
       layer/surprise_hidden:
         agg: np.mean
         att: agent.agent.surprise
-      layer/n_segments:
+      layer/segments_forward:
         agg: np.mean
-        att: agent.num_segments
+        att: agent.num_segments_forward
+      layer/segments_backward:
+        agg: np.mean
+        att: agent.num_segments_backward
       sf/steps:
         agg: np.mean
         att: agent.agent.sf_steps
@@ -35,9 +38,9 @@ heatmap_metrics:
   class: HeatmapMetrics
   params:
     metrics:
-      agent/obs_reward:
-        agg: np.mean
-        att: obs_reward
+#      agent/obs_reward:
+#        agg: np.mean
+#        att: obs_reward
       agent/real_reward:
         agg: np.mean
         att: real_reward

@@ -355,6 +355,13 @@ class BioAgentWrapper(BaseAgent):
             decoder = self._make_decoder(encoder, decoder_type, decoder_conf)
             n_groups = encoder.n_groups
             n_states = encoder.getSingleNumColumns()
+        elif self.encoder_type == 'vae':
+            from hima.modules.vae import CatVAE
+            encoder = CatVAE(**self.conf['encoder'])
+            # TODO add decoder
+            decoder = None
+            n_groups = encoder.model.latent_dim
+            n_states = encoder.model.categorical_dim
         elif self.encoder_type is None:
             encoder = None
             decoder = None
