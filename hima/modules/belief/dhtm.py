@@ -1464,17 +1464,16 @@ class DHTM(Layer):
         vars_for_obs_states = obs_states // self.n_obs_states
         obs_states_per_var = obs_states - vars_for_obs_states * self.n_obs_states
 
-        hid_vars = (
-                np.tile(np.arange(self.n_hidden_vars_per_obs_var), len(vars_for_obs_states)) +
-                vars_for_obs_states * self.n_hidden_vars_per_obs_var
-        )
+        # map observation variables to hidden variables
+        all_hid_vars = np.arange(self.n_hidden_vars).reshape(-1, self.n_hidden_vars_per_obs_var)
+        hid_vars = all_hid_vars[vars_for_obs_states].flatten()
+
         hid_columns = (
                 np.repeat(obs_states_per_var, self.n_hidden_vars_per_obs_var) +
                 self.n_obs_states * hid_vars
         )
 
-        all_vars = np.arange(self.n_hidden_vars)
-        vars_without_states = all_vars[np.isin(all_vars, hid_vars, invert=True)]
+        vars_without_states = all_hid_vars[np.isin(all_hid_vars, hid_vars, invert=True)]
 
         cells_for_empty_vars = self._get_cells_in_vars(vars_without_states)
 
