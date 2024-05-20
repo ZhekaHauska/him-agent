@@ -6,8 +6,9 @@ run_tag: null
 action_inertia: 1
 frame_skip: 3
 strategies: null
+  #- [ 0, 0, 1, 1, 2, 2 ]
 observe_action: True
-reward_free: False
+reward_free: false
 
 setup: custom/free10x10.yaml
 

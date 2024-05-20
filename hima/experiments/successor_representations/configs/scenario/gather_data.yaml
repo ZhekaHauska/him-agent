@@ -1,4 +1,4 @@
-- condition: ['episodes', 'equal', 50, 'norepeat']
+- condition: ['episodes', 'equal', 1000, 'norepeat']
   check_every: 'episodes'
   action: stop_runner
   params: {}
@@ -7,12 +7,12 @@
   action: switch_logging
   params: {}
 
-- condition: ['episodes', 'equal', 50, 'norepeat']
+- condition: ['episodes', 'equal', 1000, 'norepeat']
   check_every: 'episodes'
   action: agent.save
   params: {}
 
-- condition: ['episodes', 'mod', 10, 'repeat']
+- condition: ['episodes', 'mod', 100, 'repeat']
   check_every: 'episodes'
   action: agent.print_digest
   params: {}
