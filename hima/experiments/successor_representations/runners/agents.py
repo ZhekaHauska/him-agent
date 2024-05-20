@@ -349,7 +349,7 @@ class BioAgentWrapper(BaseAgent):
             encoder_conf['feedforward_sds'] = [self.conf['raw_obs_shape'], 0.1]
 
             decoder_type = self.conf['decoder_type']
-            decoder_conf = self.conf['decoder']
+            decoder_conf = self.conf.get('decoder', None)
 
             encoder = SpatialPoolerGroupedWrapper(**encoder_conf)
             decoder = self._make_decoder(encoder, decoder_type, decoder_conf)
