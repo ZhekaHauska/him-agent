@@ -15,8 +15,7 @@ from hima.common.sds import Sds
 
 
 class MlpClassifier:
-    feedforward_sds: Sds
-    output_size: int
+    layer_dims: list[int]
 
     # cache
     sparse_input: SparseSdr
@@ -34,33 +33,23 @@ class MlpClassifier:
 
     def __init__(
             self,
-            classification: bool,
-            feedforward_sds: Sds, output_size: int,
+            classification: bool, layers: list[int],
             learning_rate: float,
             seed: int = None,
-            collect_losses: int = 0,
-            hidden_layer: bool | int = False
+            collect_losses: int = 0
     ):
         self.rng = np.random.default_rng(seed)
-        self.feedforward_sds = feedforward_sds
-        self.output_size = output_size
-
-        shape = (feedforward_sds.size, output_size)
-
         self.lr = learning_rate
 
-        if hidden_layer:
-            layers = [
-                nn.Linear(shape[0], hidden_layer, dtype=float),
-                nn.Tanh(),
-                nn.Linear(hidden_layer, shape[1], dtype=float)
-            ]
-        else:
-            layers = [
-                nn.Linear(shape[0], shape[1], dtype=float),
-            ]
+        self.layer_dims = layers
 
-        self.mlp = nn.Sequential(*layers)
+        nn_layers = [
+            nn.Linear(layers[0], layers[1], dtype=float)
+        ]
+        for i in range(1, len(layers) - 1):
+            nn_layers.append(nn.Tanh())
+            nn_layers.append(nn.Linear(layers[i], layers[i + 1], dtype=float))
+        self.mlp = nn.Sequential(*nn_layers)
 
         if classification:
             self.loss_func = nn.CrossEntropyLoss()
@@ -91,3 +80,11 @@ class MlpClassifier:
 
         if self.collect_losses:
             self.losses.append(loss.item())
+
+    @property
+    def input_size(self):
+        return self.layer_dims[0]
+
+    @property
+    def output_size(self):
+        return self.layer_dims[-1]

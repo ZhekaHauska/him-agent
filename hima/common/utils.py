@@ -84,7 +84,7 @@ def softmax(
     """
     beta = isnone(beta, 1.0)
     temp = isnone(temp, 1 / beta)
-    temp = clip(temp, 1e-5, 1e+3)
+    temp = clip(temp, 1e-5, 1e+4)
 
     e_x = np.exp((x - np.max(x, axis=axis, keepdims=True)) / temp)
     return e_x / np.sum(e_x, axis=axis, keepdims=True)

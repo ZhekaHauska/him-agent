@@ -70,15 +70,14 @@ class SpatialEncoderExperiment:
     training: TrainConfig
     testing: TestConfig
 
-    input_sds: Sds
-    output_sds: Sds
+    dataset_sds: Sds
+    encoding_sds: Sds
 
     stats: EpochStats
 
     def __init__(
             self, config: TConfig, config_path: Path,
-            log: bool, seed: int, output_sds: Sds,
-            train: TConfig, test: TConfig,
+            log: bool, seed: int, train: TConfig, test: TConfig,
             setup: TConfig, classifier: TConfig, data: str,
             sdr_tracker: TConfig,
             project: str = None,
@@ -101,7 +100,7 @@ class SpatialEncoderExperiment:
         self.rng = np.random.default_rng(self.seed)
 
         setup = self.config.config_resolver.resolve(setup, config_type=dict)
-        encoder, input_mode = self._get_setup(**setup)
+        encoder, encoding_sds, input_mode = self._get_setup(**setup)
         self.input_mode = OutputMode[input_mode.upper()]
         self.is_binary = self.input_mode == OutputMode.BINARY
 
@@ -113,8 +112,8 @@ class SpatialEncoderExperiment:
             self.data = DvcDataset(seed=seed, filepath=ds_filepath, binary=self.is_binary)
             self.classification = False
 
-        self.input_sds = self.data.sds
-        self.output_sds = Sds.make(output_sds)
+        self.dataset_sds = self.data.sds
+        self.encoding_sds = Sds.make(encoding_sds)
 
         self.training = self.config.resolve_object(train, object_type_or_factory=TrainConfig)
         self.testing = self.config.resolve_object(test, object_type_or_factory=TestConfig)
@@ -122,18 +121,15 @@ class SpatialEncoderExperiment:
         if encoder is not None:
             # spatial encoding layer + 1-layer linear ANN classifier
             self.encoder = self.config.resolve_object(
-                encoder, feedforward_sds=self.input_sds, output_sds=self.output_sds
+                encoder, feedforward_sds=self.dataset_sds, output_sds=self.encoding_sds
             )
 
             self.sdr_tracker: SdrTracker = self.config.resolve_object(
-                sdr_tracker, sds=self.output_sds
+                sdr_tracker, sds=self.encoding_sds
             )
             self.online_loss_metric_key = f'online_loss_{self.training.n_online_epochs}'
             print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
         else:
-            # 2-layer ANN classifier
-            # NB: set hidden layer to make the classifier 2-layer
-            classifier['hidden_layer'] = self.output_sds.size
             self.encoder = None
 
         self.n_classes = self.data.n_classes
@@ -195,7 +191,7 @@ class SpatialEncoderExperiment:
         batched_indices = split_to_batches(order, self.training.batch_size)
         losses = []
         for batch_ix in batched_indices:
-            batch = np.zeros((len(batch_ix), classifier.feedforward_sds.size))
+            batch = np.zeros((len(batch_ix), classifier.input_size))
             fill_batch(batch, train_sdrs, batch_ix, self.encoder, learn=True)
 
             target_cls = targets[batch_ix]
@@ -308,7 +304,7 @@ class SpatialEncoderExperiment:
 
         accuracy = 0.0
         for batch_ix in batched_indices:
-            batch = np.zeros((len(batch_ix), classifier.feedforward_sds.size))
+            batch = np.zeros((len(batch_ix), classifier.input_size))
             fill_batch(batch, test_sdrs, batch_ix)
 
             target_cls = targets[batch_ix]
@@ -327,7 +323,7 @@ class SpatialEncoderExperiment:
 
         losses = []
         for batch_ix in batched_indices:
-            batch = np.zeros((len(batch_ix), classifier.feedforward_sds.size))
+            batch = np.zeros((len(batch_ix), classifier.input_size))
             fill_batch(batch, train_sdrs, batch_ix)
 
             target_cls = targets[batch_ix]
@@ -337,11 +333,14 @@ class SpatialEncoderExperiment:
         return losses
 
     def make_ann_classifier(self) -> MlpClassifier:
-        feedforward_sds = self.input_sds if self.encoder is None else self.output_sds
+        if self.encoder is not None:
+            layers = [self.encoding_sds.size, self.n_classes]
+        else:
+            layers = [self.dataset_sds.size, self.encoding_sds.size, self.n_classes]
+
         return self.config.resolve_object(
             self.classifier, object_type_or_factory=MlpClassifier,
-            feedforward_sds=feedforward_sds, output_size=self.n_classes,
-            classification=self.classification
+            layers=layers, classification=self.classification
 
         )
 
@@ -385,8 +384,8 @@ class SpatialEncoderExperiment:
         })
 
     @staticmethod
-    def _get_setup(input_mode: str, encoder: TConfig = None):
-        return encoder, input_mode
+    def _get_setup(input_mode: str, encoding_sds, encoder: TConfig = None):
+        return encoder, encoding_sds, input_mode
 
     def should_test(self):
         return (
