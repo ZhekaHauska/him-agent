@@ -197,7 +197,11 @@ class BioHIMA:
         # learn with mse loss
         lr, messages = self.observation_reward_lr, self.observation_messages
 
-        self.observation_rewards += lr * messages * (reward - self.observation_rewards)
+        deltas = messages * (reward - self.observation_rewards)
+        lrs = np.ones_like(deltas)
+        lrs[deltas < 0] = lr
+
+        self.observation_rewards += lrs * deltas
 
     def evaluate_actions(self, *, with_planning: bool = False):
         """Evaluate Q[s,a] for each action."""
