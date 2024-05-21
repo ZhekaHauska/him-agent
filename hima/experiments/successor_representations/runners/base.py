@@ -175,7 +175,8 @@ class BaseRunner:
                     if self.steps > 0:
                         self.environment.act(self.action)
                     self.environment.step()
-                    self.obs, self.reward, self.is_terminal = self.environment.obs()
+                    self.obs, reward, self.is_terminal = self.environment.obs()
+                    self.reward += reward
 
                     if self.is_terminal:
                         self.end_of_episode = True
