@@ -944,7 +944,7 @@ class ArrayMetrics(BaseMetric):
         for metric, values in self.metrics.items():
             arr_path = os.path.join(
                 self.log_dir,
-                f'{self.logger.name}_{metric.split("/")[-1]}_{step}.gif'
+                f'{self.logger.name}_{metric.split("/")[-1]}_{step}.npy'
             )
             np.save(arr_path, np.array(values))
         self._reset()

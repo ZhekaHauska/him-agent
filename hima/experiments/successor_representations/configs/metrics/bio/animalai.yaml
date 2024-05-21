@@ -48,3 +48,19 @@ heatmap_metrics:
     update_period: 1
     log_step: episodes
     log_period: 100
+
+#snapshots:
+#  class: ArrayMetrics
+#  params:
+#    metrics:
+#      raw_input:
+#        att: raw_observation
+#      camera:
+#        att: camera_output
+#      encoder:
+#        att: encoder_output
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 1
+#    log_dir: 'logs/debug_animalai'

@@ -231,6 +231,21 @@ class ICMLRunner(BaseRunner):
     def sf_diff(self):
         return np.mean(self.agent.predicted_sf - self.agent.planned_sf)
 
+    @property
+    def raw_observation(self):
+        return np.dot(self.obs[:, :, :3], [299 / 1000, 587 / 1000, 114 / 1000])
+
+    @property
+    def camera_output(self):
+        return sparse_to_dense(self.agent.events, shape=self.environment.raw_obs_shape)
+
+    @property
+    def encoder_output(self):
+        return self.agent.agent.observation_messages.reshape(
+            self.agent.agent.cortical_column.layer.n_obs_vars,
+            -1
+        )
+
     def save_encoder(self, path):
         with open(
             os.path.join(path,
