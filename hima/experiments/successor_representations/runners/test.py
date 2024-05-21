@@ -103,6 +103,11 @@ class ICMLRunner(BaseRunner):
         return real_reward
 
     @property
+    def encoded_reward(self):
+        im = self.encoder_output
+        return im * self.reward
+
+    @property
     def state_visited(self):
         env = self.environment.environment
         r, c = env.r, env.c
