@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
 import torch
+from torch.nn import functional as F
 from torchvae.cat_vae import CategoricalVAE
 from torchvision.transforms import ToTensor
 from hima.common.sdr import sparse_to_dense
@@ -37,7 +38,7 @@ class CatVAE:
 
         with torch.no_grad():
             z = self.model.encode(input_sdr)[0]
-            dense = self.model.reparameterize(z)
+            dense = F.softmax(z / self.model.temp, dim=-1)
         dense = dense.squeeze(0).view(self.model.latent_dim, self.model.categorical_dim)
         dense = dense.detach().cpu().numpy()
         result = (
