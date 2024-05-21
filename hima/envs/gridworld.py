@@ -30,7 +30,8 @@ class GridWorld:
             room[0, :, :], room[1, :, :], room[2, :, :]
         )
 
-        if random_floor_colors:
+        self.random_floor_colors = random_floor_colors
+        if self.random_floor_colors:
             # last color reserved for terminal state
             # negative colors reserved for obstacles
             colors = self._rng.integers(0, np.max(self.colors), size=self.colors.shape)
