@@ -4,6 +4,7 @@ log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test met
 
 seed: 42
 setup: setups.binary_basic_sp
+debug: False
 
 train:
   n_epochs: 3
@@ -12,13 +13,13 @@ train:
 test:
   eval_first: 3
   eval_schedule: 5
-  n_epochs: 3
+  n_epochs: 20
 
 classifier:
   classification: ???
   layers: ???
-#  learning_rate: 0.0003
-  learning_rate: 0.001
+  learning_rate: 0.0003
+#  learning_rate: 0.001
   collect_losses: 1
 
 sp:
@@ -31,6 +32,17 @@ sp:
     init_radius: 10.0
     beta: 200.0
     threshold: 0.002
+
+  soft_hebb_ext:
+    _type_: sp.soft_hebb_ext
+    seed: ???
+    feedforward_sds: ???
+    output_sds: ???
+    learning_rate: 0.05
+    init_radius: 20.0
+    min_active_mass: 0.75
+    min_mass: 0.92
+    beta_lr: 0.005
 
   htm_sp:
     _type_: sp.htm
@@ -47,21 +59,11 @@ sp:
     boost_sliding_window: 1_500
     expected_normal_overlap_frequency: 0.2
     min_activation_threshold: 6
-  basic_sp:
-    _base_: _common_base
-    output_sds: ???
-#    target_rf_to_input_ratio: 0.3
-#    newborn_pruning_cycle: 40.0
-#    newborn_pruning_stages: 20
 
   float_sp:
     _base_: _common_base
     _type_: sp.float
     output_sds: ???
-#    target_rf_to_input_ratio: 0.3
-#    target_rf_to_input_ratio: 2.0
-#    newborn_pruning_cycle: 50.0
-#    newborn_pruning_stages: 20
 
   sng_sp:
     _type_: sp.layer_bckp
@@ -109,8 +111,8 @@ sp:
     initial_rf_to_input_ratio: 8.0
     # learning
     learning_rate: 0.01
-#    newborn_pruning_cycle: 50.0
-    newborn_pruning_cycle: 20.0
+    newborn_pruning_cycle: 50.0
+#    newborn_pruning_cycle: 20.0
     newborn_pruning_stages: 20
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 1000.0
@@ -125,8 +127,14 @@ setups:
   rate_soft_hebb:
     encoder: sp.soft_hebb
     input_mode: rate
-#    encoding_sds: [2000, 10]
-    encoding_sds: [400, 6]
+    encoding_sds: [2000, 10]
+#    encoding_sds: [400, 6]
+#    encoding_sds: [125, 1]
+  rate_soft_hebb_ext:
+    encoder: sp.soft_hebb_ext
+    input_mode: rate
+    encoding_sds: [2000, 2]
+#    encoding_sds: [400, 4]
 #    encoding_sds: [125, 1]
   binary_htm_sp:
     encoder: sp.htm_sp
@@ -144,9 +152,6 @@ setups:
     encoder:
       _base_: sp.float_sp
       output_mode: rate
-    input_mode: binary
-  binary_basic_sp:
-    encoder: sp.basic_sp
     input_mode: binary
 
 data: mnist

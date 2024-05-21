@@ -77,9 +77,9 @@ class MnistDataset:
     sds: Sds
     binary: bool
 
-    def __init__(self, seed: int, binary: bool = True, ds: str = 'mnist'):
+    def __init__(self, seed: int, binary: bool = True, ds: str = 'mnist', debug: bool = False):
         self.binary = binary
-        normalizer, threshold, train, test = _load_dataset(seed, ds, grayscale=True)
+        normalizer, threshold, train, test = _load_dataset(seed, ds, grayscale=True, debug=debug)
 
         train_images, train_targets = train
         self.train = SdrDataset(train_images, train_targets, threshold, binary)
@@ -100,7 +100,8 @@ class MnistDataset:
 
 
 def _load_dataset(
-        seed: int, ds_name: str, test_size: int | float = 10_000, grayscale: bool = True
+        seed: int, ds_name: str, test_size: int | float = 10_000, grayscale: bool = True,
+        debug: bool = False
 ):
     # normalize the images [0, 255] -> [0, 1]
     normalizer = 255.0
@@ -149,8 +150,9 @@ def _load_dataset(
     )
 
     # NB: remove after debug session
-    n_trains, n_tests = 15_000, 2_500
-    train_images, train_targets = train_images[:n_trains], train_targets[:n_trains]
-    test_images, test_targets = test_images[:n_tests], test_targets[:n_tests]
+    if debug:
+        n_trains, n_tests = 15_000, 2_500
+        train_images, train_targets = train_images[:n_trains], train_targets[:n_trains]
+        test_images, test_targets = test_images[:n_tests], test_targets[:n_tests]
 
     return normalizer, threshold, (train_images, train_targets), (test_images, test_targets)

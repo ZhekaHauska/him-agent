@@ -79,7 +79,7 @@ class SpatialEncoderExperiment:
             self, config: TConfig, config_path: Path,
             log: bool, seed: int, train: TConfig, test: TConfig,
             setup: TConfig, classifier: TConfig, data: str,
-            sdr_tracker: TConfig,
+            sdr_tracker: TConfig, debug: bool,
             project: str = None,
             wandb_init: TConfig = None,
             **_
@@ -105,7 +105,7 @@ class SpatialEncoderExperiment:
         self.is_binary = self.input_mode == OutputMode.BINARY
 
         if data in ['mnist', 'cifar']:
-            self.data = MnistDataset(seed=seed, binary=self.is_binary, ds=data)
+            self.data = MnistDataset(seed=seed, binary=self.is_binary, ds=data, debug=debug)
             self.classification = True
         else:
             ds_filepath = Path('~/data/outdoors_walking').expanduser()

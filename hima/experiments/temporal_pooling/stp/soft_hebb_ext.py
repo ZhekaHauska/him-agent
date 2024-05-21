@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+import numba
 import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
@@ -19,7 +20,9 @@ from hima.experiments.temporal_pooling.stats.metrics import entropy
 
 
 class SoftHebbLayer:
-    """A competitive SoftHebb network implementation. Near-exact implementation."""
+    """
+    A competitive SoftHebb network implementation.
+    """
     rng: Generator
 
     # input
@@ -41,7 +44,7 @@ class SoftHebbLayer:
 
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds, learning_rate: float,
-            init_radius: float, beta: float, threshold: float,
+            init_radius: float, min_active_mass: float, min_mass: float, beta_lr: float,
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
@@ -52,8 +55,6 @@ class SoftHebbLayer:
         self.feedforward_sds = Sds.make(feedforward_sds)
 
         self.sparse_input = np.empty(0, dtype=int)
-        # use float not only to generalize to Rate SDR, but also to eliminate
-        # inevitable int-to-float converting when we multiply it by weights
         self.dense_input = np.zeros(self.ff_size, dtype=float)
         self.is_empty_input = True
 
@@ -61,6 +62,8 @@ class SoftHebbLayer:
 
         self.potentials = np.zeros(self.output_size, dtype=float)
         self.learning_rate = learning_rate
+        self.min_active_mass = min_active_mass
+        self.min_mass = min_mass
 
         shape = (self.output_size, self.ff_size)
         req_radius = init_radius
@@ -68,11 +71,17 @@ class SoftHebbLayer:
         self.weights = self.rng.normal(loc=0.0, scale=init_std, size=shape)
         self.radius = self.get_radius()
 
-        self.beta = beta
-        self.threshold = threshold
+        self.beta = 10.0
+        self.beta_lr = beta_lr
+        self.threshold = min(1 / self.output_sds.size, self.output_sds.active_size ** (-2))
+
+        bias = np.log(1 / self.output_size) / self.beta
+        self.biases = self.rng.normal(loc=bias, scale=0.001, size=self.output_size)
         self.cnt = 0
+        self.loops = 0
         print(f'init_std: {init_std:.3f} | {self.avg_radius:.3f}')
 
+        # # stats collection
         slow_lr = LearningRateParam(window=40_000)
         fast_lr = LearningRateParam(window=10_000)
         self.computation_speed = MeanValue(lr=slow_lr)
@@ -93,38 +102,69 @@ class SoftHebbLayer:
     def _compute(self, input_sdr: AnySparseSdr, learn: bool) -> AnySparseSdr:
         self.accept_input(input_sdr, learn=learn)
 
-        lr = self.learning_rate
-        x, w = self.dense_input, self.weights
+        x, w, b, t = self.dense_input, self.weights, self.biases, self.threshold
         u = w @ x
-        y = softmax(u, beta=self.beta)
+        q = -np.log(self.avg_radius)
+        y = softmax(u + q * b, beta=self.beta)
 
-        # Fixed threshold
-        thr = self.threshold
-        sdr = np.flatnonzero(y > thr)
-        values = y[sdr]
-        output_sdr = RateSdr(sdr, values / (values.sum() + 1e-30))
+        loops, sdr, values, mass = get_important(y, t, self.min_mass)
+        output_sdr = RateSdr(sdr, values / (mass + 1e-30))
         self.accept_output(output_sdr, learn=learn)
 
         if not learn:
             return output_sdr
 
-        _lr = lr * self.relative_radius
-        _lr = np.expand_dims(_lr, -1)
+        lr = self.learning_rate
+        lr = lr * self.relative_radius + 0.0001
+
         _u = np.expand_dims(u, -1)
         _x = np.expand_dims(x, 0)
         _y = np.expand_dims(y, -1)
+        _lr = np.expand_dims(lr, -1)
 
         d_weights = _y[sdr] * (_x - w[sdr] * _u[sdr])
         d_weights /= np.abs(d_weights).max() + 1e-30
         self.weights[sdr, :] += _lr[sdr] * d_weights
         self.radius[sdr] = self.get_radius(sdr)
 
+        self.biases = np.log(self.output_rate)
+
+        beta_lr = self.beta_lr
+        sorted_values = np.sort(values)
+        ac_size = self.output_sds.active_size
+        active_mass = sorted_values[-ac_size:].sum()
+
+        if len(sdr) < ac_size:
+            d_beta = -0.02
+        elif active_mass < self.min_active_mass or active_mass > self.min_mass:
+            target_mass = (self.min_active_mass + self.min_mass) / 2
+            rel_mass = np.clip(active_mass / target_mass, 0.7, 1.2)
+            # less -> neg (neg log) -> increase beta and vice versa
+            d_beta = -np.log(rel_mass)
+        else:
+            d_beta = 0.0
+
+        self.beta *= np.exp(beta_lr * d_beta)
+        self.beta = np.clip(self.beta, 1e-3, 1e+4)
+
+        exp_missing_mass = (1.0 - self.min_mass) / 2
+        rel_missing_mass = (1.0 - mass) / exp_missing_mass
+        rel_missing_mass = np.clip(rel_missing_mass, 0.75, 1.1)
+        d_thr = -loops**2 if loops > 1 else -0.5 * np.log(rel_missing_mass)
+        self.threshold += 0.01 * beta_lr * d_thr
+
+        self.loops += loops
         self.cnt += 1
         if self.cnt % 1000 == 0:
+            low_y = y[y <= t]
+            low_mx = 0. if low_y.size == 0 else low_y.max()
             print(
-                f'{self.avg_radius:.5f}  {self.output_entropy():.3f} {self.output_active_size:.1f}'
-                f'| {y[y<=thr].max():.3f}  {values.max():.3f}'
-                f'| {values.sum():.3f}  {values.size}'
+                f'{self.avg_radius:.3f} {self.output_entropy():.3f} {self.output_active_size:.1f}'
+                f'| {self.beta:.1f} {self.threshold:.4f}'
+                f'| {self.biases.mean():.3f} [{self.biases.min():.3f}; {self.biases.max():.3f}]'
+                f'| {low_mx:.4f}  {y.max():.3f}'
+                f'| {active_mass:.3f} {values.sum():.3f}  {sdr.size}'
+                f'| {self.loops/self.cnt:.3f}'
             )
 
         return output_sdr
@@ -187,5 +227,23 @@ class SoftHebbLayer:
     def output_active_size(self):
         return self.slow_output_sdr_size_trace.get()
 
+    @property
+    def output_relative_rate(self):
+        target_rate = self.output_sds.sparsity
+        return self.output_rate / target_rate
+
     def output_entropy(self):
         return entropy(self.output_rate)
+
+
+@numba.jit(nopython=True, cache=True)
+def get_important(a, min_val, min_mass):
+    i = 1
+    while True:
+        sdr = np.flatnonzero(a > min_val)
+        values = a[sdr]
+        mass = values.sum()
+        if mass >= min_mass:
+            return i, sdr, values, mass
+        min_val /= 4
+        i += 1
