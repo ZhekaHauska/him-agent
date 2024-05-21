@@ -11,7 +11,6 @@ import torch
 from torch import nn, optim
 
 from hima.common.sdr import SparseSdr
-from hima.common.sds import Sds
 
 
 class MlpClassifier:
@@ -47,7 +46,7 @@ class MlpClassifier:
             nn.Linear(layers[0], layers[1], dtype=float)
         ]
         for i in range(1, len(layers) - 1):
-            nn_layers.append(nn.Tanh())
+            nn_layers.append(nn.SiLU())
             nn_layers.append(nn.Linear(layers[i], layers[i + 1], dtype=float))
         self.mlp = nn.Sequential(*nn_layers)
 

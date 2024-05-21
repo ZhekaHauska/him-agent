@@ -41,6 +41,7 @@ class SoftHebbLayer:
 
     # connections
     weights: npt.NDArray[float]
+    rf: npt.NDArray[int]
 
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds, learning_rate: float,
@@ -69,6 +70,8 @@ class SoftHebbLayer:
         req_radius = init_radius
         init_std = req_radius * np.sqrt(np.pi / 2 / self.ff_size)
         self.weights = self.rng.normal(loc=0.0, scale=init_std, size=shape)
+        self.mask = self.rng.binomial(1, 0.65, size=shape)
+        self.mask = None
         self.radius = self.get_radius()
 
         self.beta = 10.0
@@ -123,7 +126,7 @@ class SoftHebbLayer:
         _lr = np.expand_dims(lr, -1)
 
         d_weights = _y[sdr] * (_x - w[sdr] * _u[sdr])
-        d_weights /= np.abs(d_weights).max() + 1e-30
+        # d_weights /= np.abs(d_weights).max() + 1e-30
         self.weights[sdr, :] += _lr[sdr] * d_weights
         self.radius[sdr] = self.get_radius(sdr)
 
@@ -138,13 +141,14 @@ class SoftHebbLayer:
             d_beta = -0.02
         elif active_mass < self.min_active_mass or active_mass > self.min_mass:
             target_mass = (self.min_active_mass + self.min_mass) / 2
-            rel_mass = np.clip(active_mass / target_mass, 0.7, 1.2)
+            rel_mass = max(0.1, active_mass / target_mass)
             # less -> neg (neg log) -> increase beta and vice versa
             d_beta = -np.log(rel_mass)
         else:
             d_beta = 0.0
 
-        self.beta *= np.exp(beta_lr * d_beta)
+        self.beta *= np.exp(beta_lr * np.clip(d_beta, -1.0, 1.0))
+        self.beta += beta_lr * d_beta
         self.beta = np.clip(self.beta, 1e-3, 1e+4)
 
         exp_missing_mass = (1.0 - self.min_mass) / 2
@@ -171,8 +175,11 @@ class SoftHebbLayer:
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         if ixs is None:
-            return np.sqrt(np.sum(self.weights ** 2, axis=-1))
-        return np.sqrt(np.sum(self.weights[ixs] ** 2, axis=-1))
+            w = self.weights
+            return np.sqrt(np.sum(w ** 2, axis=-1))
+
+        w = self.weights[ixs]
+        return np.sqrt(np.sum(w ** 2, axis=-1))
 
     @property
     def relative_radius(self):

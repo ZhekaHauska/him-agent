@@ -123,6 +123,7 @@ setups:
   rate_ann:
     input_mode: rate
 #    encoding_sds: [2000, 1]
+#    encoding_sds: [400, 1]
     encoding_sds: [125, 1]
   rate_soft_hebb:
     encoder: sp.soft_hebb
@@ -133,8 +134,8 @@ setups:
   rate_soft_hebb_ext:
     encoder: sp.soft_hebb_ext
     input_mode: rate
-    encoding_sds: [2000, 2]
-#    encoding_sds: [400, 4]
+#    encoding_sds: [2000, 2]
+    encoding_sds: [400, 4]
 #    encoding_sds: [125, 1]
   binary_htm_sp:
     encoder: sp.htm_sp
