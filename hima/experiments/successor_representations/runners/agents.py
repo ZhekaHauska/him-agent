@@ -58,6 +58,8 @@ class DatasetCreatorAgent(BaseAgent):
 
     def observe(self, events, action, reward=0):
         if self.camera is not None:
+            if reward > 0:
+                self.camera.reset()
             events = self.camera.capture(events)
             im = sparse_to_dense(events, shape=self.raw_obs_shape)
         else:
@@ -209,6 +211,8 @@ class BioAgentWrapper(BaseAgent):
         self.steps += 1
 
         if self.camera is not None:
+            if reward > 0:
+                self.camera.reset()
             self.events = self.camera.capture(obs)
         else:
             self.events = obs

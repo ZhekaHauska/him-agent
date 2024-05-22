@@ -96,6 +96,8 @@ class AnimalAIWrapper(BaseEnvironment):
             obs = self.environment.get_obs_dict(term.obs)["camera"]
             reward += term.reward
             is_terminal = True
+            if reward > 0:
+                obs = np.ones_like(obs)
 
         return obs, reward, is_terminal
 
