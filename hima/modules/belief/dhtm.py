@@ -998,6 +998,8 @@ class DHTM(Layer):
             apply_noise: (bool, bool) = (False, False),
             noise_gamma: (float, float) = (0.0, 0.0),
             noise_scale: (float, float) = (1.0, 1.0),
+            column_prior: str = "uniform",
+            alpha: float = 1.0,
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1029,6 +1031,7 @@ class DHTM(Layer):
         self.noise_gamma = noise_gamma
         self.apply_noise = apply_noise
         self.noise_scale = noise_scale
+        self.alpha = alpha
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1121,6 +1124,7 @@ class DHTM(Layer):
         self.surprise_forward_buffer = list()
         self.surprise_backward_buffer = list()
         self.can_clear_buffers = False
+        self.column_prior = column_prior
 
         # instead of deliberately saving prior
         # we use fixed initial messages
@@ -1450,10 +1454,32 @@ class DHTM(Layer):
         cells = self._get_cells_for_observation(observation)
         obs_factor = sparse_to_dense(cells, like=self.internal_messages)
 
-        messages = self.internal_messages.reshape(self.n_hidden_vars, -1)
-        obs_factor = obs_factor.reshape(self.n_hidden_vars, -1)
+        messages = self.internal_messages * obs_factor
+        messages = messages.reshape(self.n_hidden_vars, -1)
 
-        messages = normalize((messages + self.posterior_noise / self.cells_per_column) * obs_factor, obs_factor)
+        if self.column_prior == "dirichlet":
+            column_prior = self._rng.dirichlet(
+                alpha=[self.alpha] * self.cells_per_column,
+                size=self.n_hidden_vars
+            ).flatten()
+            prior = np.zeros_like(obs_factor)
+            prior[obs_factor == 1] = column_prior
+        elif self.column_prior == "uniform":
+            prior = obs_factor
+        elif self.column_prior == "one_hot":
+            column_prior_sparse = self._rng.integers(
+                0, self.cells_per_column, size=self.n_hidden_vars
+            ) + np.arange(self.n_hidden_vars) * self.cells_per_column
+            column_prior = np.zeros((self.n_hidden_vars, self.cells_per_column)).flatten()
+            column_prior[column_prior_sparse] = 1
+            column_prior = column_prior.reshape(self.n_hidden_vars, self.cells_per_column)
+            prior = np.zeros_like(obs_factor)
+            prior[obs_factor == 1] = column_prior
+        else:
+            raise ValueError(f"There is no such column prior mode: {self.column_prior}!")
+
+        prior = prior.reshape(self.n_hidden_vars, -1)
+        messages = normalize(messages, prior)
 
         if return_obs_factor:
             return messages.flatten(), obs_factor.flatten()
