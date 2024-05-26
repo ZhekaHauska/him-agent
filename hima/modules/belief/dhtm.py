@@ -994,12 +994,12 @@ class DHTM(Layer):
             developmental_period: int = 10000,
             cells_activity_lr: float = 0.1,
             use_backward_messages: bool = False,
-            posterior_noise: float = EPS,
             apply_noise: (bool, bool) = (False, False),
             noise_gamma: (float, float) = (0.0, 0.0),
             noise_scale: (float, float) = (1.0, 1.0),
             column_prior: str = "uniform",
             alpha: float = 1.0,
+            default_messages: str = 'forward',
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1027,11 +1027,11 @@ class DHTM(Layer):
         self.cells_activity_lr = cells_activity_lr
         self.use_backward_messages = use_backward_messages
         self.grow_backward_connections = use_backward_messages
-        self.posterior_noise = posterior_noise
         self.noise_gamma = noise_gamma
         self.apply_noise = apply_noise
         self.noise_scale = noise_scale
         self.alpha = alpha
+        self.default_messages = default_messages
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1369,10 +1369,25 @@ class DHTM(Layer):
                     backward_messages = self.backward_messages_buffer[t]
 
                 self.forward_messages_buffer[t] = self.internal_messages.copy()
+
                 # combine forward and backward messages
                 self.internal_messages = internal_messages * backward_messages
+                if self.default_messages == 'forward':
+                    default_messages = internal_messages
+                elif self.default_messages == 'backward':
+                    default_messages = backward_messages
+                elif self.default_messages == 'or':
+                    default_messages = (
+                        internal_messages + backward_messages
+                    )
+                else:
+                    raise ValueError(f'There is no such combine mode: {self.default_messages}!')
+
                 self.internal_messages = (
-                    normalize(self.internal_messages.reshape(self.n_hidden_vars, -1))
+                    normalize(
+                        self.internal_messages.reshape(self.n_hidden_vars, -1),
+                        default_values=default_messages.reshape(self.n_hidden_vars, -1)
+                    )
                 ).flatten()
             else:
                 self.set_context_messages(self.forward_messages_buffer[t-1].copy())
