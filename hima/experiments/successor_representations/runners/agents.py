@@ -31,12 +31,14 @@ class DatasetCreatorAgent(BaseAgent):
             self,
             dataset_path,
             raw_obs_shape,
+            reward_boost: int = 0,
             camera_mode=None,
             seed=None,
             **kwargs
     ):
         self.initial_action = None
         self.state_value = 0
+        self.reward_boost = reward_boost
 
         self.seed = seed
         self.dataset_path = dataset_path
@@ -58,14 +60,15 @@ class DatasetCreatorAgent(BaseAgent):
 
     def observe(self, events, action, reward=0):
         if self.camera is not None:
-            if reward > 0:
-                self.camera.reset()
             events = self.camera.capture(events)
             im = sparse_to_dense(events, shape=self.raw_obs_shape)
         else:
             im = events
 
         self.images.append(im.copy())
+        if reward > 0:
+            for _ in range(self.reward_boost):
+                self.images.append(im.copy())
 
     def sample_action(self):
         return None
@@ -211,8 +214,6 @@ class BioAgentWrapper(BaseAgent):
         self.steps += 1
 
         if self.camera is not None:
-            if reward > 0:
-                self.camera.reset()
             self.events = self.camera.capture(obs)
         else:
             self.events = obs
