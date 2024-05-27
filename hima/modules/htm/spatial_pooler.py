@@ -1052,7 +1052,8 @@ class SPEnsemble:
 
         shift = 0
         for i, sp in enumerate(self.sps):
-            tmp_input_sdr.dense = input_sdr.dense[shift: shift + self.sp_size]
+            dense = input_sdr.dense[shift: shift + self.sp_size]
+            tmp_input_sdr.dense = dense.copy()
             sp.compute(tmp_input_sdr, learn, tmp_output_sdr)
             outputs.append(
                 tmp_output_sdr.sparse + i * self.sps[0].getNumColumns()
