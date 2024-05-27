@@ -1474,7 +1474,10 @@ class DHTM(Layer):
         cells = self._get_cells_for_observation(observation)
         obs_factor = sparse_to_dense(cells, like=self.internal_messages)
 
-        messages = self.internal_messages * obs_factor
+        if not self.is_any_segment_active:
+            messages = np.zeros_like(self.internal_messages)
+        else:
+            messages = self.internal_messages * obs_factor
         messages = messages.reshape(self.n_hidden_vars, -1)
 
         if self.column_prior == "dirichlet":
