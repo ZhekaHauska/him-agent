@@ -1492,7 +1492,6 @@ class DHTM(Layer):
             ) + np.arange(self.n_hidden_vars) * self.cells_per_column
             column_prior = np.zeros((self.n_hidden_vars, self.cells_per_column)).flatten()
             column_prior[column_prior_sparse] = 1
-            column_prior = column_prior.reshape(self.n_hidden_vars, self.cells_per_column)
             prior = np.zeros_like(obs_factor)
             prior[obs_factor == 1] = column_prior
         else:
