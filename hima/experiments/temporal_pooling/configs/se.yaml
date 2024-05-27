@@ -13,7 +13,7 @@ train:
 test:
   eval_first: 3
   eval_schedule: 5
-  n_epochs: 20
+  n_epochs: 10
 
 classifier:
   classification: ???
@@ -43,6 +43,16 @@ sp:
     min_active_mass: 0.75
     min_mass: 0.92
     beta_lr: 0.005
+
+  krotov:
+    _type_: sp.krotov
+    seed: ???
+    feedforward_sds: ???
+    output_sds: ???
+    learning_rate: 0.002
+    lebesgue_p: 3
+    neg_hebb_delta: 0.4
+    init_radius: 20.0
 
   htm_sp:
     _type_: sp.htm
@@ -134,8 +144,15 @@ setups:
   rate_soft_hebb_ext:
     encoder: sp.soft_hebb_ext
     input_mode: rate
-#    encoding_sds: [2000, 2]
-    encoding_sds: [400, 4]
+    encoding_sds: [2000, 20]
+#    encoding_sds: [400, 4]
+#    encoding_sds: [125, 1]
+  rate_krotov:
+    encoder: sp.krotov
+    sdr_tracker: False
+    input_mode: rate
+    encoding_sds: [2000, 7]
+#    encoding_sds: [400, 2]
 #    encoding_sds: [125, 1]
   binary_htm_sp:
     encoder: sp.htm_sp

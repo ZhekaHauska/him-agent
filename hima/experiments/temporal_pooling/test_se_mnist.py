@@ -100,7 +100,7 @@ class SpatialEncoderExperiment:
         self.rng = np.random.default_rng(self.seed)
 
         setup = self.config.config_resolver.resolve(setup, config_type=dict)
-        encoder, encoding_sds, input_mode = self._get_setup(**setup)
+        encoder, encoding_sds, input_mode, req_sdr_tracker = self._get_setup(**setup)
         self.input_mode = OutputMode[input_mode.upper()]
         self.is_binary = self.input_mode == OutputMode.BINARY
 
@@ -124,9 +124,11 @@ class SpatialEncoderExperiment:
                 encoder, feedforward_sds=self.dataset_sds, output_sds=self.encoding_sds
             )
 
-            self.sdr_tracker: SdrTracker = self.config.resolve_object(
-                sdr_tracker, sds=self.encoding_sds
-            )
+            self.sdr_tracker = None
+            if req_sdr_tracker:
+                self.sdr_tracker: SdrTracker = self.config.resolve_object(
+                    sdr_tracker, sds=self.encoding_sds
+                )
             self.online_loss_metric_key = f'online_loss_{self.training.n_online_epochs}'
             print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
         else:
@@ -203,9 +205,11 @@ class SpatialEncoderExperiment:
     def test_epoch_se_ann_kn_mode(self, train_sdrs, test_sdrs):
         def encode_dataset(data):
             encoded_sdrs = []
+            track_sdrs = self.sdr_tracker is not None
             for obs_sdr in data:
                 enc_sdr = self.encoder.compute(obs_sdr, learn=False)
-                self.sdr_tracker.on_sdr_updated(enc_sdr, ignore=False)
+                if track_sdrs:
+                    self.sdr_tracker.on_sdr_updated(enc_sdr, ignore=False)
                 encoded_sdrs.append(enc_sdr)
             return encoded_sdrs
 
@@ -214,7 +218,9 @@ class SpatialEncoderExperiment:
 
         print(f'==> Test after {self.i_train_epoch}')
 
-        entropy = self.sdr_tracker.on_sequence_finished(None, ignore=False)['H']
+        entropy = None
+        if self.sdr_tracker is not None:
+            entropy = self.sdr_tracker.on_sequence_finished(None, ignore=False)['H']
 
         # ==> train and test epoch-specific ANN classifier
         kn_ann_classifier = self.make_ann_classifier()
@@ -241,10 +247,11 @@ class SpatialEncoderExperiment:
         # add metrics
         epoch_metrics = self.metrics.setdefault('epochs', {})
         epoch_metrics[self.i_train_epoch] = {
-            'se_entropy': entropy,
             'kn_loss': final_epoch_kn_loss,
             'kn_accuracy': accuracy,
         }
+        if entropy is not None:
+            epoch_metrics[self.i_train_epoch]['se_entropy'] = entropy
 
         if self.i_train_epoch == 1:
             step_metrics = self.metrics.setdefault('steps', {})
@@ -384,8 +391,10 @@ class SpatialEncoderExperiment:
         })
 
     @staticmethod
-    def _get_setup(input_mode: str, encoding_sds, encoder: TConfig = None):
-        return encoder, encoding_sds, input_mode
+    def _get_setup(
+            input_mode: str, encoding_sds, encoder: TConfig = None, sdr_tracker: bool = True
+    ):
+        return encoder, encoding_sds, input_mode, sdr_tracker
 
     def should_test(self):
         return (

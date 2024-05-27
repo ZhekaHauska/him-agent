@@ -60,6 +60,7 @@ class SoftHebbLayer:
         self.is_empty_input = True
 
         self.output_sds = Sds.make(output_sds)
+        self.output_mode = OutputMode.RATE
 
         self.potentials = np.zeros(self.output_size, dtype=float)
         self.learning_rate = learning_rate
