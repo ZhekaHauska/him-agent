@@ -97,6 +97,11 @@ class ICMLRunner(BaseRunner):
         return obs_rewards
 
     @property
+    def clean_surprise(self):
+        layer = self.agent.agent.cortical_column.layer
+        return self.agent.agent.surprise * layer.is_any_segment_active
+
+    @property
     def real_reward(self):
         im = sparse_to_dense(self.agent.events, shape=self.environment.raw_obs_shape)
         real_reward = im * self.reward

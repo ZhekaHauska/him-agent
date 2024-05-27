@@ -21,7 +21,7 @@ def softmax(x, beta=1.0):
     return e_x / e_x.sum()
 
 
-def normalize(x, default_values=None):
+def normalize(x, default_values=None, return_zeroed_variables_count=False):
     norm_x = x.copy()
     norm = x.sum(axis=-1)
     mask = norm == 0
@@ -31,7 +31,10 @@ def normalize(x, default_values=None):
 
     norm_x[mask] = default_values[mask]
     norm[mask] = norm_x[mask].sum(axis=-1)
-    return norm_x / norm.reshape((-1, 1))
+    if return_zeroed_variables_count:
+        return norm_x / norm.reshape((-1, 1)), np.sum(mask)
+    else:
+        return norm_x / norm.reshape((-1, 1))
 
 
 def sample_categorical_variables(probs, rng: np.random.Generator):

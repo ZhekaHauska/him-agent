@@ -1085,6 +1085,7 @@ class DHTM(Layer):
         self.prediction_cells = np.zeros_like(self.internal_messages)
         self.observation_messages = np.zeros(self.input_sdr_size)
         self.prediction_columns = None
+        self.is_any_segment_active = False
 
         # cells are numbered in the following order:
         # internal cells | context cells | external cells
@@ -1113,8 +1114,10 @@ class DHTM(Layer):
         self.cells_to_grow_new_context_segments_backward = np.empty(0)
         self.new_context_segments_backward = np.empty(0)
 
+        # metrics
         self.state_information = 0
         self.surprise = 0
+        self.n_bursting_vars = 0
 
         self.observation_messages_buffer = list()
         self.external_messages_buffer = list()
@@ -1184,6 +1187,8 @@ class DHTM(Layer):
         self.prediction_columns = None
         self.state_information = 0
         self.surprise = 0
+        self.n_bursting_vars = 0
+        self.is_any_segment_active = False
 
         # attempt to connect to visualization server
         if self.visualize and (self.vis_server is None):
@@ -1376,7 +1381,7 @@ class DHTM(Layer):
                     default_messages = internal_messages
                 elif self.default_messages == 'backward':
                     default_messages = backward_messages
-                elif self.default_messages == 'or':
+                elif self.default_messages == 'both':
                     default_messages = (
                         internal_messages + backward_messages
                     )
@@ -1481,7 +1486,7 @@ class DHTM(Layer):
             prior[obs_factor == 1] = column_prior
         elif self.column_prior == "uniform":
             prior = obs_factor
-        elif self.column_prior == "one_hot":
+        elif self.column_prior == "one-hot":
             column_prior_sparse = self._rng.integers(
                 0, self.cells_per_column, size=self.n_hidden_vars
             ) + np.arange(self.n_hidden_vars) * self.cells_per_column
@@ -1494,7 +1499,22 @@ class DHTM(Layer):
             raise ValueError(f"There is no such column prior mode: {self.column_prior}!")
 
         prior = prior.reshape(self.n_hidden_vars, -1)
-        messages = normalize(messages, prior)
+        messages, self.n_bursting_vars = normalize(
+            messages, prior, return_zeroed_variables_count=True
+        )
+
+        n_states = obs_factor.sum(axis=-1)
+        self.state_information = (
+                np.log(n_states) +
+                np.sum(
+                    messages * np.log(
+                        np.clip(
+                            messages, EPS, None
+                        )
+                    ),
+                    axis=-1
+                )
+        )
 
         if return_obs_factor:
             return messages.flatten(), obs_factor.flatten()
@@ -1587,7 +1607,8 @@ class DHTM(Layer):
         )
 
         # excitation activity
-        if len(active_segments) > 0:
+        self.is_any_segment_active = len(active_segments) > 0
+        if self.is_any_segment_active:
             factors_for_active_segments = factors.factor_for_segment[active_segments]
             log_factor_value = factors.log_factor_values_per_segment[active_segments]
 
