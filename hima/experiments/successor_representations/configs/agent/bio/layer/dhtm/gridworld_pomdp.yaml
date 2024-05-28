@@ -10,27 +10,29 @@ inverse_temp_internal: 1.0
 cell_activation_threshold: 0.0001
 cells_activity_lr: 0.9
 developmental_period: 30000
-posterior_noise: 0.00001
-use_backward_messages: true
+use_backward_messages: false
 # [forward, backward] uniform noise
-apply_noise: [true, true]
+apply_noise: [false, false]
 noise_gamma: [0.0, 0.0]
 noise_scale: [0.1, 0.1]
+column_prior: dirichlet  # uniform | dirichlet | one-hot
+alpha: 1.0  # only for dirichlet prior
+default_messages: both  # forward | backward | both
 
 visualize: false
 
 context_factors_conf:
   n_vars_per_factor: 4
   max_factors_per_var: 1
-  factor_lr: 0.1
+  factor_lr: 0.5
   synapse_lr: 0.1
-  initial_log_factor_value: 0
+  initial_log_factor_value: -3
   initial_synapse_value: 0.5
   max_segments: 30000
   segment_activity_lr: 0.001
   var_score_lr: 0.001
   fraction_of_segments_to_prune: 0.0
-  min_log_factor_value: -1
+  min_log_factor_value: -5
   max_segments_per_cell: 255
 
 # reset_context_period: 80
