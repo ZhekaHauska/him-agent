@@ -1660,30 +1660,32 @@ class DHTM(Layer):
 
             log_next_messages[cells_with_factors] = log_prediction_for_cells_with_factors
 
-        log_next_messages = log_next_messages.reshape((self.n_hidden_vars, self.n_hidden_states))
+            log_next_messages = log_next_messages.reshape((self.n_hidden_vars, self.n_hidden_states))
 
-        # shift log value for stability
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', category=RuntimeWarning)
+            # shift log value for stability
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', category=RuntimeWarning)
 
-            means = log_next_messages.mean(
-                axis=-1,
-                where=~np.isinf(log_next_messages)
-            ).reshape((-1, 1))
+                means = log_next_messages.mean(
+                    axis=-1,
+                    where=~np.isinf(log_next_messages)
+                ).reshape((-1, 1))
 
-        means[np.isnan(means)] = 0
+            means[np.isnan(means)] = 0
 
-        log_next_messages -= means
+            log_next_messages -= means
 
-        log_next_messages = inverse_temperature * log_next_messages
+            log_next_messages = inverse_temperature * log_next_messages
 
-        next_messages = normalize(np.exp(log_next_messages))
+            next_messages = normalize(np.exp(log_next_messages))
 
-        next_messages = next_messages.flatten()
+            next_messages = next_messages.flatten()
 
-        assert ~np.any(np.isnan(next_messages))
+            assert ~np.any(np.isnan(next_messages))
 
-        self.internal_messages = next_messages
+            self.internal_messages = next_messages
+        else:
+            self.internal_messages = np.zeros_like(self.internal_messages)
 
     def _learn(
             self,
