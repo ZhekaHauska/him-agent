@@ -198,10 +198,8 @@ class BioHIMA:
         lr, messages = self.observation_reward_lr, self.observation_messages
 
         deltas = messages * (reward - self.observation_rewards)
-        lrs = np.ones_like(deltas)
-        lrs[deltas < 0] = lr
 
-        self.observation_rewards += lrs * deltas
+        self.observation_rewards += lr * deltas
 
     def evaluate_actions(self, *, with_planning: bool = False):
         """Evaluate Q[s,a] for each action."""
