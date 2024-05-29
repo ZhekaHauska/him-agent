@@ -124,6 +124,7 @@ class SoftHebbLayer:
         if self.cnt % 1000 == 0:
             print(
                 f'{self.avg_radius:.5f}  {self.output_entropy():.3f} {self.output_active_size:.1f}'
+                f'| {self.weights.mean():.3f}: {self.weights.min():.3f}  {self.weights.max():.3f}'
                 f'| {y[y<=thr].max():.3f}  {values.max():.3f}'
                 f'| {values.sum():.3f}  {values.size}'
             )

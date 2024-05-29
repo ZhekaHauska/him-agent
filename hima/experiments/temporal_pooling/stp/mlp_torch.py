@@ -11,6 +11,7 @@ import torch
 from torch import nn, optim
 
 from hima.common.sdr import SparseSdr
+from hima.experiments.temporal_pooling.stp.mlp_decoder_torch import SymExpModule
 
 
 class MlpClassifier:
@@ -35,7 +36,8 @@ class MlpClassifier:
             classification: bool, layers: list[int],
             learning_rate: float,
             seed: int = None,
-            collect_losses: int = 0
+            collect_losses: int = 0,
+            symexp_logits: bool = False,
     ):
         self.rng = np.random.default_rng(seed)
         self.lr = learning_rate
@@ -48,6 +50,9 @@ class MlpClassifier:
         for i in range(1, len(layers) - 1):
             nn_layers.append(nn.SiLU())
             nn_layers.append(nn.Linear(layers[i], layers[i + 1], dtype=float))
+
+        if symexp_logits:
+            nn_layers.append(SymExpModule())
         self.mlp = nn.Sequential(*nn_layers)
 
         if classification:

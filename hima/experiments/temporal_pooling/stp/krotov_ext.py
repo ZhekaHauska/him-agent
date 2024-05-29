@@ -14,22 +14,17 @@ from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.timer import timed
-from hima.common.utils import softmax
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 
 
-class SoftHebbLayer:
+class KrotovLayer:
     """
-    A competitive SoftHebb network implementation with several modifications:
-        - adaptive softmax beta. Such that the K most active neurons (=output active size)
-            should make ~[minM, maxM] of the total mass. While the actual active size
-            will be ~2-3 times larger, however it still indirectly/softly defines sparsity.
-        - adaptive threshold. It is adjusted to keep the total output mass close to 1.
-        - adaptive learning rate. Since learning rule forces neuron's weights norm to 1,
-            LR decays to 0 as the norm approaches 1. TODO: set clipping rule as in KrotovExt impl.
-        - TODO: remove unnormalized delta weights.
+    A competitive network implementation from Krotov-Hopfield with several modifications.
+    Source: Unsupervised learning by competing hidden units
+        https://pnas.org/doi/full/10.1073/pnas.1820458116
 
+    Modifications:
     """
     rng: Generator
 
@@ -53,7 +48,7 @@ class SoftHebbLayer:
 
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds, learning_rate: float,
-            init_radius: float, min_active_mass: float, min_mass: float, beta_lr: float,
+            init_radius: float, lebesgue_p: float, neg_hebb_delta: float, repu_n: float,
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
@@ -72,27 +67,25 @@ class SoftHebbLayer:
 
         self.potentials = np.zeros(self.output_size, dtype=float)
         self.learning_rate = learning_rate
-        self.min_active_mass = min_active_mass
-        self.min_mass = min_mass
+
+        self.lebesgue_p = lebesgue_p
+        self.neg_hebb_delta = neg_hebb_delta
+        self.repu_n = repu_n
 
         shape = (self.output_size, self.ff_size)
         req_radius = init_radius
-        init_std = req_radius * np.sqrt(np.pi / 2 / self.ff_size)
+        init_std = req_radius * (np.pi / 2 / self.ff_size)**(1 / self.lebesgue_p)
         self.weights = self.rng.normal(loc=0.001, scale=init_std, size=shape)
+
+        self.weights_pow_p = self.get_weight_pow_p()
         self.radius = self.get_radius()
         self.relative_radius = self.get_relative_radius()
 
-        self.beta = 10.0
-        self.beta_lr = beta_lr
-        self.threshold = min(1 / self.output_sds.size, self.output_sds.active_size ** (-2))
-
-        bias = np.log(1 / self.output_size) / self.beta
-        self.biases = self.rng.normal(loc=bias, scale=0.001, size=self.output_size)
         self.cnt = 0
         self.loops = 0
         print(f'init_std: {init_std:.3f} | {self.avg_radius:.3f}')
 
-        # # stats collection
+        # stats collection
         slow_lr = LearningRateParam(window=40_000)
         fast_lr = LearningRateParam(window=10_000)
         self.computation_speed = MeanValue(lr=slow_lr)
@@ -113,14 +106,17 @@ class SoftHebbLayer:
     def _compute(self, input_sdr: AnySparseSdr, learn: bool) -> AnySparseSdr:
         self.accept_input(input_sdr, learn=learn)
 
-        x, w, b, t = self.dense_input, self.weights, self.biases, self.threshold
-        u = w @ x
-        q = -self.relative_radius
-        y = softmax(u + q * b, beta=self.beta)
-        # y = softmax(u, beta=self.beta)
+        x, w = self.dense_input, self.weights
+        p, hb_delta = self.lebesgue_p, self.neg_hebb_delta
+        w_p = self.weights_pow_p
 
-        loops, sdr, values, mass = get_important(y, t, self.min_mass)
-        output_sdr = RateSdr(sdr, values / (mass + 1e-30))
+        u = np.dot(w_p, x)
+
+        sdr = np.flatnonzero(u > 0)
+        y = u[sdr] ** self.repu_n
+        y /= y.sum()
+
+        output_sdr = RateSdr(sdr, y)
         self.accept_output(output_sdr, learn=learn)
 
         if not learn:
@@ -129,56 +125,39 @@ class SoftHebbLayer:
         lr = self.learning_rate
         lr = lr * self.relative_radius + 0.0001
 
-        _u = np.expand_dims(u, -1)
+        k1 = self.output_sds.active_size + 1
+        top_k1_ix = np.argpartition(u, -k1)[-k1:]
+        ixs = np.array([
+            top_k1_ix[np.argmax(u[top_k1_ix])],
+            top_k1_ix[np.argmin(u[top_k1_ix])]
+        ], dtype=int)
+        dw = np.array([1.0, -hb_delta])
+
         _x = np.expand_dims(x, 0)
-        _y = np.expand_dims(y, -1)
+        _dw = np.expand_dims(dw, -1)
         _lr = np.expand_dims(lr, -1)
 
-        d_weights = _y[sdr] * (_x - w[sdr] * _u[sdr])
+        d_weights = _dw * _x - np.expand_dims(dw * u[ixs], -1) * w[ixs]
         d_weights /= np.abs(d_weights).max() + 1e-30
-        self.weights[sdr, :] += _lr[sdr] * d_weights
-        self.radius[sdr] = self.get_radius(sdr)
-        self.relative_radius[sdr] = self.get_relative_radius(sdr)
 
-        self.biases = np.log(self.output_rate)
+        self.weights[ixs, :] += _lr[ixs] * d_weights
+        self.weights_pow_p[ixs, :] = self.get_weight_pow_p(ixs)
+        self.radius[ixs] = self.get_radius(ixs)
+        self.relative_radius[ixs] = self.get_relative_radius(ixs)
 
-        beta_lr = self.beta_lr
-        top_k = min(self.output_sds.active_size, len(values))
-        active_mass = values[np.argpartition(values, -top_k)[-top_k:]].sum()
-
-        if len(sdr) < top_k:
-            d_beta = -0.02
-        elif active_mass < self.min_active_mass or active_mass > self.min_mass:
-            target_mass = (self.min_active_mass + self.min_mass) / 2
-            rel_mass = max(0.1, active_mass / target_mass)
-            # less -> neg (neg log) -> increase beta and vice versa
-            d_beta = -np.log(rel_mass)
-        else:
-            d_beta = 0.0
-
-        self.beta *= np.exp(beta_lr * np.clip(d_beta, -1.0, 1.0))
-        self.beta += beta_lr * d_beta
-        self.beta = np.clip(self.beta, 1e-3, 1e+4)
-
-        exp_missing_mass = (1.0 - self.min_mass) / 2
-        rel_missing_mass = (1.0 - mass) / exp_missing_mass
-        rel_missing_mass = np.clip(rel_missing_mass, 0.75, 1.1)
-        d_thr = -loops**2 if loops > 1 else -0.5 * np.log(rel_missing_mass)
-        self.threshold += 0.01 * beta_lr * d_thr
-
-        self.loops += loops
         self.cnt += 1
         if self.cnt % 5000 == 0:
-            low_y = y[y <= t]
-            low_mx = 0. if low_y.size == 0 else low_y.max()
+            sorted_values = np.sort(y)
+            ac_size = self.output_sds.active_size
+            active_mass = sorted_values[-ac_size:].sum()
+
+            biases = np.log(self.output_rate)
             print(
-                f'{self.avg_radius:.3f} {self.output_entropy():.3f} {self.output_active_size:.1f}'
-                f'| {self.beta:.1f} {self.threshold:.4f}'
-                f'| {self.biases.mean():.3f} [{self.biases.min():.3f}; {self.biases.max():.3f}]'
+                f'{self.avg_radius:.3f} {self.output_active_size:.1f}'
+                f'| {biases.mean():.2f} [{biases.min():.2f}; {biases.max():.2f}]'
+                f'| {u.min():.3f}  {u.max():.3f}'
                 f'| {self.weights.mean():.3f}: {self.weights.min():.3f}  {self.weights.max():.3f}'
-                f'| {low_mx:.4f}  {y.max():.3f}'
-                f'| {active_mass:.3f} {values.sum():.3f}  {sdr.size}'
-                f'| {self.loops/self.cnt:.3f}'
+                f'| {active_mass:.3f} {y.sum():.3f}  {sdr.size}'
             )
         # if self.cnt % 100000 == 0:
         #     import seaborn as sns
@@ -189,12 +168,14 @@ class SoftHebbLayer:
         return output_sdr
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
-        if ixs is None:
-            w = self.weights
-            return np.sqrt(np.sum(w ** 2, axis=-1))
+        p = self.lebesgue_p
+        w = self.weights if ixs is None else self.weights[ixs]
+        return np.sum(np.abs(w) ** p, axis=-1) ** (1 / p)
 
-        w = self.weights[ixs]
-        return np.sqrt(np.sum(w ** 2, axis=-1))
+    def get_weight_pow_p(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
+        p = self.lebesgue_p
+        w = self.weights if ixs is None else self.weights[ixs]
+        return np.sign(w) * (np.abs(w) ** (p - 1))
 
     def get_relative_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         r = self.radius if ixs is None else self.radius[ixs]
@@ -233,7 +214,6 @@ class SoftHebbLayer:
             return
 
         # update winners activation stats
-        self.slow_output_trace.put(value, sdr)
         self.slow_output_sdr_size_trace.put(len(sdr))
 
     @property

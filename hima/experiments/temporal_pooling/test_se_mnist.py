@@ -100,9 +100,13 @@ class SpatialEncoderExperiment:
         self.rng = np.random.default_rng(self.seed)
 
         setup = self.config.config_resolver.resolve(setup, config_type=dict)
-        encoder, encoding_sds, input_mode, req_sdr_tracker = self._get_setup(**setup)
+        (
+            encoder, encoding_sds, input_mode, req_sdr_tracker,
+            classifier_symexp_logits
+        ) = self._get_setup(**setup)
         self.input_mode = OutputMode[input_mode.upper()]
         self.is_binary = self.input_mode == OutputMode.BINARY
+        self.classifier_symexp_logits = classifier_symexp_logits
 
         if data in ['mnist', 'cifar']:
             self.data = MnistDataset(seed=seed, binary=self.is_binary, ds=data, debug=debug)
@@ -347,7 +351,8 @@ class SpatialEncoderExperiment:
 
         return self.config.resolve_object(
             self.classifier, object_type_or_factory=MlpClassifier,
-            layers=layers, classification=self.classification
+            layers=layers, classification=self.classification,
+            classifier_symexp_logits=self.classifier_symexp_logits
 
         )
 
@@ -392,9 +397,10 @@ class SpatialEncoderExperiment:
 
     @staticmethod
     def _get_setup(
-            input_mode: str, encoding_sds, encoder: TConfig = None, sdr_tracker: bool = True
+            input_mode: str, encoding_sds, encoder: TConfig = None, sdr_tracker: bool = True,
+            classifier_symexp_logits: bool = False
     ):
-        return encoder, encoding_sds, input_mode, sdr_tracker
+        return encoder, encoding_sds, input_mode, sdr_tracker, classifier_symexp_logits
 
     def should_test(self):
         return (

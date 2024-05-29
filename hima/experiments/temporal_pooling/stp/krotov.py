@@ -5,7 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-import numba
 import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
@@ -20,7 +19,9 @@ from hima.experiments.temporal_pooling.stats.metrics import entropy
 
 class KrotovLayer:
     """
-    A competitive SoftHebb network implementation.
+    A competitive network implementation from Krotov-Hopfield.
+    Source: Unsupervised learning by competing hidden units
+        https://pnas.org/doi/full/10.1073/pnas.1820458116
     """
     rng: Generator
 
@@ -44,7 +45,7 @@ class KrotovLayer:
 
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds, learning_rate: float,
-            init_radius: float, lebesgue_p: float, neg_hebb_delta: float,
+            init_radius: float, lebesgue_p: float, neg_hebb_delta: float, repu_n: float,
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
@@ -66,6 +67,7 @@ class KrotovLayer:
 
         self.lebesgue_p = lebesgue_p
         self.neg_hebb_delta = neg_hebb_delta
+        self.repu_n = repu_n
 
         shape = (self.output_size, self.ff_size)
         req_radius = init_radius
@@ -106,9 +108,10 @@ class KrotovLayer:
 
         y = np.dot(w_p, x)
 
-        sdr = np.arange(self.output_size)
-        values = y[sdr]
-        # values = np.abs(y[sdr])
+        sdr = np.flatnonzero(y > 0)
+        values = y[sdr] ** self.repu_n
+        values /= values.sum()
+
         output_sdr = RateSdr(sdr, values)
         self.accept_output(output_sdr, learn=learn)
 
@@ -116,8 +119,6 @@ class KrotovLayer:
             return output_sdr
 
         lr = self.learning_rate
-        # lr = lr * self.relative_radius + 0.0001
-        lr = np.full(self.output_size, lr)
 
         k1 = self.output_sds.active_size + 1
         top_k1_ix = np.argpartition(y, -k1)[-k1:]
@@ -128,12 +129,11 @@ class KrotovLayer:
 
         _x = np.expand_dims(x, 0)
         _dw = np.expand_dims(dw, -1)
-        _lr = np.expand_dims(lr, -1)
 
         d_weights = _dw * _x - np.expand_dims(dw * y[ixs], -1) * w[ixs]
         d_weights /= np.abs(d_weights).max() + 1e-30
 
-        self.weights[ixs, :] += _lr[ixs] * d_weights
+        self.weights[ixs, :] += lr * d_weights
         self.weights_pow_p[ixs, :] = self.get_weight_pow_p(ixs)
         self.radius[ixs] = self.get_radius(ixs)
 
@@ -145,10 +145,10 @@ class KrotovLayer:
 
             biases = np.log(self.output_rate)
             print(
-                f'{self.avg_radius:.3f} {self.output_entropy():.3f} {self.output_active_size:.1f}'
+                f'{self.avg_radius:.3f} {self.output_active_size:.1f}'
                 f'| {biases.mean():.2f} [{biases.min():.2f}; {biases.max():.2f}]'
                 f'| {y.min():.3f}  {y.max():.3f}'
-                f'| {self.weights.min():.3f}  {self.weights.max():.3f}'
+                f'| {self.weights.mean():.3f}: {self.weights.min():.3f}  {self.weights.max():.3f}'
                 f'| {active_mass:.3f} {values.sum():.3f}  {sdr.size}'
             )
 
@@ -163,10 +163,6 @@ class KrotovLayer:
         p = self.lebesgue_p
         w = self.weights if ixs is None else self.weights[ixs]
         return np.sign(w) * (np.abs(w) ** (p - 1))
-
-    @property
-    def relative_radius(self):
-        return np.abs(np.log2(np.maximum(self.radius, 0.001)))
 
     @property
     def avg_radius(self):
@@ -198,7 +194,6 @@ class KrotovLayer:
             return
 
         # update winners activation stats
-        self.slow_output_trace.put(np.abs(value), sdr)
         self.slow_output_sdr_size_trace.put(len(sdr))
 
     @property
@@ -224,16 +219,3 @@ class KrotovLayer:
 
     def output_entropy(self):
         return entropy(self.output_rate)
-
-
-@numba.jit(nopython=True, cache=True)
-def get_important(a, min_val, min_mass):
-    i = 1
-    while True:
-        sdr = np.flatnonzero(a > min_val)
-        values = a[sdr]
-        mass = values.sum()
-        if mass >= min_mass:
-            return i, sdr, values, mass
-        min_val /= 4
-        i += 1
