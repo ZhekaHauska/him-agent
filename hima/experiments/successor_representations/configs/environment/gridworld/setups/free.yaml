@@ -21,4 +21,4 @@ room: [
     [ 0, 0, 0, 0, 0]
   ]
 ]
-default_reward: -0.001
+start_position: [4, 0]

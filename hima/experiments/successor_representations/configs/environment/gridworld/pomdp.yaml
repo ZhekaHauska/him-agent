@@ -1,6 +1,7 @@
-start_position: [4, 0]
 observation_radius: 0
 collision_hint: True
 collision_reward: -0.1
+default_reward: -0.02
 random_floor_colors: true
 headless: true
+# seed: 257209842

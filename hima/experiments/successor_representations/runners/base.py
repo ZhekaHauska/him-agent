@@ -92,7 +92,9 @@ class BaseRunner:
         self.setup = conf['run']['setup']
 
         env_conf = conf['env']
-        env_conf['seed'] = self.seed
+        env_seed = env_conf.get('seed', None)
+        if env_seed is None:
+            env_conf['seed'] = self.seed
         agent_conf = conf['agent']
         agent_conf['seed'] = self.seed
 
