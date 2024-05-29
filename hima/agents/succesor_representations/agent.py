@@ -302,6 +302,9 @@ class BioHIMA:
             if return_predictions:
                 predictions.append(copy(predicted_observation))
 
+            if np.allclose(predicted_observation, 0):
+                break
+
             if early_stop:
                 break
 
