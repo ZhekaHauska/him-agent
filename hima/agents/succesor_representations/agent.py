@@ -12,14 +12,10 @@ import numpy as np
 
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import softmax, safe_divide
-from hima.modules.belief.utils import normalize
 from hima.common.smooth_values import SSValue
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
-from hima.modules.baselines.srtd import SRTD
-from hima.agents.succesor_representations.striatum import Striatum
 from hima.modules.baselines.lstm import to_numpy, TLstmLayerHiddenState
 from copy import copy
-import torch
 from hima.modules.belief.utils import EPS
 
 
@@ -34,56 +30,32 @@ class SrEstimatePlanning(Enum):
     OFF_POLICY = auto()
 
 
-class ActionValueEstimate(Enum):
-    PREDICT = 1
-    PLAN = auto()
-    BALANCE = auto()
-
-
 class BioHIMA:
     def __init__(
             self,
             cortical_column: CorticalColumn,
             *,
             gamma: float = 0.99,
-            observation_reward_lr: float = 0.01,
+            reward_lr: float = 0.01,
+            learn_rewards_from_state: bool = True,
             striatum_lr: float = 1.0,
             plan_steps: int = 1,
-            use_cached_plan: bool = False,
-            learn_cached_plan: bool = False,
-            td_steps: int = 1,
-            approximate_tail: bool = True,
             inverse_temp: float = 1.0,
             exploration_eps: float = -1,
-            action_value_estimate: str = 'plan',
             sr_estimate_planning: str = 'uniform',
             sr_early_stop_uniform: float | None = None,
             sr_early_stop_goal: float | None = None,
             sr_early_stop_surprise: float | None = None,
             lr_surprise=(0.2, 0.01),
-            lr_td_error=(0.2, 0.01),
-            adaptive_sr: bool = True,
-            adaptive_lr: bool = True,
-            srtd: SRTD | None,
-            pattern_memory: Striatum | None,
-            use_sf_as_state: bool = False,
             seed: int | None,
     ):
-        self.observation_reward_lr = observation_reward_lr
+        self.reward_lr = reward_lr
+        self.learn_rewards_from_state = learn_rewards_from_state
         self.max_striatum_lr = striatum_lr
         self.cortical_column = cortical_column
-        self.srtd = srtd
-        self.pattern_memory = pattern_memory
-        self.use_sf_as_state = use_sf_as_state
         self.gamma = gamma
         self.max_plan_steps = plan_steps
-        self.use_cached_plan = use_cached_plan
-        self.learn_cached_plan = learn_cached_plan
-        self.td_steps = td_steps
-        self.approximate_tail = approximate_tail
         self.inverse_temp = inverse_temp
-        self.adaptive_sr = adaptive_sr
-        self.adaptive_lr = adaptive_lr
 
         if exploration_eps < 0:
             self.exploration_policy = ExplorationPolicy.SOFTMAX
@@ -96,37 +68,25 @@ class BioHIMA:
         self.sr_early_stop_goal = sr_early_stop_goal
         self.sr_early_stop_surprise = sr_early_stop_surprise
 
-        self._action_value_estimate = ActionValueEstimate[action_value_estimate.upper()]
         self.sr_estimate_planning = SrEstimatePlanning[sr_estimate_planning.upper()]
 
         layer = self.cortical_column.layer
-        layer_obs_size = layer.n_obs_states * layer.n_obs_vars
-        layer_hidden_size = layer.n_hidden_states * layer.n_hidden_vars
-
-        observation_rewards = np.zeros((layer.n_obs_vars, layer.n_obs_states))
-        self.observation_rewards = observation_rewards.flatten()
-        self.observation_messages = np.zeros_like(self.observation_rewards)
-
-        # state backups for model-free TD
-        self.previous_state = self.cortical_column.layer.internal_messages.copy()
-        self.previous_observation = np.zeros_like(self.observation_rewards)
-
-        # TODO move it to Striatum class
-        if self.use_sf_as_state:
-            self.striatum_weights = np.zeros((layer_obs_size, layer_obs_size))
+        if self.learn_rewards_from_state:
+            rewards = np.zeros((layer.n_hidden_vars, layer.n_hidden_states))
         else:
-            self.striatum_weights = np.zeros((layer_hidden_size, layer_obs_size))
+            rewards = np.zeros((layer.n_obs_vars, layer.n_obs_states))
+        self.rewards = rewards.flatten()
+
+        self.observation_messages = np.zeros_like(layer.observation_messages)
 
         self.state_snapshot_stack = deque()
 
-        self.predicted_sf = None
-        self.generated_sf = None
+        self.sf = None
         self.action_values = None
         self.action_dist = None
         self.action = None
 
         # metrics
-        self.ss_td_error = SSValue(*lr_td_error)
         self.ss_surprise = SSValue(*lr_surprise)
         self.sf_steps = 0
 
@@ -136,8 +96,7 @@ class BioHIMA:
     def reset(self):
         assert len(self.state_snapshot_stack) == 0
 
-        self.predicted_sf = None
-        self.generated_sf = None
+        self.sf = None
         self.action_values = None
         self.action_dist = None
         self.action = None
@@ -145,12 +104,9 @@ class BioHIMA:
 
         self.cortical_column.reset()
 
-        self.previous_state = self.cortical_column.layer.internal_messages.copy()
-        self.previous_observation = np.zeros_like(self.observation_rewards)
-
     def sample_action(self):
         """Evaluate and sample actions."""
-        self.action_values = self.evaluate_actions(with_planning=True)
+        self.action_values = self.evaluate_actions()
         self.action_dist = self._get_action_selection_distribution(
             self.action_values, on_policy=True
         )
@@ -177,39 +133,27 @@ class BioHIMA:
         if not learn:
             return
 
-        # striatum TD learning
-        if self.td_steps > 0:
-            self.predicted_sf, self.generated_sf, td_error = self.td_update_sf()
-            self.ss_td_error.update(td_error)
-
-        if self.plan_steps > 0 and self.pattern_memory is not None and self.learn_cached_plan:
-            self.update_planned_sf()
-
         self.ss_surprise.update(self.cortical_column.surprise)
 
-        return self.predicted_sf, self.generated_sf
+        return self.sf
 
     def reinforce(self, reward):
-        """
-        Adapt prior distribution of observations according to external reward.
-            reward: float
-        """
-        # learn with mse loss
-        lr, messages = self.observation_reward_lr, self.observation_messages
+        if self.learn_rewards_from_state:
+            messages = self.cortical_column.layer.internal_messages
+        else:
+            messages = self.cortical_column.layer.observation_messages
 
-        deltas = messages * (reward - self.observation_rewards)
+        deltas = messages * (reward - self.rewards)
 
-        self.observation_rewards += lr * deltas
+        self.rewards += self.reward_lr * deltas
 
-    def evaluate_actions(self, *, with_planning: bool = False):
+    def evaluate_actions(self):
         """Evaluate Q[s,a] for each action."""
         self._make_state_snapshot()
 
         n_actions = self.cortical_column.layer.external_input_size
         action_values = np.zeros(n_actions)
         dense_action = np.zeros_like(action_values)
-
-        estimate_strategy = self._get_action_value_estimate_strategy(with_planning)
 
         for action in range(n_actions):
             # hacky way to clean previous one-hot, for 0-th does nothing
@@ -222,24 +166,29 @@ class BioHIMA:
                 external_messages=dense_action
             )
 
-            if estimate_strategy == ActionValueEstimate.PLAN:
-                if self.use_cached_plan:
-                    sf = self.predict_sf(self.cortical_column.layer.prediction_cells, area=1)
-                else:
-                    sf, self.sf_steps = self.generate_sf(
-                        self.plan_steps,
-                        initial_messages=self.cortical_column.layer.prediction_cells,
-                        initial_prediction=self.cortical_column.layer.prediction_columns,
-                        approximate_tail=self.approximate_tail,
-                        save_state=False,
-                    )
-            else:
-                sf = self.predict_sf(self.cortical_column.layer.prediction_cells)
+            if self.learn_rewards_from_state:
+                sf, self.sf_steps, sr = self.generate_sf(
+                    self.max_plan_steps,
+                    initial_messages=self.cortical_column.layer.prediction_cells,
+                    initial_prediction=self.cortical_column.layer.prediction_columns,
+                    return_sr=True,
+                    save_state=False,
+                )
 
-            # average value predicted by all variables
-            action_values[action] = np.sum(
-                sf * self.observation_rewards
-            ) / self.cortical_column.layer.n_obs_vars
+                action_values[action] = np.sum(
+                    sr * self.rewards
+                ) / self.cortical_column.layer.n_hidden_vars
+            else:
+                sf, self.sf_steps = self.generate_sf(
+                    self.max_plan_steps,
+                    initial_messages=self.cortical_column.layer.prediction_cells,
+                    initial_prediction=self.cortical_column.layer.prediction_columns,
+                    save_state=False,
+                )
+
+                action_values[action] = np.sum(
+                    sf * self.rewards
+                ) / self.cortical_column.layer.n_obs_vars
 
             self._restore_last_snapshot(pop=False)
 
@@ -251,7 +200,6 @@ class BioHIMA:
             n_steps,
             initial_messages,
             initial_prediction,
-            approximate_tail=True,
             save_state=True,
             return_predictions=False,
             return_sr=False
@@ -274,7 +222,18 @@ class BioHIMA:
         discount = 1.0
         t = -1
         for t in range(n_steps):
-            early_stop = self._early_stop_planning(predicted_observation)
+            if self.learn_rewards_from_state:
+                early_stop = self._early_stop_planning(
+                    context_messages.reshape(
+                        self.cortical_column.layer.n_hidden_vars, -1
+                    )
+                )
+            else:
+                early_stop = self._early_stop_planning(
+                    predicted_observation.reshape(
+                        self.cortical_column.layer.n_obs_vars, -1
+                    )
+                )
 
             sf += predicted_observation * discount
 
@@ -285,8 +244,7 @@ class BioHIMA:
                 action_dist = None
             else:
                 # on/off-policy
-                # NB: evaluate actions directly with prediction, not with n-step planning!
-                action_values = self.evaluate_actions(with_planning=False)
+                action_values = self.evaluate_actions()
                 action_dist = self._get_action_selection_distribution(
                     action_values,
                     on_policy=self.sr_estimate_planning == SrEstimatePlanning.ON_POLICY
@@ -308,9 +266,6 @@ class BioHIMA:
             if early_stop:
                 break
 
-        if approximate_tail:
-            sf += self.predict_sf(context_messages) * discount
-
         if save_state:
             self._restore_last_snapshot()
 
@@ -323,99 +278,9 @@ class BioHIMA:
 
         return output
 
-    def predict_sf(self, hidden_vars_dist, area=0):
-        if self.srtd is not None:
-            msg = torch.tensor(hidden_vars_dist).float().to(self.srtd.device)
-            sr = to_numpy(self.srtd.predict_sr(msg, target=True))
-        elif self.pattern_memory is not None:
-            if self.use_sf_as_state and area == 0:
-                sr = self.pattern_memory.predict(hidden_vars_dist, area=1, learn=False)
-                sr = sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
-                sr = np.dot(normalize(sr).flatten(), self.striatum_weights)
-                sr /= self.cortical_column.layer.n_obs_vars
-            else:
-                sr = self.pattern_memory.predict(hidden_vars_dist, area=area, learn=False)
-                sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
-        else:
-            sr = np.dot(hidden_vars_dist, self.striatum_weights)
-            sr /= self.cortical_column.layer.n_hidden_vars
-        return sr
-
-    def td_update_sf(self):
-        target_sf, _ = self.generate_sf(
-            self.td_steps,
-            initial_messages=self.cortical_column.layer.internal_messages,
-            initial_prediction=self.observation_messages,
-            approximate_tail=True,
-        )
-
-        if self.srtd is not None:
-            current_state = torch.tensor(self.current_state).float().to(self.srtd.device)
-            predicted_sf = self.srtd.predict_sr(current_state, target=False)
-            target_sf = torch.tensor(target_sf)
-            target_sf = target_sf.float().to(self.srtd.device)
-
-            td_error = self.srtd.compute_td_loss(
-                target_sf,
-                predicted_sf
-            )
-            predicted_sf = to_numpy(predicted_sf)
-            target_sf = to_numpy(target_sf)
-        elif self.pattern_memory is not None:
-            if self.use_sf_as_state:
-                sr = self.pattern_memory.predict(self.current_state, area=1, learn=False)
-                sr = sr.reshape(self.cortical_column.layer.n_obs_vars, -1)
-
-                predicted_sf = self.predict_sf(self.current_state)
-                prediction_cells = normalize(sr).flatten()
-                error_sr = target_sf - predicted_sf
-
-                # dSR / dW for linear model
-                delta_w = np.outer(prediction_cells, error_sr)
-
-                self.striatum_weights += self.striatum_lr * delta_w
-                self.striatum_weights = np.clip(self.striatum_weights, 0, None)
-
-                td_error = np.mean(np.power(error_sr, 2))
-            else:
-                predicted_sf = self.pattern_memory.predict(self.current_state, learn=True)
-                td_error = self.pattern_memory.update_weights(target_sf)
-        else:
-            predicted_sf = self.predict_sf(self.current_state)
-            prediction_cells = self.current_state
-            error_sr = target_sf - predicted_sf
-
-            # dSR / dW for linear model
-            delta_w = np.outer(prediction_cells, error_sr)
-
-            self.striatum_weights += self.striatum_lr * delta_w
-            self.striatum_weights = np.clip(self.striatum_weights, 0, None)
-
-            td_error = np.mean(np.power(error_sr, 2))
-
-        return predicted_sf, target_sf, td_error
-
-    def update_planned_sf(self):
-        target_sf, self.sf_steps = self.generate_sf(
-            self.plan_steps,
-            initial_messages=self.cortical_column.layer.internal_messages,
-            initial_prediction=self.observation_messages,
-            approximate_tail=False,
-        )
-        self.pattern_memory.predict(self.current_state, area=1, learn=True)
-        self.pattern_memory.update_weights(target_sf, area=1)
-
     @property
     def current_state(self):
         return self.cortical_column.layer.internal_messages
-
-    @property
-    def action_value_estimate(self):
-        return self._action_value_estimate
-
-    @action_value_estimate.setter
-    def action_value_estimate(self, value: str):
-        self._action_value_estimate = ActionValueEstimate[value.upper()]
 
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True
@@ -440,20 +305,6 @@ class BioHIMA:
 
         return action_dist
 
-    def _get_action_value_estimate_strategy(self, with_planning: bool) -> ActionValueEstimate:
-        if not with_planning or self.action_value_estimate == ActionValueEstimate.PREDICT:
-            return ActionValueEstimate.PREDICT
-
-        # with_planning == True
-        if self.action_value_estimate == ActionValueEstimate.PLAN or self._should_plan():
-            return ActionValueEstimate.PLAN
-
-        return ActionValueEstimate.PREDICT
-
-    def _should_plan(self):
-        p = np.clip(self.ss_td_error.norm_value, 0, 1)
-        return self._rng.random() < p
-
     def _make_state_snapshot(self):
         self.state_snapshot_stack.append(
             self.cortical_column.make_state_snapshot()
@@ -463,17 +314,16 @@ class BioHIMA:
         snapshot = self.state_snapshot_stack.pop() if pop else self.state_snapshot_stack[-1]
         self.cortical_column.restore_last_snapshot(snapshot)
 
-    def _early_stop_planning(self, predicted_observation: np.ndarray) -> bool:
+    def _early_stop_planning(self, messages: np.ndarray) -> bool:
+        n_vars, n_states = messages.shape
+
         if self.sr_early_stop_uniform is not None:
-            dist = predicted_observation.reshape(
-                self.cortical_column.layer.n_obs_vars, -1
-            )
             uni_dkl = (
-                    np.log(self.cortical_column.layer.n_obs_states) +
+                    np.log(n_states) +
                     np.sum(
-                        dist * np.log(
+                        messages * np.log(
                             np.clip(
-                                dist, EPS, None
+                                messages, EPS, None
                             )
                         ),
                         axis=-1
@@ -487,8 +337,8 @@ class BioHIMA:
         if self.sr_early_stop_goal is not None:
             goal = np.any(
                 np.sum(
-                    (predicted_observation * (self.observation_rewards > 0)).reshape(
-                        self.cortical_column.layer.n_obs_vars, -1
+                    (messages.flatten() * (self.rewards > 0)).reshape(
+                        n_vars, -1
                     ),
                     axis=-1
                 ) > self.sr_early_stop_goal
@@ -504,48 +354,12 @@ class BioHIMA:
         return uniform or goal or surprise
 
     @property
-    def striatum_lr(self):
-        if self.adaptive_lr:
-            lr = self.max_striatum_lr * (1 - np.clip(self.ss_surprise.norm_value, 0, 1))
-        else:
-            lr = self.max_striatum_lr
-        return lr
-
-    @property
-    def relative_log_surprise(self):
-        s_base_log = np.log(np.log(self.cortical_column.layer.n_obs_states))
-        s_current = np.clip(self.ss_surprise.current_value, 1e-7, None)
-        s_min = np.clip(self.ss_surprise.mean - self.ss_surprise.std, 1e-7, None)
-        return (1 - np.log(s_current) / s_base_log) / (1 - np.log(s_min) / s_base_log)
-
-    @property
-    def plan_steps(self):
-        if self.adaptive_sr:
-            sr_steps = int(
-                max(
-                    1,
-                    np.round(
-                        self.max_plan_steps *
-                        np.clip(self.ss_td_error.norm_value, 0, 1) *
-                        self.relative_log_surprise
-                    )
-                )
-            )
-        else:
-            sr_steps = self.max_plan_steps
-        return sr_steps
-
-    @property
     def n_actions(self):
         return self.cortical_column.layer.external_input_size
 
     @property
     def surprise(self):
         return self.ss_surprise.current_value
-
-    @property
-    def td_error(self):
-        return self.ss_td_error.current_value
 
 
 class LstmBioHima(BioHIMA):

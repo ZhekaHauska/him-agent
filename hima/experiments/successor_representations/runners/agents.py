@@ -166,40 +166,13 @@ class BioAgentWrapper(BaseAgent):
             decoder
         )
 
-        if conf['striatum_type'] is None:
-            striatum = None
-        else:
-            striatum = Striatum(
-                cortical_column.layer.n_hidden_vars,
-                cortical_column.layer.input_sdr_size,
-                n_areas=2,
-                **conf['striatum'],
-                seed=self.seed
-            )
-
-        if conf['srtd_type'] is None:
-            srtd = None
-        else:
-            srtd = SRTD(
-                cortical_column.layer.context_input_size,
-                cortical_column.layer.input_sdr_size,
-                **conf['srtd']
-            )
-
         conf['agent']['seed'] = self.seed
 
         if self.layer_type in {'lstm', 'rwkv'}:
-            self.agent = LstmBioHima(
-                cortical_column,
-                srtd=srtd,
-                pattern_memory=striatum,
-                **conf['agent']
-            )
+            raise NotImplementedError
         else:
             self.agent = BioHIMA(
                 cortical_column,
-                srtd=srtd,
-                pattern_memory=striatum,
                 **conf['agent']
             )
 
@@ -240,15 +213,11 @@ class BioAgentWrapper(BaseAgent):
 
         return self.agent.reset()
 
-    def initialize_sf_memory(self):
-        memory = self.agent.pattern_memory.weights
-        memory[0] = memory[1].copy()
-
     @property
     def state_value(self):
         action_values = self.agent.action_values
         if action_values is None:
-            action_values = self.agent.evaluate_actions(with_planning=True)
+            action_values = self.agent.evaluate_actions()
         state_value = np.sum(action_values)
         return state_value
 
@@ -256,23 +225,12 @@ class BioAgentWrapper(BaseAgent):
     def action_values(self):
         action_values = self.agent.action_values
         if action_values is None:
-            action_values = self.agent.evaluate_actions(with_planning=True)
+            action_values = self.agent.evaluate_actions()
         return action_values
 
     @property
-    def sr(self):
-        return self.agent.striatum_weights
-
-    @property
     def generated_sf(self):
-        return self.agent.generated_sf.reshape(
-            self.agent.cortical_column.layer.n_obs_vars,
-            -1
-        )
-
-    @property
-    def predicted_sf(self):
-        return self.agent.predicted_sf.reshape(
+        return self.agent.sf.reshape(
             self.agent.cortical_column.layer.n_obs_vars,
             -1
         )
@@ -280,10 +238,9 @@ class BioAgentWrapper(BaseAgent):
     @property
     def planned_sf(self):
         sf, steps = self.agent.generate_sf(
-            self.agent.plan_steps,
+            self.agent.max_plan_steps,
             initial_messages=self.agent.cortical_column.layer.internal_messages,
             initial_prediction=self.agent.observation_messages,
-            approximate_tail=self.agent.approximate_tail,
         )
         return (sf.reshape(
             self.agent.cortical_column.layer.n_obs_vars,
@@ -293,10 +250,9 @@ class BioAgentWrapper(BaseAgent):
     @property
     def planned_sr(self):
         _, steps, sr = self.agent.generate_sf(
-            self.agent.plan_steps,
+            self.agent.max_plan_steps,
             initial_messages=self.agent.cortical_column.layer.internal_messages,
             initial_prediction=self.agent.observation_messages,
-            approximate_tail=self.agent.approximate_tail,
             return_sr=True
         )
         return (sr.reshape(
@@ -322,13 +278,6 @@ class BioAgentWrapper(BaseAgent):
     def num_segments_backward(self):
         if hasattr(self.agent.cortical_column.layer, 'context_backward_factors'):
             return self.agent.cortical_column.layer.context_backward_factors.connections.numSegments()
-        else:
-            return 0
-
-    @property
-    def n_states(self):
-        if self.agent.pattern_memory is not None:
-            return len(self.agent.pattern_memory.states_in_use)
         else:
             return 0
 

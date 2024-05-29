@@ -85,13 +85,13 @@ class ICMLRunner(BaseRunner):
         if decoder is not None:
             obs_rewards = decoder.decode(
                 normalize(
-                    agent.observation_rewards.reshape(
+                    agent.rewards.reshape(
                         agent.cortical_column.layer.n_obs_vars, -1
                     )
                 ).flatten()
             ).reshape(self.environment.raw_obs_shape)
         else:
-            obs_rewards = agent.observation_rewards.reshape(
+            obs_rewards = agent.rewards.reshape(
                 agent.cortical_column.layer.n_obs_vars, -1
             )
         return obs_rewards
