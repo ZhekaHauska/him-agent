@@ -462,25 +462,33 @@ class BioHIMA:
 
     def _early_stop_planning(self, predicted_observation: np.ndarray) -> bool:
         if self.sr_early_stop_uniform is not None:
+            dist = predicted_observation.reshape(
+                self.cortical_column.layer.n_obs_vars, -1
+            )
             uni_dkl = (
                     np.log(self.cortical_column.layer.n_obs_states) +
                     np.sum(
-                        predicted_observation * np.log(
+                        dist * np.log(
                             np.clip(
-                                predicted_observation, EPS, None
+                                dist, EPS, None
                             )
-                        )
+                        ),
+                        axis=-1
                     )
             )
 
-            uniform = uni_dkl < self.sr_early_stop_uniform
+            uniform = uni_dkl.mean() < self.sr_early_stop_uniform
         else:
             uniform = False
 
         if self.sr_early_stop_goal is not None:
-            goal = (
-                np.sum(predicted_observation[self.observation_rewards > 0]) >
-                self.sr_early_stop_goal
+            goal = np.any(
+                np.sum(
+                    (predicted_observation * (self.observation_rewards > 0)).reshape(
+                        self.cortical_column.layer.n_obs_vars, -1
+                    ),
+                    axis=-1
+                ) > self.sr_early_stop_goal
             )
         else:
             goal = False
