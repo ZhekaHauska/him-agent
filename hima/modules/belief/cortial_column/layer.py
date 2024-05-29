@@ -26,6 +26,7 @@ class Layer:
     n_external_states: int
     prediction_columns: np.ndarray | None
     prediction_cells: np.ndarray | None
+    observation_messages: np.ndarray
     internal_messages: np.ndarray
     context_messages: np.ndarray
     external_messages: np.ndarray
