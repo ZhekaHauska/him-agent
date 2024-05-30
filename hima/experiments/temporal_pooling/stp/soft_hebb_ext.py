@@ -117,7 +117,6 @@ class SoftHebbLayer:
         u = w @ x
         q = -self.relative_radius
         y = softmax(u + q * b, beta=self.beta)
-        # y = softmax(u, beta=self.beta)
 
         loops, sdr, values, mass = get_important(y, t, self.min_mass)
         output_sdr = RateSdr(sdr, values / (mass + 1e-30))
@@ -180,13 +179,22 @@ class SoftHebbLayer:
                 f'| {active_mass:.3f} {values.sum():.3f}  {sdr.size}'
                 f'| {self.loops/self.cnt:.3f}'
             )
-        # if self.cnt % 100000 == 0:
+        # if self.cnt % 10000 == 0:
         #     import seaborn as sns
         #     from matplotlib import pyplot as plt
-        #     sns.histplot(self.weights.flatten())
+        #     w, r = self.weights, self.radius
+        #     w_p, r_p = self.get_weight_pow_p(p=2), self.radius ** 2
+        #     w = w / np.expand_dims(r, -1)
+        #     w_p = w_p / np.expand_dims(r_p, -1)
+        #     sns.histplot(w.flatten())
+        #     sns.histplot(w_p.flatten())
         #     plt.show()
 
         return output_sdr
+
+    def get_weight_pow_p(self, p: float, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
+        w = self.weights if ixs is None else self.weights[ixs]
+        return np.sign(w) * (np.abs(w) ** p)
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         if ixs is None:

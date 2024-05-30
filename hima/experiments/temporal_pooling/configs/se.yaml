@@ -62,7 +62,7 @@ sp:
     feedforward_sds: ???
     output_sds: ???
     init_radius: 10.0
-    learning_rate: 0.01
+    learning_rate: 0.02
     lebesgue_p: 3
     neg_hebb_delta: 0.4
     repu_n: 4.5

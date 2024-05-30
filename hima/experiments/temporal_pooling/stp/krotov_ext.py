@@ -77,7 +77,7 @@ class KrotovLayer:
         init_std = req_radius * (np.pi / 2 / self.ff_size)**(1 / self.lebesgue_p)
         self.weights = self.rng.normal(loc=0.001, scale=init_std, size=shape)
 
-        self.weights_pow_p = self.get_weight_pow_p()
+        self.weights_pow_p = self.get_weight_pow_p(self.lebesgue_p - 1)
         self.radius = self.get_radius()
         self.relative_radius = self.get_relative_radius()
 
@@ -141,7 +141,7 @@ class KrotovLayer:
         d_weights /= np.abs(d_weights).max() + 1e-30
 
         self.weights[ixs, :] += _lr[ixs] * d_weights
-        self.weights_pow_p[ixs, :] = self.get_weight_pow_p(ixs)
+        self.weights_pow_p[ixs, :] = self.get_weight_pow_p(self.lebesgue_p - 1, ixs)
         self.radius[ixs] = self.get_radius(ixs)
         self.relative_radius[ixs] = self.get_relative_radius(ixs)
 
@@ -159,10 +159,15 @@ class KrotovLayer:
                 f'| {self.weights.mean():.3f}: {self.weights.min():.3f}  {self.weights.max():.3f}'
                 f'| {active_mass:.3f} {y.sum():.3f}  {sdr.size}'
             )
-        # if self.cnt % 100000 == 0:
+        # if self.cnt % 10000 == 0:
         #     import seaborn as sns
         #     from matplotlib import pyplot as plt
-        #     sns.histplot(self.weights.flatten())
+        #     w, r = self.weights, self.radius
+        #     w_p, r_p = self.get_weight_pow_p(p=2), self.radius ** 2
+        #     w = w / np.expand_dims(r, -1)
+        #     w_p = w_p / np.expand_dims(r_p, -1)
+        #     sns.histplot(w.flatten())
+        #     sns.histplot(w_p.flatten())
         #     plt.show()
 
         return output_sdr
@@ -172,10 +177,9 @@ class KrotovLayer:
         w = self.weights if ixs is None else self.weights[ixs]
         return np.sum(np.abs(w) ** p, axis=-1) ** (1 / p)
 
-    def get_weight_pow_p(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
-        p = self.lebesgue_p
+    def get_weight_pow_p(self, p: float, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         w = self.weights if ixs is None else self.weights[ixs]
-        return np.sign(w) * (np.abs(w) ** (p - 1))
+        return np.sign(w) * (np.abs(w) ** p)
 
     def get_relative_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         r = self.radius if ixs is None else self.radius[ixs]
