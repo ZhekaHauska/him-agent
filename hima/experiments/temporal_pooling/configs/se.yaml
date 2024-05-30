@@ -89,7 +89,7 @@ sp:
     feedforward_sds: ???
     output_sds: ???
     init_radius: 10.0
-    learning_rate: 0.02
+    learning_rate: 0.01
     neg_hebb_delta: 0.4
 
   float_sp:
@@ -207,7 +207,7 @@ setups:
     ds_norm: l1
     classifier_symexp_logits: True
 #    encoding_sds: [2000, 25]
-    encoding_sds: [400, 6]
+    encoding_sds: [400, 4]
   binary_sng_sp:
     encoder:
       _base_: sp.float_sp
