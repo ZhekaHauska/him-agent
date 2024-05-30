@@ -89,7 +89,14 @@ sp:
     feedforward_sds: ???
     output_sds: ???
     init_radius: 10.0
+    neg_w_portion: 0.12
+    # linear | sqrt
+#    match_p: linear
+    match_p: sqrt
     learning_rate: 0.01
+    # pair | all
+    learning_set: all
+#    learning_set: pair
     neg_hebb_delta: 0.4
 
   float_sp:
@@ -206,8 +213,8 @@ setups:
     input_mode: rate
     ds_norm: l1
     classifier_symexp_logits: True
-#    encoding_sds: [2000, 25]
-    encoding_sds: [400, 4]
+    encoding_sds: [2000, 24]
+#    encoding_sds: [400, 4]
   binary_sng_sp:
     encoder:
       _base_: sp.float_sp
