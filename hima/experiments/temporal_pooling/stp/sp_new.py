@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+import numba
 import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
@@ -15,14 +16,15 @@ from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.sp_new import get_normal_std
 
 
-class KrotovLayer:
+class SpatialEncoderLayer:
     """
-    A competitive network implementation from Krotov-Hopfield.
+    A competitive network implementation from Krotov-Hopfield with several modifications.
     Source: Unsupervised learning by competing hidden units
         https://pnas.org/doi/full/10.1073/pnas.1820458116
+
+    Modifications:
     """
     rng: Generator
 
@@ -32,6 +34,10 @@ class KrotovLayer:
     sparse_input: SparseSdr
     dense_input: DenseSdr
 
+    # connections
+    weights: npt.NDArray[float]
+    lebesgue_p: float
+
     # potentiation and learning
     learning_rate: float
 
@@ -39,13 +45,9 @@ class KrotovLayer:
     output_sds: Sds
     output_mode: OutputMode
 
-    # connections
-    weights: npt.NDArray[float]
-    lebesgue_p: float
-
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds, learning_rate: float,
-            init_radius: float, lebesgue_p: float, neg_hebb_delta: float, repu_n: float,
+            init_radius: float, neg_hebb_delta: float,
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
@@ -64,22 +66,22 @@ class KrotovLayer:
 
         self.learning_rate = learning_rate
 
-        self.lebesgue_p = lebesgue_p
+        self.lebesgue_p = 1.0
         self.neg_hebb_delta = neg_hebb_delta
-        self.repu_n = repu_n
 
         shape = (self.output_size, self.ff_size)
         init_std = get_normal_std(init_radius, self.ff_size, self.lebesgue_p)
-        self.weights = self.rng.normal(loc=0.0, scale=init_std, size=shape)
+        self.weights = self.rng.normal(loc=0.001, scale=init_std, size=shape)
 
-        self.weights_pow_p = self.get_weight_pow_p()
+        self.weights_pow_p = self.get_weight_pow_p(self.lebesgue_p - 1)
         self.radius = self.get_radius()
+        self.relative_radius = self.get_relative_radius()
 
         self.cnt = 0
         self.loops = 0
         print(f'init_std: {init_std:.3f} | {self.avg_radius:.3f}')
 
-        # # stats collection
+        # stats collection
         slow_lr = LearningRateParam(window=40_000)
         fast_lr = LearningRateParam(window=10_000)
         self.computation_speed = MeanValue(lr=slow_lr)
@@ -104,40 +106,44 @@ class KrotovLayer:
         p, hb_delta = self.lebesgue_p, self.neg_hebb_delta
         w_p = self.weights_pow_p
 
-        y = np.dot(w_p, x)
+        u = np.dot(w_p, x)
 
-        sdr = np.flatnonzero(y > 0)
-        values = y[sdr] ** self.repu_n
-        values /= values.sum()
+        sdr = np.flatnonzero(u > 0)
+        y = u[sdr]
+        y /= y.sum()
 
-        output_sdr = RateSdr(sdr, values)
+        output_sdr = RateSdr(sdr, y)
         self.accept_output(output_sdr, learn=learn)
 
-        if not learn or len(sdr) == 0:
+        if not learn:
             return output_sdr
 
         lr = self.learning_rate
+        lr = lr * self.relative_radius + 0.0001
 
         k1 = self.output_sds.active_size + 1
-        top_k1_ix = np.argpartition(y, -k1)[-k1:]
-        top_k1_ix = top_k1_ix[np.argsort(y[top_k1_ix])]
-
-        ixs = np.array([top_k1_ix[-1], top_k1_ix[0]], dtype=int)
+        top_k1_ix = np.argpartition(u, -k1)[-k1:]
+        ixs = np.array([
+            top_k1_ix[np.argmax(u[top_k1_ix])],
+            top_k1_ix[np.argmin(u[top_k1_ix])]
+        ], dtype=int)
         dw = np.array([1.0, -hb_delta])
 
         _x = np.expand_dims(x, 0)
         _dw = np.expand_dims(dw, -1)
+        _lr = np.expand_dims(lr, -1)
 
-        d_weights = _dw * _x - np.expand_dims(dw * y[ixs], -1) * w[ixs]
+        d_weights = _dw * _x - np.expand_dims(dw * u[ixs], -1) * w[ixs]
         d_weights /= np.abs(d_weights).max() + 1e-30
 
-        self.weights[ixs, :] += lr * d_weights
-        self.weights_pow_p[ixs, :] = self.get_weight_pow_p(ixs)
+        self.weights[ixs, :] += _lr[ixs] * d_weights
+        self.weights_pow_p[ixs, :] = self.get_weight_pow_p(self.lebesgue_p - 1, ixs)
         self.radius[ixs] = self.get_radius(ixs)
+        self.relative_radius[ixs] = self.get_relative_radius(ixs)
 
         self.cnt += 1
-        if self.cnt % 1000 == 0:
-            sorted_values = np.sort(values)
+        if self.cnt % 5000 == 0:
+            sorted_values = np.sort(y)
             ac_size = self.output_sds.active_size
             active_mass = sorted_values[-ac_size:].sum()
 
@@ -145,10 +151,20 @@ class KrotovLayer:
             print(
                 f'{self.avg_radius:.3f} {self.output_active_size:.1f}'
                 f'| {biases.mean():.2f} [{biases.min():.2f}; {biases.max():.2f}]'
-                f'| {y.min():.3f}  {y.max():.3f}'
+                f'| {u.min():.3f}  {u.max():.3f}'
                 f'| {self.weights.mean():.3f}: {self.weights.min():.3f}  {self.weights.max():.3f}'
-                f'| {active_mass:.3f} {values.sum():.3f}  {sdr.size}'
+                f'| {active_mass:.3f} {y.sum():.3f}  {sdr.size}'
             )
+        # if self.cnt % 10000 == 0:
+        #     import seaborn as sns
+        #     from matplotlib import pyplot as plt
+        #     w, r = self.weights, self.radius
+        #     w_p, r_p = self.get_weight_pow_p(p=2), self.radius ** 2
+        #     w = w / np.expand_dims(r, -1)
+        #     w_p = w_p / np.expand_dims(r_p, -1)
+        #     sns.histplot(w.flatten())
+        #     sns.histplot(w_p.flatten())
+        #     plt.show()
 
         return output_sdr
 
@@ -157,10 +173,16 @@ class KrotovLayer:
         w = self.weights if ixs is None else self.weights[ixs]
         return np.sum(np.abs(w) ** p, axis=-1) ** (1 / p)
 
-    def get_weight_pow_p(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
-        p = self.lebesgue_p
+    def get_weight_pow_p(self, p: float, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         w = self.weights if ixs is None else self.weights[ixs]
-        return np.sign(w) * (np.abs(w) ** (p - 1))
+        return np.sign(w) * (np.abs(w) ** p)
+
+    def get_relative_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
+        r = self.radius if ixs is None else self.radius[ixs]
+        return np.clip(
+            np.abs(np.log2(np.maximum(r, 0.001))),
+            0.05, 4.0
+        )
 
     @property
     def avg_radius(self):
@@ -209,3 +231,10 @@ class KrotovLayer:
 
     def output_entropy(self):
         return entropy(self.output_rate)
+
+
+@numba.jit(nopython=True, cache=True, inline='always')
+def get_normal_std(required_r, n_samples: int, p: float) -> float:
+    alpha = np.pi / (2 * n_samples)
+    alpha = alpha ** (1 / p)
+    return required_r * alpha

@@ -16,6 +16,7 @@ from hima.common.timer import timed
 from hima.common.utils import softmax
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.sp_new import get_normal_std
 
 
 class SoftHebbLayer:
@@ -38,6 +39,8 @@ class SoftHebbLayer:
     # connections
     weights: npt.NDArray[float]
 
+    lebesgue_p: float
+
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds, learning_rate: float,
             init_radius: float, beta: float, threshold: float,
@@ -59,11 +62,11 @@ class SoftHebbLayer:
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode.RATE
 
+        self.lebesgue_p = 2.0
         self.learning_rate = learning_rate
 
         shape = (self.output_size, self.ff_size)
-        req_radius = init_radius
-        init_std = req_radius * np.sqrt(np.pi / 2 / self.ff_size)
+        init_std = get_normal_std(init_radius, self.ff_size, self.lebesgue_p)
         self.weights = self.rng.normal(loc=0.0, scale=init_std, size=shape)
         self.radius = self.get_radius()
 

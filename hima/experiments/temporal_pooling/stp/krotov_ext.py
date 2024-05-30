@@ -16,6 +16,7 @@ from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.sp_new import get_normal_std
 
 
 class KrotovLayer:
@@ -71,8 +72,7 @@ class KrotovLayer:
         self.repu_n = repu_n
 
         shape = (self.output_size, self.ff_size)
-        req_radius = init_radius
-        init_std = req_radius * (np.pi / 2 / self.ff_size)**(1 / self.lebesgue_p)
+        init_std = get_normal_std(init_radius, self.ff_size, self.lebesgue_p)
         self.weights = self.rng.normal(loc=0.001, scale=init_std, size=shape)
 
         self.weights_pow_p = self.get_weight_pow_p(self.lebesgue_p - 1)
@@ -117,7 +117,7 @@ class KrotovLayer:
         output_sdr = RateSdr(sdr, y)
         self.accept_output(output_sdr, learn=learn)
 
-        if not learn:
+        if not learn or len(sdr) == 0:
             return output_sdr
 
         lr = self.learning_rate

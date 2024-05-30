@@ -17,6 +17,7 @@ from hima.common.timer import timed
 from hima.common.utils import softmax
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.sp_new import get_normal_std
 
 
 class SoftHebbLayer:
@@ -75,8 +76,7 @@ class SoftHebbLayer:
         self.min_mass = min_mass
 
         shape = (self.output_size, self.ff_size)
-        req_radius = init_radius
-        init_std = req_radius * np.sqrt(np.pi / 2 / self.ff_size)
+        init_std = get_normal_std(init_radius, self.ff_size, self.lebesgue_p)
         self.weights = self.rng.normal(loc=0.001, scale=init_std, size=shape)
         self.radius = self.get_radius()
         self.relative_radius = self.get_relative_radius()
