@@ -83,6 +83,15 @@ sp:
     expected_normal_overlap_frequency: 0.2
     min_activation_threshold: 6
 
+  se:
+    _type_: sp.se
+    seed: ???
+    feedforward_sds: ???
+    output_sds: ???
+    init_radius: 10.0
+    learning_rate: 0.02
+    neg_hebb_delta: 0.4
+
   float_sp:
     _base_: _common_base
     _type_: sp.float
@@ -192,13 +201,13 @@ setups:
 #    encoding_sds: [400, 6]
   rate_sng_sp:
     encoder:
-      _base_: sp.float_sp
+      _base_: sp.se
       output_mode: rate
     input_mode: rate
     ds_norm: l1
     classifier_symexp_logits: True
-    encoding_sds: [2000, 25]
-#    encoding_sds: [400, 6]
+#    encoding_sds: [2000, 25]
+    encoding_sds: [400, 6]
   binary_sng_sp:
     encoder:
       _base_: sp.float_sp

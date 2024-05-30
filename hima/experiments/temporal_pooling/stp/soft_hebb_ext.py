@@ -17,7 +17,7 @@ from hima.common.timer import timed
 from hima.common.utils import softmax
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.sp_new import get_normal_std
+from hima.experiments.temporal_pooling.stp.se import get_normal_std
 
 
 class SoftHebbLayer:

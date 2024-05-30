@@ -16,7 +16,7 @@ from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.sp_new import get_normal_std
+from hima.experiments.temporal_pooling.stp.se import get_normal_std
 
 
 class KrotovLayer:
