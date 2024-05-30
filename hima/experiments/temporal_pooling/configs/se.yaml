@@ -89,7 +89,7 @@ sp:
     feedforward_sds: ???
     output_sds: ???
     init_radius: 10.0
-    neg_w_portion: 0.12
+    inhibitory: 0.12
     # linear | sqrt
 #    match_p: linear
     match_p: sqrt

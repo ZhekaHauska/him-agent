@@ -64,7 +64,7 @@ class SpatialEncoderLayer:
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds,
             match_p: str,
             learning_rate: float, learning_set: str,
-            init_radius: float, neg_hebb_delta: float,
+            init_radius: float, inhibitory: float, neg_hebb_delta: float,
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
@@ -91,11 +91,15 @@ class SpatialEncoderLayer:
             neg_hebb_delta /= 4
         self.d_hebb = np.array([1.0, -neg_hebb_delta])
 
-        shape = (self.output_size, self.ff_size)
+        w_shape = (self.output_size, self.ff_size)
         init_std = get_normal_std(init_radius, self.ff_size, self.lebesgue_p)
-        self.weights = np.abs(self.rng.normal(loc=0.0, scale=init_std, size=shape))
+        self.weights = np.abs(self.rng.normal(loc=0.0, scale=init_std, size=w_shape))
         # make a portion of weights negative
-        self.weights[self.rng.integers(0, shape[0], size=shape[0]//5)] *= -1
+
+        if inhibitory > 0:
+            inh_mask = self.rng.binomial(1, inhibitory, size=w_shape).astype(bool)
+            self.weights[inh_mask] *= -1
+
         if self.match_policy == MatchPolicy.SQRT:
             self.sqrt_w = self.get_square_root_weights()
 
