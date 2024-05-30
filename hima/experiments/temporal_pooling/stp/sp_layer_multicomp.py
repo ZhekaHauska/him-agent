@@ -5,8 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from enum import Enum, auto
-
 import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
@@ -18,18 +16,15 @@ from hima.common.sdrr import (
 )
 from hima.common.sds import Sds
 from hima.common.timer import timed
-from hima.common.utils import safe_divide, softmax
+from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.sp_layer import SpLearningAlgo
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     RepeatingCountdown, make_repeating_counter, tick
 )
 
 
-# Intermediate version of SP during the migration to work with both
-# binary and rate encodings. Previous: sp_rate.py. Current last.
-# New: supports synaptogenesis.
+# Multi-compartmental version of Spatial Encoder. Works on top of the sp_layer compartments.
 
 
 # TODO:
@@ -369,6 +364,7 @@ class SpatialPooler:
         compartment = self.rng.choice(compartments, p=compartment_probs)
 
         success = compartment.activate_synaptogenesis_step(sng_winner)
+        self.synaptogenesis_score[sng_winner] = 0.
         self.synaptogenesis_cnt += 1
         self.synaptogenesis_cnt_successful += int(success)
 
