@@ -35,7 +35,6 @@ class KrotovLayer:
     dense_input: DenseSdr
 
     # potentiation and learning
-    potentials: npt.NDArray[float]
     learning_rate: float
 
     # output
@@ -44,7 +43,7 @@ class KrotovLayer:
 
     # connections
     weights: npt.NDArray[float]
-    rf: npt.NDArray[int]
+    lebesgue_p: float
 
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds, learning_rate: float,
@@ -65,7 +64,6 @@ class KrotovLayer:
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode.RATE
 
-        self.potentials = np.zeros(self.output_size, dtype=float)
         self.learning_rate = learning_rate
 
         self.lebesgue_p = lebesgue_p
@@ -195,17 +193,9 @@ class KrotovLayer:
     def accept_input(self, sdr: AnySparseSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
         sdr, value = split_sdr_values(sdr)
-        self.is_empty_input = len(sdr) == 0
-
-        if not self.is_empty_input:
-            l2_value = np.sqrt(np.sum(value**2))
-            if l2_value > 1e-12:
-                value /= l2_value
 
         # forget prev SDR
         self.dense_input[self.sparse_input] = 0.
-        # reset potential
-        self.potentials.fill(0.)
 
         # set new SDR
         self.sparse_input = sdr

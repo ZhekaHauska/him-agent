@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from functools import partial
 from itertools import zip_longest
 from pathlib import Path
 
@@ -102,7 +103,7 @@ class SpatialEncoderExperiment:
         setup = self.config.config_resolver.resolve(setup, config_type=dict)
         (
             encoder, encoding_sds, input_mode, req_sdr_tracker,
-            classifier_symexp_logits
+            classifier_symexp_logits, ds_norm
         ) = self._get_setup(**setup)
         self.input_mode = OutputMode[input_mode.upper()]
         self.is_binary = self.input_mode == OutputMode.BINARY
@@ -135,6 +136,13 @@ class SpatialEncoderExperiment:
                 )
             self.online_loss_metric_key = f'online_loss_{self.training.n_online_epochs}'
             print(f'Encoder: {self.encoder.feedforward_sds} -> {self.encoder.output_sds}')
+
+            normalizer = partial(
+                normalize_ds, norm=ds_norm,
+                p=getattr(self.encoder, 'lebesgue_p', None)
+            )
+            self.data.train.normalize(normalizer)
+            self.data.test.normalize(normalizer)
         else:
             self.encoder = None
 
@@ -398,9 +406,9 @@ class SpatialEncoderExperiment:
     @staticmethod
     def _get_setup(
             input_mode: str, encoding_sds, encoder: TConfig = None, sdr_tracker: bool = True,
-            classifier_symexp_logits: bool = False
+            classifier_symexp_logits: bool = False, ds_norm: str = None
     ):
-        return encoder, encoding_sds, input_mode, sdr_tracker, classifier_symexp_logits
+        return encoder, encoding_sds, input_mode, sdr_tracker, classifier_symexp_logits, ds_norm
 
     def should_test(self):
         return (
@@ -443,3 +451,21 @@ def fill_batch(batch, ds, batch_ix, encoder=None, learn=False):
                 encoder.compute(ds[sdr_ix], learn=learn)
             )
             batch[i, sdr] = rates
+
+
+def normalize_ds(ds, norm, p=None):
+    if norm is None:
+        return ds
+    if norm == 'l1':
+        p = 1
+    elif norm == 'l2':
+        p = 2
+    elif norm == 'lp':
+        assert p is not None, 'p must be provided for lp norm'
+    else:
+        raise ValueError(f'Unknown normalization type: {norm}')
+
+    r_p = np.linalg.norm(ds, ord=p, axis=-1)
+    if np.ndim(r_p) > 0:
+        r_p = r_p[:, np.newaxis]
+    return ds / r_p

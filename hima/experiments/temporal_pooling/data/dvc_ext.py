@@ -44,6 +44,12 @@ class SdrDataset:
     def get_sdr(self, ind: int) -> SparseSdr | RateSdr:
         return self.sdrs[ind].sdr if self.binary else self.sdrs[ind]
 
+    def normalize(self, normalizer):
+        self.sdrs = [
+            RateSdr(sdr=sdr.sdr, values=normalizer(sdr.values))
+            for sdr in self.sdrs
+        ]
+
 
 @dataclass
 class DvcSdrs:
@@ -76,7 +82,7 @@ class DvcDataset:
     sds: Sds
     binary: bool
 
-    def __init__(self, seed: int, filepath: str | Path, binary: bool = True):
+    def __init__(self, seed: int, filepath: str | Path, binary: bool = True, normalizer=None):
         self.dataset = _read_dataset(filepath, with_imu=True)
         self.binary = binary
         self.sds = self.dataset.sds if self.binary else self.dataset.rate_sds

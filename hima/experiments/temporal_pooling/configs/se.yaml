@@ -152,12 +152,14 @@ setups:
     encoder: sp.soft_hebb
     input_mode: rate
     classifier_symexp_logits: True
+    ds_norm: l2
     encoding_sds: [2000, 10]
 #    encoding_sds: [400, 6]
   rate_soft_hebb_ext:
     encoder: sp.soft_hebb_ext
     input_mode: rate
     classifier_symexp_logits: True
+    ds_norm: l2
     encoding_sds: [2000, 20]
 #    encoding_sds: [400, 4]
   rate_krotov:
@@ -179,11 +181,21 @@ setups:
     input_mode: binary
     encoding_sds: [2000, 40]
 #    encoding_sds: [400, 6]
+  rate_fl_sp:
+    encoder:
+      _base_: sp.float_sp
+      output_mode: rate
+    input_mode: rate
+    ds_norm: l1
+    classifier_symexp_logits: True
+    encoding_sds: [2000, 25]
+#    encoding_sds: [400, 6]
   rate_sng_sp:
     encoder:
       _base_: sp.float_sp
       output_mode: rate
     input_mode: rate
+    ds_norm: l1
     classifier_symexp_logits: True
     encoding_sds: [2000, 25]
 #    encoding_sds: [400, 6]

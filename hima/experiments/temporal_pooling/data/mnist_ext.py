@@ -23,29 +23,22 @@ class SdrDataset:
     targets: npt.NDArray[int]
 
     dense_sdrs: npt.NDArray[float]
-    sdrs: list[SparseSdr]
-    classes: list[npt.NDArray[int]]
+    sdrs: list[RateSdr]
+    _classes: list[npt.NDArray[int]] | None
 
     def __init__(self, images, targets, threshold: float, binary: bool):
         self.binary = binary
 
         self.images = images
         self.targets = targets
+        self.flatten_images = self.images.reshape(self.n_images, -1)
 
-        # Rate SDR
-        self.dense_values = self.images.reshape(self.n_images, -1)
-        self.sparse_sdrs = [np.flatnonzero(img >= threshold) for img in self.dense_values]
-
-        # Binary SDR
-        image_thresholds = np.mean(self.dense_values, axis=-1, keepdims=True)
-        image_thresholds = np.maximum(image_thresholds, threshold)
-        self.binary_dense_sdrs = (self.dense_values >= image_thresholds).astype(float)
-        self.binary_sparse_sdrs = [np.flatnonzero(img) for img in self.binary_dense_sdrs]
-
-        self.classes = [
-            np.flatnonzero(self.targets == cls)
-            for cls in range(self.n_classes)
+        bin_sdrs = [np.flatnonzero(img >= threshold) for img in self.flatten_images]
+        self.sdrs = [
+            RateSdr(sdr, values=self.flatten_images[ind][sdr])
+            for ind, sdr in enumerate(bin_sdrs)
         ]
+        self._classes = None
 
     @property
     def n_images(self):
@@ -56,15 +49,23 @@ class SdrDataset:
         return 10
 
     @property
+    def classes(self):
+        if self._classes is None:
+            self._classes = [np.flatnonzero(self.targets == i) for i in range(self.n_classes)]
+        return self._classes
+
+    @property
     def image_shape(self):
         return self.images.shape[1:]
 
     def get_sdr(self, ind: int) -> SparseSdr | RateSdr:
-        if self.binary:
-            return self.binary_sparse_sdrs[ind]
+        return self.sdrs[ind].sdr if self.binary else self.sdrs[ind]
 
-        sdr = self.sparse_sdrs[ind]
-        return RateSdr(sdr, values=self.dense_values[ind][sdr])
+    def normalize(self, normalizer):
+        self.sdrs = [
+            RateSdr(sdr=sdr.sdr, values=normalizer(sdr.values))
+            for sdr in self.sdrs
+        ]
 
 
 class MnistDataset:
@@ -77,9 +78,12 @@ class MnistDataset:
     sds: Sds
     binary: bool
 
-    def __init__(self, seed: int, binary: bool = True, ds: str = 'mnist', debug: bool = False):
+    def __init__(
+            self, seed: int, binary: bool = True, ds: str = 'mnist', debug: bool = False,
+            normalizer=None
+    ):
         self.binary = binary
-        normalizer, threshold, train, test = _load_dataset(seed, ds, grayscale=True, debug=debug)
+        threshold, train, test = _load_dataset(seed, ds, grayscale=True, debug=debug)
 
         train_images, train_targets = train
         self.train = SdrDataset(train_images, train_targets, threshold, binary)
@@ -87,7 +91,13 @@ class MnistDataset:
         test_images, test_targets = test
         self.test = SdrDataset(test_images, test_targets, threshold, binary)
 
-        sparsity = self.train.binary_dense_sdrs.mean() if binary else self.train.dense_values.mean()
+        if binary:
+            sparsity = np.mean([
+                len(sdr.sdr) / self.train.flatten_images.shape[1]
+                for sdr in self.train.sdrs
+            ])
+        else:
+            sparsity = self.train.flatten_images.mean()
         self.sds = Sds(shape=self.image_shape, sparsity=sparsity)
 
     @property
@@ -107,10 +117,7 @@ def _load_dataset(
     normalizer = 255.0
 
     # NB: to get sdr for rate sdrs
-    if ds_name == 'mnist':
-        threshold = 0.05
-    else:
-        threshold = 0.15
+    threshold = 1.0 / normalizer
 
     from pathlib import Path
     cache_path = Path(f'~/data/_cache/{ds_name}{"_gs" if grayscale else ""}.pkl')
@@ -129,7 +136,6 @@ def _load_dataset(
             supported_datasets[ds_name], version=1, return_X_y=True, as_frame=False,
             parser='auto'
         )
-
         images = images.astype(float) / normalizer
         if grayscale and ds_name == 'cifar':
             # convert to grayscale
@@ -155,4 +161,4 @@ def _load_dataset(
         train_images, train_targets = train_images[:n_trains], train_targets[:n_trains]
         test_images, test_targets = test_images[:n_tests], test_targets[:n_tests]
 
-    return normalizer, threshold, (train_images, train_targets), (test_images, test_targets)
+    return threshold, (train_images, train_targets), (test_images, test_targets)
