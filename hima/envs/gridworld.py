@@ -8,6 +8,7 @@ from copy import copy
 
 import pygame
 import matplotlib.pyplot as plt
+import seaborn as sns
 from PIL import Image
 import io
 
@@ -172,16 +173,15 @@ class GridWorld:
     def render(self):
         shift = self.shift
         im = self.colors.copy()
-        agent_color = max(self.unique_colors) + 0.5
         min_vis_color = np.min(self.colors)
 
         if shift > 0:
             im = im[shift:-shift, shift:-shift]
 
-        im[self.r, self.c] = agent_color
-
         plt.figure()
-        plt.imshow(im, cmap='Pastel1', aspect=1, vmin=min_vis_color)
+        sns.heatmap(im, annot=True, cmap='Pastel1', square=True, vmin=min_vis_color, cbar=False)
+        if (self.r is not None) and (self.c is not None):
+            plt.text(self.c, self.r+1, 'A')
         plt.axis('off')
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches="tight")
