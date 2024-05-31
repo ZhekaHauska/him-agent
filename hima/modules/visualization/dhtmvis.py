@@ -17,17 +17,16 @@ TIMEOUT = 600
 
 
 class DHTMVisualizer:
-    def __init__(self, host=HOST, port=PORT, main_window_size=(200, 50), time_constant=50):
+    def __init__(self, host=HOST, port=PORT, message_annot=False):
         self.host = host
         self.port = port
-        self.main_window_size = main_window_size
-        self.time_constant = time_constant
 
         self.data = None
         self.n_steps = 0
         self.phase = 'unknown'
 
         # create figures
+        self.message_annot = message_annot
         self.fig_messages = plt.figure('messages')
         self.messages = self.fig_messages.subplot_mosaic(
             [
@@ -158,12 +157,12 @@ class DHTMVisualizer:
             self.data['external_messages'],
             ax=self.messages['external'],
             cbar=False,
-            annot=True
+            annot=self.message_annot
         )
         sns.heatmap(
             self.data['context_messages'],
             ax=self.messages['context'],
-            annot=True,
+            annot=self.message_annot,
             cbar=False
         )
 
@@ -171,26 +170,26 @@ class DHTMVisualizer:
             sns.heatmap(
                 self.data['prediction_cells'],
                 ax=self.messages['prediction'],
-                annot=True,
+                annot=self.message_annot,
                 cbar=False
             )
         sns.heatmap(
             self.data['internal_messages'],
             ax=self.messages['internal'],
-            annot=True,
+            annot=self.message_annot,
             cbar=False
         )
         sns.heatmap(
             self.data['prediction_columns'],
             ax=self.messages['obs_states_prediction'],
-            annot=True,
+            annot=self.message_annot,
             cbar=False
         )
 
         sns.heatmap(
             self.data['observation_messages'],
             ax=self.messages['obs_states'],
-            annot=True,
+            annot=self.message_annot,
             cbar=False
         )
 
