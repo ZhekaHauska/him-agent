@@ -1,7 +1,7 @@
 program: run.py
 #entity: TBI   # default: $WANDB_ENTITY
 
-project: stp.se_mnist_rf
+project: stp.se_csr
 method: grid
 parameters:
   seed.:
