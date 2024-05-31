@@ -136,7 +136,7 @@ class KrotovLayer:
         self.radius[ixs] = self.get_radius(ixs)
 
         self.cnt += 1
-        if self.cnt % 1000 == 0:
+        if self.cnt % 10000 == 0:
             sorted_values = np.sort(values)
             ac_size = self.output_sds.active_size
             active_mass = sorted_values[-ac_size:].sum()

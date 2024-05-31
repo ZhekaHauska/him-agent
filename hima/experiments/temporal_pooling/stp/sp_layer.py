@@ -50,6 +50,7 @@ class SpatialPooler:
     # output
     output_sds: Sds
     output_mode: OutputMode
+    activation_threshold: float
 
     winners: RateSdr
 

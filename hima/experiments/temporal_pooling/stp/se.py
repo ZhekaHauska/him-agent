@@ -191,10 +191,10 @@ class SpatialEncoderLayer:
         if self.pruning_controller is not None:
             self.prune_newborns()
 
-        if self.cnt % 5000 == 0:
+        if self.cnt % 10000 == 0:
             self.print_stats(u, sdr, y)
-        if self.cnt % 50000 == 0:
-            self.plot_weights_distr()
+        # if self.cnt % 50000 == 0:
+        #     self.plot_weights_distr()
 
         return output_sdr
 

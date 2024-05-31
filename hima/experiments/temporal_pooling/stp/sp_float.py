@@ -10,10 +10,9 @@ from typing import cast
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
 from hima.common.sdr import SparseSdr
+from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
 from hima.common.sds import Sds
-from hima.common.utils import safe_divide
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
@@ -246,10 +245,14 @@ class SpatialPooler:
     def select_output(self):
         output_sdr = self.winners
         if self.output_mode == OutputMode.RATE:
-            values = safe_divide(
-                self.potentials[self.winners],
-                cast(float, self.potentials[self.strongest_winner])
-            )
+            # values = safe_divide(
+            #     self.potentials[self.winners],
+            #     cast(float, self.potentials[self.strongest_winner])
+            # )
+            values = self.potentials[self.winners]
+            # values = safe_divide(
+            #     self.potentials[self.winners], self.potentials[self.winners].sum()
+            # )
             output_sdr = RateSdr(self.winners, values=values)
         return output_sdr
 
@@ -415,7 +418,7 @@ class SpatialPooler:
         return self.feedforward_trace[self.rf]
 
     def output_entropy(self):
-        return entropy(self.output_rate, sds=self.output_sds)
+        return entropy(self.output_rate)
 
     @property
     def recognition_strength(self):

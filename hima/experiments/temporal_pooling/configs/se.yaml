@@ -29,7 +29,7 @@ sp:
     seed: ???
     feedforward_sds: ???
     output_sds: ???
-    learning_rate: 0.05
+    learning_rate: 0.01
     init_radius: 10.0
     beta: 200.0
     threshold: 0.002
@@ -40,7 +40,7 @@ sp:
     feedforward_sds: ???
     output_sds: ???
     init_radius: 20.0
-    learning_rate: 0.02
+    learning_rate: 0.01
     beta_lr: 0.005
     min_active_mass: 0.75
     min_mass: 0.92
@@ -51,7 +51,7 @@ sp:
     feedforward_sds: ???
     output_sds: ???
     init_radius: 10.0
-    learning_rate: 0.02
+    learning_rate: 0.01
     lebesgue_p: 3
     neg_hebb_delta: 0.4
     repu_n: 4.5
@@ -62,7 +62,7 @@ sp:
     feedforward_sds: ???
     output_sds: ???
     init_radius: 10.0
-    learning_rate: 0.02
+    learning_rate: 0.01
     lebesgue_p: 3
     neg_hebb_delta: 0.4
     repu_n: 4.5
@@ -98,8 +98,8 @@ sp:
     learning_set: all
     neg_hebb_delta: 0.4
     pruning:
-      n_stages: 20
-      cycle: 50.0
+      n_stages: 10
+      cycle: 100.0
       mode: linear
       target_rf_sparsity: 0.25
 
@@ -165,6 +165,7 @@ sp:
 setups:
   rate_ann:
     input_mode: rate
+    classifier_symexp_logits: True
 #    encoding_sds: [2000, 1]
 #    encoding_sds: [400, 1]
     encoding_sds: [125, 1]
@@ -217,7 +218,7 @@ setups:
     input_mode: rate
     ds_norm: l1
     classifier_symexp_logits: True
-    encoding_sds: [2000, 24]
+    encoding_sds: [2000, 25]
 #    encoding_sds: [400, 4]
   binary_sng_sp:
     encoder:

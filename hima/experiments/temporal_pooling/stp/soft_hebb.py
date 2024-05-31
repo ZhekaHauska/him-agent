@@ -122,7 +122,7 @@ class SoftHebbLayer:
         self.radius[sdr] = self.get_radius(sdr)
 
         self.cnt += 1
-        if self.cnt % 1000 == 0:
+        if self.cnt % 10000 == 0:
             print(
                 f'{self.avg_radius:.5f}  {self.output_entropy():.3f} {self.output_active_size:.1f}'
                 f'| {self.weights.mean():.3f}: {self.weights.min():.3f}  {self.weights.max():.3f}'

@@ -1,25 +1,43 @@
 program: run.py
 #entity: TBI   # default: $WANDB_ENTITY
 
-project: stp.se_mnist_final
+project: stp.se_mnist_rf
 method: grid
 parameters:
   seed.:
-    values: [500, 510, 520, 530, 540] #, 550, 560, 570, 580, 590] #, 700, 701, 702, 703, 704, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+    values: [500, 510, 520] #, 530, 540] #, 550, 560, 570, 580, 590] #, 700, 701, 702, 703, 704, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
     # values: [40, 41, 42, 43, 44] #, 45, 46] #, 47, 48, 49] #, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
 
   log.:
     value: True
-  output_sds.:
-    value: [2000, 40]
   train..n_epochs:
-    value: 25
+    value: 40
+  train..n_online_epochs:
+    value: 3
   test..n_epochs:
-    value: 25
+    value: 40
   test..eval_first:
     value: 5
   test..eval_schedule:
     value: 5
+  classifier..learning_rate:
+    value: 0.0003
+
+  data.:
+    values:
+      - mnist
+      - cifar
+
+  setup.:
+    values:
+      - setups.rate_ann
+      - setups.binary_htm_sp
+      - setups.rate_soft_hebb
+      - setups.rate_krotov
+      - setups.rate_sng_sp
+      - setups.rate_fl_sp
+      - setups.rate_soft_hebb_ext
+      - setups.rate_krotov_ext
 
 command:
   - ${env}

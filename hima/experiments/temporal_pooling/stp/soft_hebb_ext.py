@@ -166,7 +166,7 @@ class SoftHebbLayer:
 
         self.loops += loops
         self.cnt += 1
-        if self.cnt % 5000 == 0:
+        if self.cnt % 10000 == 0:
             low_y = y[y <= t]
             low_mx = 0. if low_y.size == 0 else low_y.max()
             print(
