@@ -98,7 +98,7 @@ class SpatialEncoderLayer:
         self.lebesgue_p = 1.0
         if learning_set == LearningSet.PAIR:
             # NB: otherwise, learning diverges — weights grow to infinity
-            neg_hebb_delta /= 4
+            neg_hebb_delta = neg_hebb_delta ** 2
         self.d_hebb = np.array([1.0, -neg_hebb_delta])
 
         self.rf_sparsity = 1.0

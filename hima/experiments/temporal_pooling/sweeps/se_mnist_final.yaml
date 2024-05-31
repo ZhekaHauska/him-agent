@@ -1,7 +1,7 @@
 program: run.py
 #entity: TBI   # default: $WANDB_ENTITY
 
-project: stp.se_csr
+project: stp.se_csr3
 method: grid
 parameters:
   seed.:
@@ -11,22 +11,24 @@ parameters:
   log.:
     value: True
   train..n_epochs:
-    value: 5
+    # value: 5
+    value: 10
   train..n_online_epochs:
     value: 3
   test..n_epochs:
     value: 40
   test..eval_first:
-    value: 5
+    value: 4
   test..eval_schedule:
     value: 5
   classifier..learning_rate:
-    value: 0.002
+    value: 0.003
 
   data.:
     values:
       - mnist
       - cifar
+      - dvc
 
   setup.:
     values:
@@ -37,7 +39,6 @@ parameters:
       - setups.rate_sng_sp
       - setups.rate_fl_sp
       - setups.rate_soft_hebb_ext
-#      - setups.rate_krotov_ext
 
 command:
   - ${env}
