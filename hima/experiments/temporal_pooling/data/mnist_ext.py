@@ -38,6 +38,10 @@ class SdrDataset:
             RateSdr(sdr, values=self.flatten_images[ind][sdr])
             for ind, sdr in enumerate(bin_sdrs)
         ]
+        self.binary_sdrs = [
+            np.flatnonzero(img >= img.mean())
+            for img in self.flatten_images
+        ]
         self._classes = None
 
     @property
@@ -59,7 +63,7 @@ class SdrDataset:
         return self.images.shape[1:]
 
     def get_sdr(self, ind: int) -> SparseSdr | RateSdr:
-        return self.sdrs[ind].sdr if self.binary else self.sdrs[ind]
+        return self.binary_sdrs[ind] if self.binary else self.sdrs[ind]
 
     def normalize(self, normalizer):
         self.sdrs = [
