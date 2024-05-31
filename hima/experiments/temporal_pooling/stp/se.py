@@ -12,12 +12,15 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
 
+from hima.common.config.base import TConfig
 from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
+from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
+from hima.experiments.temporal_pooling.stp.sp_utils import tick
 
 
 class MatchPolicy(Enum):
@@ -42,6 +45,8 @@ class SpatialEncoderLayer:
 
     # input
     feedforward_sds: Sds
+    adapt_to_ff_sparsity: bool
+
     # input cache
     sparse_input: SparseSdr
     dense_input: DenseSdr
@@ -49,6 +54,9 @@ class SpatialEncoderLayer:
     # connections
     weights: npt.NDArray[float]
     lebesgue_p: float
+    rf_sparsity: float
+
+    pruning_controller: PruningController | None
 
     # potentiation and learning
     match_policy: MatchPolicy
@@ -62,9 +70,10 @@ class SpatialEncoderLayer:
 
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds,
-            match_p: str,
+            adapt_to_ff_sparsity: bool, match_policy: str,
             learning_rate: float, learning_set: str,
             init_radius: float, inhibitory: float, neg_hebb_delta: float,
+            pruning: TConfig = None,
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
@@ -73,11 +82,12 @@ class SpatialEncoderLayer:
         self.comp_name = None
 
         self.feedforward_sds = Sds.make(feedforward_sds)
+        self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
         self.sparse_input = np.empty(0, dtype=int)
         self.dense_input = np.zeros(self.ff_size, dtype=float)
         self.is_empty_input = True
-        self.match_policy = MatchPolicy[match_p.upper()]
+        self.match_policy = MatchPolicy[match_policy.upper()]
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode.RATE
@@ -91,11 +101,12 @@ class SpatialEncoderLayer:
             neg_hebb_delta /= 4
         self.d_hebb = np.array([1.0, -neg_hebb_delta])
 
+        self.rf_sparsity = 1.0
         w_shape = (self.output_size, self.ff_size)
         init_std = get_normal_std(init_radius, self.ff_size, self.lebesgue_p)
         self.weights = np.abs(self.rng.normal(loc=0.0, scale=init_std, size=w_shape))
-        # make a portion of weights negative
 
+        # make a portion of weights negative
         if inhibitory > 0:
             inh_mask = self.rng.binomial(1, inhibitory, size=w_shape).astype(bool)
             self.weights[inh_mask] *= -1
@@ -110,6 +121,10 @@ class SpatialEncoderLayer:
         # LR anneal to 0.0001
         self.lr_activation_threshold = 0.01
 
+        self.pruning_controller = None
+        if pruning is not None:
+            self.pruning_controller = PruningController(self, **pruning)
+
         self.cnt = 0
         self.loops = 0
         print(f'init_std: {init_std:.3f} | {self.avg_radius:.3f}')
@@ -118,6 +133,8 @@ class SpatialEncoderLayer:
         slow_lr = LearningRateParam(window=40_000)
         fast_lr = LearningRateParam(window=10_000)
         self.computation_speed = MeanValue(lr=slow_lr)
+
+        self.slow_feedforward_size_trace = MeanValue(lr=slow_lr)
         self.slow_output_trace = MeanValue(
             size=self.output_size, lr=slow_lr, initial_value=self.output_sds.sparsity
         )
@@ -171,10 +188,8 @@ class SpatialEncoderLayer:
         self.update_activation_threshold(activation_info, thr)
         self.cnt += 1
 
-        if self.cnt % 10000 == 0:
-            # zero out the least important weights
-            w = self.weights
-            w[np.abs(w) < 0.2 * self.avg_radius/self.ff_size] = 0.0
+        if self.pruning_controller is not None:
+            self.prune_newborns()
 
         if self.cnt % 5000 == 0:
             self.print_stats(u, sdr, y)
@@ -212,6 +227,13 @@ class SpatialEncoderLayer:
         self.sparse_input = sdr
         self.dense_input[self.sparse_input] = value
 
+        # For SP, an online learning is THE MOST natural operation mode.
+        # We treat the opposite case as the special mode, which only partly affects SP state.
+        if not learn:
+            return
+
+        self.slow_feedforward_size_trace.put(len(sdr))
+
     def accept_output(self, sdr: AnySparseSdr, *, learn: bool):
         sdr, value = split_sdr_values(sdr)
 
@@ -221,6 +243,18 @@ class SpatialEncoderLayer:
         # update winners activation stats
         self.slow_output_sdr_size_trace.put(len(sdr))
         self.slow_output_trace.put(value, sdr)
+
+    def prune_newborns(self):
+        pc = self.pruning_controller
+        if not pc.is_newborn_phase:
+            return
+        now, pc.countdown = tick(pc.countdown)
+        if not now:
+            return
+
+        sparsity, rf_size = pc.shrink_receptive_field()
+        self.rf_sparsity = sparsity
+        print(f'{sparsity:.4f} | {rf_size}')
 
     def get_learning_set(self, sdr, y):
         n_winners = sdr.size
@@ -355,6 +389,14 @@ class SpatialEncoderLayer:
         return self.feedforward_sds.size
 
     @property
+    def ff_avg_active_size(self):
+        return round(self.slow_feedforward_size_trace.get())
+
+    @property
+    def ff_avg_sparsity(self):
+        return self.ff_avg_active_size / self.ff_size
+
+    @property
     def output_size(self):
         return self.output_sds.size
 
@@ -430,47 +472,6 @@ def nb_choice(rng, p):
     # Get corresponding index
     ind = np.searchsorted(acc_w, r, side='right')
     return ind
-
-
-@numba.jit(nopython=True, cache=True)
-def nb_choice_k(max_n, k=1, weights=None, replace=False):
-    """
-    Choose k samples from max_n values, with optional weights and replacement.
-
-    Args:
-        max_n (int): the maximum index to choose
-        k (int): number of samples
-        weights (array): weight of each index, if not uniform
-        replace (bool): whether to sample with replacement
-    """
-    # Get cumulative weights
-    if weights is None:
-        weights = np.full(int(max_n), 1.0)
-    cumweights = np.cumsum(weights)
-
-    maxweight = cumweights[-1]  # Total of weights
-    inds = np.full(k, -1, dtype=np.int64)  # Arrays of sample and sampled indices
-
-    # Sample
-    i = 0
-    while i < k:
-
-        # Find the index
-        r = maxweight * np.random.rand()  # Pick random weight value
-        ind = np.searchsorted(cumweights, r, side='right')  # Get corresponding index
-
-        # Optionally sample without replacement
-        found = False
-        if not replace:
-            for j in range(i):
-                if inds[j] == ind:
-                    found = True
-                    continue
-        if not found:
-            inds[i] = ind
-            i += 1
-
-    return inds
 
 
 @numba.jit(nopython=True, cache=True)

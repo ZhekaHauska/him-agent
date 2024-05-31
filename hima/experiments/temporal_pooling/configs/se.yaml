@@ -87,17 +87,21 @@ sp:
     _type_: sp.se
     seed: ???
     feedforward_sds: ???
+    adapt_to_ff_sparsity: True
     output_sds: ???
     init_radius: 10.0
     inhibitory: 0.12
     # linear | sqrt
-#    match_p: linear
-    match_p: sqrt
+    match_policy: sqrt
     learning_rate: 0.01
     # pair | all
     learning_set: all
-#    learning_set: pair
     neg_hebb_delta: 0.4
+    pruning:
+      n_stages: 20
+      cycle: 50.0
+      mode: linear
+      target_rf_sparsity: 0.25
 
   float_sp:
     _base_: _common_base
