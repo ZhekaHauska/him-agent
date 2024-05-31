@@ -107,7 +107,7 @@ class SoftHebbLayer:
         output_sdr = RateSdr(sdr, values / (values.sum() + 1e-30))
         self.accept_output(output_sdr, learn=learn)
 
-        if not learn:
+        if not learn or sdr.size == 0:
             return output_sdr
 
         _lr = lr * self.relative_radius

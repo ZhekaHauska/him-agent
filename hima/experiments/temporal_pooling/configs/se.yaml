@@ -164,9 +164,10 @@ sp:
 setups:
   rate_ann:
     input_mode: rate
-#    encoding_sds: [2000, 1]
-#    encoding_sds: [400, 1]
     encoding_sds: [125, 1]
+  rate_ann_2k:
+    input_mode: rate
+    encoding_sds: [2000, 1]
   rate_soft_hebb:
     encoder: sp.soft_hebb
     input_mode: rate
@@ -197,6 +198,13 @@ setups:
 #    encoding_sds: [400, 2]
   binary_htm_sp:
     encoder: sp.htm_sp
+    input_mode: binary
+    encoding_sds: [2000, 40]
+#    encoding_sds: [400, 6]
+  binary_htm_sp_dense:
+    encoder:
+      _base_: sp.htm_sp
+      potential_synapses_ratio: 0.4
     input_mode: binary
     encoding_sds: [2000, 40]
 #    encoding_sds: [400, 6]

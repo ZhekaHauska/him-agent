@@ -117,7 +117,7 @@ class KrotovLayer:
         output_sdr = RateSdr(sdr, y)
         self.accept_output(output_sdr, learn=learn)
 
-        if not learn or len(sdr) == 0:
+        if not learn or sdr.size == 0:
             return output_sdr
 
         lr = self.learning_rate

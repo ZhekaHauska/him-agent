@@ -316,7 +316,7 @@ class SpatialEncoderExperiment:
         if self.classification:
             print(f'MLP Accuracy: {accuracy:.3%} | Loss: {nn_epoch_loss:.3f}')
         else:
-            print(f'MLP MSE: {accuracy:.3%} | Loss: {nn_epoch_loss:.3f}')
+            print(f'MLP MSE: {accuracy:.3} | Loss: {nn_epoch_loss:.3f}')
 
     def evaluate_ann_classifier(self, classifier, test_sdrs, targets):
         batched_indices = split_to_batches(len(test_sdrs), self.training.batch_size)
