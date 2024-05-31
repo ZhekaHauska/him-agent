@@ -154,7 +154,7 @@ sp:
     initial_rf_to_input_ratio: 8.0
     # learning
     learning_rate: 0.01
-    newborn_pruning_cycle: 50.0
+    newborn_pruning_cycle: 100.0
     newborn_pruning_stages: 20
     newborn_pruning_mode: powerlaw
     prune_grow_cycle: 1000.0
@@ -164,7 +164,6 @@ sp:
 setups:
   rate_ann:
     input_mode: rate
-    classifier_symexp_logits: True
 #    encoding_sds: [2000, 1]
 #    encoding_sds: [400, 1]
     encoding_sds: [125, 1]
@@ -199,7 +198,6 @@ setups:
   binary_htm_sp:
     encoder: sp.htm_sp
     input_mode: binary
-    classifier_symexp_logits: True
     encoding_sds: [2000, 40]
 #    encoding_sds: [400, 6]
   rate_fl_sp:
@@ -207,7 +205,6 @@ setups:
       _base_: sp.float_sp
       output_mode: rate
     input_mode: rate
-#    ds_norm: l2
     classifier_symexp_logits: True
     encoding_sds: [2000, 25]
 #    encoding_sds: [400, 6]

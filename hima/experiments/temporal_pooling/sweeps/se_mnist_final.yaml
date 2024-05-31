@@ -1,7 +1,7 @@
 program: run.py
 #entity: TBI   # default: $WANDB_ENTITY
 
-project: stp.se_csr2
+project: stp.se_csr
 method: grid
 parameters:
   seed.:
@@ -26,7 +26,7 @@ parameters:
   data.:
     values:
       - mnist
-#      - cifar
+      - cifar
 
   setup.:
     values:
