@@ -101,7 +101,7 @@ sp:
       n_stages: 20
       cycle: 100.0
       mode: linear
-      target_rf_sparsity: 0.25
+      target_rf_sparsity: 0.35
 
   float_sp:
     _base_: _common_base
@@ -144,13 +144,13 @@ sp:
   _common_base:
     _base_: $_base.spatial_pooler.default
     # input
-    target_rf_to_input_ratio: 0.3
-#    target_rf_to_input_ratio: 0.5
+#    target_rf_to_input_ratio: 0.3
+    target_rf_to_input_ratio: 0.5
 #    target_rf_to_input_ratio: 0.7
 #    target_rf_to_input_ratio: 2.0
 
-    target_max_rf_sparsity: 0.05
-    initial_max_rf_sparsity: 0.6
+    target_max_rf_sparsity: 0.1
+    initial_max_rf_sparsity: 0.5
     initial_rf_to_input_ratio: 8.0
     # learning
     learning_rate: 0.01
@@ -164,21 +164,21 @@ sp:
 setups:
   rate_ann:
     input_mode: rate
-#    classifier_symexp_logits: True
+    classifier_symexp_logits: True
 #    encoding_sds: [2000, 1]
 #    encoding_sds: [400, 1]
     encoding_sds: [125, 1]
   rate_soft_hebb:
     encoder: sp.soft_hebb
     input_mode: rate
-#    classifier_symexp_logits: True
+    classifier_symexp_logits: True
     ds_norm: l2
     encoding_sds: [2000, 10]
 #    encoding_sds: [400, 6]
   rate_soft_hebb_ext:
     encoder: sp.soft_hebb_ext
     input_mode: rate
-#    classifier_symexp_logits: True
+    classifier_symexp_logits: True
     ds_norm: l2
     encoding_sds: [2000, 20]
 #    encoding_sds: [400, 4]
@@ -186,19 +186,20 @@ setups:
     encoder: sp.krotov
     sdr_tracker: False
     input_mode: rate
-#    classifier_symexp_logits: True
+    classifier_symexp_logits: True
     encoding_sds: [2000, 7]
 #    encoding_sds: [400, 2]
   rate_krotov_ext:
     encoder: sp.krotov_ext
     sdr_tracker: False
     input_mode: rate
-#    classifier_symexp_logits: True
+    classifier_symexp_logits: True
     encoding_sds: [2000, 7]
 #    encoding_sds: [400, 2]
   binary_htm_sp:
     encoder: sp.htm_sp
     input_mode: binary
+    classifier_symexp_logits: True
     encoding_sds: [2000, 40]
 #    encoding_sds: [400, 6]
   rate_fl_sp:
@@ -206,8 +207,8 @@ setups:
       _base_: sp.float_sp
       output_mode: rate
     input_mode: rate
-    ds_norm: l1
-#    classifier_symexp_logits: True
+#    ds_norm: l2
+    classifier_symexp_logits: True
     encoding_sds: [2000, 25]
 #    encoding_sds: [400, 6]
   rate_sng_sp:
@@ -216,8 +217,8 @@ setups:
       output_mode: rate
     input_mode: rate
     ds_norm: l1
-#    classifier_symexp_logits: True
-    encoding_sds: [2000, 25]
+    classifier_symexp_logits: True
+    encoding_sds: [2000, 20]
 #    encoding_sds: [400, 4]
   binary_sng_sp:
     encoder:

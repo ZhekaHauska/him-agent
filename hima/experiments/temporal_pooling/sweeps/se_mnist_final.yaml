@@ -1,7 +1,7 @@
 program: run.py
 #entity: TBI   # default: $WANDB_ENTITY
 
-project: stp.se_csr
+project: stp.se_csr2
 method: grid
 parameters:
   seed.:
@@ -11,7 +11,7 @@ parameters:
   log.:
     value: True
   train..n_epochs:
-    value: 10
+    value: 5
   train..n_online_epochs:
     value: 3
   test..n_epochs:
@@ -26,7 +26,7 @@ parameters:
   data.:
     values:
       - mnist
-      - cifar
+#      - cifar
 
   setup.:
     values:
@@ -37,7 +37,7 @@ parameters:
       - setups.rate_sng_sp
       - setups.rate_fl_sp
       - setups.rate_soft_hebb_ext
-      - setups.rate_krotov_ext
+#      - setups.rate_krotov_ext
 
 command:
   - ${env}

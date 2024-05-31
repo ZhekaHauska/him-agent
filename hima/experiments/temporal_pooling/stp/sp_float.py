@@ -14,6 +14,7 @@ from hima.common.sdr import SparseSdr
 from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
 from hima.common.sds import Sds
 from hima.common.timer import timed
+from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
@@ -245,11 +246,11 @@ class SpatialPooler:
     def select_output(self):
         output_sdr = self.winners
         if self.output_mode == OutputMode.RATE:
-            # values = safe_divide(
-            #     self.potentials[self.winners],
-            #     cast(float, self.potentials[self.strongest_winner])
-            # )
-            values = self.potentials[self.winners]
+            values = safe_divide(
+                self.potentials[self.winners],
+                cast(float, self.potentials[self.strongest_winner])
+            )
+            # values = self.potentials[self.winners]
             # values = safe_divide(
             #     self.potentials[self.winners], self.potentials[self.winners].sum()
             # )
