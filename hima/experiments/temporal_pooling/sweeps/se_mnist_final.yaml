@@ -11,7 +11,7 @@ parameters:
   log.:
     value: True
   train..n_epochs:
-    value: 40
+    value: 10
   train..n_online_epochs:
     value: 3
   test..n_epochs:
@@ -21,7 +21,7 @@ parameters:
   test..eval_schedule:
     value: 5
   classifier..learning_rate:
-    value: 0.0003
+    value: 0.002
 
   data.:
     values:

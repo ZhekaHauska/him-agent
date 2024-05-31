@@ -360,7 +360,7 @@ class SpatialEncoderExperiment:
         return self.config.resolve_object(
             self.classifier, object_type_or_factory=MlpClassifier,
             layers=layers, classification=self.classification,
-            classifier_symexp_logits=self.classifier_symexp_logits
+            symexp_logits=self.classifier_symexp_logits
 
         )
 
