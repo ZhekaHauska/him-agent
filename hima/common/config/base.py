@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Collection, Union
 
-from ruamel import yaml
+from ruamel.yaml import YAML
 
 from hima.common.utils import ensure_list
 
@@ -129,4 +129,5 @@ def read_config(filepath: str | Path) -> TConfig:
         filepath = Path(filepath)
 
     with filepath.open('r') as config_io:
-        return yaml.load(config_io, Loader=yaml.Loader)
+        yaml = YAML()
+        return yaml.load(config_io)
