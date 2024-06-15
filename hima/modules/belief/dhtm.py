@@ -24,9 +24,13 @@ import warnings
 import pygraphviz as pgv
 import colormap
 import socket
+from typing import Literal
 
 HOST = "127.0.0.1"
 PORT = 5555
+
+DEFAULT_MESSAGES = Literal['forward', 'backward', 'both']
+PRIOR_MODE = Literal['uniform', 'one-hot', 'dirichlet']
 
 
 class BioDHTM(Layer):
@@ -994,12 +998,11 @@ class DHTM(Layer):
             developmental_period: int = 10000,
             cells_activity_lr: float = 0.1,
             use_backward_messages: bool = False,
-            apply_noise: (bool, bool) = (False, False),
-            noise_gamma: (float, float) = (0.0, 0.0),
-            noise_scale: (float, float) = (1.0, 1.0),
-            column_prior: str = "uniform",
-            alpha: float = 1.0,
-            default_messages: str = 'forward',
+            column_prior: PRIOR_MODE = "dirichlet",
+            alpha: float = 1.0,  # dirichlet only
+            default_messages: DEFAULT_MESSAGES = 'forward',
+            max_resamples: int = 10,
+            noise_scale: float = 1.0,
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1027,11 +1030,10 @@ class DHTM(Layer):
         self.cells_activity_lr = cells_activity_lr
         self.use_backward_messages = use_backward_messages
         self.grow_backward_connections = use_backward_messages
-        self.noise_gamma = noise_gamma
-        self.apply_noise = apply_noise
-        self.noise_scale = noise_scale
         self.alpha = alpha
         self.default_messages = default_messages
+        self.max_resamples = max_resamples
+        self.noise_scale = noise_scale
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1118,14 +1120,13 @@ class DHTM(Layer):
         self.state_information = 0
         self.surprise = 0
         self.n_bursting_vars = 0
+        self.total_resamples = 0
 
         self.observation_messages_buffer = list()
         self.external_messages_buffer = list()
         self.forward_messages_buffer = list()
         self.backward_messages_buffer = list()
         self.prior_buffer = list()
-        self.surprise_forward_buffer = list()
-        self.surprise_backward_buffer = list()
         self.can_clear_buffers = False
         self.column_prior = column_prior
 
@@ -1200,8 +1201,6 @@ class DHTM(Layer):
         self.forward_messages_buffer.clear()
         self.backward_messages_buffer.clear()
         self.prior_buffer.clear()
-        self.surprise_forward_buffer.clear()
-        self.surprise_backward_buffer.clear()
 
     def predict(self, context_factors=None, **_):
         if context_factors is None:
@@ -1253,9 +1252,8 @@ class DHTM(Layer):
 
             # save t prediction (prior)
             self.prior_buffer.append(self.internal_messages.copy())
-            # save t surprise
+            # t surprise
             self.surprise = - np.log(self.prediction_columns[observation] + EPS)
-            self.surprise_forward_buffer.append(self.surprise.copy())
             # save t-1 messages
             self.observation_messages_buffer.append(self.observation_messages.copy())
             self.external_messages_buffer.append(self.external_messages.copy())
@@ -1297,7 +1295,6 @@ class DHTM(Layer):
                     np.flatnonzero(self.observation_messages)
                 ] + EPS
             )
-            self.surprise_backward_buffer.append(self.surprise.copy())
             self.observation_messages = self.observation_messages_buffer[t].copy()
             self.internal_messages = self._get_posterior()
             self.backward_messages_buffer.append(self.internal_messages.copy())
@@ -1308,24 +1305,7 @@ class DHTM(Layer):
         self.backward_messages_buffer = self.backward_messages_buffer[::-1]
 
     def _update_segments(self):
-        if self.apply_noise[0]:
-            noise_level_forward = self._get_noise_level(
-                self.surprise_forward_buffer,
-                self.noise_scale[0],
-                self.noise_gamma[0]
-            )
-        else:
-            noise_level_forward = None
-
-        if self.apply_noise[1] and self.use_backward_messages:
-            noise_level_backward = self._get_noise_level(
-                    self.surprise_backward_buffer[::-1],
-                    self.noise_scale[1],
-                    self.noise_gamma[1]
-                )
-        else:
-            noise_level_backward = None
-
+        self.total_resamples = 0
         self.internal_messages = self.initial_forward_messages.copy()
         self.internal_active_cells.sparse = self._sample_cells(
             self.internal_messages.reshape(self.n_hidden_vars, -1)
@@ -1340,32 +1320,8 @@ class DHTM(Layer):
                     self.predict()
                     self.observation_messages = self.observation_messages_buffer[t].copy()
                     self.internal_messages, obs_factor = self._get_posterior(return_obs_factor=True)
-
-                    if self.apply_noise[0]:
-                        noise_level_fwd = np.repeat(
-                            noise_level_forward[t],
-                            self.n_hidden_vars_per_obs_var
-                        )
-                        internal_messages = self._apply_noise(
-                            self.internal_messages.reshape(self.n_hidden_vars, -1),
-                            obs_factor.reshape(self.n_hidden_vars, -1) / self.cells_per_column,
-                            noise_level_fwd
-                        ).flatten()
-                    else:
-                        internal_messages = self.internal_messages
-
-                    if self.apply_noise[1]:
-                        noise_level_bwd = np.repeat(
-                            noise_level_backward[t],
-                            self.n_hidden_vars_per_obs_var
-                        )
-                        backward_messages = self._apply_noise(
-                            self.backward_messages_buffer[t].reshape(self.n_hidden_vars, -1),
-                            obs_factor.reshape(self.n_hidden_vars, -1) / self.cells_per_column,
-                            noise_level_bwd
-                        ).flatten()
-                    else:
-                        backward_messages = self.backward_messages_buffer[t]
+                    internal_messages = self.internal_messages
+                    backward_messages = self.backward_messages_buffer[t]
                 else:
                     # we don't have an observation for initial backward step
                     # so just copy backward messages
@@ -1403,6 +1359,35 @@ class DHTM(Layer):
             self.internal_active_cells.sparse = self._sample_cells(
                 self.internal_messages.reshape(self.n_hidden_vars, -1)
             )
+
+            if (t + 1) < len(self.observation_messages_buffer):
+                messages_backup = self.internal_messages.copy()
+                accept_sample = False
+                trial = 0
+                for trial in range(self.max_resamples):
+                    self.set_context_messages(self.internal_active_cells.dense.copy())
+                    self.predict()
+
+                    if self.is_any_segment_active:
+                        observation = np.flatnonzero(self.observation_messages_buffer[t+1])
+                        surprise = - np.log(self.prediction_columns[observation] + EPS)
+                        gamma = self._rng.random()
+                        discard_prob = self._get_noise_level(surprise, noise_scale=self.noise_scale)
+                        if gamma > discard_prob:
+                            accept_sample = True
+                    else:
+                        accept_sample = True
+
+                    if accept_sample:
+                        break
+                    else:
+                        self.internal_active_cells.sparse = self._sample_cells(
+                            messages_backup.reshape(self.n_hidden_vars, -1)
+                        )
+
+                self.total_resamples += trial
+
+                self.internal_messages = messages_backup
 
             if len(self.external_messages) > 0:
                 self.external_active_cells.sparse = self._sample_cells(
@@ -1549,23 +1534,15 @@ class DHTM(Layer):
 
         return np.concatenate([cells_for_empty_vars, cells_in_columns])
 
-    def _get_noise_level(self, surprise, noise_scale=1, noise_gamma=0):
+    @staticmethod
+    def _get_noise_level(surprise: float, noise_scale: float = 1.0):
         """
-            Returns noise level for each step and each observation variable
+            Returns noise level for each observation variable
         """
-        noise_level = list()
-        x = np.zeros_like(surprise[0])
-        noise_level.append(x.copy())
-        T = len(surprise)
-        for s in surprise[::-1]:
-            x += noise_scale * s/(noise_scale * s+1)
-            noise_level.append(
-                np.clip(x.copy(), 0, 1)
-            )
-            x *= noise_gamma
-        return noise_level[::-1]
+        return np.clip(noise_scale * surprise/(noise_scale * surprise+1), 0, 1)
 
-    def _apply_noise(self, distribution, noise, noise_level):
+    @staticmethod
+    def _apply_noise(distribution, noise, noise_level):
         """
             distribution (n_vars, n_states): categorical distribution for each variable
             noise (n_vars, n_states): categorical distribution of noise

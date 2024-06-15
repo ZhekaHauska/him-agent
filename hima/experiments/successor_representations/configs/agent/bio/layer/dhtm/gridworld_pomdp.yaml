@@ -10,11 +10,9 @@ inverse_temp_internal: 1.0
 cell_activation_threshold: 0.0001
 cells_activity_lr: 0.9
 developmental_period: 30000
-use_backward_messages: false
-# [forward, backward] uniform noise
-apply_noise: [false, false]
-noise_gamma: [0.0, 0.0]
-noise_scale: [0.1, 0.1]
+use_backward_messages: true
+max_resamples: 10
+noise_scale: 10.0
 column_prior: dirichlet  # uniform | dirichlet | one-hot
 alpha: 1.0  # only for dirichlet prior
 default_messages: both  # forward | backward | both
