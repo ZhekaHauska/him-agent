@@ -12,7 +12,8 @@ cells_activity_lr: 0.9
 developmental_period: 30000
 use_backward_messages: true
 max_resamples: 10
-noise_scale: 10.0
+noise_scale: 0.001
+surprise_scale: 10.0
 column_prior: dirichlet  # uniform | dirichlet | one-hot
 alpha: 1.0  # only for dirichlet prior
 default_messages: both  # forward | backward | both

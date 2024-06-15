@@ -1003,6 +1003,7 @@ class DHTM(Layer):
             default_messages: DEFAULT_MESSAGES = 'forward',
             max_resamples: int = 10,
             noise_scale: float = 1.0,
+            surprise_scale: float = 1.0,
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1034,6 +1035,7 @@ class DHTM(Layer):
         self.default_messages = default_messages
         self.max_resamples = max_resamples
         self.noise_scale = noise_scale
+        self.surprise_scale = surprise_scale
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1370,9 +1372,12 @@ class DHTM(Layer):
 
                     if self.is_any_segment_active:
                         observation = np.flatnonzero(self.observation_messages_buffer[t+1])
-                        surprise = - np.log(self.prediction_columns[observation] + EPS)
+                        surprise = -np.log(self.prediction_columns[observation] + EPS)
                         gamma = self._rng.random()
-                        discard_prob = self._get_noise_level(surprise, noise_scale=self.noise_scale)
+                        discard_prob = np.clip(
+                            self.surprise_scale * np.sum(surprise)/(self.surprise_scale * surprise+1),
+                            0, 1
+                        )
                         if gamma > discard_prob:
                             accept_sample = True
                     else:
@@ -1381,8 +1386,24 @@ class DHTM(Layer):
                     if accept_sample:
                         break
                     else:
+                        noise_level = np.clip(
+                            self.noise_scale * surprise/(self.noise_scale * surprise+1),
+                            0, 1
+                        )
+                        noise_level = np.repeat(
+                            noise_level,
+                            self.n_hidden_vars_per_obs_var
+                        )
+                        cells = self._get_cells_for_observation(observation)
+                        obs_factor = sparse_to_dense(cells, like=self.internal_messages)
+                        noised_messages = self._apply_noise(
+                            messages_backup.reshape(self.n_hidden_vars, -1),
+                            obs_factor.reshape(self.n_hidden_vars, -1) / self.cells_per_column,
+                            noise_level
+                        ).flatten()
+
                         self.internal_active_cells.sparse = self._sample_cells(
-                            messages_backup.reshape(self.n_hidden_vars, -1)
+                            noised_messages.reshape(self.n_hidden_vars, -1)
                         )
 
                 self.total_resamples += trial
@@ -1533,13 +1554,6 @@ class DHTM(Layer):
         ).flatten()
 
         return np.concatenate([cells_for_empty_vars, cells_in_columns])
-
-    @staticmethod
-    def _get_noise_level(surprise: float, noise_scale: float = 1.0):
-        """
-            Returns noise level for each observation variable
-        """
-        return np.clip(noise_scale * surprise/(noise_scale * surprise+1), 0, 1)
 
     @staticmethod
     def _apply_noise(distribution, noise, noise_level):
