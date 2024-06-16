@@ -17,8 +17,10 @@ from hima.common.sdr import sparse_to_dense
 from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
 
+from functools import partial
 import matplotlib.pyplot as plt
 from scipy.stats import entropy
+from scipy.special import rel_entr
 import numpy as np
 import warnings
 import pygraphviz as pgv
@@ -30,7 +32,7 @@ HOST = "127.0.0.1"
 PORT = 5555
 
 DEFAULT_MESSAGES = Literal['forward', 'backward', 'both']
-PRIOR_MODE = Literal['uniform', 'one-hot', 'dirichlet']
+PRIOR_MODE = Literal['uniform', 'one-hot', 'dirichlet', 'observation_trace']
 
 
 class BioDHTM(Layer):
@@ -1004,6 +1006,9 @@ class DHTM(Layer):
             max_resamples: int = 10,
             noise_scale: float = 1.0,
             surprise_scale: float = 1.0,
+            gamma: float = 0.9,
+            otp_lr: float = 0.01,
+            otp_beta: float = 1.0,
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1036,6 +1041,7 @@ class DHTM(Layer):
         self.max_resamples = max_resamples
         self.noise_scale = noise_scale
         self.surprise_scale = surprise_scale
+        self.gamma = gamma
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1088,6 +1094,7 @@ class DHTM(Layer):
 
         self.prediction_cells = np.zeros_like(self.internal_messages)
         self.observation_messages = np.zeros(self.input_sdr_size)
+        self.observation_trace = np.zeros(self.input_sdr_size)
         self.prediction_columns = None
         self.is_any_segment_active = False
 
@@ -1153,6 +1160,15 @@ class DHTM(Layer):
             like=self.external_messages
         )
 
+        # observation trace prior
+        self.otp_weights = self._rng.dirichlet(
+            alpha=[self.alpha] * self.n_obs_states,
+            size=self.n_hidden_vars * self.n_hidden_states
+        )
+        self.otp_lr = otp_lr
+        self.otp_beta = otp_beta
+
+        # visualization
         self.visualize = visualize
         self.vis_server_address = visualization_server
         self.vis_server = None
@@ -1266,6 +1282,7 @@ class DHTM(Layer):
             size=self.input_sdr_size,
             dtype=REAL64_DTYPE
         )
+        self.observation_trace = observation_messages + self.gamma * self.observation_trace
 
         # update messages
         self.observation_messages = observation_messages
@@ -1298,6 +1315,7 @@ class DHTM(Layer):
                 ] + EPS
             )
             self.observation_messages = self.observation_messages_buffer[t].copy()
+            self.observation_trace = self.observation_messages + self.gamma * self.observation_trace
             self.internal_messages = self._get_posterior()
             self.backward_messages_buffer.append(self.internal_messages.copy())
             if self.vis_server:
@@ -1321,6 +1339,7 @@ class DHTM(Layer):
                     self.set_context_messages(self.internal_messages.copy())
                     self.predict()
                     self.observation_messages = self.observation_messages_buffer[t].copy()
+                    self.observation_trace = self.observation_messages + self.gamma * self.observation_trace
                     self.internal_messages, obs_factor = self._get_posterior(return_obs_factor=True)
                     internal_messages = self.internal_messages
                     backward_messages = self.backward_messages_buffer[t]
@@ -1503,6 +1522,27 @@ class DHTM(Layer):
             column_prior[column_prior_sparse] = 1
             prior = np.zeros_like(obs_factor)
             prior[obs_factor == 1] = column_prior
+        elif self.column_prior == "observation_trace":
+            norm_observation_trace = normalize(
+                self.observation_trace.reshape(self.n_obs_vars, -1)
+            )
+            dkl = np.sum(rel_entr(norm_observation_trace, self.otp_weights[cells]), axis=-1)
+            column_prior = np.apply_along_axis(
+                partial(softmax, beta=self.otp_beta),
+                axis=-1,
+                arr=dkl.reshape(
+                    -1, self.cells_per_column
+                )
+            )
+            prior = np.zeros_like(obs_factor)
+            prior[obs_factor == 1] = column_prior.flatten()
+
+            # update weights
+            ids = self._sample_cells(column_prior)
+            cells_to_update = cells[ids]
+            self.otp_weights[cells_to_update] += self.otp_lr * (
+                    norm_observation_trace - self.otp_weights[cells_to_update]
+            )
         else:
             raise ValueError(f"There is no such column prior mode: {self.column_prior}!")
 

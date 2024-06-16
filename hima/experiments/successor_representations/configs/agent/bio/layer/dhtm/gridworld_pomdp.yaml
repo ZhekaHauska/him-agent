@@ -11,11 +11,16 @@ cell_activation_threshold: 0.0001
 cells_activity_lr: 0.9
 developmental_period: 30000
 use_backward_messages: true
-max_resamples: 10
+# resampling
+max_resamples: 0
 noise_scale: 0.001
 surprise_scale: 10.0
-column_prior: dirichlet  # uniform | dirichlet | one-hot
-alpha: 1.0  # only for dirichlet prior
+# column prior
+column_prior: observation_trace # uniform | dirichlet | one-hot | observation_trace
+gamma: 0.9  # trace discount
+otp_lr: 0.1  # for observation_trace only
+otp_beta: 10.0  # for observation_trace only
+alpha: 1.0  # only for dirichlet prior, also affects initialization for observation_trace mode
 default_messages: both  # forward | backward | both
 
 visualize: false
