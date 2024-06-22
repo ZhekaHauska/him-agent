@@ -32,7 +32,7 @@ HOST = "127.0.0.1"
 PORT = 5555
 
 DEFAULT_MESSAGES = Literal['forward', 'backward', 'both']
-PRIOR_MODE = Literal['uniform', 'one-hot', 'dirichlet', 'observation_trace']
+PRIOR_MODE = Literal['uniform', 'one-hot', 'dirichlet', 'chinese-restaurant']
 
 
 class BioDHTM(Layer):
@@ -1006,9 +1006,12 @@ class DHTM(Layer):
             max_resamples: int = 10,
             noise_scale: float = 1.0,
             surprise_scale: float = 1.0,
+            use_observation_trace: bool = False,
             gamma: float = 0.9,
             otp_lr: float = 0.01,
             otp_beta: float = 1.0,
+            freq_lr: float = 0.1,
+            new_state_weight: float = 1.0,
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1161,12 +1164,18 @@ class DHTM(Layer):
         )
 
         # observation trace prior
+        self.use_observation_trace = use_observation_trace
         self.otp_weights = self._rng.dirichlet(
             alpha=[self.alpha] * self.n_obs_states,
             size=self.n_hidden_vars * self.n_hidden_states
         )
         self.otp_lr = otp_lr
         self.otp_beta = otp_beta
+
+        # online Chinese Restaurant Prior
+        self.state_activation_freq = np.zeros(self.n_hidden_states * self.n_hidden_vars)
+        self.freq_lr = freq_lr
+        self.new_state_weight = new_state_weight
 
         # visualization
         self.visualize = visualize
@@ -1286,7 +1295,10 @@ class DHTM(Layer):
 
         # update messages
         self.observation_messages = observation_messages
-        self.internal_messages = self._get_posterior()
+        self.internal_messages = self._get_posterior(
+            use_observation_trace=self.use_observation_trace,
+            column_prior_mode=self.column_prior
+        )
 
         if self.vis_server is not None:
             self._send_state('inference')
@@ -1332,7 +1344,7 @@ class DHTM(Layer):
         )
         for t in range(1, len(self.forward_messages_buffer)):
             self.set_external_messages(self.external_messages_buffer[t - 1].copy())
-
+            obs_factor = None
             if self.use_backward_messages:
                 # update forward messages
                 if t < len(self.observation_messages_buffer):
@@ -1340,7 +1352,11 @@ class DHTM(Layer):
                     self.predict()
                     self.observation_messages = self.observation_messages_buffer[t].copy()
                     self.observation_trace = self.observation_messages + self.gamma * self.observation_trace
-                    self.internal_messages, obs_factor = self._get_posterior(return_obs_factor=True)
+                    self.internal_messages, obs_factor = self._get_posterior(
+                        return_obs_factor=True,
+                        use_observation_trace=self.use_observation_trace,
+                        column_prior_mode=self.column_prior
+                    )
                     internal_messages = self.internal_messages
                     backward_messages = self.backward_messages_buffer[t]
                 else:
@@ -1372,6 +1388,7 @@ class DHTM(Layer):
                     )
                 ).flatten()
             else:
+                self.observation_messages = self.observation_messages_buffer[t].copy()
                 self.set_context_messages(self.forward_messages_buffer[t-1].copy())
                 self.internal_messages = self.forward_messages_buffer[t].copy()
 
@@ -1380,7 +1397,12 @@ class DHTM(Layer):
             self.internal_active_cells.sparse = self._sample_cells(
                 self.internal_messages.reshape(self.n_hidden_vars, -1)
             )
+            if len(self.external_messages) > 0:
+                self.external_active_cells.sparse = self._sample_cells(
+                    self.external_messages.reshape(self.n_external_vars, -1)
+                )
 
+            # resampling
             if (t + 1) < len(self.observation_messages_buffer):
                 messages_backup = self.internal_messages.copy()
                 accept_sample = False
@@ -1429,10 +1451,14 @@ class DHTM(Layer):
 
                 self.internal_messages = messages_backup
 
-            if len(self.external_messages) > 0:
-                self.external_active_cells.sparse = self._sample_cells(
-                    self.external_messages.reshape(self.n_external_vars, -1)
-                )
+            if obs_factor is None:
+                if t < len(self.observation_messages_buffer):
+                    observation = np.flatnonzero(self.observation_messages)
+                    cells = self._get_cells_for_observation(observation)
+                    obs_factor = sparse_to_dense(cells, like=self.internal_messages)
+
+            if obs_factor is not None:
+                self._update_frequencies(mask=obs_factor.astype(np.bool8))
 
             # grow forward connections
             (
@@ -1494,27 +1520,38 @@ class DHTM(Layer):
 
         self.can_clear_buffers = True
 
-    def _get_posterior(self, return_obs_factor=False):
+    def _update_frequencies(self, mask=None):
+        delta = self.freq_lr * (self.internal_active_cells.dense - self.state_activation_freq)
+        if mask is not None:
+            self.state_activation_freq[mask] += delta[mask]
+        else:
+            self.state_activation_freq += delta
+
+        np.clip(self.state_activation_freq, 0, 1, out=self.state_activation_freq)
+
+    def _get_posterior(
+            self,
+            return_obs_factor=False,
+            use_observation_trace=False,
+            column_prior_mode: PRIOR_MODE = 'uniform'
+    ):
         observation = np.flatnonzero(self.observation_messages)
         cells = self._get_cells_for_observation(observation)
         obs_factor = sparse_to_dense(cells, like=self.internal_messages)
 
-        if not self.is_any_segment_active:
-            messages = np.zeros_like(self.internal_messages)
-        else:
-            messages = self.internal_messages * obs_factor
+        messages = self.internal_messages * obs_factor
         messages = messages.reshape(self.n_hidden_vars, -1)
 
-        if self.column_prior == "dirichlet":
+        if column_prior_mode == "dirichlet":
             column_prior = self._rng.dirichlet(
                 alpha=[self.alpha] * self.cells_per_column,
                 size=self.n_hidden_vars
             ).flatten()
             prior = np.zeros_like(obs_factor)
             prior[obs_factor == 1] = column_prior
-        elif self.column_prior == "uniform":
+        elif column_prior_mode == "uniform":
             prior = obs_factor
-        elif self.column_prior == "one-hot":
+        elif column_prior_mode == "one-hot":
             column_prior_sparse = self._rng.integers(
                 0, self.cells_per_column, size=self.n_hidden_vars
             ) + np.arange(self.n_hidden_vars) * self.cells_per_column
@@ -1522,33 +1559,50 @@ class DHTM(Layer):
             column_prior[column_prior_sparse] = 1
             prior = np.zeros_like(obs_factor)
             prior[obs_factor == 1] = column_prior
-        elif self.column_prior == "observation_trace":
+        elif column_prior_mode == 'chinese-restaurant':
+            eps = self.new_state_weight / (1/(self.freq_lr + EPS) - 1 + EPS)
+            column_prior = self.state_activation_freq[cells].reshape(-1, self.cells_per_column)
+            free_cells_count = self.cells_per_column - np.count_nonzero(
+                column_prior,
+                axis=-1
+            )
+            prob_per_cell = eps / (1 + eps) / free_cells_count
+
+            zero_mask = np.isclose(column_prior, 0)
+            column_prior[zero_mask] = prob_per_cell
+            column_prior[~zero_mask] /= (1 + eps)
+
+            prior = np.zeros_like(obs_factor)
+            prior[obs_factor == 1] = column_prior.flatten()
+        else:
+            raise ValueError(f"There is no such column prior mode: {column_prior_mode}!")
+
+        if use_observation_trace == "observation_trace":
             norm_observation_trace = normalize(
                 self.observation_trace.reshape(self.n_obs_vars, -1)
             )
             dkl = np.sum(rel_entr(norm_observation_trace, self.otp_weights[cells]), axis=-1)
-            column_prior = np.apply_along_axis(
+            column_probs = np.apply_along_axis(
                 partial(softmax, beta=self.otp_beta),
                 axis=-1,
                 arr=dkl.reshape(
                     -1, self.cells_per_column
                 )
             )
-            prior = np.zeros_like(obs_factor)
-            prior[obs_factor == 1] = column_prior.flatten()
+            ot_prior = np.zeros_like(obs_factor)
+            ot_prior[obs_factor == 1] = column_probs.flatten()
+            prior *= ot_prior
 
             # update weights
-            ids = self._sample_cells(column_prior)
+            ids = self._sample_cells(column_probs)
             cells_to_update = cells[ids]
             self.otp_weights[cells_to_update] += self.otp_lr * (
                     norm_observation_trace - self.otp_weights[cells_to_update]
             )
-        else:
-            raise ValueError(f"There is no such column prior mode: {self.column_prior}!")
 
         prior = prior.reshape(self.n_hidden_vars, -1)
         messages, self.n_bursting_vars = normalize(
-            messages, prior, return_zeroed_variables_count=True
+            messages * prior, prior, return_zeroed_variables_count=True
         )
 
         n_states = obs_factor.sum(axis=-1)
