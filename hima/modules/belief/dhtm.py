@@ -1000,6 +1000,7 @@ class DHTM(Layer):
             developmental_period: int = 10000,
             cells_activity_lr: float = 0.1,
             use_backward_messages: bool = False,
+            inhibit_cells_by_default: bool = True,
             column_prior: PRIOR_MODE = "dirichlet",
             alpha: float = 1.0,  # dirichlet only
             default_messages: DEFAULT_MESSAGES = 'forward',
@@ -1045,6 +1046,7 @@ class DHTM(Layer):
         self.noise_scale = noise_scale
         self.surprise_scale = surprise_scale
         self.gamma = gamma
+        self.inhibit_cells_by_default = inhibit_cells_by_default
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1248,6 +1250,7 @@ class DHTM(Layer):
             messages,
             context_factors,
             self.inverse_temp_context,
+            inhibit_cells_by_default=self.inhibit_cells_by_default
         )
 
         self.prediction_cells = self.internal_messages.copy()
@@ -1645,6 +1648,7 @@ class DHTM(Layer):
             messages: np.ndarray,
             factors: Factors,
             inverse_temperature=1.0,
+            inhibit_cells_by_default=True
     ):
         """
         Calculate messages for internal cells based on messages from all cells.
@@ -1669,7 +1673,7 @@ class DHTM(Layer):
 
         log_next_messages = np.full(
             self.internal_cells,
-            fill_value=-np.inf,
+            fill_value=-np.inf if inhibit_cells_by_default else 0.0,
             dtype=REAL_DTYPE
         )
 
