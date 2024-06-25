@@ -161,7 +161,7 @@ def _resolve_dataset(type_tag):
         from hima.experiments.temporal_pooling.data.synthetic_sequences import SyntheticSequences
         return SyntheticSequences
     if type_tag == 'ds.dvc_sequences':
-        from hima.experiments.temporal_pooling.data.dvc import DvcSequences
+        from hima.experiments.temporal_pooling.data.dvs import DvcSequences
         return DvcSequences
     if type_tag == 'ds.text_sequences':
         from hima.experiments.temporal_pooling.data.text import TextSequences
