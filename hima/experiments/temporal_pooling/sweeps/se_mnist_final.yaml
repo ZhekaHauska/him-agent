@@ -1,11 +1,11 @@
 program: run.py
 #entity: TBI   # default: $WANDB_ENTITY
 
-project: stp.se_csr3
+project: stp.se_csr_final
 method: grid
 parameters:
   seed.:
-    values: [500, 510, 520] #, 530, 540] #, 550, 560, 570, 580, 590] #, 700, 701, 702, 703, 704, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+    values: [500, 510, 520] #[500, 510, 520, 530, 540] #, 550, 560, 570, 580, 590] #, 700, 701, 702, 703, 704, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
     # values: [40, 41, 42, 43, 44] #, 45, 46] #, 47, 48, 49] #, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
 
   log.:
@@ -16,7 +16,7 @@ parameters:
   train..n_online_epochs:
     value: 3
   test..n_epochs:
-    value: 40
+    value: 30
   test..eval_first:
     value: 4
   test..eval_schedule:
@@ -28,12 +28,14 @@ parameters:
     values:
       - mnist
       - cifar
-      - dvc
+      - dvs
 
   setup.:
     values:
       - setups.rate_ann
+      - setups.rate_ann_2k
       - setups.binary_htm_sp
+      - setups.binary_htm_sp_dense
       - setups.rate_soft_hebb
       - setups.rate_krotov
       - setups.rate_sng_sp

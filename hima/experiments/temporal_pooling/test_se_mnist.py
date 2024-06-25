@@ -20,7 +20,7 @@ from hima.common.sdrr import OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, prepend_dict_keys
-from hima.experiments.temporal_pooling.data.dvc_ext import DvcDataset
+from hima.experiments.temporal_pooling.data.dvc_ext import DvsDataset
 from hima.experiments.temporal_pooling.data.mnist_ext import MnistDataset
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
@@ -114,7 +114,7 @@ class SpatialEncoderExperiment:
             self.classification = True
         else:
             ds_filepath = Path('~/data/outdoors_walking').expanduser()
-            self.data = DvcDataset(seed=seed, filepath=ds_filepath, binary=self.is_binary)
+            self.data = DvsDataset(seed=seed, filepath=ds_filepath, binary=self.is_binary)
             self.classification = False
 
         self.dataset_sds = self.data.sds

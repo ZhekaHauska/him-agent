@@ -52,7 +52,7 @@ class SdrDataset:
 
 
 @dataclass
-class DvcSdrs:
+class DvsSdrs:
     n_elements: int
     sds: Sds
     rate_sds: Sds
@@ -73,8 +73,8 @@ class DvcSdrs:
         self.imu_events = imu_events
 
 
-class DvcDataset:
-    dataset: DvcSdrs
+class DvsDataset:
+    dataset: DvsSdrs
 
     train: SdrDataset
     test: SdrDataset
@@ -102,7 +102,7 @@ class DvcDataset:
         return self.train.target_size
 
 
-def _read_dataset(filepath: str, with_imu: bool) -> DvcSdrs:
+def _read_dataset(filepath: str, with_imu: bool) -> DvsSdrs:
     filepath = Path(filepath)
     filepath = filepath.expanduser()
     ds_dir = filepath if filepath.is_dir() else filepath.parent
@@ -114,7 +114,7 @@ def _read_dataset(filepath: str, with_imu: bool) -> DvcSdrs:
     if with_imu:
         sdrs |= np.load(ds_dir / 'imu.npz')
 
-    return DvcSdrs(**sdrs)
+    return DvsSdrs(**sdrs)
 
 
 def unflatten_sdrs(
