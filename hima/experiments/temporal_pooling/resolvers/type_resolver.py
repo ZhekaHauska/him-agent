@@ -196,6 +196,11 @@ def _resolve_runner(type_tag: str):
     if type_tag == 'stp_experiment.se':
         from hima.experiments.temporal_pooling.test_se_mnist import SpatialEncoderExperiment
         return SpatialEncoderExperiment
+    if type_tag == 'stp_experiment.se_offline':
+        from hima.experiments.temporal_pooling.test_se_offline import (
+            SpatialEncoderOfflineExperiment
+        )
+        return SpatialEncoderOfflineExperiment
     if type_tag == 'stp_experiment.neurogenesis':
         from hima.experiments.temporal_pooling.test_neurogenesis import NeurogenesisExperiment
         return NeurogenesisExperiment
