@@ -1550,9 +1550,12 @@ class DHTM(Layer):
                 axis=-1
             )
             prob_per_cell = eps / (1 + eps) / free_cells_count
+            prob_per_cell = np.repeat(prob_per_cell, self.cells_per_column).reshape(
+                -1, self.cells_per_column
+            )
 
             zero_mask = np.isclose(column_prior, 0)
-            column_prior[zero_mask] = prob_per_cell
+            column_prior[zero_mask] = prob_per_cell[zero_mask]
             column_prior[~zero_mask] /= (1 + eps)
 
             prior = np.zeros_like(obs_factor)
