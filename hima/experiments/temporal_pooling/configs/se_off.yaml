@@ -1,4 +1,4 @@
-_type_: stp_experiment.se
+_type_: stp_experiment.se_offline
 project: stp.se_mnist_tmp
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 

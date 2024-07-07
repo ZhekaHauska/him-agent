@@ -21,13 +21,22 @@ from hima.common.sds import Sds
 class SdrDataset:
     binary: bool
 
-    sdrs: list[RateSdr]
+    # class indices
     _targets: npt.NDArray[float]
+
+    # flatten post-processed sparse SDRs
+    sdrs: list[RateSdr]
+
+    dense_sdrs = None
+    support_dense: bool = False
 
     def __init__(self, sdrs, targets, binary: bool):
         self.binary = binary
         self.sdrs = sdrs
         self._targets = targets
+
+    def __len__(self):
+        return len(self.sdrs)
 
     @property
     def n_images(self):

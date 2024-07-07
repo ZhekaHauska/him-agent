@@ -19,30 +19,43 @@ from hima.common.sds import Sds
 class SdrDataset:
     binary: bool
 
+    # raw 2D images
     images: npt.NDArray[float]
+    # class indices
     targets: npt.NDArray[int]
 
+    # flatten post-processed image dense representations
     dense_sdrs: npt.NDArray[float]
+    # flatten post-processed sparse SDRs
     sdrs: list[RateSdr]
+    # flatten post-processed binary SDRs
+    binary_sdrs: list[npt.NDArray[int]]
+
     _classes: list[npt.NDArray[int]] | None
+
+    support_dense: bool = True
 
     def __init__(self, images, targets, threshold: float, binary: bool):
         self.binary = binary
 
         self.images = images
         self.targets = targets
-        self.flatten_images = self.images.reshape(self.n_images, -1)
 
-        bin_sdrs = [np.flatnonzero(img >= threshold) for img in self.flatten_images]
+        self.dense_sdrs = self.images.reshape(self.n_images, -1)
+
+        bin_sdrs = [np.flatnonzero(img >= threshold) for img in self.dense_sdrs]
         self.sdrs = [
-            RateSdr(sdr, values=self.flatten_images[ind][sdr])
+            RateSdr(sdr, values=self.dense_sdrs[ind][sdr])
             for ind, sdr in enumerate(bin_sdrs)
         ]
         self.binary_sdrs = [
             np.flatnonzero(img >= img.mean())
-            for img in self.flatten_images
+            for img in self.dense_sdrs
         ]
         self._classes = None
+
+    def __len__(self):
+        return len(self.sdrs)
 
     @property
     def n_images(self):
@@ -70,6 +83,7 @@ class SdrDataset:
             RateSdr(sdr=sdr.sdr, values=normalizer(sdr.values))
             for sdr in self.sdrs
         ]
+        self.dense_sdrs = normalizer(self.dense_sdrs)
 
 
 class MnistDataset:
@@ -97,11 +111,11 @@ class MnistDataset:
 
         if binary:
             sparsity = np.mean([
-                len(sdr.sdr) / self.train.flatten_images.shape[1]
+                len(sdr.sdr) / self.train.dense_sdrs.shape[1]
                 for sdr in self.train.sdrs
             ])
         else:
-            sparsity = self.train.flatten_images.mean()
+            sparsity = self.train.dense_sdrs.mean()
         self.sds = Sds(shape=self.image_shape, sparsity=sparsity)
 
     @property
