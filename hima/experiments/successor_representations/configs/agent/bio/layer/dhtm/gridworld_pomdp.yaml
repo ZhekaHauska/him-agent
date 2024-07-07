@@ -12,15 +12,16 @@ cells_activity_lr: 0.9
 developmental_period: 30000
 use_backward_messages: true
 # resampling
-max_resamples: 0
-noise_scale: 0.001
+max_resamples: 10
+noise_scale: 0.0
 surprise_scale: 10.0
 # column prior
-column_prior: observation_trace # uniform | dirichlet | one-hot | observation_trace
+column_prior: chinese-restaurant # uniform | dirichlet | one-hot | chinese-restaurant
+use_observation_trace: false
 gamma: 0.9  # trace discount
-otp_lr: 0.1  # for observation_trace only
-otp_beta: 10.0  # for observation_trace only
-alpha: 1.0  # only for dirichlet prior, also affects initialization for observation_trace mode
+otp_lr: 0.01  # for observation_trace only
+otp_beta: 1.0  # for observation_trace only
+alpha: 1.0  # only for dirichlet prior, also affects initialization for observation trace
 default_messages: both  # forward | backward | both
 
 visualize: false
