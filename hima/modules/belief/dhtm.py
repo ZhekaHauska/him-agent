@@ -1347,16 +1347,22 @@ class DHTM(Layer):
         )
         for t in range(1, len(self.forward_messages_buffer)):
             self.set_external_messages(self.external_messages_buffer[t - 1].copy())
-            obs_factor = None
+            if t < len(self.observation_messages_buffer):
+                self.observation_messages = self.observation_messages_buffer[t].copy()
+                observation = np.flatnonzero(self.observation_messages)
+                cells = self._get_cells_for_observation(observation)
+                obs_factor = sparse_to_dense(cells, like=self.internal_messages)
+            else:
+                obs_factor = None
+                self.observation_messages = np.zeros_like(self.observation_messages_buffer[-1])
+
             if self.use_backward_messages:
                 # update forward messages
                 if t < len(self.observation_messages_buffer):
                     self.set_context_messages(self.internal_messages.copy())
                     self.predict()
-                    self.observation_messages = self.observation_messages_buffer[t].copy()
                     self.observation_trace = self.observation_messages + self.gamma * self.observation_trace
-                    self.internal_messages, obs_factor = self._get_posterior(
-                        return_obs_factor=True,
+                    self.internal_messages = self._get_posterior(
                         use_observation_trace=self.use_observation_trace,
                         column_prior_mode=self.column_prior
                     )
@@ -1391,7 +1397,6 @@ class DHTM(Layer):
                     )
                 ).flatten()
             else:
-                self.observation_messages = self.observation_messages_buffer[t].copy()
                 self.set_context_messages(self.forward_messages_buffer[t-1].copy())
                 self.internal_messages = self.forward_messages_buffer[t].copy()
 
@@ -1433,12 +1438,6 @@ class DHTM(Layer):
                 self.total_resamples += trial
 
                 self.internal_messages = messages_backup
-
-            if obs_factor is None:
-                if t < len(self.observation_messages_buffer):
-                    observation = np.flatnonzero(self.observation_messages)
-                    cells = self._get_cells_for_observation(observation)
-                    obs_factor = sparse_to_dense(cells, like=self.internal_messages)
 
             if obs_factor is not None:
                 self._update_frequencies(mask=obs_factor.astype(np.bool8))
@@ -1504,6 +1503,9 @@ class DHTM(Layer):
         self.can_clear_buffers = True
 
     def _update_frequencies(self, mask=None):
+        freq_lr = np.full_like(self.state_activation_freq, fill_value=self.freq_lr)
+        freq_lr[np.isclose(self.state_activation_freq, 0)] = 1.0
+
         delta = self.freq_lr * (self.internal_active_cells.dense - self.state_activation_freq)
         if mask is not None:
             self.state_activation_freq[mask] += delta[mask]
@@ -1545,16 +1547,19 @@ class DHTM(Layer):
         elif column_prior_mode == 'chinese-restaurant':
             eps = self.new_state_weight / (1/(self.freq_lr + EPS) - 1 + EPS)
             column_prior = self.state_activation_freq[cells].reshape(-1, self.cells_per_column)
-            free_cells_count = self.cells_per_column - np.count_nonzero(
-                column_prior,
+            zero_mask = np.isclose(column_prior, 0)
+            free_cells_count = np.count_nonzero(
+                zero_mask,
                 axis=-1
             )
-            prob_per_cell = eps / (1 + eps) / free_cells_count
+            prob_per_cell = np.divide(
+                eps / (1 + eps), free_cells_count,
+                where=free_cells_count != 0
+            )
             prob_per_cell = np.repeat(prob_per_cell, self.cells_per_column).reshape(
                 -1, self.cells_per_column
             )
 
-            zero_mask = np.isclose(column_prior, 0)
             column_prior[zero_mask] = prob_per_cell[zero_mask]
             column_prior[~zero_mask] /= (1 + eps)
 
@@ -1732,6 +1737,9 @@ class DHTM(Layer):
 
             log_next_messages[cells_with_factors] = log_prediction_for_cells_with_factors
 
+        if (not self.is_any_segment_active) and inhibit_cells_by_default:
+            self.internal_messages = np.zeros_like(self.internal_messages)
+        else:
             log_next_messages = log_next_messages.reshape((self.n_hidden_vars, self.n_hidden_states))
 
             # shift log value for stability
@@ -1756,8 +1764,6 @@ class DHTM(Layer):
             assert ~np.any(np.isnan(next_messages))
 
             self.internal_messages = next_messages
-        else:
-            self.internal_messages = np.zeros_like(self.internal_messages)
 
     def _learn(
             self,
