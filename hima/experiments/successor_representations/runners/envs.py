@@ -156,6 +156,7 @@ class GridWorldWrapper(BaseEnvironment):
         self.conf = conf
         self.environment = self._start_env(setup)
         self.n_colors = self.environment.n_colors
+        self.max_color = np.max(self.environment.unique_colors)
         self.min_color = np.min(self.environment.unique_colors)
         self.min_vis_color = np.min(self.environment.colors)
         self.trajectory = []
@@ -170,7 +171,7 @@ class GridWorldWrapper(BaseEnvironment):
         else:
             self.raw_obs_shape = (
                 self.n_cells,
-                self.n_colors
+                self.max_color - self.min_color + 1
             )
         self.actions = tuple(self.environment.actions)
         self.n_actions = len(self.actions)
