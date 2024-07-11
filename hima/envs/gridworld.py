@@ -27,6 +27,7 @@ class GridWorld:
     ):
         self._rng = np.random.default_rng(seed)
 
+        room = np.asarray(room)
         self.colors, self.rewards, self.terminals = (
             room[0, :, :], room[1, :, :], room[2, :, :]
         )
@@ -88,10 +89,14 @@ class GridWorld:
             self.canvas = None
 
     def reset(self, start_r=None, start_c=None):
-        if start_r is None:
-            start_r = self._rng.integers(self.h)
-        if start_c is None:
-            start_c = self._rng.integers(self.w)
+        if (start_r is None) or (start_c is None):
+            while True:
+                start_r = self._rng.integers(self.h)
+                start_c = self._rng.integers(self.w)
+                if self.colors[start_r + self.shift, start_c + self.shift] >= 0:
+                    break
+        else:
+            assert self.colors[start_r + self.shift, start_c + self.shift] >= 0
 
         self.start_r, self.start_c = start_r, start_c
         self.r, self.c = start_r, start_c
