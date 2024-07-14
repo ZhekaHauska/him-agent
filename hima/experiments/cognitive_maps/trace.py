@@ -62,6 +62,7 @@ class TraceBasedLoc:
         )
         self.observation_messages = np.zeros(self.n_obs_states)
         self.observation_trace = np.zeros(self.n_obs_states)
+        self.norm_observation_trace = np.zeros(self.n_obs_states)
 
         self.internal_active_state = SDR(self.n_hidden_states)
 
@@ -81,6 +82,9 @@ class TraceBasedLoc:
             dtype=REAL64_DTYPE
         )
         self.observation_trace = observation_messages + self.gamma * self.observation_trace
+        self.norm_observation_trace = normalize(
+            self.observation_trace[None, :]
+        )
 
         # update messages
         self.observation_messages = observation_messages
@@ -130,10 +134,7 @@ class TraceBasedLoc:
         else:
             raise ValueError(f"There is no such column prior mode: {self.column_prior_mode}!")
 
-        norm_observation_trace = normalize(
-            self.observation_trace[None, :]
-        )
-        dkl = np.sum(rel_entr(norm_observation_trace, self.otp_weights[cells]), axis=-1)
+        dkl = np.sum(rel_entr(self.norm_observation_trace, self.otp_weights[cells]), axis=-1)
         column_probs = np.apply_along_axis(
             partial(softmax, beta=self.otp_beta),
             axis=-1,
@@ -165,12 +166,9 @@ class TraceBasedLoc:
         np.clip(self.state_activation_freq, 0, 1, out=self.state_activation_freq)
 
     def _update_weights(self):
-        norm_observation_trace = normalize(
-            self.observation_trace[None, :]
-        )
         cells_to_update = self.internal_active_state.sparse
         self.otp_weights[cells_to_update] += self.otp_lr * (
-                norm_observation_trace - self.otp_weights[cells_to_update]
+                self.norm_observation_trace - self.otp_weights[cells_to_update]
         )
 
     def _get_cells_for_observation(self, obs_state):

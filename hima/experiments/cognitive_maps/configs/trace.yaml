@@ -1,7 +1,7 @@
 cells_per_column: 15
 column_prior_mode: dirichlet
 alpha: 1.0
-gamma: 0.9
+gamma: 0.7
 otp_lr: 0.01
 otp_beta: 1.0
 freq_lr: 0.1
