@@ -8,8 +8,7 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 
 

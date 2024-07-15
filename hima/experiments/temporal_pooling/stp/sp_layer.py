@@ -11,8 +11,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.common.utils import safe_divide
@@ -116,7 +115,7 @@ class SpatialPooler:
         self.stdp = self.get_learning_algos()[self.learning_algo]
         self.modulation = 1.0
 
-        self.winners = RateSdr(np.empty(0, dtype=int), np.empty(0, dtype=float))
+        self.winners = RateSdr(np.empty(0, dtype=int))
 
         rf_sparsity = min(rf_to_input_ratio * self.feedforward_sds.sparsity, rf_sparsity)
         rf_size = int(rf_sparsity * self.ff_size)

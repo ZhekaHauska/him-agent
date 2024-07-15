@@ -11,10 +11,9 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr
-from hima.common.sdrr import (
-    RateSdr, AnySparseSdr, OutputMode, split_sdr_values,
-    CompartmentsAnySparseSdr
+from hima.common.sdr import (
+    SparseSdr, RateSdr, AnySparseSdr, CompartmentsAnySparseSdr, OutputMode,
+    split_sdr_values
 )
 from hima.common.sds import Sds
 from hima.common.timer import timed

@@ -8,8 +8,7 @@ from __future__ import annotations
 import numpy as np
 from sklearn.datasets import load_digits
 
-from hima.common.sdrr import RateSdr
-from hima.common.sdr import SparseSdr
+from hima.common.sdr import SparseSdr, RateSdr
 from hima.common.sds import Sds
 
 

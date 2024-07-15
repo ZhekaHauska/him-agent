@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from hima.common.sdrr import AnySparseSdr, split_sdr_values
+from hima.common.sdr import AnySparseSdr, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam

@@ -55,16 +55,9 @@ sp:
     neg_hebb_delta: 0.4
     repu_n: 4.5
 
-  krotov_ext:
-    _type_: sp.krotov_ext
-    seed: ???
-    feedforward_sds: ???
-    output_sds: ???
-    init_radius: 10.0
-    learning_rate: 0.01
-    lebesgue_p: 3
-    neg_hebb_delta: 0.4
-    repu_n: 4.5
+  krotov_adaptive:
+    _base_: sp.krotov
+    adaptive_lr: True
 
   htm_sp:
     _type_: sp.htm
@@ -172,7 +165,8 @@ setups:
     input_mode: rate
     # classifier_symexp_logits: True
     ds_norm: l2
-    encoding_sds: [2000, 10]
+    encoding_sds: [2000, 20]
+#    encoding_sds: [2000, 10]
 #    encoding_sds: [400, 6]
   rate_soft_hebb_ext:
     encoder: sp.soft_hebb_ext
@@ -188,8 +182,8 @@ setups:
     # classifier_symexp_logits: True
     encoding_sds: [2000, 7]
 #    encoding_sds: [400, 2]
-  rate_krotov_ext:
-    encoder: sp.krotov_ext
+  rate_krotov_adaptive:
+    encoder: sp.krotov_adaptive
     sdr_tracker: False
     input_mode: rate
     # classifier_symexp_logits: True

@@ -16,7 +16,7 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
-from hima.common.sdrr import OutputMode, split_sdr_values
+from hima.common.sdr import OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, prepend_dict_keys
@@ -427,7 +427,7 @@ def personalize_metrics(metrics: dict, prefix: str):
 
 
 def get_data(data):
-    return [data.get_sdr(i) for i in range(data.n_images)]
+    return [data.get_sdr(i) for i in range(len(data))]
 
 
 def split_to_batches(ds_size_or_order, batch_size):

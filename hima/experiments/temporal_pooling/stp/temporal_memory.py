@@ -11,7 +11,7 @@ from htm.advanced.support.numpy_helpers import getAllCellsInColumns, argmaxMulti
 from htm.bindings.math import Random
 from htm.bindings.sdr import SDR
 
-from hima.common.sdrr import RateSdr
+from hima.common.sdr import RateSdr
 from hima.common.utils import safe_divide
 from hima.modules.htm.connections import Connections
 from hima.modules.htm.temporal_memory import UINT_DTYPE, REAL64_DTYPE, EPS

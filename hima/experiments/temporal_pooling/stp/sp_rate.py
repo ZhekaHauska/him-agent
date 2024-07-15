@@ -11,8 +11,7 @@ from typing import cast
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.common.timer import timed

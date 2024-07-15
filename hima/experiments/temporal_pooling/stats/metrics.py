@@ -9,8 +9,7 @@ import numba
 import numpy as np
 import numpy.typing as npt
 
-from hima.common.sdr import SparseSdr, SetSdr
-from hima.common.sdrr import AnySparseSdr, RateSdr
+from hima.common.sdr import SparseSdr, SetSdr, RateSdr, AnySparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide, isnone
 
@@ -54,9 +53,9 @@ def sdr_similarity(
     is_rate_sdr2 = isinstance(x2, RateSdr)
     if is_rate_sdr1 or is_rate_sdr2:
         if not is_rate_sdr1:
-            x1 = RateSdr(x1, np.repeat(1., len(x1)))
+            x1 = RateSdr(x1)
         if not is_rate_sdr2:
-            x2 = RateSdr(x2, np.repeat(1., len(x2)))
+            x2 = RateSdr(x2)
         sim_func = _sdrr_similarity
     else:
         sim_func = _sdr_similarity

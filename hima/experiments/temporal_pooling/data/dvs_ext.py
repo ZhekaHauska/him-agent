@@ -12,34 +12,25 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
-from hima.common.sdr import SparseSdr
-from hima.common.sdrr import RateSdr
+from hima.common.sdr import RateSdr, AnySparseSdr
+from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
 
 
 @dataclass
 class SdrDataset:
     binary: bool
+    sdrs: SdrArray
 
     # class indices
     _targets: npt.NDArray[float]
 
-    # flatten post-processed sparse SDRs
-    sdrs: list[RateSdr]
-
-    dense_sdrs = None
-    support_dense: bool = False
-
-    def __init__(self, sdrs, targets, binary: bool):
+    def __init__(self, sdrs: SdrArray, targets, binary):
         self.binary = binary
         self.sdrs = sdrs
         self._targets = targets
 
     def __len__(self):
-        return len(self.sdrs)
-
-    @property
-    def n_images(self):
         return len(self.sdrs)
 
     @property
@@ -50,14 +41,11 @@ class SdrDataset:
     def target_size(self):
         return self.targets.shape[1]
 
-    def get_sdr(self, ind: int) -> SparseSdr | RateSdr:
-        return self.sdrs[ind].sdr if self.binary else self.sdrs[ind]
+    def get_sdr(self, ind: int) -> AnySparseSdr:
+        return self.sdrs.get_sdr(ind)
 
     def normalize(self, normalizer):
-        self.sdrs = [
-            RateSdr(sdr=sdr.sdr, values=normalizer(sdr.values))
-            for sdr in self.sdrs
-        ]
+        self.sdrs = self.sdrs.create_modified(normalizer)
 
 
 @dataclass
@@ -91,7 +79,7 @@ class DvsDataset:
     sds: Sds
     binary: bool
 
-    def __init__(self, seed: int, filepath: str | Path, binary: bool = True, normalizer=None):
+    def __init__(self, seed: int, filepath: str | Path, binary: bool = True):
         self.dataset = _read_dataset(filepath, with_imu=True)
         self.binary = binary
         self.sds = self.dataset.sds if self.binary else self.dataset.rate_sds
@@ -102,6 +90,10 @@ class DvsDataset:
         test_sdrs = rate_sdrs[split_ix:]
         train_targets = self.dataset.imu_events[:split_ix]
         test_targets = self.dataset.imu_events[split_ix:]
+
+        sdr_size = self.sds.size
+        train_sdrs = SdrArray(sparse=train_sdrs, sdr_size=sdr_size)
+        test_sdrs = SdrArray(sparse=test_sdrs, sdr_size=sdr_size)
 
         self.train = SdrDataset(train_sdrs, train_targets, binary)
         self.test = SdrDataset(test_sdrs, test_targets, binary)
@@ -137,4 +129,3 @@ def unflatten_sdrs(
         )
         for i in range(len(indices[1:]))
     ]
-

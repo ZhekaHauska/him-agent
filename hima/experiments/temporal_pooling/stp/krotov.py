@@ -9,8 +9,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
@@ -46,15 +45,13 @@ class KrotovLayer:
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds, learning_rate: float,
             init_radius: float, lebesgue_p: float, neg_hebb_delta: float, repu_n: float,
+            adaptive_lr: bool = False, weights_bias: float = 0.001,
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
-
         self.rng = np.random.default_rng(seed)
-        self.comp_name = None
 
         self.feedforward_sds = Sds.make(feedforward_sds)
-
         self.sparse_input = np.empty(0, dtype=int)
         self.dense_input = np.zeros(self.ff_size, dtype=float)
         self.is_empty_input = True
@@ -63,6 +60,7 @@ class KrotovLayer:
         self.output_mode = OutputMode.RATE
 
         self.learning_rate = learning_rate
+        self.adaptive_lr = adaptive_lr
 
         self.lebesgue_p = lebesgue_p
         self.neg_hebb_delta = neg_hebb_delta
@@ -70,10 +68,12 @@ class KrotovLayer:
 
         shape = (self.output_size, self.ff_size)
         init_std = get_normal_std(init_radius, self.ff_size, self.lebesgue_p)
-        self.weights = self.rng.normal(loc=0.0, scale=init_std, size=shape)
+        self.weights = self.rng.normal(loc=weights_bias, scale=init_std, size=shape)
 
         self.weights_pow_p = self.get_weight_pow_p()
         self.radius = self.get_radius()
+        if self.adaptive_lr:
+            self.relative_radius = self.get_relative_radius()
 
         self.cnt = 0
         self.loops = 0
@@ -104,40 +104,49 @@ class KrotovLayer:
         p, hb_delta = self.lebesgue_p, self.neg_hebb_delta
         w_p = self.weights_pow_p
 
-        y = np.dot(w_p, x)
+        u = np.dot(w_p, x)
 
-        sdr = np.flatnonzero(y > 0)
-        values = y[sdr] ** self.repu_n
-        values /= values.sum()
+        sdr = np.flatnonzero(u > 0)
+        y = u[sdr] ** self.repu_n
+        y /= y.sum()
 
-        output_sdr = RateSdr(sdr, values)
+        output_sdr = RateSdr(sdr, y)
         self.accept_output(output_sdr, learn=learn)
 
         if not learn or sdr.size == 0:
             return output_sdr
 
-        lr = self.learning_rate
+        kp1 = self.output_sds.active_size + 1
+        top_kp1_ix = np.argpartition(u, -kp1)[-kp1:]
 
-        k1 = self.output_sds.active_size + 1
-        top_k1_ix = np.argpartition(y, -k1)[-k1:]
-        top_k1_ix = top_k1_ix[np.argsort(y[top_k1_ix])]
-
-        ixs = np.array([top_k1_ix[-1], top_k1_ix[0]], dtype=int)
+        # [best, worst] in top K+1
+        ixs = np.array([
+            top_kp1_ix[np.argmax(u[top_kp1_ix])],
+            top_kp1_ix[np.argmin(u[top_kp1_ix])]
+        ], dtype=int)
         dw = np.array([1.0, -hb_delta])
 
         _x = np.expand_dims(x, 0)
         _dw = np.expand_dims(dw, -1)
 
-        d_weights = _dw * _x - np.expand_dims(dw * y[ixs], -1) * w[ixs]
+        lr = self.learning_rate
+        if self.adaptive_lr:
+            lr = lr * self.relative_radius + 0.0001
+            lr = np.expand_dims(lr, -1)
+            lr = lr[ixs]
+
+        d_weights = _dw * _x - np.expand_dims(dw * u[ixs], -1) * w[ixs]
         d_weights /= np.abs(d_weights).max() + 1e-30
 
         self.weights[ixs, :] += lr * d_weights
         self.weights_pow_p[ixs, :] = self.get_weight_pow_p(ixs)
         self.radius[ixs] = self.get_radius(ixs)
+        if self.adaptive_lr:
+            self.relative_radius[ixs] = self.get_relative_radius(ixs)
 
         self.cnt += 1
         if self.cnt % 10000 == 0:
-            sorted_values = np.sort(values)
+            sorted_values = np.sort(y)
             ac_size = self.output_sds.active_size
             active_mass = sorted_values[-ac_size:].sum()
 
@@ -145,10 +154,20 @@ class KrotovLayer:
             print(
                 f'{self.avg_radius:.3f} {self.output_active_size:.1f}'
                 f'| {biases.mean():.2f} [{biases.min():.2f}; {biases.max():.2f}]'
-                f'| {y.min():.3f}  {y.max():.3f}'
+                f'| {u.min():.3f}  {u.max():.3f}'
                 f'| {self.weights.mean():.3f}: {self.weights.min():.3f}  {self.weights.max():.3f}'
-                f'| {active_mass:.3f} {values.sum():.3f}  {sdr.size}'
+                f'| {active_mass:.3f} {y.sum():.3f}  {sdr.size}'
             )
+        # if self.cnt % 10000 == 0:
+        #     import seaborn as sns
+        #     from matplotlib import pyplot as plt
+        #     w, r = self.weights, self.radius
+        #     w_p, r_p = self.get_weight_pow_p(p=2), self.radius ** 2
+        #     w = w / np.expand_dims(r, -1)
+        #     w_p = w_p / np.expand_dims(r_p, -1)
+        #     sns.histplot(w.flatten())
+        #     sns.histplot(w_p.flatten())
+        #     plt.show()
 
         return output_sdr
 
@@ -158,9 +177,16 @@ class KrotovLayer:
         return np.sum(np.abs(w) ** p, axis=-1) ** (1 / p)
 
     def get_weight_pow_p(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
-        p = self.lebesgue_p
+        p = self.lebesgue_p - 1
         w = self.weights if ixs is None else self.weights[ixs]
-        return np.sign(w) * (np.abs(w) ** (p - 1))
+        return np.sign(w) * (np.abs(w) ** p)
+
+    def get_relative_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
+        r = self.radius if ixs is None else self.radius[ixs]
+        return np.clip(
+            np.abs(np.log2(np.maximum(r, 0.001))),
+            0.05, 4.0
+        )
 
     @property
     def avg_radius(self):
@@ -209,3 +235,16 @@ class KrotovLayer:
 
     def output_entropy(self):
         return entropy(self.output_rate)
+
+
+# @numba.jit(nopython=True, cache=True)
+def get_important(a, min_val, min_mass):
+    i = 1
+    while True:
+        sdr = np.flatnonzero(a > min_val)
+        values = a[sdr]
+        mass = values.sum()
+        if mass >= min_mass:
+            return i, sdr, values, mass
+        min_val /= 4
+        i += 1

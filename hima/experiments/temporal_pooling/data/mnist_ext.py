@@ -10,56 +10,48 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from hima.common.sdrr import RateSdr
-from hima.common.sdr import SparseSdr
+from hima.common.sdr import SparseSdr, RateSdr
+from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
 
 
 @dataclass
 class SdrDataset:
     binary: bool
+    sdrs: SdrArray
 
     # raw 2D images
     images: npt.NDArray[float]
     # class indices
     targets: npt.NDArray[int]
 
-    # flatten post-processed image dense representations
-    dense_sdrs: npt.NDArray[float]
-    # flatten post-processed sparse SDRs
-    sdrs: list[RateSdr]
-    # flatten post-processed binary SDRs
-    binary_sdrs: list[npt.NDArray[int]]
-
     _classes: list[npt.NDArray[int]] | None
-
-    support_dense: bool = True
 
     def __init__(self, images, targets, threshold: float, binary: bool):
         self.binary = binary
-
         self.images = images
         self.targets = targets
 
-        self.dense_sdrs = self.images.reshape(self.n_images, -1)
+        flatten_images = self.images.reshape(self.images.shape[0], -1)
+        sdr_size = flatten_images.shape[1]
 
-        bin_sdrs = [np.flatnonzero(img >= threshold) for img in self.dense_sdrs]
-        self.sdrs = [
-            RateSdr(sdr, values=self.dense_sdrs[ind][sdr])
-            for ind, sdr in enumerate(bin_sdrs)
-        ]
-        self.binary_sdrs = [
-            np.flatnonzero(img >= img.mean())
-            for img in self.dense_sdrs
-        ]
+        if binary:
+            bin_rate_sdrs = [
+                RateSdr(np.flatnonzero(img >= img.mean()))
+                for img in flatten_images
+            ]
+            self.sdrs = SdrArray(sparse=bin_rate_sdrs, sdr_size=sdr_size)
+        else:
+            bin_sdrs = [np.flatnonzero(img >= threshold) for img in flatten_images]
+            rate_sdrs = [
+                RateSdr(sdr, values=values[sdr])
+                for sdr, values in zip(bin_sdrs, flatten_images)
+            ]
+            self.sdrs = SdrArray(sparse=rate_sdrs, dense=flatten_images, sdr_size=sdr_size)
         self._classes = None
 
     def __len__(self):
         return len(self.sdrs)
-
-    @property
-    def n_images(self):
-        return self.images.shape[0]
 
     @property
     def n_classes(self):
@@ -76,14 +68,10 @@ class SdrDataset:
         return self.images.shape[1:]
 
     def get_sdr(self, ind: int) -> SparseSdr | RateSdr:
-        return self.binary_sdrs[ind] if self.binary else self.sdrs[ind]
+        return self.sdrs.get_sdr(ind, binary=self.binary)
 
     def normalize(self, normalizer):
-        self.sdrs = [
-            RateSdr(sdr=sdr.sdr, values=normalizer(sdr.values))
-            for sdr in self.sdrs
-        ]
-        self.dense_sdrs = normalizer(self.dense_sdrs)
+        self.sdrs = self.sdrs.create_modified(normalizer)
 
 
 class MnistDataset:
@@ -96,10 +84,7 @@ class MnistDataset:
     sds: Sds
     binary: bool
 
-    def __init__(
-            self, seed: int, binary: bool = True, ds: str = 'mnist', debug: bool = False,
-            normalizer=None
-    ):
+    def __init__(self, seed: int, binary: bool = True, ds: str = 'mnist', debug: bool = False):
         self.binary = binary
         threshold, train, test = _load_dataset(seed, ds, grayscale=True, debug=debug)
 
@@ -110,12 +95,11 @@ class MnistDataset:
         self.test = SdrDataset(test_images, test_targets, threshold, binary)
 
         if binary:
-            sparsity = np.mean([
-                len(sdr.sdr) / self.train.dense_sdrs.shape[1]
-                for sdr in self.train.sdrs
-            ])
+            sum_active = np.sum([len(rate_sdr.sdr) for rate_sdr in self.train.sdrs.sparse])
+            total_number = self.train.images.size
+            sparsity = sum_active / total_number
         else:
-            sparsity = self.train.dense_sdrs.mean()
+            sparsity = self.train.sdrs.dense.mean()
         self.sds = Sds(shape=self.image_shape, sparsity=sparsity)
 
     @property

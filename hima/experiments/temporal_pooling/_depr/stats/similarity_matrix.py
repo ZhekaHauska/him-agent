@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from hima.common.sdr import SparseSdr
-from hima.common.sdrr import RateSdr
+from hima.common.sdr import SparseSdr, RateSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, safe_divide
 from hima.experiments.temporal_pooling.stats.metrics import (

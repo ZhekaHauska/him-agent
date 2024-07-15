@@ -16,7 +16,8 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
-from hima.common.sdrr import OutputMode, split_sdr_values
+from hima.common.sdr import OutputMode, split_sdr_values
+from hima.common.sdr_array import SdrArray, fill_dense
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, prepend_dict_keys
@@ -183,36 +184,12 @@ class SpatialEncoderOfflineExperiment:
 
         self.log_progress(self.metrics)
 
-    def train_epoch_se(self, train_sdrs):
-        for ix in tqdm(self.rng.permutation(len(train_sdrs))):
-            self.encoder.compute(train_sdrs[ix], learn=True)
+    def train_epoch_se(self, data):
+        n_samples = len(data)
+        order = self.rng.permutation(n_samples)
+        self.encode_array(data.sdrs, order=order, learn=True, track=False)
 
-    def train_epoch_se_ann_online(self, train_sdrs, classifier, targets):
-        """Train spatial encoder. Train also ANN classifier in batch-ONLINE mode."""
-        order = self.rng.permutation(len(train_sdrs))
-        batched_indices = split_to_batches(order, self.training.batch_size)
-        losses = []
-        for batch_ix in batched_indices:
-            batch = np.zeros((len(batch_ix), classifier.input_size))
-            fill_batch(batch, train_sdrs, batch_ix, self.encoder, learn=True)
-
-            target_cls = targets[batch_ix]
-            classifier.learn(batch, target_cls)
-            losses.append(classifier.losses[-1])
-
-        return losses
-
-    def test_epoch_se_ann_kn_mode(self, train_sdrs, test_sdrs):
-        def encode_dataset(data):
-            encoded_sdrs = []
-            track_sdrs = self.sdr_tracker is not None
-            for obs_sdr in data:
-                enc_sdr = self.encoder.compute(obs_sdr, learn=False)
-                if track_sdrs:
-                    self.sdr_tracker.on_sdr_updated(enc_sdr, ignore=False)
-                encoded_sdrs.append(enc_sdr)
-            return encoded_sdrs
-
+    def test_epoch_se_ann_kn_mode(self, train_data, test_data):
         if not self.should_test():
             return
 
@@ -224,12 +201,18 @@ class SpatialEncoderOfflineExperiment:
 
         # ==> train and test epoch-specific ANN classifier
         kn_ann_classifier = self.make_ann_classifier()
-        train_sdrs = encode_dataset(train_sdrs)
+        track_sdrs = self.sdr_tracker is not None
+        n_train_samples = len(train_data)
+        train_order = np.arange(n_train_samples)
+        encoded_train_sdrs = self.encode_array(
+            train_data.sdrs, order=train_order, learn=False, track=track_sdrs
+        )
+
         first_epoch_kn_losses = None
         final_epoch_kn_losses = None
         for _ in trange(self.testing.n_epochs):
             kn_epoch_losses = self.train_epoch_ann_classifier(
-                kn_ann_classifier, train_sdrs, self.data.train.targets
+                kn_ann_classifier, encoded_train_sdrs, train_data.targets
             )
             # NB: stores only the first epoch losses and remains unchanged further on
             first_epoch_kn_losses = isnone(first_epoch_kn_losses, kn_epoch_losses)
@@ -238,9 +221,13 @@ class SpatialEncoderOfflineExperiment:
 
         final_epoch_kn_loss = np.mean(final_epoch_kn_losses)
 
-        test_sdrs = encode_dataset(test_sdrs)
+        n_test_samples = len(test_data)
+        test_order = np.arange(n_test_samples)
+        encoded_test_sdrs = self.encode_array(
+            test_data.sdrs, order=test_order, learn=False, track=track_sdrs
+        )
         accuracy = self.evaluate_ann_classifier(
-            kn_ann_classifier, test_sdrs, self.data.test.targets
+            kn_ann_classifier, encoded_test_sdrs, self.data.test.targets
         )
         self.print_decoder_quality(accuracy, final_epoch_kn_loss)
 
@@ -266,7 +253,9 @@ class SpatialEncoderOfflineExperiment:
 
         Testing schedule determines when to evaluate the classifier on the test dataset.
         """
-        data, classifier = self.data, self.persistent_ann_classifier
+        classifier = self.persistent_ann_classifier
+        train_sdrs, train_targets = self.data.train.sdrs, self.data.train.targets
+        test_data = self.data.test
 
         self.i_train_epoch = 0
         while self.i_train_epoch < self.testing.n_epochs:
@@ -274,17 +263,31 @@ class SpatialEncoderOfflineExperiment:
             self.print_with_timestamp(f'Epoch {self.i_train_epoch}')
             # NB: it is `nn_` instead of `kn` as both first and second layers trained for N epochs,
             # i.e. K-N mode for 2-layer ANN is N-N mode.
-            nn_epoch_losses = self.train_epoch_ann_classifier(classifier, data.train)
-            self.test_epoch_ann(classifier, data.test, nn_epoch_losses)
+            nn_epoch_losses = self.train_epoch_ann_classifier(classifier, train_sdrs, train_targets)
+            self.test_epoch_ann(classifier, test_data, nn_epoch_losses)
 
         self.log_progress(self.metrics)
+
+    def train_epoch_ann_classifier(self, classifier, sdrs, targets):
+        n_samples = len(sdrs)
+        order = self.rng.permutation(n_samples)
+        batched_indices = split_to_batches(order, self.training.batch_size)
+
+        losses = []
+        for batch_ixs in batched_indices:
+            batch = make_batch(batch_ixs, sdrs)
+            target_cls = targets[batch_ixs]
+            classifier.learn(batch, target_cls)
+            losses.append(classifier.losses[-1])
+
+        return losses
 
     def test_epoch_ann(self, classifier, data, nn_epoch_losses):
         if not self.should_test():
             return
 
         nn_epoch_loss = np.mean(nn_epoch_losses)
-        accuracy = self.evaluate_ann_classifier(classifier, data)
+        accuracy = self.evaluate_ann_classifier(classifier, data.sdrs, data.targets)
         self.print_decoder_quality(accuracy, nn_epoch_loss)
 
         epoch_metrics = self.metrics.setdefault('epochs', {})
@@ -296,57 +299,45 @@ class SpatialEncoderOfflineExperiment:
             step_metrics = self.metrics.setdefault('steps', {})
             step_metrics['1-1_loss'] = nn_epoch_losses
 
-    def print_decoder_quality(self, accuracy, nn_epoch_loss):
-        if self.classification:
-            print(f'MLP Accuracy: {accuracy:.3%} | Loss: {nn_epoch_loss:.3f}')
-        else:
-            print(f'MLP MSE: {accuracy:.3} | Loss: {nn_epoch_loss:.3f}')
-
-    def evaluate_ann_classifier(self, classifier, data):
-        n_examples = len(data)
-        batched_indices = split_to_batches(n_examples, self.training.batch_size)
+    def evaluate_ann_classifier(self, classifier, sdrs, targets):
+        n_samples = len(sdrs)
+        order = np.arange(n_samples)
+        batched_indices = split_to_batches(order, self.training.batch_size)
 
         sum_accuracy = 0.0
         for batch_ix in batched_indices:
-            shape = (len(batch_ix), classifier.input_size)
-            batch = make_batch(batch_ix, shape, data)
+            batch = make_batch(batch_ix, sdrs)
+            target_cls = targets[batch_ix]
 
-            target_cls = data.targets[batch_ix]
             prediction = classifier.predict(batch)
-            if self.classification:
-                sum_accuracy += np.count_nonzero(np.argmax(prediction, axis=-1) == target_cls)
-            else:
-                sum_accuracy += np.sum((prediction - target_cls) ** 2)
+            sum_accuracy += self.get_accuracy(prediction, target_cls)
 
-        return sum_accuracy / n_examples
+        return sum_accuracy / n_samples
 
-    def train_epoch_ann_classifier(self, classifier, data):
-        order = self.rng.permutation(len(data))
-        batched_indices = split_to_batches(order, self.training.batch_size)
+    def encode_array(self, sdrs: SdrArray, *, order, learn=False, track=False):
+        assert self.encoder is not None, 'Encoder is not defined'
+        encoded_sdrs = []
 
-        losses = []
-        for batch_ix in batched_indices:
-            shape = (len(batch_ix), classifier.input_size)
-            batch = make_batch(batch_ix, shape, data)
-
-            target_cls = data.targets[batch_ix]
-            classifier.learn(batch, target_cls)
-            losses.append(classifier.losses[-1])
-
-        return losses
-
-    def make_ann_classifier(self) -> MlpClassifier:
-        if self.encoder is not None:
-            layers = [self.encoding_sds.size, self.n_classes]
+        if getattr(self.encoder, 'compute_batch', False):
+            # I expect that batch computing is defined for dense SDRs, as only for this kind
+            # of encoding batch computing is reasonable.
+            batched_indices = split_to_batches(order, self.training.batch_size)
+            for batch_ixs in tqdm(batched_indices):
+                batch = make_batch(batch_ixs, sdrs)
+                encoded_batch = self.encoder.compute_batch(batch, learn=learn)
+                if track:
+                    self.sdr_tracker.on_sdr_batch_updated(encoded_batch, ignore=False)
+                encoded_sdrs.extend(encoded_batch)
         else:
-            layers = [self.dataset_sds.size, self.encoding_sds.size, self.n_classes]
+            # for single SDR encoding, compute expects a sparse SDR.
+            for ix in tqdm(order):
+                obs_sdr = sdrs.get_sdr(ix, binary=self.is_binary)
+                enc_sdr = self.encoder.compute(obs_sdr, learn=learn)
+                if track:
+                    self.sdr_tracker.on_sdr_updated(enc_sdr, ignore=False)
+                encoded_sdrs.append(enc_sdr)
 
-        return self.config.resolve_object(
-            self.classifier, object_type_or_factory=MlpClassifier,
-            layers=layers, classification=self.classification,
-            symexp_logits=self.classifier_symexp_logits
-
-        )
+        return SdrArray(sparse=encoded_sdrs, sdr_size=self.encoding_sds.size)
 
     def log_progress(self, metrics: dict):
         if self.logger is None:
@@ -387,6 +378,32 @@ class SpatialEncoderOfflineExperiment:
             for key, value in epoch.items()
         })
 
+    def get_accuracy(self, predictions, targets):
+        if self.classification:
+            # number of correct predictions in a batch
+            return np.count_nonzero(np.argmax(predictions, axis=-1) == targets)
+
+        # MSE over each prediction coordinates => sum MSE over a batch
+        return np.mean((predictions - targets) ** 2, axis=-1).sum()
+
+    def make_ann_classifier(self) -> MlpClassifier:
+        if self.encoder is not None:
+            layers = [self.encoding_sds.size, self.n_classes]
+        else:
+            layers = [self.dataset_sds.size, self.encoding_sds.size, self.n_classes]
+
+        return self.config.resolve_object(
+            self.classifier, object_type_or_factory=MlpClassifier,
+            layers=layers, classification=self.classification,
+            symexp_logits=self.classifier_symexp_logits
+        )
+
+    def print_decoder_quality(self, accuracy, nn_epoch_loss):
+        if self.classification:
+            print(f'MLP Accuracy: {accuracy:.3%} | Loss: {nn_epoch_loss:.3f}')
+        else:
+            print(f'MLP MSE: {accuracy:.3} | Loss: {nn_epoch_loss:.3f}')
+
     @staticmethod
     def _get_setup(
             input_mode: str, encoding_sds, encoder: TConfig = None, sdr_tracker: bool = True,
@@ -410,18 +427,9 @@ def personalize_metrics(metrics: dict, prefix: str):
     return prepend_dict_keys(metrics, prefix, separator='/')
 
 
-def get_data(data):
-    return [data.get_sdr(i) for i in range(data.n_images)]
-
-
-def split_to_batches(ds_size_or_order, batch_size):
-    if isinstance(ds_size_or_order, int):
-        ds_order = np.arange(ds_size_or_order)
-        ds_size = ds_size_or_order
-    else:
-        ds_order = ds_size_or_order
-        ds_size = len(ds_order)
-    return np.array_split(ds_order, ds_size // batch_size)
+def split_to_batches(order, batch_size):
+    n_samples = len(order)
+    return np.array_split(order, n_samples // batch_size)
 
 
 def fill_batch(batch, ds, batch_ix, encoder=None, learn=False):
@@ -437,23 +445,14 @@ def fill_batch(batch, ds, batch_ix, encoder=None, learn=False):
             batch[i, sdr] = rates
 
 
-def make_batch(batch_ixs, shape, data):
-    if data.support_dense:
-        return data.dense_sdrs[batch_ixs]
+def make_batch(batch_ixs, sdrs: SdrArray):
+    if sdrs.dense is not None:
+        return sdrs.dense[batch_ixs]
 
+    shape = (len(batch_ixs), sdrs.sdr_size)
     batch = np.zeros(shape)
-    for i, sdr_ix in enumerate(batch_ixs):
-        sdr, rates = split_sdr_values(data.sdrs[sdr_ix])
-        batch[i, sdr] = rates
+    fill_dense(batch, sdrs, batch_ixs)
     return batch
-
-
-def make_batch_enc(batch_ixs, sdrs, encoder, learn, shape=None, dense_sdrs=None):
-    for i, sdr_ix in enumerate(batch_ix):
-        sdr, rates = split_sdr_values(
-            encoder.compute(ds[sdr_ix], learn=learn)
-        )
-        batch[i, sdr] = rates
 
 
 def normalize_ds(ds, norm, p=None):

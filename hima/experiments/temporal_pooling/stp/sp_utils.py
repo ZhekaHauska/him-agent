@@ -10,7 +10,7 @@ from numba import jit
 from numpy import typing as npt
 from numpy.random import Generator
 
-from hima.common.sdrr import OutputMode
+from hima.common.sdr import OutputMode
 from hima.common.utils import safe_divide
 
 
@@ -61,14 +61,14 @@ def boosting(relative_rate: float | np.ndarray, k: float, softness: float = 3.0)
 RepeatingCountdown = tuple[int, int]
 
 
-@jit(inline='always')
+@jit(cache=True, inline='always')
 def make_repeating_counter(ticks: int | None) -> RepeatingCountdown:
     if ticks is None:
         ticks = -1
     return ticks, ticks
 
 
-@jit(inline='always')
+@jit(cache=True, inline='always')
 def is_infinite(countdown: RepeatingCountdown) -> bool:
     return countdown[1] == -1
 

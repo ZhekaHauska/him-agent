@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 
 from hima.common.sdr_sampling import sample_sdr, sample_rate_sdr
-from hima.common.sdrr import AnySparseSdr, RateSdr, OutputMode
+from hima.common.sdr import RateSdr, AnySparseSdr, OutputMode
 from hima.common.sds import Sds, TSdsShortNotation
 from hima.common.utils import isnone
 

@@ -12,8 +12,7 @@ import numpy as np
 from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 
-from hima.common.sdr import SparseSdr
-from hima.common.sdrr import AnySparseSdr
+from hima.common.sdr import SparseSdr, AnySparseSdr
 from hima.common.utils import clip
 
 

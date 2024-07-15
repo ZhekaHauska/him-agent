@@ -11,7 +11,7 @@ import numpy as np
 
 from hima.common.config.base import TConfig, extracted
 from hima.common.config.values import resolve_init_params
-from hima.common.sdrr import split_sdr_values, RateSdr
+from hima.common.sdr import RateSdr, split_sdr_values
 from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.global_vars import VARS_LEARN
 

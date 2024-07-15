@@ -6,8 +6,7 @@
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr
-from hima.common.sdrr import RateSdr
+from hima.common.sdr import SparseSdr, RateSdr
 from hima.common.sds import Sds
 
 

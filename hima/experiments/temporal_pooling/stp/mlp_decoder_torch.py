@@ -12,8 +12,7 @@ import numpy.typing as npt
 import torch
 from torch import nn, optim
 
-from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.modules.baselines.lstm import to_numpy, symexp

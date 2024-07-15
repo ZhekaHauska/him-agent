@@ -8,8 +8,8 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from hima.common.sdr import SparseSdr
-from hima.common.sdrr import split_sdr_values
+from hima.common.sdr import split_sdr_values, RateSdr, AnySparseSdr
+from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
@@ -18,6 +18,11 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
     RepeatingCountdown,
     make_repeating_counter, tick, is_infinite
 )
+
+
+# TODO: standardize LearningRateParam and repeating countdowns setting via config,
+#   make reasonable defaults, and add documentation describing the usage. For now,
+#   I frequently forget the internal logic of Tracker classes and have to look it up.
 
 
 class SdrTracker:
@@ -61,10 +66,51 @@ class SdrTracker:
         # self.histogram.reset(hard=True)
         self.union.clear()
 
-    def on_sdr_updated(self, sdr: SparseSdr, ignore: bool) -> TMetrics:
+    def on_sdr_batch_updated(self, batch: SdrArray, ignore: bool) -> TMetrics:
         if ignore:
             return {}
 
+        # NB: handle sdrs in the batch sequentially, remember the last step and aggregate metrics
+        # and return them combined in the end
+        step_metrics, agg_metrics = {}, {}
+        for i in range(len(batch)):
+            if batch.sparse is not None:
+                sdr = batch.sparse[i]
+            else:
+                sdr = np.flatnonzero(batch.dense[i])
+                values = batch.dense[i][sdr]
+                sdr = RateSdr(sdr, values)
+
+            self._on_sdr_updated(sdr)
+
+            flush_step_now, self.step_flush_countdown = tick(self.step_flush_countdown)
+            if flush_step_now:
+                step_metrics = self.flush_step_metrics()
+
+            flush_agg_now, self.aggregate_flush_countdown = tick(self.aggregate_flush_countdown)
+            if flush_agg_now:
+                agg_metrics = self.flush_aggregate_metrics()
+
+        return step_metrics | agg_metrics
+
+    def on_sdr_updated(self, sdr: AnySparseSdr, ignore: bool) -> TMetrics:
+        if ignore:
+            return {}
+
+        self._on_sdr_updated(sdr)
+
+        metrics = {}
+        flush_step_now, self.step_flush_countdown = tick(self.step_flush_countdown)
+        if flush_step_now:
+            metrics |= self.flush_step_metrics()
+
+        flush_aggregate_now, self.aggregate_flush_countdown = tick(self.aggregate_flush_countdown)
+        if flush_aggregate_now:
+            metrics |= self.flush_aggregate_metrics()
+
+        return metrics
+
+    def _on_sdr_updated(self, sdr: AnySparseSdr):
         list_sdr, value = split_sdr_values(sdr)
         sdr: set = set(list_sdr)
         prev_sdr = self.prev_sdr
@@ -79,17 +125,6 @@ class SdrTracker:
         self.sym_similarity.put(sym_similarity)
 
         self.prev_sdr = sdr
-
-        metrics = {}
-        flush_step_now, self.step_flush_countdown = tick(self.step_flush_countdown)
-        if flush_step_now:
-            metrics |= self.flush_step_metrics()
-
-        flush_aggregate_now, self.aggregate_flush_countdown = tick(self.aggregate_flush_countdown)
-        if flush_aggregate_now:
-            metrics |= self.flush_aggregate_metrics()
-
-        return metrics
 
     def on_sequence_finished(self, _, ignore: bool) -> TMetrics:
         if ignore:

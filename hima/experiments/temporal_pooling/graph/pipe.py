@@ -13,7 +13,7 @@ from hima.common.sdr_sampling import (
     sample_noisy_sdr_rate_sdr, sample_noisy_rates_rate_sdr,
     sample_noisy_sdr
 )
-from hima.common.sdrr import RateSdr
+from hima.common.sdr import RateSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.graph.node import Node, Stretchable
 from hima.experiments.temporal_pooling.graph.stream import Stream, SdrStream

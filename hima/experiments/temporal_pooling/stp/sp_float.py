@@ -10,8 +10,7 @@ from typing import cast
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode
+from hima.common.sdr import SparseSdr, RateSdr, AnySparseSdr, OutputMode
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.common.utils import safe_divide

@@ -10,8 +10,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr, DenseSdr
-from hima.common.sdrr import RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, split_sdr_values
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.common.utils import softmax
@@ -57,12 +56,9 @@ class SoftHebbLayer:
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
-
         self.rng = np.random.default_rng(seed)
-        self.comp_name = None
 
         self.feedforward_sds = Sds.make(feedforward_sds)
-
         self.sparse_input = np.empty(0, dtype=int)
         self.dense_input = np.zeros(self.ff_size, dtype=float)
         self.is_empty_input = True
