@@ -1407,6 +1407,7 @@ class DHTM(Layer):
                 messages_backup = self.internal_messages.copy()
                 accept_sample = False
                 trial = 0
+
                 for trial in range(self.max_resamples):
                     self.set_context_messages(self.internal_active_cells.dense.copy())
                     self.predict()
@@ -1426,6 +1427,10 @@ class DHTM(Layer):
 
                     if accept_sample:
                         break
+
+                    self.internal_active_cells.sparse = self._sample_cells(
+                        messages_backup.reshape(self.n_hidden_vars, -1)
+                    )
 
                 self.total_resamples += trial
 
