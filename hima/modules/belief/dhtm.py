@@ -1007,7 +1007,6 @@ class DHTM(Layer):
             max_resamples: int = 10,
             noise_scale: float = 1.0,
             surprise_scale: float = 1.0,
-            use_observation_trace: bool = False,
             gamma: float = 0.9,
             otp_lr: float = 0.01,
             otp_beta: float = 1.0,
@@ -1099,7 +1098,6 @@ class DHTM(Layer):
 
         self.prediction_cells = np.zeros_like(self.internal_messages)
         self.observation_messages = np.zeros(self.input_sdr_size)
-        self.observation_trace = np.zeros(self.input_sdr_size)
         self.prediction_columns = None
         self.is_any_segment_active = False
 
@@ -1166,7 +1164,6 @@ class DHTM(Layer):
         )
 
         # observation trace prior
-        self.use_observation_trace = use_observation_trace
         self.otp_weights = self._rng.dirichlet(
             alpha=[self.alpha] * self.n_obs_states,
             size=self.n_hidden_vars * self.n_hidden_states
@@ -1294,12 +1291,10 @@ class DHTM(Layer):
             size=self.input_sdr_size,
             dtype=REAL64_DTYPE
         )
-        self.observation_trace = observation_messages + self.gamma * self.observation_trace
 
         # update messages
         self.observation_messages = observation_messages
         self.internal_messages = self._get_posterior(
-            use_observation_trace=self.use_observation_trace,
             column_prior_mode=self.column_prior
         )
 
@@ -1330,7 +1325,6 @@ class DHTM(Layer):
                 ] + EPS
             )
             self.observation_messages = self.observation_messages_buffer[t].copy()
-            self.observation_trace = self.observation_messages + self.gamma * self.observation_trace
             self.internal_messages = self._get_posterior()
             self.backward_messages_buffer.append(self.internal_messages.copy())
             if self.vis_server:
@@ -1361,9 +1355,7 @@ class DHTM(Layer):
                 if t < len(self.observation_messages_buffer):
                     self.set_context_messages(self.internal_messages.copy())
                     self.predict()
-                    self.observation_trace = self.observation_messages + self.gamma * self.observation_trace
                     self.internal_messages = self._get_posterior(
-                        use_observation_trace=self.use_observation_trace,
                         column_prior_mode=self.column_prior
                     )
                     internal_messages = self.internal_messages
@@ -1517,7 +1509,6 @@ class DHTM(Layer):
     def _get_posterior(
             self,
             return_obs_factor=False,
-            use_observation_trace=False,
             column_prior_mode: PRIOR_MODE = 'uniform'
     ):
         observation = np.flatnonzero(self.observation_messages)
@@ -1567,29 +1558,6 @@ class DHTM(Layer):
             prior[obs_factor == 1] = column_prior.flatten()
         else:
             raise ValueError(f"There is no such column prior mode: {column_prior_mode}!")
-
-        if use_observation_trace == "observation_trace":
-            norm_observation_trace = normalize(
-                self.observation_trace.reshape(self.n_obs_vars, -1)
-            )
-            dkl = np.sum(rel_entr(norm_observation_trace, self.otp_weights[cells]), axis=-1)
-            column_probs = np.apply_along_axis(
-                partial(softmax, beta=self.otp_beta),
-                axis=-1,
-                arr=dkl.reshape(
-                    -1, self.cells_per_column
-                )
-            )
-            ot_prior = np.zeros_like(obs_factor)
-            ot_prior[obs_factor == 1] = column_probs.flatten()
-            prior *= ot_prior
-
-            # update weights
-            ids = self._sample_cells(column_probs)
-            cells_to_update = cells[ids]
-            self.otp_weights[cells_to_update] += self.otp_lr * (
-                    norm_observation_trace - self.otp_weights[cells_to_update]
-            )
 
         prior = prior.reshape(self.n_hidden_vars, -1)
         messages, self.n_bursting_vars = normalize(
