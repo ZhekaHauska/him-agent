@@ -43,9 +43,10 @@ class KrotovLayer:
     lebesgue_p: float
 
     def __init__(
-            self, *, seed: int, feedforward_sds: Sds, output_sds: Sds, learning_rate: float,
-            init_radius: float, lebesgue_p: float, neg_hebb_delta: float, repu_n: float,
-            adaptive_lr: bool = False, weights_bias: float = 0.001,
+            self, *, seed: int, feedforward_sds: Sds, output_sds: Sds,
+            learning_rate: float,
+            lebesgue_p: float, neg_hebb_delta: float, repu_n: float,
+            init_radius: float = 10.0, adaptive_lr: bool = False, weights_bias: float = 0.001,
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
@@ -54,7 +55,6 @@ class KrotovLayer:
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.sparse_input = np.empty(0, dtype=int)
         self.dense_input = np.zeros(self.ff_size, dtype=float)
-        self.is_empty_input = True
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode.RATE
@@ -131,10 +131,10 @@ class KrotovLayer:
 
         lr = self.learning_rate
         if self.adaptive_lr:
-            lr = lr * self.relative_radius + 0.0001
+            lr = lr * self.relative_radius[ixs]
             lr = np.expand_dims(lr, -1)
-            lr = lr[ixs]
 
+        # TODO: consider weights signs fixation
         d_weights = _dw * _x - np.expand_dims(dw * u[ixs], -1) * w[ixs]
         d_weights /= np.abs(d_weights).max() + 1e-30
 

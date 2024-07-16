@@ -7,17 +7,18 @@ setup: setups.binary_basic_sp
 debug: False
 
 train:
-  n_epochs: 3
+  n_epochs: 5
   batch_size: 64
 test:
   eval_first: 3
   eval_schedule: 5
-  n_epochs: 10
+  n_epochs: 20
 
 classifier:
   classification: ???
   layers: ???
 #  learning_rate: 0.0003
+#  learning_rate: 0.0015
   learning_rate: 0.003
   collect_losses: 1
   symexp_logits: ???
@@ -28,10 +29,18 @@ sp:
     seed: ???
     feedforward_sds: ???
     output_sds: ???
-    learning_rate: 0.01
-    init_radius: 10.0
+    init_radius: 20.0
+    learning_rate: 0.025
     beta: 200.0
     threshold: 0.002
+    adaptive_lr: True
+    normalize_dw: False
+    # from SHb ext
+    bias_boosting: True
+    beta_lr: 0.002
+    min_active_mass: 0.75
+    min_mass: 0.92
+
 
   soft_hebb_ext:
     _type_: sp.soft_hebb_ext
@@ -39,7 +48,7 @@ sp:
     feedforward_sds: ???
     output_sds: ???
     init_radius: 20.0
-    learning_rate: 0.01
+    learning_rate: 0.025
     beta_lr: 0.005
     min_active_mass: 0.75
     min_mass: 0.92
@@ -173,6 +182,7 @@ setups:
     input_mode: rate
     # classifier_symexp_logits: True
     ds_norm: l2
+#    encoding_sds: [2000, 7]
     encoding_sds: [2000, 20]
 #    encoding_sds: [400, 4]
   rate_krotov:
@@ -183,12 +193,8 @@ setups:
     encoding_sds: [2000, 7]
 #    encoding_sds: [400, 2]
   rate_krotov_adaptive:
+    _base_: setups.rate_krotov
     encoder: sp.krotov_adaptive
-    sdr_tracker: False
-    input_mode: rate
-    # classifier_symexp_logits: True
-    encoding_sds: [2000, 7]
-#    encoding_sds: [400, 2]
   binary_htm_sp:
     encoder: sp.htm_sp
     input_mode: binary

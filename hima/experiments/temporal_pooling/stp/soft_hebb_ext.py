@@ -61,7 +61,6 @@ class SoftHebbLayer:
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.sparse_input = np.empty(0, dtype=int)
         self.dense_input = np.zeros(self.ff_size, dtype=float)
-        self.is_empty_input = True
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode.RATE
@@ -108,12 +107,12 @@ class SoftHebbLayer:
     def _compute(self, input_sdr: AnySparseSdr, learn: bool) -> AnySparseSdr:
         self.accept_input(input_sdr, learn=learn)
 
-        x, w, b, t = self.dense_input, self.weights, self.biases, self.threshold
+        x, w, b, thr = self.dense_input, self.weights, self.biases, self.threshold
         u = w @ x
         q = -self.relative_radius
         y = softmax(u + q * b, beta=self.beta)
 
-        loops, sdr, values, mass = get_important(y, t, self.min_mass)
+        sdr, values, mass = get_important(y, thr)
         output_sdr = RateSdr(sdr, values / (mass + 1e-30))
         self.accept_output(output_sdr, learn=learn)
 
@@ -121,7 +120,7 @@ class SoftHebbLayer:
             return output_sdr
 
         lr = self.learning_rate
-        lr = lr * self.relative_radius + 0.0001
+        lr = lr * self.relative_radius[sdr]
 
         _u = np.expand_dims(u, -1)
         _x = np.expand_dims(x, 0)
@@ -130,7 +129,7 @@ class SoftHebbLayer:
 
         d_weights = _y[sdr] * (_x - w[sdr] * _u[sdr])
         d_weights /= np.abs(d_weights).max() + 1e-30
-        self.weights[sdr, :] += _lr[sdr] * d_weights
+        self.weights[sdr, :] += _lr * d_weights
         self.radius[sdr] = self.get_radius(sdr)
         self.relative_radius[sdr] = self.get_relative_radius(sdr)
 
@@ -157,13 +156,13 @@ class SoftHebbLayer:
         exp_missing_mass = (1.0 - self.min_mass) / 2
         rel_missing_mass = (1.0 - mass) / exp_missing_mass
         rel_missing_mass = np.clip(rel_missing_mass, 0.75, 1.1)
-        d_thr = -loops**2 if loops > 1 else -0.5 * np.log(rel_missing_mass)
+        d_thr = -0.5 * np.log(rel_missing_mass)
         self.threshold += 0.01 * beta_lr * d_thr
 
-        self.loops += loops
+        self.loops += 1
         self.cnt += 1
-        if self.cnt % 10000 == 0:
-            low_y = y[y <= t]
+        if self.cnt % 2000 == 0:
+            low_y = y[y <= thr]
             low_mx = 0. if low_y.size == 0 else low_y.max()
             print(
                 f'{self.avg_radius:.3f} {self.output_entropy():.3f} {self.output_active_size:.1f}'
@@ -257,13 +256,8 @@ class SoftHebbLayer:
 
 
 @numba.jit(nopython=True, cache=True)
-def get_important(a, min_val, min_mass):
-    i = 1
-    while True:
-        sdr = np.flatnonzero(a > min_val)
-        values = a[sdr]
-        mass = values.sum()
-        if mass >= min_mass:
-            return i, sdr, values, mass
-        min_val /= 4
-        i += 1
+def get_important(a, min_val):
+    sdr = np.flatnonzero(a > min_val)
+    values = a[sdr]
+    mass = values.sum()
+    return sdr, values, mass

@@ -170,14 +170,12 @@ class SpatialEncoderOfflineExperiment:
             without testing to report only the training losses (ONLINE mode).
             It is used to compare representation stability of SE and SP.
         """
-        n_epochs = max(self.training.n_epochs, self.testing.n_epochs)
+        n_epochs = self.training.n_epochs
         self.i_train_epoch = 0
         while self.i_train_epoch < n_epochs:
             self.i_train_epoch += 1
             self.print_with_timestamp(f'Epoch {self.i_train_epoch}')
-            if self.i_train_epoch <= self.training.n_epochs:
-                # just regular SE training
-                self.train_epoch_se(self.data.train)
+            self.train_epoch_se(self.data.train)
 
             # [on testing schedule] train and test ANN classifier in K-N mode
             self.test_epoch_se_ann_kn_mode(self.data.train, self.data.test)
@@ -412,10 +410,18 @@ class SpatialEncoderOfflineExperiment:
         return encoder, encoding_sds, input_mode, sdr_tracker, classifier_symexp_logits, ds_norm
 
     def should_test(self):
-        return (
-            self.i_train_epoch <= self.testing.eval_first or
-            self.i_train_epoch == self.testing.n_epochs
-        )
+        if self.i_train_epoch <= self.training.n_epochs:
+            eval_scheduled = self.testing.tick()
+            if eval_scheduled or self.i_train_epoch <= self.testing.eval_first:
+                return True
+
+        with_encoder = self.encoder is not None
+        if with_encoder:
+            # last training epoch (for encoder)
+            return self.i_train_epoch == self.training.n_epochs
+
+        # last training epoch (for ANN)
+        return self.i_train_epoch == self.testing.n_epochs
 
     def print_with_timestamp(self, *args, cond: bool = True):
         if not cond:
