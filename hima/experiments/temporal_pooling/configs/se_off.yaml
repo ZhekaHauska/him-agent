@@ -18,7 +18,6 @@ classifier:
   classification: ???
   layers: ???
 #  learning_rate: 0.0003
-#  learning_rate: 0.0015
   learning_rate: 0.003
   collect_losses: 1
   symexp_logits: ???
@@ -31,27 +30,28 @@ sp:
     output_sds: ???
     init_radius: 20.0
     learning_rate: 0.025
-    beta: 200.0
-    threshold: 0.002
     adaptive_lr: True
-    normalize_dw: False
-    # from SHb ext
-    bias_boosting: True
-    beta_lr: 0.002
-    min_active_mass: 0.75
-    min_mass: 0.92
-
+    normalize_dw: True
+    beta: 200.0
+    beta_lr: 0.0
+    threshold: 0.001
 
   soft_hebb_ext:
-    _type_: sp.soft_hebb_ext
-    seed: ???
-    feedforward_sds: ???
-    output_sds: ???
+    _base_: sp.soft_hebb
     init_radius: 20.0
     learning_rate: 0.025
-    beta_lr: 0.005
+    adaptive_lr: True
+    normalize_dw: False
+    beta: 200.0
+    beta_lr: 0.002
+    threshold: 0.001
+    output_extra: 1.0
     min_active_mass: 0.75
     min_mass: 0.92
+    bias_boosting: True
+    negative_hebbian: 'no'
+    filter_output: 'hard'
+    normalize_output: 'no'
 
   krotov:
     _type_: sp.krotov
@@ -175,15 +175,13 @@ setups:
     # classifier_symexp_logits: True
     ds_norm: l2
     encoding_sds: [2000, 20]
-#    encoding_sds: [2000, 10]
 #    encoding_sds: [400, 6]
   rate_soft_hebb_ext:
     encoder: sp.soft_hebb_ext
     input_mode: rate
     # classifier_symexp_logits: True
     ds_norm: l2
-#    encoding_sds: [2000, 7]
-    encoding_sds: [2000, 20]
+    encoding_sds: [2000, 10]
 #    encoding_sds: [400, 4]
   rate_krotov:
     encoder: sp.krotov

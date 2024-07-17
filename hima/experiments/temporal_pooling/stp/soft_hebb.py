@@ -5,6 +5,9 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+import enum
+from enum import Enum, auto
+
 import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
@@ -16,6 +19,22 @@ from hima.common.utils import softmax
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.se import get_normal_std
+
+
+class NegativeHebbian(Enum):
+    NO = 1
+    RATE = auto()
+    TOP_K = auto()
+
+
+class FilterOutput(Enum):
+    SOFT = 1
+    HARD = auto()
+
+
+class NormalizeOutput(Enum):
+    NO = 1
+    YES = auto()
 
 
 class SoftHebbLayer:
@@ -49,9 +68,12 @@ class SoftHebbLayer:
             # boosting via negative bias
             bias_boosting: bool = False,
             # activation threshold and softmax beta
-            threshold: float = 0.001,
+            threshold: float = 0.001, output_extra: float = 0.5,
             beta: float = 10.0, beta_lr: float = 0.01,
             min_active_mass: float = None, min_mass: float = None,
+            # others
+            negative_hebbian: str = 'no', filter_output: str = 'soft',
+            normalize_output: str = 'no',
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
@@ -68,6 +90,10 @@ class SoftHebbLayer:
         self.adaptive_lr = adaptive_lr
         if self.adaptive_lr:
             self.lr_range = lr_range
+
+        self.negative_hebbian = NegativeHebbian[negative_hebbian.upper()]
+        self.filter_output = FilterOutput[filter_output.upper()]
+        self.normalize_output = NormalizeOutput[normalize_output.upper()]
 
         self.lebesgue_p = 2.0
         shape = (self.output_size, self.ff_size)
@@ -90,6 +116,7 @@ class SoftHebbLayer:
             self.beta_lr = beta_lr
             self.threshold_lr = beta_lr / 100.0
             self.threshold = min(1 / self.output_sds.size, self.output_sds.active_size ** (-2))
+            self.output_extra = output_extra
 
         self.min_active_mass = min_active_mass
         self.min_mass = min_mass
@@ -135,25 +162,37 @@ class SoftHebbLayer:
         mass = values.sum()
 
         self.fast_output_sdr_size_trace.put(len(sdr))
-        o_sdr = np.flatnonzero(y > 1e-4)
-        o_values = y[o_sdr]
+        if self.filter_output == FilterOutput.HARD:
+            o_sdr = sdr
+        else:
+            o_sdr = np.flatnonzero(y > 1e-4)
+
+        o_values = y[o_sdr].copy()
+        if self.normalize_output == NormalizeOutput.YES:
+            o_values /= mass + 1e-30
+
         output_sdr = RateSdr(o_sdr, o_values)
-        # output_sdr = RateSdr(sdr, values / (mass + 1e-30))
         self.accept_output(output_sdr, learn=learn)
 
         if not learn or sdr.size == 0:
             return output_sdr
 
         k = self.output_sds.active_size
-        cur_k = min(k, len(sdr))
-        top_k_sdr = np.argpartition(values, -cur_k)[-cur_k:]
-        top_k = values[top_k_sdr]
+        top_k = None
+        if self.adaptive_beta or self.negative_hebbian == NegativeHebbian.TOP_K:
+            cur_k = min(k, len(sdr))
+            top_k = values[np.argpartition(values, -cur_k)[-cur_k:]]
+
+        y = y[sdr]
+        if self.negative_hebbian == NegativeHebbian.RATE:
+            y = y - self.output_rate[sdr]
+        elif self.negative_hebbian == NegativeHebbian.TOP_K:
+            y = y - np.min(top_k)
+            y[y < 0] *= 0.2
 
         _u = np.expand_dims(u[sdr], -1)
         _x = np.expand_dims(x, 0)
-        _y = np.expand_dims(y[sdr] - np.min(top_k), -1)
-        # _y = np.expand_dims(y[sdr] - self.output_rate[sdr], -1)
-        _y[_y < 0] *= 0.2
+        _y = np.expand_dims(y, -1)
 
         lr = self.learning_rate
         if self.adaptive_lr:
@@ -172,10 +211,7 @@ class SoftHebbLayer:
 
         if self.adaptive_beta:
             beta_lr = self.beta_lr * np.sqrt(np.mean(lr))
-            # k = self.output_sds.active_size
-            # cur_k = min(k, len(sdr))
             active_mass = top_k.sum()
-            # active_mass = values[np.argpartition(values, -cur_k)[-cur_k:]].sum()
 
             self.fast_mass_trace.put(mass)
             self.fast_active_mass_trace.put(active_mass)
@@ -200,10 +236,10 @@ class SoftHebbLayer:
             thr_lr = self.threshold_lr * np.sqrt(np.mean(lr))
             if avg_active_size < k:
                 d_thr = -1.0
-            elif avg_active_size > 2 * k:
+            elif avg_active_size > k * (1.0 + 2 * self.output_extra):
                 d_thr = 1.0
             else:
-                d_thr = 0.1 * np.sign(avg_active_size - 1.25 * k)
+                d_thr = 0.1 * np.sign(avg_active_size - k * (1.0 + self.output_extra))
 
             self.threshold += thr_lr * d_thr
             self.threshold = max(1e-5, self.threshold)
