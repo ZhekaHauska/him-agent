@@ -109,9 +109,6 @@ def _resolve_spatial_pooler(type_tag: str):
     if type_tag == 'sp.soft_hebb':
         from hima.experiments.temporal_pooling.stp.soft_hebb import SoftHebbLayer
         return SoftHebbLayer
-    if type_tag == 'sp.soft_hebb_ext':
-        from hima.experiments.temporal_pooling.stp.soft_hebb_ext import SoftHebbLayer
-        return SoftHebbLayer
     if type_tag == 'sp.krotov':
         from hima.experiments.temporal_pooling.stp.krotov import KrotovLayer
         return KrotovLayer
