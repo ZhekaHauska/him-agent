@@ -11,7 +11,7 @@ import numpy as np
 
 from hima.common.config.base import TConfig, extracted
 from hima.common.config.values import resolve_init_params
-from hima.common.sdr import RateSdr, split_sdr_values
+from hima.common.sdr import RateSdr, unwrap_as_rate_sdr
 from hima.experiments.temporal_pooling.graph.block import Block
 from hima.experiments.temporal_pooling.graph.global_vars import VARS_LEARN
 
@@ -128,15 +128,15 @@ class SpatialTemporalMemoryBlock(Block):
         self[PREDICTED_CELLS].set(output_sdr)
 
     def set_predicted_cells(self):
-        pred_sdr, _ = split_sdr_values(self[PREDICTED_CELLS].get())
+        pred_sdr, _ = unwrap_as_rate_sdr(self[PREDICTED_CELLS].get())
         if len(pred_sdr) == 0:
             self[PREDICTED_AND_ACTIVE_CELLS].set(self[ACTIVE_CELLS].get())
         else:
             self[PREDICTED_AND_ACTIVE_CELLS].set(self[PREDICTED_CELLS].get())
 
     def union_predicted_cells(self):
-        pred_sdr, pred_values = split_sdr_values(self[PREDICTED_CELLS].get())
-        act_sdr, act_values = split_sdr_values(self[ACTIVE_CELLS].get())
+        pred_sdr, pred_values = unwrap_as_rate_sdr(self[PREDICTED_CELLS].get())
+        act_sdr, act_values = unwrap_as_rate_sdr(self[ACTIVE_CELLS].get())
 
         overlap_sdr = set(pred_sdr) & set(act_sdr)
         act_mask = np.array([i for i, x in enumerate(act_sdr) if x not in overlap_sdr], dtype=int)
@@ -156,8 +156,8 @@ class SpatialTemporalMemoryBlock(Block):
         pass
 
     def compare_with_prediction(self):
-        pred_sdr, pred_values = split_sdr_values(self[PREDICTED_CELLS].get())
-        act_sdr, act_values = split_sdr_values(self[ACTIVE_CELLS].get())
+        pred_sdr, pred_values = unwrap_as_rate_sdr(self[PREDICTED_CELLS].get())
+        act_sdr, act_values = unwrap_as_rate_sdr(self[ACTIVE_CELLS].get())
 
         overlap_sdr = set(pred_sdr) & set(act_sdr)
         mask = np.array([i for i, x in enumerate(pred_sdr) if x in overlap_sdr], dtype=int)

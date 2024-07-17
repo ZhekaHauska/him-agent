@@ -12,7 +12,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, unwrap_as_rate_sdr
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.common.utils import safe_divide
@@ -257,7 +257,7 @@ class SpatialPooler:
 
     def accept_input(self, sdr: AnySparseSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
-        sdr, value = split_sdr_values(sdr)
+        sdr, value = unwrap_as_rate_sdr(sdr)
         self.is_empty_input = len(sdr) == 0
 
         # TODO: L2 norm
@@ -471,7 +471,7 @@ class SpatialPooler:
         return self.winners
 
     def accept_output(self, sdr: SparseSdr, *, learn: bool):
-        sdr, value = split_sdr_values(sdr)
+        sdr, value = unwrap_as_rate_sdr(sdr)
 
         if not learn or sdr.shape[0] == 0:
             return

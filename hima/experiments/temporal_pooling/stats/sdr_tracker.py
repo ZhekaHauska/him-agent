@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from hima.common.sdr import split_sdr_values, RateSdr, AnySparseSdr
+from hima.common.sdr import unwrap_as_rate_sdr, RateSdr, AnySparseSdr
 from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
@@ -111,7 +111,7 @@ class SdrTracker:
         return metrics
 
     def _on_sdr_updated(self, sdr: AnySparseSdr):
-        list_sdr, value = split_sdr_values(sdr)
+        list_sdr, value = unwrap_as_rate_sdr(sdr)
         sdr: set = set(list_sdr)
         prev_sdr = self.prev_sdr
 

@@ -16,7 +16,7 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
-from hima.common.sdr import OutputMode, split_sdr_values
+from hima.common.sdr import OutputMode, unwrap_as_rate_sdr, wrap_as_rate_sdr
 from hima.common.sdr_array import SdrArray, fill_dense
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
@@ -331,6 +331,7 @@ class SpatialEncoderOfflineExperiment:
             for ix in tqdm(order):
                 obs_sdr = sdrs.get_sdr(ix, binary=self.is_binary)
                 enc_sdr = self.encoder.compute(obs_sdr, learn=learn)
+                enc_sdr = wrap_as_rate_sdr(enc_sdr)
                 if track:
                     self.sdr_tracker.on_sdr_updated(enc_sdr, ignore=False)
                 encoded_sdrs.append(enc_sdr)
@@ -441,11 +442,11 @@ def split_to_batches(order, batch_size):
 def fill_batch(batch, ds, batch_ix, encoder=None, learn=False):
     if encoder is None:
         for i, sdr_ix in enumerate(batch_ix):
-            sdr, rates = split_sdr_values(ds[sdr_ix])
+            sdr, rates = unwrap_as_rate_sdr(ds[sdr_ix])
             batch[i, sdr] = rates
     else:
         for i, sdr_ix in enumerate(batch_ix):
-            sdr, rates = split_sdr_values(
+            sdr, rates = unwrap_as_rate_sdr(
                 encoder.compute(ds[sdr_ix], learn=learn)
             )
             batch[i, sdr] = rates

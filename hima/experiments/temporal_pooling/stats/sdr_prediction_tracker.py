@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from hima.common.sdr import AnySparseSdr, split_sdr_values
+from hima.common.sdr import AnySparseSdr, unwrap_as_rate_sdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
@@ -60,8 +60,8 @@ class SdrPredictionTracker:
         if ignore:
             return {}
 
-        pr_sdr, pr_value = split_sdr_values(self.predicted_sdr)
-        gt_sdr, gt_value = split_sdr_values(self.observed_sdr)
+        pr_sdr, pr_value = unwrap_as_rate_sdr(self.predicted_sdr)
+        gt_sdr, gt_value = unwrap_as_rate_sdr(self.observed_sdr)
 
         pr_set_sdr, gt_set_sdr = set(pr_sdr), set(gt_sdr)
 

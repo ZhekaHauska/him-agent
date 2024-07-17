@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, unwrap_as_rate_sdr
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.common.utils import safe_divide
@@ -235,7 +235,7 @@ class SpatialPooler:
 
     def accept_input(self, sdr: AnySparseSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
-        sdr, value = split_sdr_values(sdr)
+        sdr, value = unwrap_as_rate_sdr(sdr)
         self.is_empty_input = len(sdr) == 0
 
         l1_value = np.sum(value)
@@ -354,7 +354,7 @@ class SpatialPooler:
             self, neurons: RateSdr, pre_synaptic_activity: npt.NDArray[float],
             modulation: float = 1.0
     ):
-        neurons, rates = split_sdr_values(neurons)
+        neurons, rates = unwrap_as_rate_sdr(neurons)
 
         if len(neurons) == 0:
             return
@@ -380,7 +380,7 @@ class SpatialPooler:
         pre_synaptic_activity: dense array n_neurons x RF_size with their synaptic activations
         modulation: a modulation coefficient for the update step
         """
-        neurons, rates = split_sdr_values(neurons)
+        neurons, rates = unwrap_as_rate_sdr(neurons)
 
         if len(neurons) == 0:
             return
@@ -410,7 +410,7 @@ class SpatialPooler:
         pre_synaptic_activity: dense array n_neurons x RF_size with their synaptic activations
         modulation: a modulation coefficient for the update step
         """
-        neurons, rates = split_sdr_values(neurons)
+        neurons, rates = unwrap_as_rate_sdr(neurons)
 
         if len(neurons) == 0:
             return
@@ -432,7 +432,7 @@ class SpatialPooler:
         return self.winners.sdr
 
     def accept_output(self, sdr: SparseSdr, *, learn: bool):
-        sdr, value = split_sdr_values(sdr)
+        sdr, value = unwrap_as_rate_sdr(sdr)
 
         if not learn or sdr.shape[0] == 0:
             return

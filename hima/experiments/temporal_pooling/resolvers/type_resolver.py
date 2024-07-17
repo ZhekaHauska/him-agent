@@ -112,6 +112,9 @@ def _resolve_spatial_pooler(type_tag: str):
     if type_tag == 'sp.krotov':
         from hima.experiments.temporal_pooling.stp.krotov import KrotovLayer
         return KrotovLayer
+    if type_tag == 'sp.gse':
+        from hima.experiments.temporal_pooling.stp.se_general import SpatialEncoderLayer
+        return SpatialEncoderLayer
     if type_tag == 'sp.se':
         from hima.experiments.temporal_pooling.stp.se import SpatialEncoderLayer
         return SpatialEncoderLayer

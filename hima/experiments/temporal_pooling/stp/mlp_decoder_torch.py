@@ -12,7 +12,7 @@ import numpy.typing as npt
 import torch
 from torch import nn, optim
 
-from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, unwrap_as_rate_sdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.modules.baselines.lstm import to_numpy, symexp
@@ -188,7 +188,7 @@ class MlpDecoder:
 
     def accept_input(self, sdr: AnySparseSdr):
         """Accept new input and move to the next time step"""
-        sdr, values = split_sdr_values(sdr)
+        sdr, values = unwrap_as_rate_sdr(sdr)
 
         # forget prev SDR
         self.dense_input[self.sparse_input] = 0.
@@ -199,7 +199,7 @@ class MlpDecoder:
 
     def accept_ground_truth(self, sdr: AnySparseSdr):
         """Accept new input and move to the next time step"""
-        sdr, values = split_sdr_values(sdr)
+        sdr, values = unwrap_as_rate_sdr(sdr)
 
         # forget prev SDR
         self.dense_gt_values[self.sparse_gt] = 0.

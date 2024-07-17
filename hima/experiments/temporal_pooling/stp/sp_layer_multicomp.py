@@ -11,7 +11,7 @@ from numpy.random import Generator
 
 from hima.common.sdr import (
     SparseSdr, RateSdr, AnySparseSdr, CompartmentsAnySparseSdr, OutputMode,
-    split_sdr_values
+    unwrap_as_rate_sdr
 )
 from hima.common.sds import Sds
 from hima.common.timer import timed
@@ -303,7 +303,7 @@ class SpatialPooler:
         for comp_name in self.compartments:
             self.compartments[comp_name].accept_output(sdr, learn=learn)
 
-        sdr, value = split_sdr_values(sdr)
+        sdr, value = unwrap_as_rate_sdr(sdr)
         if not learn:
             return
 

@@ -13,7 +13,7 @@ import numpy.typing as npt
 from numpy.random import Generator
 
 from hima.common.config.base import TConfig
-from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, split_sdr_values
+from hima.common.sdr import SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, unwrap_as_rate_sdr
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
@@ -217,7 +217,7 @@ class SpatialEncoderLayer:
 
     def accept_input(self, sdr: AnySparseSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
-        sdr, value = split_sdr_values(sdr)
+        sdr, value = unwrap_as_rate_sdr(sdr)
 
         # forget prev SDR
         self.dense_input[self.sparse_input] = 0.
@@ -234,7 +234,7 @@ class SpatialEncoderLayer:
         self.slow_feedforward_size_trace.put(len(sdr))
 
     def accept_output(self, sdr: AnySparseSdr, *, learn: bool):
-        sdr, value = split_sdr_values(sdr)
+        sdr, value = unwrap_as_rate_sdr(sdr)
 
         if not learn or sdr.shape[0] == 0:
             return
