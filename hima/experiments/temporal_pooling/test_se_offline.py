@@ -150,7 +150,7 @@ class SpatialEncoderOfflineExperiment:
         self.classifier: TConfig = classifier
         self.persistent_ann_classifier = self.make_ann_classifier()
         self.i_train_epoch = 0
-        self.metrics = {}
+        self.set_metrics()
 
     def run(self):
         self.print_with_timestamp('==> Run')
@@ -179,8 +179,6 @@ class SpatialEncoderOfflineExperiment:
 
             # [on testing schedule] train and test ANN classifier in K-N mode
             self.test_epoch_se_ann_kn_mode(self.data.train, self.data.test)
-
-        self.log_progress(self.metrics)
 
     def train_epoch_se(self, data):
         n_samples = len(data)
@@ -230,17 +228,14 @@ class SpatialEncoderOfflineExperiment:
         self.print_decoder_quality(accuracy, final_epoch_kn_loss)
 
         # add metrics
-        epoch_metrics = self.metrics.setdefault('epochs', {})
-        epoch_metrics[self.i_train_epoch] = {
+        epoch_metrics = {
             'kn_loss': final_epoch_kn_loss,
             'kn_accuracy': accuracy,
         }
         if entropy is not None:
-            epoch_metrics[self.i_train_epoch]['se_entropy'] = entropy
+            epoch_metrics['se_entropy'] = entropy
 
-        if self.i_train_epoch == 1:
-            step_metrics = self.metrics.setdefault('steps', {})
-            step_metrics['1-1_loss'] = first_epoch_kn_losses
+        self.log_progress(epoch_metrics)
         print('<== Test')
 
     def run_ann(self):
@@ -264,8 +259,6 @@ class SpatialEncoderOfflineExperiment:
             nn_epoch_losses = self.train_epoch_ann_classifier(classifier, train_sdrs, train_targets)
             self.test_epoch_ann(classifier, test_data, nn_epoch_losses)
 
-        self.log_progress(self.metrics)
-
     def train_epoch_ann_classifier(self, classifier, sdrs, targets):
         n_samples = len(sdrs)
         order = self.rng.permutation(n_samples)
@@ -288,14 +281,11 @@ class SpatialEncoderOfflineExperiment:
         accuracy = self.evaluate_ann_classifier(classifier, data.sdrs, data.targets)
         self.print_decoder_quality(accuracy, nn_epoch_loss)
 
-        epoch_metrics = self.metrics.setdefault('epochs', {})
-        epoch_metrics[self.i_train_epoch] = {
+        epoch_metrics = {
             'kn_loss': nn_epoch_loss,
             'kn_accuracy': accuracy,
         }
-        if self.i_train_epoch == 1:
-            step_metrics = self.metrics.setdefault('steps', {})
-            step_metrics['1-1_loss'] = nn_epoch_losses
+        self.log_progress(epoch_metrics)
 
     def evaluate_ann_classifier(self, classifier, sdrs, targets):
         n_samples = len(sdrs)
@@ -342,40 +332,8 @@ class SpatialEncoderOfflineExperiment:
         if self.logger is None:
             return
 
-        # NB: I log all collected metrics for the entire run in the end, simulating the correct
-        # steps order, such that all step metrics (losses) have correct step number, and all
-        # epoch summary metrics are logged in the first step.
-
-        self.logger.define_metric("epoch")
-        self.logger.define_metric("se_entropy", step_metric="epoch")
-        self.logger.define_metric("kn_loss", step_metric="epoch")
-        self.logger.define_metric("kn_accuracy", step_metric="epoch")
-
-        # {metric: [batch stats], ...}
-        step_metrics = metrics.pop('steps', {})
-        # {epoch: {metric: value, ...}, ...}
-        epoch_metrics = metrics.pop('epochs', {})
-
-        # first, log step (=batch) stats
-        step_metrics_names, step_metrics_arrays = zip(*step_metrics.items())
-        step_metrics_names = list(step_metrics_names)
-        for step_items in zip_longest(*step_metrics_arrays, fillvalue=None):
-            self.logger.log({
-                step_metrics_names[i_item]: item
-                for i_item, item in enumerate(step_items)
-                if item is not None
-            })
-
-        # second, log epoch stats
-        for i_epoch, epoch in epoch_metrics.items():
-            self.logger.log({'epoch': i_epoch, **epoch})
-
-        # third, log epoch stats as summary
-        self.logger.log({
-            f'{key}/epoch_{i_epoch}': value
-            for i_epoch, epoch in epoch_metrics.items()
-            for key, value in epoch.items()
-        })
+        metrics['epoch'] = self.i_train_epoch
+        self.logger.log(metrics)
 
     def get_accuracy(self, predictions, targets):
         if self.classification:
@@ -428,6 +386,15 @@ class SpatialEncoderOfflineExperiment:
         if not cond:
             return
         print_with_timestamp(self.init_time, *args)
+
+    def set_metrics(self):
+        if self.logger is None:
+            return
+
+        self.logger.define_metric("epoch")
+        self.logger.define_metric("se_entropy", step_metric="epoch")
+        self.logger.define_metric("kn_loss", step_metric="epoch")
+        self.logger.define_metric("kn_accuracy", step_metric="epoch")
 
 
 def personalize_metrics(metrics: dict, prefix: str):
