@@ -1,0 +1,3 @@
+n_clones: 10
+consolidation_threshold: 1  # controls noise tolerance?
+visualize: true

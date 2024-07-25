@@ -1,0 +1,7 @@
+log: true
+project_name: 'dhtm_test'
+n_steps: 50
+n_epochs: 100
+env: 'configs/gridworld.yaml'
+dhtm: 'configs/dhtm.yaml'
+seed: null
