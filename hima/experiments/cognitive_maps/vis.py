@@ -28,29 +28,19 @@ class ToyDHTMVis:
         self.window_size = window_size
 
         atexit.register(self.close)
+
         # create server
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            while True:
-                try:
-                    s.bind((self.host, self.port))
-                    break
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connection = None
+        while True:
+            try:
+                self.server.bind((self.host, self.port))
+                break
 
-                except OSError:
-                    self.port += 1
-                    if self.port > 49151:
-                        self.port = 1024
-
-            s.listen(1)
-            self.connection, addr = s.accept()
-            print(
-                f'connected {addr}'
-            )
-
-        data = self._get_json_dict()
-        if data['type'] == 'hello':
-            self._send_string('toy_dhtm')
-        else:
-            self.close()
+            except OSError:
+                self.port += 1
+                if self.port > 49151:
+                    self.port = 1024
 
         self.run()
 
@@ -63,7 +53,6 @@ class ToyDHTMVis:
 
         # create a surface on screen that has the size of 240 x 180
         screen = pygame.display.set_mode(self.window_size)
-        clock = pygame.time.Clock()
         # controls
         key_actions = (
             (pygame.K_SPACE, "step"),
@@ -72,33 +61,49 @@ class ToyDHTMVis:
         running = True
         # kind of camera position
         pos = 0
-        events = 'nothing'
+        events = dict()
+        info = 'No info'
         # main loop
         while running:
             # event handling, gets all event from the event queue
             action = None
             for event in pygame.event.get():
-                # only do something if the event is of type QUIT
                 if event.type == pygame.QUIT:
                     # change the value to False, to exit the main loop
                     running = False
+                    self.close()
                 if event.type == pygame.KEYDOWN:
                     for k, a in key_actions:
                         if event.key == k:
                             action = a
-            if action == 'step':
-                self._send_string('step')
-                events = self._get_data()
+
+            if self.connection is None:
+                info = "Waiting for new connection."
+            else:
+                if action == 'step':
+                    self._send_string('step')
+                    data = self._get_json_dict()
+
+                    if data['type'] == 'events':
+                        events = data
+                        info = str(events)
+                    elif data['type'] == 'close':
+                        info = "Connection closed."
+                        self.connection = None
 
             # update text info
             txt = font.render(
-                str(events),
+                info,
                 False,
                 (255, 255, 255)
             )
             screen.fill((0, 0, 0))
             screen.blit(txt, (self.window_size[0] // 3, 0))
             pygame.display.flip()
+
+            if self.connection is None:
+                self.connect()
+                info = "Connected"
 
     def _send_as_json(self, dictionary):
         message_json = json.dumps(dictionary)
@@ -141,6 +146,19 @@ class ToyDHTMVis:
             atexit.unregister(self.close)
         except Exception as e:
             print("exception unregistering close method", e)
+
+    def connect(self):
+        self.server.listen(1)
+        self.connection, addr = self.server.accept()
+        print(
+            f'connected {addr}'
+        )
+
+        data = self._get_json_dict()
+        if data['type'] == 'hello':
+            self._send_string('toy_dhtm')
+        else:
+            self.close()
 
 
 if __name__ == '__main__':

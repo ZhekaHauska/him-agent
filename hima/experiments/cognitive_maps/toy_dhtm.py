@@ -6,6 +6,7 @@
 import numpy as np
 import socket
 import json
+import atexit
 from hima.modules.belief.utils import get_data, send_string, NumpyEncoder
 
 HOST = "127.0.0.1"
@@ -18,6 +19,8 @@ class ToyDHTM:
         for one hidden variable with visualizations.
         Stores transition matrix explicitly.
     """
+    vis_server: socket.socket
+
     def __init__(
             self,
             n_obs_states,
@@ -45,9 +48,10 @@ class ToyDHTM:
         self.action_buffer = list()
         self.state_buffer = list()
 
-        self.vis_server = None
         if self.visualize:
             self.connect_to_vis_server()
+            if self.vis_server is not None:
+                atexit.register(self.close)
 
     def reset(self):
         self.clear_buffers()
@@ -216,6 +220,16 @@ class ToyDHTM:
             self.vis_server.close()
             self.vis_server = None
             print(f'Failed to connect to the visualization server: {msg}. Proceed.')
+
+    def close(self):
+        if self.vis_server is not None:
+            self._send_json_dict({'type': 'close'})
+            self.vis_server.close()
+            print('Connection closed.')
+        try:
+            atexit.unregister(self.close)
+        except Exception as e:
+            print("exception unregistering close method", e)
 
     def _send_events(self, events):
         data = get_data(self.vis_server)

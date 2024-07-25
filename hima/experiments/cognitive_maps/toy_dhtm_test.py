@@ -33,7 +33,7 @@ if __name__ == '__main__':
         for step in range(config['n_steps']):
             observation, _, _ = env.obs()
             observation = observation.flatten()[0]
-            obs_state = np.flatnonzero(env.unique_colors == observation)
+            obs_state = np.flatnonzero(env.unique_colors == observation)[0]
             action = rng.integers(0, len(env.actions))
             dhtm.observe(obs_state, action)
 
