@@ -49,9 +49,9 @@ class SoftHebbLayer:
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds,
             learning_rate: float,
-            init_radius: float = 20.0,
-            weights_bias: float = 0.001, normalize_dw: bool = False,
+            init_radius: float = 20.0, weights_bias: float = 0.0,
             adaptive_lr: bool = False, lr_range: tuple[float, float] = (0.00001, 0.1),
+            normalize_dw: bool = False,
             # boosting via negative bias
             bias_boosting: bool = False,
             # activation threshold and softmax beta
@@ -261,8 +261,12 @@ class SoftHebbLayer:
         bb = 1.0 + np.clip(b * np.maximum(self.relative_radius, 0.) / 10, 0.0, 100.0)
         return u * bb
 
-    def get_weight_pow_p(self, p: float, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
+    def get_weight_pow_p(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
+        p = self.lebesgue_p - 1
         w = self.weights if ixs is None else self.weights[ixs]
+        if p == 1:
+            # shortcut to remove unnecessary calculations
+            return w
         return np.sign(w) * (np.abs(w) ** p)
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:

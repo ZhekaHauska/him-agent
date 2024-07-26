@@ -103,8 +103,9 @@ class MeanValue(Generic[T]):
         if is_now:
             self.reset()
 
-    def get(self) -> T:
-        return safe_divide(self.agg_value, self.n_steps)
+    def get(self, ixs=None) -> T:
+        agg_value = self.agg_value if ixs is None else self.agg_value[ixs]
+        return safe_divide(agg_value, self.n_steps)
 
     def reset(self, hard: bool = False):
         # it is expected to apply reset/decay only periodically, not after every

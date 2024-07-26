@@ -1,5 +1,5 @@
 _type_: stp_experiment.se_offline
-project: stp.se_mnist_tmp
+project: stp.se_offline_debug
 log: True    # wandb logging, use 'dry' for dummy do-nothing logging to test metrics collection
 
 seed: 42
@@ -23,6 +23,22 @@ classifier:
   symexp_logits: ???
 
 sp:
+  htm_sp:
+    _type_: sp.htm
+    seed: ???
+    feedforward_sds: ???
+    output_sds: ???
+#    potential_synapses_ratio: 0.05
+    potential_synapses_ratio: 0.1
+#    potential_synapses_ratio: 0.25
+#    potential_synapses_ratio: 1.0
+    synapse_permanence_deltas: [0.14, 0.02]
+    connected_permanence_threshold: 0.5
+    boost_strength: 7.0
+    boost_sliding_window: 1_500
+    expected_normal_overlap_frequency: 0.2
+    min_activation_threshold: 6
+
   soft_hebb:
     _type_: sp.soft_hebb
     seed: ???
@@ -39,6 +55,7 @@ sp:
   soft_hebb_ext:
     _base_: sp.soft_hebb
     init_radius: 20.0
+    weights_bias: 0.001
     learning_rate: 0.025
     adaptive_lr: True
     normalize_dw: False
@@ -67,37 +84,52 @@ sp:
   krotov_adaptive:
     _base_: sp.krotov
     adaptive_lr: True
-
-  htm_sp:
-    _type_: sp.htm
-    seed: ???
-    feedforward_sds: ???
-    output_sds: ???
-#    potential_synapses_ratio: 0.05
-    potential_synapses_ratio: 0.1
-#    potential_synapses_ratio: 0.25
-#    potential_synapses_ratio: 1.0
-    synapse_permanence_deltas: [0.14, 0.02]
-    connected_permanence_threshold: 0.5
-    boost_strength: 7.0
-    boost_sliding_window: 1_500
-    expected_normal_overlap_frequency: 0.2
-    min_activation_threshold: 6
+    weights_bias: 0.001
 
   gse:
     _type_: sp.gse
     seed: ???
     feedforward_sds: ???
-    adapt_to_ff_sparsity: True
     output_sds: ???
-    init_radius: 20.0
-    inhibitory: 0.12
-    # linear | sqrt
-    match_policy: sqrt
+    adapt_to_ff_sparsity: True
+
+    normalize_input_p: 0.0
+    # no | subtract_avg | subtract_avg_and_clip
+    filter_input_policy: no
+    lebesgue_p: 1.0
+    init_radius: 10.0
+    weights_bias: 0.0
+    weights_distribution: normal
+    inhibitory_ratio: 0.1
+
+    # linear | sqrt | krotov
+    match_policy: linear
+    bias_boosting: True
+    # linear | powerlaw | exponential
+    activation_policy: linear
+    threshold: 0.0
+    threshold_lr: 0.0001
+    min_active_mass: 0.75
+    min_mass: 0.92
+    beta: 1.0
+    beta_lr: 0.01
+
     learning_rate: 0.01
+    adaptive_lr: True
     # pair | all
     learning_set: all
-    neg_hebb_delta: 0.4
+    normalize_dw: False
+    negative_hebbian: no
+    neg_hebb_delta: 0.1
+
+    filter_output: soft
+    output_extra: 0.5
+    normalize_output: yes
+    pruning:
+      n_stages: 20
+      cycle: 100.0
+      mode: linear
+      target_rf_sparsity: 0.5
 
   se:
     _type_: sp.se
@@ -189,18 +221,19 @@ setups:
     encoder: sp.soft_hebb
     input_mode: rate
     ds_norm: l2
-    encoding_sds: [2000, 20]
+#    encoding_sds: [2000, 20]
+    encoding_sds: [800, 8]
   rate_soft_hebb_ext:
+    _base_: setups.rate_soft_hebb
     encoder: sp.soft_hebb_ext
-    input_mode: rate
-    classifier_symexp_logits: True
-    ds_norm: l2
-    encoding_sds: [2000, 10]
+#    encoding_sds: [2000, 10]
+    encoding_sds: [800, 4]
   rate_krotov:
     encoder: sp.krotov
-    sdr_tracker: False
+#    sdr_tracker: False
     input_mode: rate
-    encoding_sds: [2000, 7]
+#    encoding_sds: [2000, 7]
+    encoding_sds: [800, 3]
   rate_krotov_adaptive:
     _base_: setups.rate_krotov
     encoder: sp.krotov_adaptive
@@ -210,7 +243,16 @@ setups:
       output_mode: rate
     input_mode: rate
     ds_norm: l1
-    encoding_sds: [2000, 25]
+#    encoding_sds: [2000, 25]
+    encoding_sds: [800, 10]
+  rate_gse:
+    encoder:
+      _base_: sp.gse
+      output_mode: rate
+    input_mode: rate
+    ds_norm: l1
+#    encoding_sds: [2000, 25]
+    encoding_sds: [800, 10]
   binary_htm_sparse:
     encoder:
       _base_: sp.htm_sp
