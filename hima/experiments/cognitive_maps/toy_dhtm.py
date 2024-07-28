@@ -64,7 +64,7 @@ class ToyDHTM:
     def observe(self, obs_state, action):
         # for debugging
         # event type: (name: str, data: tuple)
-        events = dict()
+        events = list()
 
         self.observation_buffer.append(obs_state)
         self.action_buffer.append(action)
@@ -75,21 +75,21 @@ class ToyDHTM:
         pos = step
         resolved = False
 
-        events.update({'new_obs': (pos, obs_state, action)})
+        events.append(('new_obs', pos, obs_state, action))
 
         while not resolved:
             if step == 0:
                 # initial step
-                column_states = np.arange(self.n_clones) + obs_state
+                column_states = self._get_column_states(obs_state)
                 state = column_states[np.argmax(self.activation_counts[column_states])]
                 self.state_buffer[pos] = state
                 resolved = True
 
-                events.update({'set_state': state})
+                events.append(('set_state', self._state_to_clone(state)))
             else:
                 # input variables
                 obs_state = self.observation_buffer[pos]
-                column_states = np.arange(self.n_clones) + obs_state
+                column_states = self._get_column_states(obs_state)
                 state = self.state_buffer[pos]
 
                 prev_state = self.state_buffer[pos - 1]
@@ -113,8 +113,8 @@ class ToyDHTM:
                     ~permanence_mask
                 ]
 
-                events.update(
-                    {'predict_forward': (correct_prediction, wrong_perm, wrong_temp)}
+                events.append(
+                    ('predict_forward', correct_prediction, wrong_perm, wrong_temp)
                 )
                 # cases:
                 # 1. correct set is not empty
@@ -128,14 +128,14 @@ class ToyDHTM:
                     self.state_buffer[pos] = state
                     resolved = True
 
-                    events.update({'set_state': state})
+                    events.append(('set_state', self._state_to_clone(state)))
                 # 2. correct set is empty
                 else:
                     if state is None:
                         state = column_states[np.argmax(self.activation_counts[column_states])]
                         self.state_buffer[pos] = state
 
-                        events.update({'set_state': state})
+                        events.append(('set_state', self._state_to_clone(state)))
 
                     if len(wrong_perm) == 0:
                         resolved = True
@@ -144,16 +144,14 @@ class ToyDHTM:
                         # try to use backward connections first
                         prediction = self.transition_counts[prev_action, :, state].flatten()
                         sparse_prediction = np.flatnonzero(prediction)
+                        prev_obs_state = self.observation_buffer[pos - 1]
 
-                        column_states = np.arange(self.n_clones) + self.observation_buffer[pos - 1]
+                        column_states = self._get_column_states(prev_obs_state)
                         coincide = np.isin(sparse_prediction, column_states)
                         correct_prediction = sparse_prediction[coincide]
 
-                        events.update(
-                            {
-                                'predict_backward':
-                                (correct_prediction, sparse_prediction[~coincide])
-                            }
+                        events.append(
+                            ('predict_backward', correct_prediction, sparse_prediction[~coincide])
                         )
 
                         if len(correct_prediction) > 0:
@@ -174,24 +172,26 @@ class ToyDHTM:
 
                         self.state_buffer[pos - 1] = prev_state
 
-                        events.update({'set_prev_state': prev_state})
+                        events.append(
+                            ('set_prev_state', self._state_to_clone(state))
+                        )
 
                 # in any case
                 if len(wrong_temp) > 0:
                     self.transition_counts[prev_action, prev_state, wrong_temp] = 0
                     self.activation_counts[wrong_temp] -= 1
 
-                    events.update({'remove_con': (prev_state, wrong_temp)})
+                    events.append(('remove_con', (prev_state, wrong_temp)))
 
                 self.transition_counts[prev_action, prev_state, state] += 1
                 self.activation_counts[state] += 1
 
-                events.update({'reinforce_con': (prev_state, state)})
+                events.append(('reinforce_con', prev_state, state))
                 # move to previous position
                 if not resolved:
                     pos -= 1
 
-                    events.update({'move': pos})
+                    events.append(('move', pos))
 
                     if pos == 0:
                         resolved = True
@@ -200,6 +200,12 @@ class ToyDHTM:
                 self._send_events(events)
 
             events.clear()
+
+    def _state_to_clone(self, state):
+        return state - self.n_clones * (state // self.n_clones)
+
+    def _get_column_states(self, obs_state):
+        return np.arange(self.n_clones) + obs_state * self.n_clones
 
     def connect_to_vis_server(self):
         self.vis_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -240,8 +246,10 @@ class ToyDHTM:
             self.vis_server = None
             print('Server shutdown. Proceed.')
         elif data == 'step':
-            data_dict = {'type': 'events'}
-            data_dict.update(events)
+            data_dict = {
+                'type': 'events',
+                'events': events
+            }
             self._send_json_dict(data_dict)
 
     def _send_json_dict(self, data_dict):
