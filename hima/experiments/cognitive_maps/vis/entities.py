@@ -17,8 +17,10 @@ ALPHA_INACTIVE = 0.5
 ALPHA_ACTIVE = 1.0
 COLORS = {
     'text': (255, 255, 255),
-    'bg': (255, 255, 255)
+    'bg': (255, 255, 255),
+    'connection': (0, 0, 0)
 }
+EPS = 1e-24
 # left, right, up, down
 ACTIONS = ['l', 'r', 'u', 'd']
 
@@ -122,7 +124,7 @@ class State(Sprite):
         self.destroyed = True
 
 
-class EventHandler:
+class LearningHistory:
     def __init__(
             self,
             canvas_size: tuple[int, int],
@@ -309,3 +311,162 @@ class EventHandler:
         self.main_group.clear(self.canvas, self.bgd)
         self.main_group.draw(self.canvas)
         self.main_group.update()
+
+
+class Node(State):
+    def __init__(
+            self,
+            clone: int,
+            obs_state: int,
+            position: tuple[int, int],
+            image: Surface,
+            bsize: int,
+            dilation: float,
+            *groups,
+    ):
+        info = (str(clone), 0.4, -0.1, 0, COLORS['text'])
+        additional_info = [(str(obs_state), 0.2, 0.25, 0, COLORS['text'])]
+        super().__init__(
+            info, image, position, bsize, *groups, additional_info=additional_info
+        )
+        self.clone = clone
+        self.obs_state = obs_state
+        self.radius = bsize * dilation
+
+        self.activate()
+
+
+class TransitionGraph:
+    def __init__(
+            self,
+            canvas_size: tuple[int, int],
+            sprites: tuple,
+            node_size: int,
+            speed: int,
+            decay: float = 0.9,
+            dilation: float = 1.5,
+            rep_factor: float = 2,
+            noise: float = 0
+    ):
+        self.node_size = node_size
+        self.dilation = dilation
+        self.rep_factor = rep_factor
+        self.noise = noise
+        self.sprites = sprites
+        self.canvas = Surface(canvas_size)
+        self.canvas.fill(COLORS['bg'])
+        self.bgd = Surface(canvas_size)
+        self.bgd.fill(COLORS['bg'])
+
+        self.center = (canvas_size[0]//2, canvas_size[1]//2)
+        self.speed = speed
+        self.init_speed = speed
+        self.decay = decay
+        self.safe_margin = (speed**2 + speed**2)**0.5
+        self.last_pos = self.center
+
+        self.current_step = 0
+        self.main_group = pg.sprite.Group()
+
+        self.vertices = dict()
+        self.edges = dict()
+
+    def handle(self, event):
+        event_type = event[0]
+        if event_type == 'reinforce_con':
+            self.speed = self.init_speed
+            prev_action, prev_state, state = event[1:]
+
+            node1 = f'{prev_state}'
+            node2 = f'{state}'
+            edge = f'{prev_state}_{state}'
+
+            if not (edge in self.edges):
+                self.edges[edge] = {
+                    'node1': node1,
+                    'node2': node2,
+                    'actions': {a: 0 for a in ACTIONS}
+                }
+            self.edges[edge]['actions'][ACTIONS[prev_action]] += 1
+
+            for node, s in zip((node1, node2), (prev_state, state)):
+                if not (node in self.vertices):
+                    # sample random position
+                    position = (
+                            np.asarray(self.last_pos) +
+                            np.random.uniform(-self.node_size, self.node_size, size=2)
+                    )
+                    self.vertices[node] = {
+                        'vis': Node(
+                            s[0],
+                            s[1],
+                            (int(position[0]), int(position[1])),
+                            self.sprites[0],
+                            self.node_size,
+                            self.dilation,
+                            self.main_group
+                        ),
+                        'edges': set(),
+                    }
+                self.last_pos = self.vertices[node]['vis'].rect.center
+            self.vertices[node2]['edges'].add(edge)
+
+    def update(self):
+        self.canvas.blit(self.bgd, (0, 0))
+
+        # draw edges
+        for edge in self.edges.values():
+            start_pos = self.vertices[edge['node1']]['vis'].rect.center
+            end_pos = self.vertices[edge['node2']]['vis'].rect.center
+            # TODO add edge label
+            pg.draw.aaline(
+                self.canvas,
+                COLORS['connection'],
+                start_pos,
+                end_pos
+            )
+
+        # update node positions
+        for node in self.vertices.values():
+            # total attraction
+            att_direct = [0.0, 0.0]
+            start_pos = node['vis'].rect.center
+            for edge in node['edges']:
+                edge = self.edges[edge]
+                end_pos = self.vertices[edge['node1']]['vis'].rect.center
+                delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
+                distance = (delta[0] ** 2 + delta[1] ** 2) ** 0.5
+                if distance > (self.vertices[edge['node1']]['vis'].radius + self.safe_margin):
+                    att_direct[0] += delta[0]
+                    att_direct[1] += delta[1]
+
+            # total repulsion
+            rep_direct = [0.0, 0.0]
+            for verx in self.vertices.values():
+                end_pos = verx['vis'].rect.center
+                delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
+                distance = (delta[0]**2 + delta[1]**2) ** 0.5
+                if distance < verx['vis'].radius:
+                    rep_direct[0] -= np.sign(delta[0]) * self.rep_factor / (distance + EPS)
+                    rep_direct[1] -= np.sign(delta[1]) * self.rep_factor / (distance + EPS)
+
+            total_direct = (att_direct[0] + rep_direct[0], att_direct[1] + rep_direct[1])
+            noise = self.noise * self.node_size
+            total_direct = (
+                            np.asarray(total_direct) +
+                            np.random.uniform(-noise, noise, size=2)
+                    )
+            shift = (
+                int(round(self.speed * np.sign(total_direct[0]))),
+                int(round(self.speed * np.sign(total_direct[1])))
+            )
+            node['shift'] = shift
+
+        for node in self.vertices.values():
+            node['vis'].rect.move_ip(node['shift'])
+
+        self.speed *= self.decay
+
+        self.main_group.draw(self.canvas)
+        self.main_group.update()
+

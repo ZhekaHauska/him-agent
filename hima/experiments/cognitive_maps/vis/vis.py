@@ -11,7 +11,7 @@ import json
 import atexit
 import pygame
 
-from hima.experiments.cognitive_maps.vis.entities import EventHandler
+from hima.experiments.cognitive_maps.vis.entities import LearningHistory, TransitionGraph
 
 HOST = "127.0.0.1"
 PORT = 5555
@@ -67,11 +67,22 @@ class ToyDHTMVis:
             pygame.image.load('assets/hidden_state.png').convert_alpha(),
             pygame.image.load('assets/predicted_state_perm.png').convert_alpha(),
             pygame.image.load('assets/predicted_state_temp.png').convert_alpha(),
+            pygame.image.load('assets/aliased_state.png').convert_alpha(),
         )
-        self.event_handler = EventHandler(
-            self.window_size,
+        self.history = LearningHistory(
+            (self.window_size[0], self.window_size[1]//2),
             (100, 100),
             sprites
+        )
+        self.graph = TransitionGraph(
+            (self.window_size[0], self.window_size[1] // 2),
+            [sprites[-1]],
+            50,
+            1,
+            0.99,
+            2.0,
+            10,
+            0.01
         )
 
     def run(self):
@@ -104,12 +115,11 @@ class ToyDHTMVis:
                     if len(self.events) > 0:
                         self._handle_event(self.events.pop(0))
                 elif action == 'scroll_left':
-                    self.event_handler.scroll(-1)
+                    self.history.scroll(-1)
                 elif action == 'scroll_right':
-                    self.event_handler.scroll(+1)
+                    self.history.scroll(+1)
 
-            self.event_handler.update()
-            self.screen.blit(self.event_handler.canvas, (0, 0))
+            self.update()
             pygame.display.flip()
 
             if self.connection is None:
@@ -172,8 +182,15 @@ class ToyDHTMVis:
         else:
             self.close()
 
+    def update(self):
+        self.history.update()
+        self.graph.update()
+        self.screen.blit(self.graph.canvas, (0, 0))
+        self.screen.blit(self.history.canvas, (0, self.graph.canvas.get_size()[1]))
+
     def _handle_event(self, event):
-        self.event_handler.handle(event)
+        self.history.handle(event)
+        self.graph.handle(event)
 
 
 if __name__ == '__main__':
