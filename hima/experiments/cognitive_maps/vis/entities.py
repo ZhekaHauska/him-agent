@@ -49,8 +49,6 @@ class State(Sprite):
         self.rect = self.image.get_rect()
         self.rect.center = position
 
-        self.just_activated = False
-        self.just_inactivated = False
         self.decay = (1 / 100) * ANIMATION_SPEED
 
         text_size = int(bsize * info[1])
@@ -77,7 +75,9 @@ class State(Sprite):
                 self.image.blit(text, text_rect)
 
         self.active = False
-        self.alpha = ALPHA_INACTIVE
+        self.destroyed = False
+        self.alpha = 0
+        self.target_alpha = ALPHA_INACTIVE
         self.image.set_alpha(int(round(255 * self.alpha)))
 
         self.to_scroll = 0
@@ -97,28 +97,28 @@ class State(Sprite):
             self.rect.move_ip(-scroll_dx, 0)
 
         # activate/deactivate animation
-        if self.just_activated:
-            self.update_alpha(self.decay)
-            if self.alpha == ALPHA_ACTIVE:
-                self.just_activated = False
-        elif self.just_inactivated:
-            self.update_alpha(-self.decay)
-            if self.alpha <= ALPHA_INACTIVE:
-                self.just_inactivated = False
+        self.update_alpha()
 
+        if self.destroyed and (self.alpha == 0):
+            self.kill()
+
+    def update_alpha(self):
+        delta = self.target_alpha - self.alpha
+        self.alpha += np.sign(delta) * min(abs(delta), self.decay)
+        self.alpha = np.clip(self.alpha, 0.0, 1.0)
         self.image.set_alpha(int(round(255 * self.alpha)))
 
-    def update_alpha(self, inc):
-        self.alpha += inc
-        self.alpha = np.clip(self.alpha, ALPHA_INACTIVE, ALPHA_ACTIVE)
-
     def activate(self):
-        self.just_activated = True
+        self.target_alpha = ALPHA_ACTIVE
         self.active = True
 
     def deactivate(self):
-        self.just_inactivated = True
+        self.target_alpha = ALPHA_INACTIVE
         self.active = False
+
+    def destroy(self):
+        self.target_alpha = 0
+        self.destroyed = True
 
 
 class EventHandler:
@@ -220,7 +220,7 @@ class EventHandler:
         group = self.step_groups[step]['predicted']
         if len(group) > 0:
             for x in group:
-                x.kill()
+                x.destroy()
             group.clear()
 
     def set_state(self, state, pos):
