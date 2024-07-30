@@ -214,12 +214,26 @@ class ToyDHTM:
                     self.transition_counts[prev_action, prev_state, wrong_temp] = 0
                     self.activation_counts[wrong_temp] -= 1
 
-                    events.append(('remove_con', (prev_state, wrong_temp)))
+                    events.append(
+                        (
+                            'remove_con',
+                            prev_action,
+                            self._state_to_clone(prev_state, return_obs_state=True),
+                            [self._state_to_clone(x, return_obs_state=True) for x in wrong_temp]
+                        )
+                    )
 
                 self.transition_counts[prev_action, prev_state, state] += 1
                 self.activation_counts[state] += 1
 
-                events.append(('reinforce_con', prev_state, state))
+                events.append(
+                    (
+                        'reinforce_con',
+                        prev_action,
+                        self._state_to_clone(prev_state, return_obs_state=True),
+                        self._state_to_clone(state, return_obs_state=True)
+                    )
+                )
                 # move to previous position
                 if not resolved:
                     pos -= 1
