@@ -38,9 +38,10 @@ class ToyDHTM:
         self.vis_server_address = visualization_server
 
         self.transition_counts = np.zeros(
-            (self.n_actions, self.n_hidden_states, self.n_hidden_states)
+            (self.n_actions, self.n_hidden_states, self.n_hidden_states),
+            dtype=np.int64
         )
-        self.activation_counts = np.zeros(self.n_hidden_states)
+        self.activation_counts = np.zeros(self.n_hidden_states, dtype=np.int64)
         # determines, how many counts we need to get for a transition to make it permanent
         self.consolidation_threshold = consolidation_threshold
 
@@ -105,7 +106,7 @@ class ToyDHTM:
                 correct_prediction = sparse_prediction[coincide]
                 wrong_prediction = sparse_prediction[~coincide]
 
-                permanence_mask = prediction[wrong_prediction] >= self.consolidation_threshold
+                permanence_mask = prediction[wrong_prediction] > self.consolidation_threshold
                 wrong_perm = wrong_prediction[
                     permanence_mask
                 ]
@@ -114,7 +115,24 @@ class ToyDHTM:
                 ]
 
                 events.append(
-                    ('predict_forward', correct_prediction, wrong_perm, wrong_temp)
+                    (
+                        'predict_forward',
+                        [
+                            self._state_to_clone(x, return_obs_state=True) + (w,)
+                            for x, w in
+                            zip(correct_prediction, prediction[correct_prediction])
+                        ],
+                        [
+                            self._state_to_clone(x, return_obs_state=True) + (w,)
+                            for x, w in
+                            zip(wrong_perm, prediction[wrong_perm])
+                        ],
+                        [
+                            self._state_to_clone(x, return_obs_state=True) + (w,)
+                            for x, w in
+                            zip(wrong_temp, prediction[wrong_temp])
+                        ]
+                    )
                 )
                 # cases:
                 # 1. correct set is not empty
@@ -149,9 +167,22 @@ class ToyDHTM:
                         column_states = self._get_column_states(prev_obs_state)
                         coincide = np.isin(sparse_prediction, column_states)
                         correct_prediction = sparse_prediction[coincide]
+                        wrong_prediction = sparse_prediction[~coincide]
 
                         events.append(
-                            ('predict_backward', correct_prediction, sparse_prediction[~coincide])
+                            (
+                                'predict_backward',
+                                [
+                                    self._state_to_clone(x, return_obs_state=True) + (w,)
+                                    for x, w in
+                                    zip(correct_prediction, prediction[correct_prediction])
+                                ],
+                                [
+                                    self._state_to_clone(x, return_obs_state=True) + (w,)
+                                    for x, w in
+                                    zip(wrong_prediction, prediction[wrong_prediction])
+                                ]
+                            )
                         )
 
                         if len(correct_prediction) > 0:
@@ -201,8 +232,13 @@ class ToyDHTM:
 
             events.clear()
 
-    def _state_to_clone(self, state):
-        return state - self.n_clones * (state // self.n_clones)
+    def _state_to_clone(self, state, return_obs_state=False):
+        obs_state = state // self.n_clones
+        clone = state - self.n_clones * obs_state
+        if return_obs_state:
+            return clone, obs_state
+        else:
+            return clone
 
     def _get_column_states(self, obs_state):
         return np.arange(self.n_clones) + obs_state * self.n_clones
