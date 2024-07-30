@@ -1,14 +1,17 @@
-#  Copyright (c) 2024 Autonomous Non-Profit Organization "Artificial Intelligence Research
+#  Copyright (c) 2023 Autonomous Non-Profit Organization "Artificial Intelligence Research
 #  Institute" (AIRI); Moscow Institute of Physics and Technology (National Research University).
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+
 import numpy as np
 import socket
 import time
 import json
 import atexit
 import pygame
+
+from hima.experiments.cognitive_maps.vis.entities import EventHandler
 
 HOST = "127.0.0.1"
 PORT = 5555
@@ -42,68 +45,77 @@ class ToyDHTMVis:
                 if self.port > 49151:
                     self.port = 1024
 
-        self.run()
-
-    def run(self):
         # initialize the pygame module
         pygame.init()
         pygame.font.init()
-        font = pygame.font.SysFont('arial', 14)
         pygame.display.set_caption("Toy DHTM")
+        self.clock = pygame.time.Clock()
+        self.screen = pygame.display.set_mode(self.window_size)
 
-        # create a surface on screen that has the size of 240 x 180
-        screen = pygame.display.set_mode(self.window_size)
         # controls
-        key_actions = (
+        self.key_actions = (
             (pygame.K_SPACE, "step"),
+            (pygame.K_LEFT, "scroll_left"),
+            (pygame.K_RIGHT, "scroll_right")
         )
         # define a variable to control the main loop
-        running = True
-        # kind of camera position
-        pos = 0
-        events = dict()
-        info = 'No info'
-        # main loop
-        while running:
+        self.running = True
+        self.events = list()
+
+        sprites = (
+            pygame.image.load('assets/obs_state.png').convert_alpha(),
+            pygame.image.load('assets/hidden_state.png').convert_alpha(),
+            pygame.image.load('assets/predicted_state_perm.png').convert_alpha(),
+            pygame.image.load('assets/predicted_state_temp.png').convert_alpha(),
+        )
+        self.event_handler = EventHandler(
+            self.window_size,
+            (100, 100),
+            sprites
+        )
+
+    def run(self):
+        while self.running:
+            self.clock.tick(60)
             # event handling, gets all event from the event queue
             action = None
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     # change the value to False, to exit the main loop
-                    running = False
+                    self.running = False
                     self.close()
                 if event.type == pygame.KEYDOWN:
-                    for k, a in key_actions:
+                    for k, a in self.key_actions:
                         if event.key == k:
                             action = a
 
-            if self.connection is None:
-                info = "Waiting for new connection."
-            else:
+            if self.connection is not None:
                 if action == 'step':
-                    self._send_string('step')
-                    data = self._get_json_dict()
+                    if len(self.events) == 0:
+                        self._send_string('step')
+                        data = self._get_json_dict()
 
-                    if data['type'] == 'events':
-                        events = data
-                        info = str(events)
-                    elif data['type'] == 'close':
-                        info = "Connection closed."
-                        self.connection = None
+                        if data['type'] == 'events':
+                            events = data['events']
+                            self.events.extend(events)
+                        elif data['type'] == 'close':
+                            self.connection = None
 
-            # update text info
-            txt = font.render(
-                info,
-                False,
-                (255, 255, 255)
-            )
-            screen.fill((0, 0, 0))
-            screen.blit(txt, (self.window_size[0] // 3, 0))
+                    if len(self.events) > 0:
+                        self._handle_event(self.events.pop(0))
+                elif action == 'scroll_left':
+                    self.event_handler.scroll(-1)
+                elif action == 'scroll_right':
+                    self.event_handler.scroll(+1)
+
+            self.event_handler.update()
+            self.screen.blit(self.event_handler.canvas, (0, 0))
             pygame.display.flip()
 
             if self.connection is None:
                 self.connect()
-                info = "Connected"
+
+        pygame.quit()
 
     def _send_as_json(self, dictionary):
         message_json = json.dumps(dictionary)
@@ -160,6 +172,9 @@ class ToyDHTMVis:
         else:
             self.close()
 
+    def _handle_event(self, event):
+        self.event_handler.handle(event)
+
 
 if __name__ == '__main__':
-    vis_sever = ToyDHTMVis()
+    ToyDHTMVis().run()
