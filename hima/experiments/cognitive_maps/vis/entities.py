@@ -215,6 +215,11 @@ class EventHandler:
                     clone, obs_state, weight, self.current_step-1,
                     False, False, False
                 )
+        elif event_type == 'reset':
+            for sp in self.main_group:
+                sp.kill()
+            self.step_groups.clear()
+            self.current_step = 0
 
     def clear_prediction(self, step):
         group = self.step_groups[step]['predicted']

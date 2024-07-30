@@ -56,6 +56,8 @@ class ToyDHTM:
 
     def reset(self):
         self.clear_buffers()
+        if self.vis_server is not None:
+            self._send_events([('reset', )])
 
     def clear_buffers(self):
         self.observation_buffer.clear()
