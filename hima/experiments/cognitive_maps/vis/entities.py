@@ -16,7 +16,8 @@ ANIMATION_SPEED = 2  # 1 is normal speed
 ALPHA_INACTIVE = 0.5
 ALPHA_ACTIVE = 1.0
 COLORS = {
-    'text': (255, 255, 255)
+    'text': (255, 255, 255),
+    'bg': (255, 255, 255)
 }
 # left, right, up, down
 ACTIONS = ['l', 'r', 'u', 'd']
@@ -126,14 +127,19 @@ class EventHandler:
             self,
             canvas_size: tuple[int, int],
             step_size: tuple[int, int],
-            sprites: tuple
+            sprites: tuple,
+            debug=True
     ):
         self.sprites = sprites
         self.horizontal_step, self.vertical_step = step_size
         self.canvas = Surface(canvas_size)
-        self.canvas.fill((255, 255, 255))
+        self.canvas.fill(COLORS['bg'])
         self.bgd = Surface(canvas_size)
-        self.bgd.fill((255, 255, 255))
+        self.bgd.fill(COLORS['bg'])
+        self.debug = debug
+        self.debug_text = pg.font.SysFont(
+                    'notosansmono', 12
+                )
 
         self.center = (canvas_size[0]//2, canvas_size[1]//2)
 
@@ -145,7 +151,16 @@ class EventHandler:
         self.scroll_frames = int(round(60 / ANIMATION_SPEED))
 
     def handle(self, event):
-        print(event)
+        if self.debug:
+            print(event)
+            d_text = self.debug_text.render(
+                str(event), True, (0, 0, 0)
+            )
+            bg = Surface((self.canvas.get_size()[0], d_text.get_size()[1]))
+            bg.fill(COLORS['bg'])
+            self.canvas.blit(bg, (0, 0))
+            self.canvas.blit(d_text, (0, 0))
+
         event_type = event[0]
         if event_type == 'new_obs':
             pos, obs_state, action = event[1:]
@@ -217,7 +232,7 @@ class EventHandler:
                 )
         elif event_type == 'reset':
             for sp in self.main_group:
-                sp.kill()
+                sp.destroy()
             self.step_groups.clear()
             self.current_step = 0
 
