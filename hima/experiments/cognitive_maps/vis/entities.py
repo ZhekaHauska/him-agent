@@ -18,7 +18,7 @@ ALPHA_ACTIVE = 1.0
 COLORS = {
     'text': (255, 255, 255),
     'bg': (255, 255, 255),
-    'connection': (0, 0, 0)
+    'connection': (54, 86, 181)
 }
 EPS = 1e-24
 # left, right, up, down
@@ -447,7 +447,7 @@ class TransitionGraph:
             end_pos = self.vertices[edge['node2']]['vis'].rect.center
 
             label = self.connection_font.render(
-                ' '.join([x for x, v in edge['actions'].items() if v > 0]),
+                ' '.join([f'{x}:{v}' for x, v in edge['actions'].items() if v > 0]),
                 True,
                 COLORS['connection']
             )
@@ -494,11 +494,12 @@ class TransitionGraph:
             for edge in node['edges']:
                 edge = self.edges[edge]
                 end_pos = self.vertices[edge['node1']]['vis'].rect.center
+                strength = sum(edge['actions'].values())
                 delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
                 distance = (delta[0] ** 2 + delta[1] ** 2) ** 0.5
                 if distance > (self.vertices[edge['node1']]['vis'].radius + self.safe_margin):
-                    att_direct[0] += delta[0]
-                    att_direct[1] += delta[1]
+                    att_direct[0] += strength * delta[0]
+                    att_direct[1] += strength * delta[1]
 
             att_direct = (
                 self.speed * np.sign(att_direct[0]),
