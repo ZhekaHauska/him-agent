@@ -103,10 +103,10 @@ def symexp(x: npt.NDArray[float]) -> npt.NDArray[float]:
 def clip(x: Any, low=None, high=None) -> Any:
     """Clip the value with the provided thresholds. NB: doesn't support vectorization."""
 
-    # both x < x and x > x are False, so consider them as safeguards
-    if x < isnone(low, x):
+    # both x < None and x > None are False, so consider them as safeguards
+    if x < low:
         x = low
-    elif x > isnone(high, x):
+    elif x > high:
         x = high
     return x
 
