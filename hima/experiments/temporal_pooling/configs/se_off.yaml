@@ -97,39 +97,44 @@ sp:
     # no | subtract_avg | subtract_avg_and_clip
     filter_input_policy: no
     lebesgue_p: 1.0
-    init_radius: 10.0
+    init_radius: 20.0
     weights_bias: 0.0
     weights_distribution: normal
     inhibitory_ratio: 0.1
+    persistent_signs: True
 
     # linear | sqrt | krotov
     match_policy: linear
-    bias_boosting: True
-    # linear | powerlaw | exponential
-    activation_policy: linear
+    # no | additive | multiplicative
+    boosting_policy: multiplicative
+    # powerlaw | exponential
+    activation_func: powerlaw
+    # top_k | threshold_f | threshold_linear
+    beta: 1.0
+    beta_lr: 0.0
+    activation_policy: top_k
     threshold: 0.0
     threshold_lr: 0.0001
     min_active_mass: 0.75
-    min_mass: 0.92
-    beta: 1.0
-    beta_lr: 0.01
+    min_mass: 0.8
+
+    normalize_output: yes
+    # E = K * (1 + e)
+    output_extra: 1.5
 
     learning_rate: 0.01
     adaptive_lr: True
-    # pair | all
-    learning_set: all
+    # M | [M, Q]: M - hebb, Q - anti-hebb; ints or floats — absolute or relative to K
+    learning_set: [1.0, 0.4]
+    anti_hebb_scale: 1.0
     normalize_dw: False
-    negative_hebbian: no
-    neg_hebb_delta: 0.1
 
-    filter_output: soft
-    output_extra: 0.5
-    normalize_output: yes
-    pruning:
-      n_stages: 20
-      cycle: 100.0
-      mode: linear
-      target_rf_sparsity: 0.5
+#    pruning:
+#      n_stages: 25
+#      cycle: 200.0
+#      # linear | powerlaw
+#      mode: powerlaw
+#      target_rf_sparsity: 0.5
 
   se:
     _type_: sp.se
@@ -221,19 +226,19 @@ setups:
     encoder: sp.soft_hebb
     input_mode: rate
     ds_norm: l2
-#    encoding_sds: [2000, 20]
-    encoding_sds: [800, 8]
+    encoding_sds: [2000, 20]
+#    encoding_sds: [800, 8]
   rate_soft_hebb_ext:
     _base_: setups.rate_soft_hebb
     encoder: sp.soft_hebb_ext
-#    encoding_sds: [2000, 10]
-    encoding_sds: [800, 4]
+    encoding_sds: [2000, 10]
+#    encoding_sds: [800, 4]
   rate_krotov:
     encoder: sp.krotov
 #    sdr_tracker: False
     input_mode: rate
-#    encoding_sds: [2000, 7]
-    encoding_sds: [800, 3]
+    encoding_sds: [2000, 7]
+#    encoding_sds: [800, 3]
   rate_krotov_adaptive:
     _base_: setups.rate_krotov
     encoder: sp.krotov_adaptive
@@ -243,15 +248,15 @@ setups:
       output_mode: rate
     input_mode: rate
     ds_norm: l1
-#    encoding_sds: [2000, 25]
-    encoding_sds: [800, 10]
+    encoding_sds: [2000, 25]
+#    encoding_sds: [800, 10]
   rate_gse:
     encoder:
       _base_: sp.gse
       output_mode: rate
     input_mode: rate
     ds_norm: l1
-#    encoding_sds: [2000, 25]
+#    encoding_sds: [2000, 20]
     encoding_sds: [800, 10]
   binary_htm_sparse:
     encoder:

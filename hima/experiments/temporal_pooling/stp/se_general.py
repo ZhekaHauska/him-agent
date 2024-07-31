@@ -397,6 +397,9 @@ class SpatialEncoderLayer:
             raise ValueError(f'Unsupported activation function: {self.activation_func}')
 
     def update_dense_weights(self, x, sdr, y, u):
+        if sdr.size == 0:
+            return
+
         lr = self.get_adaptive_lr(sdr) if self.adaptive_lr else self.learning_rate
         w = self.weights[sdr]
 
@@ -407,14 +410,17 @@ class SpatialEncoderLayer:
         sg = np.sign(w) if self.persistent_signs else 1.0
         if self.match_policy == MatchPolicy.KROTOV:
             _u = np.expand_dims(u[sdr], -1)
+            _u = np.maximum(0., _u)
+            _u = _u / max(10.0, _u.max() + 1e-30)
+            # Oja learning rule, Lp normalization, p >= 2
             dw = y_ * (sg * _x - w * _u)
         else:
+            # Willshaw learning rule, L1 normalization
             dw = y_ * (sg * _x - w)
 
         if self.normalize_dw:
             dw /= np.abs(dw).max() + 1e-30
 
-        # Oja's Hebbian learning rule for L1
         self.weights[sdr, :] += lr_ * dw
 
         self.radius[sdr] = self.get_radius(sdr)
@@ -518,7 +524,7 @@ class SpatialEncoderLayer:
         return ixs, y_h
 
     def update_beta(self, sdr, y):
-        if not self.adaptive_beta:
+        if not self.adaptive_beta or sdr.size == 0:
             return
 
         k = self.output_sds.active_size
@@ -609,19 +615,20 @@ class SpatialEncoderLayer:
         return np.clip(base_lr * rs, *self.lr_range)
 
     def print_stats(self, u, sdr, y):
+        r = self.avg_radius
         sorted_values = np.sort(y)
         ac_size = self.output_sds.active_size
         active_mass = 100.0 * sorted_values[-ac_size:].sum()
         biases = self.output_rate / self.output_sds.sparsity
         w = self.weights
-        eps = 0.2 / self.ff_size
+        eps = r * 0.2 / self.ff_size
         signs_w = np.sign(w)
         pos_w = 100.0 * np.count_nonzero(signs_w > eps) / w.size
         neg_w = 100.0 * np.count_nonzero(signs_w < -eps) / w.size
         zero_w = 100.0 - pos_w - neg_w
         sft_thr, thr = self.soft_threshold, self.threshold
         print(
-            f'R={self.avg_radius:.3f} H={self.output_entropy():.3f}'
+            f'R={r:.3f} H={self.output_entropy():.3f}'
             f' B={self.beta:.3f} S={self.output_active_size:.1f}'
             f'| T[{sft_thr*100:.3f}; {thr*100:.2f}]'
             f'| B[{biases.min():.2f}; {biases.max():.2f}]'
