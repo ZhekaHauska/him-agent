@@ -556,6 +556,8 @@ class TransitionGraph:
             node['vis'].move(shift)
 
         self.speed *= self.speed_decay
+        if self.speed <= 0.001:
+            self.speed = 0.0
         self.rad_factor *= self.rad_decay
 
         self.main_group.draw(self.canvas)
