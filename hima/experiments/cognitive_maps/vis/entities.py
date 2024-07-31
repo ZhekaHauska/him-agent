@@ -342,7 +342,7 @@ class TransitionGraph:
             canvas_size: tuple[int, int],
             sprites: tuple,
             node_size: int,
-            speed: int,
+            speed: float,
             speed_decay: float = 0.9,
             dilation: float = 1.5,
             rep_factor: float = 2,
@@ -357,6 +357,7 @@ class TransitionGraph:
         self.canvas.fill(COLORS['bg'])
         self.bgd = Surface(canvas_size)
         self.bgd.fill(COLORS['bg'])
+        self.connection_font = pg.font.SysFont('arial',  int(node_size * 0.2))
 
         self.center = (canvas_size[0]//2, canvas_size[1]//2)
 
@@ -444,12 +445,42 @@ class TransitionGraph:
         for edge in self.edges.values():
             start_pos = self.vertices[edge['node1']]['vis'].rect.center
             end_pos = self.vertices[edge['node2']]['vis'].rect.center
-            # TODO add edge label
-            pg.draw.aaline(
-                self.canvas,
-                COLORS['connection'],
-                start_pos,
-                end_pos
+
+            label = self.connection_font.render(
+                ' '.join([x for x, v in edge['actions'].items() if v > 0]),
+                True,
+                COLORS['connection']
+            )
+
+            if start_pos != end_pos:
+                middle_pos = ((start_pos[0] + end_pos[0])//2, (start_pos[1] + end_pos[1])//2)
+                direction = np.sign(end_pos[0] - start_pos[0])
+                label_pos = (middle_pos[0], middle_pos[1] - label.get_size()[1] * int(direction > 0))
+
+                pg.draw.aaline(
+                    self.canvas,
+                    COLORS['connection'],
+                    start_pos,
+                    end_pos
+                )
+            else:
+                label_pos = (
+                    start_pos[0] + 0.5 * self.node_size, start_pos[1] + 0.5 * self.node_size
+                )
+                pg.draw.arc(
+                    self.canvas,
+                    COLORS['connection'],
+                    pg.rect.Rect(
+                        start_pos[0], start_pos[1],
+                        0.5*self.node_size, 0.5*self.node_size
+                    ),
+                    0,
+                    360
+                )
+
+            self.canvas.blit(
+                label,
+                label_pos
             )
 
         mass_center = [0, 0]
@@ -470,8 +501,8 @@ class TransitionGraph:
                     att_direct[1] += delta[1]
 
             att_direct = (
-                int(round(self.speed * np.sign(att_direct[0]))),
-                int(round(self.speed * np.sign(att_direct[1])))
+                self.speed * np.sign(att_direct[0]),
+                self.speed * np.sign(att_direct[1])
             )
 
             # total repulsion
@@ -485,8 +516,8 @@ class TransitionGraph:
                     rep_direct[1] -= np.sign(delta[1]) * (self.init_rep_factor - self.rep_factor)
 
             rep_direct = (
-                int(round(self.speed * np.sign(rep_direct[0]))),
-                int(round(self.speed * np.sign(rep_direct[1])))
+                self.speed * np.sign(rep_direct[0]),
+                self.speed * np.sign(rep_direct[1])
             )
 
             total_direct = (att_direct[0] + rep_direct[0], att_direct[1] + rep_direct[1])
@@ -496,8 +527,8 @@ class TransitionGraph:
                             np.random.uniform(-noise, noise, size=2)
                     )
             shift = (
-                int(round(self.speed * np.sign(total_direct[0]))),
-                int(round(self.speed * np.sign(total_direct[1])))
+                self.speed * np.sign(total_direct[0]),
+                self.speed * np.sign(total_direct[1])
             )
             node['shift'] = shift
 
@@ -506,8 +537,8 @@ class TransitionGraph:
             mass_center[1] /= len(self.vertices)
 
         compensation = (
-            int(round(self.speed * np.sign(self.center[0] - mass_center[0]))),
-            int(round(self.speed * np.sign(self.center[1] - mass_center[1])))
+            self.speed * np.sign(self.center[0] - mass_center[0]),
+            self.speed * np.sign(self.center[1] - mass_center[1])
         )
         for node in self.vertices.values():
             shift = (
