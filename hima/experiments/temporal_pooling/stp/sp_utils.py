@@ -44,7 +44,10 @@ def sample_for_each_neuron(
     ])
 
 
-def boosting(relative_rate: float | np.ndarray, k: float, softness: float = 3.0) -> float:
+def boosting(
+        relative_rate: float | npt.NDArray[float], k: float | npt.NDArray[float],
+        softness: float = 3.0
+) -> float:
     # relative rate: rate / R_target
     # x = -log(relative_rate)
     #   0 1 +inf  -> +inf 0 -inf
