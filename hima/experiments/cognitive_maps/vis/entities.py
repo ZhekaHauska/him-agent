@@ -20,6 +20,8 @@ COLORS = {
     'bg': (255, 255, 255),
     'connection': (54, 86, 181)
 }
+DUMP_SPEED = 1e-2
+DUMP_FORCE = 1e-3
 EPS = 1e-24
 # left, right, up, down
 ACTIONS = ['l', 'r', 'u', 'd']
@@ -322,6 +324,7 @@ class Node(State):
             image: Surface,
             bsize: int,
             dilation: float,
+            speed_decay: float,
             *groups,
     ):
         info = (str(clone), 0.4, -0.1, 0, COLORS['text'])
@@ -332,15 +335,28 @@ class Node(State):
         self.clone = clone
         self.obs_state = obs_state
         self.radius = bsize * dilation
+
+        self.speed_decay = speed_decay
+        self.velocity = [0.0, 0.0]
         self.position = list(position)
 
         self.activate()
 
     def move(self, vector):
-        self.position[0] += vector[0]
-        self.position[1] += vector[1]
+        self.velocity[0] += vector[0]
+        self.velocity[1] += vector[1]
+        self.velocity[0] *= self.speed_decay
+        self.velocity[1] *= self.speed_decay
+
+        if abs(self.velocity[0]) <= DUMP_SPEED:
+            self.velocity[0] = 0
+        if abs(self.velocity[1]) <= DUMP_SPEED:
+            self.velocity[1] = 0
 
     def update(self, *args, **kwargs):
+        self.position[0] += self.velocity[0]
+        self.position[1] += self.velocity[1]
+
         self.rect.center = (
             int(round(self.position[0])),
             int(round(self.position[1]))
@@ -354,14 +370,14 @@ class TransitionGraph:
             canvas_size: tuple[int, int],
             sprites: tuple,
             node_size: int,
-            speed: float,
+            force: float,
+            force_decay: float = 0.9,
             speed_decay: float = 0.9,
             dilation: float = 1.5,
             rad_decay: float = 1.0,
             rep_factor: float = 1.0,
             att_factor: float = 1.0,
-            noise: float = 0,
-            noise_decay: float = 0.99
+            gravitation: float = 0.1
     ):
         self.node_size = node_size
         self.dilation = dilation
@@ -374,8 +390,9 @@ class TransitionGraph:
 
         self.center = (canvas_size[0]//2, canvas_size[1]//2)
 
-        self.speed = speed
-        self.init_speed = speed
+        self.force = force
+        self.init_force = force
+        self.force_decay = force_decay
         self.speed_decay = speed_decay
 
         self.rep_factor = rep_factor
@@ -383,12 +400,10 @@ class TransitionGraph:
         self.rad_factor = 1.0
         self.init_rad_factor = 1.0
         self.rad_decay = rad_decay
+        self.gravitation = gravitation
+        self.init_gravitation = gravitation
 
-        self.noise = noise
-        self.init_noise = noise
-        self.noise_decay = noise_decay
-
-        self.safe_margin = 1
+        self.safe_margin = 3
         self.last_pos = self.center
 
         self.current_step = 0
@@ -400,8 +415,8 @@ class TransitionGraph:
     def handle(self, event):
         event_type = event[0]
         if event_type == 'reinforce_con':
-            self.speed = self.init_speed
-            self.noise = self.init_noise
+            self.force = self.init_force
+            self.gravitation = self.init_gravitation
             self.rad_factor = self.init_rad_factor
 
             prev_action, prev_state, state = event[1:]
@@ -433,6 +448,7 @@ class TransitionGraph:
                             self.sprites[0],
                             self.node_size,
                             self.dilation,
+                            self.speed_decay,
                             self.main_group
                         ),
                         'edges': set(),
@@ -440,8 +456,8 @@ class TransitionGraph:
                 self.last_pos = self.vertices[node]['vis'].rect.center
             self.vertices[node2]['edges'].add(edge)
         elif event_type == 'remove_con':
-            self.speed = self.init_speed
-            self.noise = self.init_noise
+            self.force = self.init_force
+            self.gravitation = self.init_gravitation
             self.rad_factor = self.init_rad_factor
 
             prev_action, prev_state, states = event[1:]
@@ -498,14 +514,11 @@ class TransitionGraph:
                 label_pos
             )
 
-        mass_center = [0, 0]
         # update node positions
         for _id, node in self.vertices.items():
             # total attraction
             att_direct = [0.0, 0.0]
             start_pos = node['vis'].rect.center
-            mass_center[0] += start_pos[0]
-            mass_center[1] += start_pos[1]
             for edge in node['edges']:
                 edge = self.edges[edge]
                 end_pos = self.vertices[edge['node1']]['vis'].rect.center
@@ -527,37 +540,37 @@ class TransitionGraph:
                     end_pos = verx['vis'].rect.center
                     delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
                     distance = (delta[0]**2 + delta[1]**2) ** 0.5
+                    delta = self.normalize(delta)
                     if distance < verx['vis'].radius * (self.init_rad_factor - self.rad_factor):
-                        rep_direct[0] -= (np.sign(delta[0]) / (distance + EPS))
-                        rep_direct[1] -= (np.sign(delta[1]) / (distance + EPS))
+                        rep_direct[0] -= delta[0]
+                        rep_direct[1] -= delta[1]
 
             total_direct = (
                     self.att_factor * att_direct[0] + self.rep_factor * rep_direct[0],
                     self.att_factor * att_direct[1] + self.rep_factor * rep_direct[1]
             )
 
-            shift = self.normalize(total_direct, self.speed)
+            shift = self.normalize(total_direct, self.force)
             node['shift'] = shift
 
-        if len(self.vertices) > 0:
-            mass_center[0] /= len(self.vertices)
-            mass_center[1] /= len(self.vertices)
-
-        compensation = (
-            self.center[0] - mass_center[0],
-            self.center[1] - mass_center[1]
-        )
-        compensation = self.normalize(compensation, self.speed)
         for node in self.vertices.values():
+            compensation = (
+                self.center[0] - node['vis'].rect.center[0],
+                self.center[1] - node['vis'].rect.center[1]
+            )
+            compensation = self.normalize(compensation, self.gravitation)
             shift = (
                 node['shift'][0] + compensation[0],
                 node['shift'][1] + compensation[1]
             )
             node['vis'].move(shift)
 
-        self.speed *= self.speed_decay
-        if self.speed <= 0.001:
-            self.speed = 0.0
+        self.force *= self.force_decay
+        self.gravitation *= self.force_decay
+        if self.force <= DUMP_FORCE:
+            self.force = 0.0
+        if self.gravitation <= DUMP_FORCE:
+            self.gravitation = 0
         self.rad_factor *= self.rad_decay
 
         self.main_group.draw(self.canvas)

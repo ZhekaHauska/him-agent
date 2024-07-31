@@ -76,12 +76,14 @@ class ToyDHTMVis:
             (self.window_size[0], self.window_size[1] // 2),
             [sprites[-1]],
             50,
-            0.8,
-            0.998,
+            0.1,
+            0.995,
+            0.9,
             3.0,
             0.99,
-            5.0,
-            1.0
+            20.0,
+            1.0,
+            0.05,
         )
 
     def run(self):
