@@ -21,14 +21,11 @@ TIMEOUT = 600
 class ToyDHTMVis:
     def __init__(
             self,
-            window_size=(800, 600),
             host=HOST,
             port=PORT
     ):
         self.host = host
         self.port = port
-
-        self.window_size = window_size
 
         atexit.register(self.close)
 
@@ -50,6 +47,7 @@ class ToyDHTMVis:
         pygame.font.init()
         pygame.display.set_caption("Toy DHTM")
         self.clock = pygame.time.Clock()
+        self.window_size = pygame.display.get_desktop_sizes()[0]
         self.screen = pygame.display.set_mode(self.window_size)
 
         # controls
@@ -78,13 +76,12 @@ class ToyDHTMVis:
             (self.window_size[0], self.window_size[1] // 2),
             [sprites[-1]],
             50,
-            3,
+            0.8,
+            1.0,
+            3.0,
             0.99,
-            1.5,
-            20,
-            0.995,
-            0.1,
-            0.95
+            5.0,
+            1.0
         )
 
     def run(self):

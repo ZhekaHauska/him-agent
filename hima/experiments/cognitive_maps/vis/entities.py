@@ -388,7 +388,7 @@ class TransitionGraph:
         self.init_noise = noise
         self.noise_decay = noise_decay
 
-        self.safe_margin = (speed**2 + speed**2)**0.5
+        self.safe_margin = 1
         self.last_pos = self.center
 
         self.current_step = 0
