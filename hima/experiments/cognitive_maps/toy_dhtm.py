@@ -206,7 +206,7 @@ class ToyDHTM:
                         self.state_buffer[pos - 1] = prev_state
 
                         events.append(
-                            ('set_prev_state', self._state_to_clone(state))
+                            ('set_prev_state', self._state_to_clone(prev_state))
                         )
 
                 # in any case
