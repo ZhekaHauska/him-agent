@@ -463,11 +463,12 @@ class TransitionGraph:
             prev_action, prev_state, states = event[1:]
             edges = [f'{prev_state}_{x}' for x in states]
             for edge in edges:
-                actions = self.edges[edge]['actions']
-                actions[ACTIONS[prev_action]] -= 1
-                if sum(actions.values()) == 0:
-                    self.vertices[self.edges[edge]['node2']]['edges'].remove(edge)
-                    self.edges.pop(edge)
+                if edge in self.edges:
+                    actions = self.edges[edge]['actions']
+                    actions[ACTIONS[prev_action]] -= 1
+                    if sum(actions.values()) == 0:
+                        self.vertices[self.edges[edge]['node2']]['edges'].remove(edge)
+                        self.edges.pop(edge)
 
     def update(self):
         self.canvas.blit(self.bgd, (0, 0))
