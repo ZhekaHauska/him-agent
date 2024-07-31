@@ -22,7 +22,8 @@ from hima.common.utils import softmax
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
-from hima.experiments.temporal_pooling.stp.sp_utils import tick
+from hima.experiments.temporal_pooling.stp.sp_utils import tick, boosting
+from hima.modules.htm.utils import abs_or_relative
 
 
 class WeightsDistribution(Enum):
@@ -44,10 +45,21 @@ class MatchPolicy(Enum):
     KROTOV = auto()
 
 
-class ActivationPolicy(Enum):
-    LINEAR = 1
-    POWERLAW = auto()
+class BoostingPolicy(Enum):
+    NO = 0
+    ADDITIVE = auto()
+    MULTIPLICATIVE = auto()
+
+
+class ActivationFunc(Enum):
+    POWERLAW = 1
     EXPONENTIAL = auto()
+
+
+class ActivationPolicy(Enum):
+    TOP_K = 1
+    THRESHOLD_F = auto()
+    THRESHOLD_LINEAR = auto()
 
 
 class LearningSet(Enum):
@@ -104,7 +116,8 @@ class SpatialEncoderLayer:
 
     # potentiation and learning
     match_policy: MatchPolicy
-    learning_set: LearningSet
+    # [M, Q]: the number of neurons affected by hebb and anti-hebb
+    learning_set: tuple[int, int]
     learning_rate: float
 
     # output
@@ -119,20 +132,23 @@ class SpatialEncoderLayer:
             normalize_input_p: float = 0.0, filter_input_policy: str = 'no',
             lebesgue_p: float = 1.0, init_radius: float = 10.0,
             weights_bias: float = 0.0, weights_distribution: str = 'normal',
-            inhibitory_ratio: float = 0.0,
+            inhibitory_ratio: float = 0.0, persistent_signs: bool = False,
 
-            match_policy: str = 'linear', bias_boosting: bool = False,
-            activation_policy: str = 'linear',
+            match_policy: str = 'linear', boosting_policy: str = 'no',
+            activation_func: str = 'powerlaw', activation_policy: str = 'top_k',
+            beta: float = 1.0, beta_lr: float = 0.01,
             threshold: float = 0.0, threshold_lr: float = 0.0001,
             min_active_mass: float = None, min_mass: float = None,
-            beta: float = 1.0, beta_lr: float = 0.01,
 
-            learning_rate: float = 0.01, learning_set: str = 'all',
+            learning_rate: float = 0.01,
             adaptive_lr: bool = False, lr_range: tuple[float, float] = (0.00001, 0.1),
+            # M | [M, Q] | [M, P, Q]: M - hebb, Q - anti-hebb, P - starting index for anti-hebb
+            # ints or floats — absolute or relative
+            learning_set: int | float | tuple[int | float] = 1.0,
+            anti_hebb_scale: float = 0.4,
             normalize_dw: bool = False,
-            negative_hebbian: str = 'no', neg_hebb_delta: float = 0.4,
 
-            filter_output: str = 'soft', output_extra: float = 0.5, normalize_output: str = 'no',
+            normalize_output: str = 'no', output_extra: int | float = 0.0,
 
             pruning: TConfig = None,
             **kwargs
@@ -147,11 +163,6 @@ class SpatialEncoderLayer:
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode.RATE
-
-        self.learning_rate = learning_rate
-        self.adaptive_lr = adaptive_lr
-        if self.adaptive_lr:
-            self.lr_range = lr_range
 
         # ==> Input preprocessing
         self.input_normalization = normalize_input_p > 0.0
@@ -173,7 +184,7 @@ class SpatialEncoderLayer:
             raise ValueError(f'Unsupported distribution: {weights_distribution}')
 
         self.radius = self.get_radius()
-        self.log_radius = self.get_log_radius()
+        self.pos_log_radius = self.get_log_radius()
 
         # make a portion of weights negative
         if inhibitory_ratio > 0.0:
@@ -187,9 +198,22 @@ class SpatialEncoderLayer:
         elif self.match_policy == MatchPolicy.KROTOV:
             self.weights_pow_p = self.get_weight_pow_p()
 
-        self.bias_boosting = bias_boosting
+        self.bias_boosting = BoostingPolicy[boosting_policy.upper()]
 
         # ==> Activation
+        self.activation_func = ActivationFunc[activation_func.upper()]
+        if self.activation_func in [ActivationFunc.POWERLAW, ActivationFunc.EXPONENTIAL]:
+            # for Exp, beta is inverse temperature in the softmax
+            # for Powerlaw, beta is the power in the RePU (for simplicity I use the same name)
+            self.beta = beta
+            self.adaptive_beta = beta_lr > 0.0
+            if self.adaptive_beta:
+                if self.activation_func == ActivationFunc.POWERLAW:
+                    # compared to the softmax beta, the power beta is usually smaller, hence lr is
+                    # scaled down to equalize settings for diff activation policies
+                    beta_lr /= 10.0
+                self.beta_lr = beta_lr
+
         self.activation_policy = ActivationPolicy[activation_policy.upper()]
         self.soft_threshold = threshold
         self.threshold = threshold
@@ -201,31 +225,19 @@ class SpatialEncoderLayer:
         self.min_active_mass = min_active_mass
         self.min_mass = min_mass
 
-        if self.activation_policy in [ActivationPolicy.POWERLAW, ActivationPolicy.EXPONENTIAL]:
-            # for Exp, beta is inverse temperature in the softmax
-            # for Powerlaw, beta is the power in the RePU (for simplicity I use the same name)
-            self.beta = beta
-            self.adaptive_beta = beta_lr > 0.0
-            if self.adaptive_beta:
-                self.beta_lr = beta_lr
-            if self.activation_policy == ActivationPolicy.POWERLAW:
-                # compared to the softmax beta, the power beta is usually smaller, hence lr is
-                # scaled down to equalize settings for diff activation policies
-                self.beta_lr /= 10.0
-
         # ==> Learning
-        self.learning_set = LearningSet[learning_set.upper()]
+        self.learning_set = parse_learning_set(learning_set, self.output_sds.active_size)
+        self.learning_rate = learning_rate
+        self.adaptive_lr = adaptive_lr
+        if self.adaptive_lr:
+            self.lr_range = lr_range
+        self.anti_hebbian_scale = anti_hebb_scale
         self.normalize_dw = normalize_dw
-        self.negative_hebbian = NegativeHebbian[negative_hebbian.upper()]
-        if learning_set == LearningSet.PAIR:
-            # NB: otherwise, learning diverges — weights grow to infinity
-            neg_hebb_delta = neg_hebb_delta ** 2
-        self.d_hebb = np.array([1.0, -neg_hebb_delta])
+        self.persistent_signs = persistent_signs
 
         # ==> Output
-        self.filter_output = FilterOutput[filter_output.upper()]
         self.normalize_output = NormalizeOutput[normalize_output.upper()]
-        self.output_extra = output_extra
+        self.output_extra = abs_or_relative(output_extra, self.output_sds.active_size)
 
         self.pruning_controller = None
         if pruning is not None:
@@ -247,14 +259,13 @@ class SpatialEncoderLayer:
         self.fast_potentials_trace = MeanValue(size=self.output_size, lr=fast_lr, initial_value=0.)
 
         self.slow_output_trace = MeanValue(
-            size=self.output_size, lr=slow_lr, initial_value=self.output_sds.sparsity
+            size=self.output_size, lr=slow_lr, initial_value=1.0 / self.output_size
         )
         self.fast_output_sdr_size_trace = MeanValue(
             lr=fast_lr, initial_value=self.output_sds.active_size
         )
 
-        if self.activation_policy == ActivationPolicy.EXPONENTIAL and self.adaptive_beta:
-            self.fast_mass_trace = MeanValue(lr=fast_lr, initial_value=self.min_mass)
+        if self.adaptive_beta:
             self.fast_active_mass_trace = MeanValue(lr=fast_lr, initial_value=self.min_active_mass)
 
     def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
@@ -270,78 +281,30 @@ class SpatialEncoderLayer:
 
         # ==> Match input
         u_raw = self.match_input(x)
-        if learn:
-            self.fast_potentials_trace.put(u_raw)
+        u = self.apply_boosting(u_raw)
 
         # ==> Activate
-        k = self.output_sds.active_size
-
-        u = u_raw
-        if self.bias_boosting:
-            avg_u = self.fast_potentials_trace.get()
-            u = u_raw - avg_u
-
-        if self.activation_policy == ActivationPolicy.LINEAR:
-            sdr = np.flatnonzero(u >= self.soft_threshold)
-            y = normalize(u[sdr] - self.soft_threshold)
-            if learn:
-                self.update_soft_threshold(sdr)
-            top_2k = min(2 * k, sdr.size)
-            top_2k_ix = np.argpartition(y, -top_2k)[-top_2k:]
-            sdr = sdr[top_2k_ix].copy()
-            y = y[top_2k_ix].copy()
-        elif self.activation_policy == ActivationPolicy.POWERLAW:
-            sdr = np.flatnonzero(u > 0)
-            # sign * abs
-            y = u[sdr] ** self.beta
-        elif self.activation_policy == ActivationPolicy.EXPONENTIAL:
-            y = softmax(u, beta=self.beta)
-            thr = self.threshold
-            sdr = np.flatnonzero(y > thr)
-            y = y[sdr]
-        else:
-            raise ValueError(f'Unsupported activation policy: {self.activation_policy}')
+        sdr, y = self.activate(u)
 
         # ==> Select output
-        # if learn and self.cnt % 500 == 0:
-        #     print(self.threshold)
-        #     import matplotlib.pyplot as plt
-        #     # plt.hist(u, bins=50)
-        #     plt.hist(y, bins=50)
-        #     plt.show()
-
-        if self.filter_output == FilterOutput.HARD:
-            top_k = min(k, sdr.size)
-            top_k_ix = np.argpartition(y, -top_k)[-top_k:]
-            o_sdr = sdr[top_k_ix].copy()
-            o_y = y[top_k_ix].copy()
-        else:
-            o_sdr = sdr.copy()
-            o_y = y.copy()
-
-        if self.normalize_output == NormalizeOutput.YES:
-            o_y = normalize(o_y)
-
-        output_sdr = RateSdr(o_sdr, o_y)
+        output_sdr = RateSdr(sdr, y)
         self.accept_output(output_sdr, learn=learn)
 
         if not learn:
             return output_sdr
 
         # ==> Select learning set
-        n_winners = sdr.size
-        if n_winners == 0:
-            ixs, y_h = self.get_best_from_inactive(u)
-        elif self.learning_set == LearningSet.PAIR:
-            ixs, y_h = self.sample_learning_pair(sdr, y)
-        elif self.learning_set == LearningSet.ALL:
-            ixs, y_h = self.get_learning_set(sdr, y)
+        if sdr.size == 0:
+            sdr_hebb, y_hebb = self.get_best_from_inactive(u)
         else:
-            raise ValueError(f'Unsupported learning set: {self.learning_set}')
+            sdr_hebb, y_hebb = self.get_learning_set(sdr, y)
 
         # ==> Learn
-        self.update_dense_weights(ixs, x, y_h)
+        self.update_dense_weights(x, sdr_hebb, y_hebb, u_raw)
+        self.update_beta(sdr, y)
         self.update_activation_threshold()
+
+        self.fast_potentials_trace.put(u_raw)
 
         self.cnt += 1
 
@@ -352,8 +315,55 @@ class SpatialEncoderLayer:
             self.print_stats(u, sdr, y)
         # if self.cnt % 50000 == 0:
         #     self.plot_weights_distr()
+        # if self.cnt % 10000 == 0:
+        #     self.plot_activation_distr(sdr, u, y)
 
         return output_sdr
+
+    def activate(self, u):
+        if self.activation_policy == ActivationPolicy.TOP_K:
+            sdr, y = self.activate_top_k(u)
+        else:
+            sdr, y = self.activate_by_threshold(u)
+
+        if self.normalize_output == NormalizeOutput.YES:
+            # TODO: normalize by avg
+            y = normalize(y, all_positive=True)
+
+        return sdr, y
+
+    def activate_top_k(self, u):
+        # 1) F(u) -> Top K -> -u[k] -> normalize (avg) -> Output
+        #   | learn top M/M+Q, where M,Q <= K/2
+        k = self.output_sds.active_size
+        sdr = np.flatnonzero(u > 0)
+        y = u[sdr]
+        e = self.output_extra
+        ixs = arg_top_k(y, k + e + 1)
+        sdr = sdr[ixs]
+        y = y[ixs]
+        if sdr.size > 1:
+            y = y - y.min()
+            mask = y > 0
+            sdr = sdr[mask]
+            y = y[mask]
+        y = self.activate_f(y)
+        return sdr, y
+
+    def activate_by_threshold(self, u):
+        # 2) Active SDR: F(clip[u - Soft]) & Normalize -> Slice by Hard
+        #   | Output Rates: a) origin Activation -> normalize (avg);
+        #       b) Linear: clip[u-Soft] & normalize (avg)
+        #   | Learning: use output rates, top M/M+Q, where M,Q <= K/2
+        u = u - self.soft_threshold
+        sdr = np.flatnonzero(u > 0)
+        v = self.activate_f(u[sdr])
+        v = normalize(v, all_positive=True)
+        mask = v > self.threshold
+        sdr = sdr[mask]
+        nonlinear_output = self.activation_policy == ActivationPolicy.THRESHOLD_F
+        y = v[mask] if nonlinear_output else u[sdr]
+        return sdr, y
 
     def match_input(self, x):
         if self.match_policy == MatchPolicy.LINEAR:
@@ -366,24 +376,50 @@ class SpatialEncoderLayer:
             raise ValueError(f'Unsupported match policy: {self.match_policy}')
         return np.dot(w, x)
 
-    def update_dense_weights(self, sdr, x, y):
-        lr = self.learning_rate
-        if self.adaptive_lr:
-            lr = lr * self.get_adaptive_lr(sdr)
+    def apply_boosting(self, u_raw):
+        u = u_raw
+        if self.bias_boosting == BoostingPolicy.ADDITIVE:
+            avg_u = self.fast_potentials_trace.get()
+            u = u_raw - avg_u
+        elif self.bias_boosting == BoostingPolicy.MULTIPLICATIVE:
+            boosting_k = boosting(relative_rate=self.output_relative_rate, k=self.pos_log_radius)
+            u = u_raw * boosting_k
+        return u
+
+    def activate_f(self, u):
+        if self.activation_func == ActivationFunc.POWERLAW:
+            if self.beta == 1.0:
+                return u
+            return u ** self.beta
+        elif self.activation_func == ActivationFunc.EXPONENTIAL:
+            return exp_x(u, beta=self.beta)
+        else:
+            raise ValueError(f'Unsupported activation function: {self.activation_func}')
+
+    def update_dense_weights(self, x, sdr, y, u):
+        lr = self.get_adaptive_lr(sdr) if self.adaptive_lr else self.learning_rate
         w = self.weights[sdr]
 
         _x = np.expand_dims(x, 0)
         y_ = np.expand_dims(y, -1)
         lr_ = np.expand_dims(lr, -1)
 
+        sg = np.sign(w) if self.persistent_signs else 1.0
+        if self.match_policy == MatchPolicy.KROTOV:
+            _u = np.expand_dims(u[sdr], -1)
+            dw = y_ * (sg * _x - w * _u)
+        else:
+            dw = y_ * (sg * _x - w)
+
+        if self.normalize_dw:
+            dw /= np.abs(dw).max() + 1e-30
+
         # Oja's Hebbian learning rule for L1
-        # NB: brackets set order of operations to increase performance
-        self.weights[sdr, :] += (lr_ * y_) * (_x - np.abs(w))
+        self.weights[sdr, :] += lr_ * dw
 
         self.radius[sdr] = self.get_radius(sdr)
-        self.log_radius[sdr] = self.get_log_radius(sdr)
-        if self.match_policy == MatchPolicy.SQRT:
-            self.sqrt_w[sdr, :] = self.get_weight_pow_p(sdr, p=0.5)
+        self.pos_log_radius[sdr] = self.get_log_radius(sdr)
+        self.recalculate_derivative_weights(sdr)
 
     def accept_input(self, sdr: AnySparseSdr, *, learn: bool):
         """Accept new input and move to the next time step"""
@@ -407,6 +443,7 @@ class SpatialEncoderLayer:
         if self.input_normalization:
             p = self.normalize_input_p
             x = normalize(x, p)
+            raise NotImplementedError('Normalize by avg norm')
 
         # set new SDR
         self.sparse_input = sdr
@@ -440,74 +477,90 @@ class SpatialEncoderLayer:
         self.rf_sparsity = sparsity
         print(f'{sparsity:.4f} | {rf_size}')
 
+        # rescale weights to keep the same norms
+        rs = np.expand_dims(self.radius, -1)
+        new_rs = np.expand_dims(self.get_radius(), -1)
+        self.weights *= rs / new_rs
+
+        self.recalculate_derivative_weights()
+
     def get_learning_set(self, sdr, y):
         n_winners = sdr.size
-        ac_size = self.output_sds.active_size
+        k = self.output_sds.active_size
+        m, q = self.learning_set
         assert n_winners > 0
 
-        top_2k = min(2 * ac_size, n_winners)
-        top_2k_ix = np.argpartition(y, -top_2k)[-top_2k:]
-        top_2k_ix = top_2k_ix[np.argsort(y[top_2k_ix])]
+        sorted_ixs = np.argsort(y)[::-1]
 
-        # select top K for excitation
-        best_k = min(ac_size, n_winners)
-        best_k_ix = top_2k_ix[-best_k:]
-        ixs = best_k_ix
-        y_h = self.d_hebb[0] * y[best_k_ix]
+        # selecting top M for hebbian reinforcement
+        top_m = min(m, n_winners)
+        top_m_ix = sorted_ixs[:top_m]
 
-        if top_2k > ac_size:
-            # select second top K for inhibition
-            worst_k = top_2k - ac_size
-            worst_k_ix = top_2k_ix[:worst_k]
-            ixs = np.concatenate([ixs, worst_k_ix])
-            y_h = np.concatenate([y_h, self.d_hebb[1] * y[worst_k_ix]])
+        ixs = top_m_ix
+        y_hebb = y[top_m_ix]
 
-        ixs = sdr[ixs]
-        return ixs, y_h
+        q = min(q, n_winners - k)
+        if q > 0:
+            # selecting top Q starting from P-th index for anti-hebbian inhibition
+            top_q_anti_ix = sorted_ixs[k:k+q]
+            alpha = -self.anti_hebbian_scale
 
-    def sample_learning_pair(self, sdr, y):
-        n_winners = sdr.size
-        ac_size = self.output_sds.active_size
-        assert n_winners > 0
+            ixs = np.concatenate([ixs, top_q_anti_ix])
+            y_hebb = np.concatenate([y_hebb, alpha * y[top_q_anti_ix]])
 
-        top_2k = min(2 * ac_size, n_winners)
-        top_2k_ix = np.argpartition(y, -top_2k)[-top_2k:]
-        top_2k_ix = top_2k_ix[np.argsort(y[top_2k_ix])]
-
-        # sample single from top K [weighted by their activation] for excitation
-        best_k = min(ac_size, n_winners)
-        best_k_ix = top_2k_ix[-best_k:]
-        excitation_ix = nb_choice(self.rng, y[best_k_ix])
-        ixs = [excitation_ix]
-
-        if top_2k > ac_size:
-            worst_k = top_2k - ac_size
-            # sample single from second top K [weighted by their activation] for inhibition
-            worst_k_ix = top_2k_ix[:worst_k]
-            inhibition_ix = nb_choice(self.rng, y[worst_k_ix])
-            ixs.append(inhibition_ix)
-
-        ixs = np.array(ixs, dtype=int)
-        y_hebb = self.d_hebb[:ixs.size] * y[ixs]
         ixs = sdr[ixs]
         return ixs, y_hebb
 
-    def get_best_from_inactive(self, u):
+    @staticmethod
+    def get_best_from_inactive(u):
         ixs = np.array([np.argmax(u)], dtype=int)
-        y_h = self.d_hebb[:1]
+        y_h = np.array([1.0])
         return ixs, y_h
 
+    def update_beta(self, sdr, y):
+        if not self.adaptive_beta:
+            return
+
+        k = self.output_sds.active_size
+        if self.activation_policy == ActivationPolicy.TOP_K and self.output_extra < k:
+            return
+
+        # count active mass
+        active_mass = y[arg_top_k(y, k)].sum()
+        self.fast_active_mass_trace.put(active_mass)
+
+        avg_pos_log_radius = max(0.01, np.mean(self.pos_log_radius[sdr]))
+        beta_lr = self.beta_lr * max(0.01, np.sqrt(avg_pos_log_radius))
+        avg_active_mass = self.fast_active_mass_trace.get()
+        avg_active_size = self.output_active_size
+
+        d_beta = 0.0
+        if avg_active_size < k:
+            d_beta = -0.02
+        elif avg_active_mass < self.min_active_mass or avg_active_mass > self.min_mass:
+            target_mass = (self.min_active_mass + self.min_mass) / 2
+            rel_mass = max(0.1, avg_active_mass / target_mass)
+            # less -> neg (neg log) -> increase beta and vice versa
+            d_beta = -np.log(rel_mass)
+
+        if d_beta != 0.0:
+            self.beta *= np.exp(beta_lr * np.clip(d_beta, -1.0, 1.0))
+            self.beta += beta_lr * d_beta
+            self.beta = max(min(self.beta, 1e+5), 1e-4)
+
     def update_soft_threshold(self, sdr):
+        if self.activation_policy == ActivationPolicy.TOP_K:
+            return
+
         k = self.output_sds.active_size
         lr = self.threshold_lr
         size = len(sdr)
 
         d_thr = 0.01 if size > k else size - k
         self.soft_threshold += lr * d_thr
-        # self.soft_threshold = max(1e-10, self.soft_threshold)
 
     def update_activation_threshold(self):
-        if self.activation_policy == ActivationPolicy.LINEAR:
+        if self.activation_policy == ActivationPolicy.TOP_K:
             return
 
         k = self.output_sds.active_size
@@ -523,10 +576,11 @@ class SpatialEncoderLayer:
         self.threshold += lr * d_thr
         self.threshold = max(1e-6, self.threshold)
 
-    def boost_potentials(self, u):
-        b = self.biases / self.base_bias
-        bb = 1.0 + np.clip(b * np.maximum(self.log_radius, 0.) / 10, 0.0, 100.0)
-        return u * bb
+    def recalculate_derivative_weights(self, sdr=None):
+        if self.match_policy == MatchPolicy.SQRT:
+            self.sqrt_w[sdr, :] = self.get_weight_pow_p(sdr, p=0.5)
+        elif self.match_policy == MatchPolicy.KROTOV:
+            self.weights_pow_p[sdr, :] = self.get_weight_pow_p(sdr)
 
     def get_weight_pow_p(self, ixs: npt.NDArray[int] = None, p: float = None) -> npt.NDArray[float]:
         if p is None:
@@ -547,29 +601,53 @@ class SpatialEncoderLayer:
 
     def get_log_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         r = self.radius if ixs is None else self.radius[ixs]
-        return np.log2(np.maximum(r, 1e-30))
+        return np.log2(np.maximum(r, 1.0))
 
     def get_adaptive_lr(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         base_lr = self.learning_rate
-        rs = self.log_radius if ixs is None else self.log_radius[ixs]
+        rs = self.pos_log_radius if ixs is None else self.pos_log_radius[ixs]
         return np.clip(base_lr * rs, *self.lr_range)
 
     def print_stats(self, u, sdr, y):
         sorted_values = np.sort(y)
         ac_size = self.output_sds.active_size
-        active_mass = sorted_values[-ac_size:].sum()
+        active_mass = 100.0 * sorted_values[-ac_size:].sum()
         biases = self.output_rate / self.output_sds.sparsity
         w = self.weights
-        non_zero_mass = np.count_nonzero(np.abs(w) > 0.2 / self.ff_size) / w.size
+        eps = 0.2 / self.ff_size
+        signs_w = np.sign(w)
+        pos_w = 100.0 * np.count_nonzero(signs_w > eps) / w.size
+        neg_w = 100.0 * np.count_nonzero(signs_w < -eps) / w.size
+        zero_w = 100.0 - pos_w - neg_w
         sft_thr, thr = self.soft_threshold, self.threshold
         print(
-            f'R={self.avg_radius:.3f} H={self.output_entropy():.3f} S={self.output_active_size:.1f}'
-            f'| T [{sft_thr*100:.3f}; {thr*100:.2f}]'
-            f'| B [{biases.min():.2f}; {biases.max():.2f}]'
-            f'| U {u.min():.3f}  {u.max():.3f}'
-            f'| W {w.mean():.3f} [{w.min():.3f}; {w.max():.3f}]  NZ={non_zero_mass:.2f}'
-            f'| Y {active_mass:.3f} {sdr.size}'
+            f'R={self.avg_radius:.3f} H={self.output_entropy():.3f}'
+            f' B={self.beta:.3f} S={self.output_active_size:.1f}'
+            f'| T[{sft_thr*100:.3f}; {thr*100:.2f}]'
+            f'| B[{biases.min():.2f}; {biases.max():.2f}]'
+            f'| U[{u.min():.3f}  {u.max():.3f}]'
+            f'| W {w.mean():.3f} [{w.min():.3f}; {w.max():.3f}]'
+            f' NZP[{neg_w:.0f}; {zero_w:.0f}; {pos_w:.0f}]'
+            f'| Y {active_mass:.0f} {sdr.size}'
         )
+
+    def plot_activation_distr(self, sdr, u, y):
+        k = self.output_sds.active_size
+        ixs_ranked = sdr[np.argsort(y)][::-1]
+        kth, eth = ixs_ranked[k - 1], ixs_ranked[-1]
+        import matplotlib.pyplot as plt
+        plt.hist(u, bins=50)
+        plt.vlines([u[kth], u[eth]], 0, 20, colors=['r', 'y'])
+        plt.show()
+        # _u = softmax(u, beta=10.0)
+        # plt.hist(_u, bins=50)
+        # plt.vlines([_u[kth], _u[eth]], 0, 20, colors=['r', 'y'])
+        # plt.show()
+        _y = np.cumsum(np.sort(y))[::-1]
+        _y /= _y[0]
+        plt.plot(_y)
+        plt.vlines(k, 0, 1, color='r')
+        plt.show()
 
     def plot_weights_distr(self):
         import seaborn as sns
@@ -612,8 +690,8 @@ class SpatialEncoderLayer:
 
     @property
     def output_relative_rate(self):
-        target_rate = self.output_sds.sparsity
-        return self.output_rate / target_rate
+        output_rates = self.output_rate
+        return output_rates / output_rates.sum()
 
     def output_entropy(self):
         return entropy(self.output_rate)
@@ -675,14 +753,61 @@ def get_normal_std(required_r, n_samples: int, p: float) -> float:
     return required_r * alpha
 
 
-def normalize(x, p=1.0):
-    r = np.sum(np.abs(x) ** p, axis=-1)
-    eps = 1e-5
+def exp_x(
+        x: npt.NDArray[float], *, beta: float, axis: int = -1
+) -> npt.NDArray[float]:
+    """
+    Compute softmax values for a vector `x` with a given temperature or inverse temperature.
+    The softmax operation is applied over the last axis by default, or over the specified axis.
+    """
+    beta = max(min(beta, 1e+5), 1e-4)
+    # TODO: check if subtracting max val is unnecessary
+    return np.exp((x - np.max(x, axis=axis, keepdims=True)) * beta)
+
+
+def normalize(x, p=1.0, all_positive=False):
+    u = x if all_positive else np.abs(x)
+    r = np.sum(u ** p, axis=-1) if p != 1.0 else np.sum(u, axis=-1)
+    eps = 1e-30
     if x.ndim > 1:
         mask = r > eps
         return x[mask] / np.expand_dims(r[mask], -1)
 
     return x / r if r > eps else x
+
+
+def arg_top_k(x, k):
+    k = min(k, x.size)
+    return np.argpartition(x, -k)[-k:]
+
+
+def parse_learning_set(ls, k):
+    # K - is a base number of active neuron as if we used k-WTA activation/learning.
+    # However, we can disentangle learning and activation, so we can have different number
+    # of active and learning neurons. It is useful in some cases to propagate more than K winners
+    # to the output. It can be also useful (and it does not depend on the previous case) to
+    # learn additional number of near-winners with anti-Hebbian learning. Sometimes we may want
+    # to propagate them to the output, sometimes not.
+    # TL;DR: K is the base number, it defines a desirable number of winning active neurons. But
+    # we also define:
+    #  - M <= K: the number of neurons affected by Hebbian learning
+    #  - Q: the number of neurons affected by anti-Hebbian learning, starting from K-th index
+
+    # ls: M | [M, Q]
+    if not isinstance(ls, (tuple, list)):
+        m = round(abs_or_relative(ls, k))
+        q = 0
+    elif len(ls) == 1:
+        m = round(abs_or_relative(ls[0], k))
+        q = 0
+    elif len(ls) == 2:
+        m = round(abs_or_relative(ls[0], k))
+        q = round(abs_or_relative(ls[1], k))
+    else:
+        raise ValueError(f'Unsupported learning set: {ls}')
+
+    m = min(k, m)
+    return m, q
 
 
 @jit

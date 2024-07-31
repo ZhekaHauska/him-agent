@@ -168,8 +168,7 @@ class SpatialTemporalPooler:
         if self.is_newborn_phase:
             # boosting
             boosting_alpha = boosting(relative_rate=self.output_relative_rate, k=self.boosting_k)
-            # ^ sign(B) is to make boosting direction unaffected by the sign of the overlap
-            delta_potentials = delta_potentials * boosting_alpha ** np.sign(delta_potentials)
+            delta_potentials = delta_potentials * boosting_alpha
 
         self.match_mask_trace = exp_sum(
             self.match_mask_trace,
