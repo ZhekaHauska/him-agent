@@ -332,8 +332,20 @@ class Node(State):
         self.clone = clone
         self.obs_state = obs_state
         self.radius = bsize * dilation
+        self.position = list(position)
 
         self.activate()
+
+    def move(self, vector):
+        self.position[0] += vector[0]
+        self.position[1] += vector[1]
+
+    def update(self, *args, **kwargs):
+        self.rect.center = (
+            int(round(self.position[0])),
+            int(round(self.position[1]))
+        )
+        super().update(*args, **kwargs)
 
 
 class TransitionGraph:
@@ -345,8 +357,9 @@ class TransitionGraph:
             speed: float,
             speed_decay: float = 0.9,
             dilation: float = 1.5,
-            rep_factor: float = 2,
-            rep_decay: float = 1.0,
+            rad_decay: float = 1.0,
+            rep_factor: float = 1.0,
+            att_factor: float = 1.0,
             noise: float = 0,
             noise_decay: float = 0.99
     ):
@@ -366,8 +379,10 @@ class TransitionGraph:
         self.speed_decay = speed_decay
 
         self.rep_factor = rep_factor
-        self.init_rep_factor = rep_factor
-        self.rep_decay = rep_decay
+        self.att_factor = att_factor
+        self.rad_factor = 1.0
+        self.init_rad_factor = 1.0
+        self.rad_decay = rad_decay
 
         self.noise = noise
         self.init_noise = noise
@@ -387,7 +402,7 @@ class TransitionGraph:
         if event_type == 'reinforce_con':
             self.speed = self.init_speed
             self.noise = self.init_noise
-            self.rep_factor = self.init_rep_factor
+            self.rad_factor = self.init_rad_factor
 
             prev_action, prev_state, state = event[1:]
 
@@ -427,7 +442,7 @@ class TransitionGraph:
         elif event_type == 'remove_con':
             self.speed = self.init_speed
             self.noise = self.init_noise
-            self.rep_factor = self.init_rep_factor
+            self.rad_factor = self.init_rad_factor
 
             prev_action, prev_state, states = event[1:]
             edges = [f'{prev_state}_{x}' for x in states]
@@ -485,7 +500,7 @@ class TransitionGraph:
 
         mass_center = [0, 0]
         # update node positions
-        for node in self.vertices.values():
+        for _id, node in self.vertices.items():
             # total attraction
             att_direct = [0.0, 0.0]
             start_pos = node['vis'].rect.center
@@ -497,40 +512,31 @@ class TransitionGraph:
                 strength = sum(edge['actions'].values())
                 delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
                 distance = (delta[0] ** 2 + delta[1] ** 2) ** 0.5
-                if distance > (self.vertices[edge['node1']]['vis'].radius + self.safe_margin):
+                if distance > (
+                        self.vertices[edge['node1']]['vis'].radius *
+                        (self.init_rad_factor - self.rad_factor) +
+                        self.safe_margin
+                ):
                     att_direct[0] += strength * delta[0]
                     att_direct[1] += strength * delta[1]
 
-            att_direct = (
-                self.speed * np.sign(att_direct[0]),
-                self.speed * np.sign(att_direct[1])
-            )
-
             # total repulsion
             rep_direct = [0.0, 0.0]
-            for verx in self.vertices.values():
-                end_pos = verx['vis'].rect.center
-                delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
-                distance = (delta[0]**2 + delta[1]**2) ** 0.5
-                if distance < verx['vis'].radius:
-                    rep_direct[0] -= np.sign(delta[0]) * (self.init_rep_factor - self.rep_factor)
-                    rep_direct[1] -= np.sign(delta[1]) * (self.init_rep_factor - self.rep_factor)
+            for rid, verx in self.vertices.items():
+                if _id != rid:
+                    end_pos = verx['vis'].rect.center
+                    delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
+                    distance = (delta[0]**2 + delta[1]**2) ** 0.5
+                    if distance < verx['vis'].radius * (self.init_rad_factor - self.rad_factor):
+                        rep_direct[0] -= (np.sign(delta[0]) / (distance + EPS))
+                        rep_direct[1] -= (np.sign(delta[1]) / (distance + EPS))
 
-            rep_direct = (
-                self.speed * np.sign(rep_direct[0]),
-                self.speed * np.sign(rep_direct[1])
-            )
-
-            total_direct = (att_direct[0] + rep_direct[0], att_direct[1] + rep_direct[1])
-            noise = self.noise * self.node_size
             total_direct = (
-                            np.asarray(total_direct) +
-                            np.random.uniform(-noise, noise, size=2)
-                    )
-            shift = (
-                self.speed * np.sign(total_direct[0]),
-                self.speed * np.sign(total_direct[1])
+                    self.att_factor * att_direct[0] + self.rep_factor * rep_direct[0],
+                    self.att_factor * att_direct[1] + self.rep_factor * rep_direct[1]
             )
+
+            shift = self.normalize(total_direct, self.speed)
             node['shift'] = shift
 
         if len(self.vertices) > 0:
@@ -538,20 +544,24 @@ class TransitionGraph:
             mass_center[1] /= len(self.vertices)
 
         compensation = (
-            self.speed * np.sign(self.center[0] - mass_center[0]),
-            self.speed * np.sign(self.center[1] - mass_center[1])
+            self.center[0] - mass_center[0],
+            self.center[1] - mass_center[1]
         )
+        compensation = self.normalize(compensation, self.speed)
         for node in self.vertices.values():
             shift = (
                 node['shift'][0] + compensation[0],
                 node['shift'][1] + compensation[1]
             )
-            node['vis'].rect.move_ip(shift)
+            node['vis'].move(shift)
 
         self.speed *= self.speed_decay
-        self.noise *= self.noise_decay
-        self.rep_factor *= self.rep_decay
+        self.rad_factor *= self.rad_decay
 
         self.main_group.draw(self.canvas)
         self.main_group.update()
 
+    @staticmethod
+    def normalize(x: tuple, s=1.0):
+        mag = (x[0]**2 + x[1]**2)**0.5
+        return s * x[0]/(mag+EPS), s * x[1]/(mag+EPS)
