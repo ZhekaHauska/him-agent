@@ -4,14 +4,13 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-import numpy as np
 import socket
 import time
 import json
 import atexit
 import pygame
 
-from hima.experiments.cognitive_maps.vis.entities import LearningHistory, TransitionGraph
+from hima.experiments.cognitive_maps.vis.entities import LearningHistory, TransitionGraph, Gridworld
 
 HOST = "127.0.0.1"
 PORT = 5555
@@ -67,13 +66,24 @@ class ToyDHTMVis:
             pygame.image.load('assets/predicted_state_temp.png').convert_alpha(),
             pygame.image.load('assets/aliased_state.png').convert_alpha(),
         )
+        masks = (
+            pygame.image.load('assets/obs_state_mask.png').convert_alpha(),
+            pygame.image.load('assets/predicted_state_obs_mask.png').convert_alpha(),
+            pygame.image.load('assets/aliased_state_obs_mask.png').convert_alpha(),
+        )
+
+        self.gridworld = Gridworld(
+            (self.window_size[0]//3, self.window_size[1]//2)
+        )
         self.history = LearningHistory(
             (self.window_size[0], self.window_size[1]//2),
             (100, 100),
-            sprites
+            sprites,
+            masks,
+            custom_cmap=self.gridworld.cmap
         )
         self.graph = TransitionGraph(
-            (self.window_size[0], self.window_size[1] // 2),
+            ((self.window_size[0] * 2) // 3, self.window_size[1] // 2),
             [sprites[-1]],
             50,
             0.1,
@@ -84,6 +94,8 @@ class ToyDHTMVis:
             20.0,
             1.0,
             0.05,
+            masks=masks,
+            custom_cmap=self.gridworld.cmap
         )
 
     def run(self):
@@ -186,10 +198,13 @@ class ToyDHTMVis:
     def update(self):
         self.history.update()
         self.graph.update()
+        self.gridworld.update()
         self.screen.blit(self.graph.canvas, (0, 0))
+        self.screen.blit(self.gridworld.canvas, (self.graph.canvas.get_size()[0], 0))
         self.screen.blit(self.history.canvas, (0, self.graph.canvas.get_size()[1]))
 
     def _handle_event(self, event):
+        self.gridworld.handle(event)
         self.history.handle(event)
         self.graph.handle(event)
 

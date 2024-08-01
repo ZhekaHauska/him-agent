@@ -194,3 +194,13 @@ class GridWorld:
         buf.seek(0)
         im = Image.open(buf)
         return im
+
+    def get_true_map(self):
+        true_map = self.colors.copy()
+        if self.shift > 0:
+            true_map = true_map[self.shift:-self.shift, self.shift:-self.shift]
+
+        for i, color in enumerate(self.unique_colors):
+            true_map[true_map == color] = i
+
+        return true_map

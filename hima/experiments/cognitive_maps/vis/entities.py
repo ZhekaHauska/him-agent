@@ -303,6 +303,8 @@ class LearningHistory:
         if (self.custom_cmap is not None) and (self.masks is not None):
             custom_color = convert_color(self.custom_cmap(obs_state))
             color_mask = self.masks[1]
+            if not forward:
+                color_mask = pygame.transform.flip(color_mask, True, False)
         else:
             custom_color = None
             color_mask = None
@@ -363,11 +365,14 @@ class Node(State):
             dilation: float,
             speed_decay: float,
             *groups,
+            custom_color=None,
+            custom_color_mask=None
     ):
         info = (str(clone), 0.4, -0.1, 0, COLORS['text'])
         additional_info = [(str(obs_state), 0.2, 0.25, 0, COLORS['text'])]
         super().__init__(
-            info, image, position, bsize, *groups, additional_info=additional_info
+            info, image, position, bsize, *groups, additional_info=additional_info,
+            custom_color_mask=custom_color_mask, custom_color=custom_color
         )
         self.clone = clone
         self.obs_state = obs_state
@@ -414,11 +419,15 @@ class TransitionGraph:
             rad_decay: float = 1.0,
             rep_factor: float = 1.0,
             att_factor: float = 1.0,
-            gravitation: float = 0.1
+            gravitation: float = 0.1,
+            masks: tuple = None,
+            custom_cmap=None
     ):
         self.node_size = node_size
         self.dilation = dilation
         self.sprites = sprites
+        self.masks = masks
+        self.custom_cmap = custom_cmap
         self.canvas = Surface(canvas_size)
         self.canvas.fill(COLORS['bg'])
         self.bgd = Surface(canvas_size)
@@ -481,6 +490,7 @@ class TransitionGraph:
                             np.asarray(self.last_pos) +
                             np.random.uniform(-self.node_size, self.node_size, size=2)
                     )
+                    color = convert_color(self.custom_cmap(s[1]))
                     self.vertices[node] = {
                         'vis': Node(
                             s[0],
@@ -490,7 +500,9 @@ class TransitionGraph:
                             self.node_size,
                             self.dilation,
                             self.speed_decay,
-                            self.main_group
+                            self.main_group,
+                            custom_color=color,
+                            custom_color_mask=self.masks[2]
                         ),
                         'in_edges': set(),
                         'out_edges': set(),
@@ -643,3 +655,69 @@ class TransitionGraph:
     def normalize(x: tuple, s=1.0):
         mag = (x[0]**2 + x[1]**2)**0.5
         return s * x[0]/(mag+EPS), s * x[1]/(mag+EPS)
+
+
+class Gridworld:
+    def __init__(
+            self,
+            canvas_size: tuple[int, int],
+            cmap: str = 'Pastel1',
+            annotate: bool = True
+    ):
+        self.canvas_size = canvas_size
+        self.colors = None
+        self.grid_size = None
+        self.shape = None
+        self.current_position = None
+
+        self.cmap = colormap.cmap_builder(cmap)
+        self.annotate = annotate
+        self.canvas = Surface(self.canvas_size)
+        self.canvas.fill(COLORS['bg'])
+
+    def handle(self, event):
+        event_type = event[0]
+        if event_type == 'reset':
+            self.colors = event[1]['gridworld_map']
+        elif event_type == 'new_true_pos':
+            self.current_position = event[1]
+
+    def update(self):
+        self.canvas.fill(COLORS['bg'])
+        if self.colors is not None:
+            self.shape = len(self.colors), len(self.colors[0])
+            self.grid_size = min(
+                self.canvas_size[0] // self.shape[0],
+                self.canvas_size[1] // self.shape[1]
+            )
+            annotation_font = pg.font.SysFont('arial', int(0.5 * self.grid_size))
+
+            for row in range(self.shape[0]):
+                for col in range(self.shape[1]):
+                    color = self.colors[row][col]
+                    if color < 0:
+                        color = COLORS['bg']
+                    else:
+                        color = convert_color(self.cmap(color))
+
+                    x = col * self.grid_size
+                    y = row * self.grid_size
+                    pg.draw.rect(self.canvas, color, (x, y, self.grid_size, self.grid_size))
+
+                    if self.annotate:
+                        text = annotation_font.render(
+                            str(self.colors[row][col]), True, COLORS['text']
+                        )
+                        self.canvas.blit(text, (x, y))
+
+            if self.current_position is not None:
+                text = annotation_font.render(
+                    str('A'), True, COLORS['text']
+                )
+                self.canvas.blit(
+                    text,
+                    (
+                        int(self.current_position[1] * self.grid_size + 0.5 * self.grid_size),
+                        int(self.current_position[0] * self.grid_size + 0.5 * self.grid_size)
+                    )
+                )

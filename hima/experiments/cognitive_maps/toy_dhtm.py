@@ -54,17 +54,17 @@ class ToyDHTM:
             if self.vis_server is not None:
                 atexit.register(self.close)
 
-    def reset(self):
+    def reset(self, gridworld_map):
         self.clear_buffers()
         if self.vis_server is not None:
-            self._send_events([('reset', )])
+            self._send_events([('reset', {'gridworld_map': gridworld_map})])
 
     def clear_buffers(self):
         self.observation_buffer.clear()
         self.action_buffer.clear()
         self.state_buffer.clear()
 
-    def observe(self, obs_state, action):
+    def observe(self, obs_state, action, true_pos=None):
         # for debugging
         # event type: (name: str, data: tuple)
         events = list()
@@ -78,6 +78,7 @@ class ToyDHTM:
         pos = step
         resolved = False
 
+        events.append(('new_true_pos', true_pos))
         events.append(('new_obs', pos, obs_state, action))
 
         while not resolved:

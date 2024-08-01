@@ -28,14 +28,14 @@ if __name__ == '__main__':
 
     for epoch in range(config['n_epochs']):
         env.reset()
-        dhtm.reset()
+        dhtm.reset(env.get_true_map())
 
         for step in range(config['n_steps']):
             observation, _, _ = env.obs()
             observation = observation.flatten()[0]
             obs_state = np.flatnonzero(env.unique_colors == observation)[0]
             action = rng.integers(0, len(env.actions))
-            dhtm.observe(obs_state, action)
+            dhtm.observe(obs_state, action, (env.r, env.c))
 
             env.act(action)
             env.step()
