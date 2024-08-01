@@ -391,7 +391,6 @@ class TransitionGraph:
         self.connection_cmap = colormap.Colormap().cmap_bicolor(
             'white', 'blue'
         )
-        self.max_con_strength = 1
 
         self.center = (canvas_size[0]//2, canvas_size[1]//2)
 
@@ -488,7 +487,7 @@ class TransitionGraph:
             label = self.connection_font.render(
                 ' '.join([f'{x}:{v}' for x, v in edge['actions'].items() if v > 0]),
                 True,
-                COLORS['connection']
+                color
             )
 
             if start_pos != end_pos:
@@ -527,14 +526,20 @@ class TransitionGraph:
             # total attraction
             att_direct = [0.0, 0.0]
             start_pos = node['vis'].rect.center
+
+            max_strength = 1
+            for edge in node['edges']:
+                edge = self.edges[edge]
+                strength = sum(edge['actions'].values())
+                edge['strength'] = strength
+                if strength > max_strength:
+                    max_strength = strength
+
             for edge in node['edges']:
                 edge = self.edges[edge]
                 end_pos = self.vertices[edge['node1']]['vis'].rect.center
-                strength = sum(edge['actions'].values())
-                if strength > self.max_con_strength:
-                    self.max_con_strength = strength
-                edge['strength'] = strength / self.max_con_strength
 
+                edge['strength'] /= max_strength
                 delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
                 distance = (delta[0] ** 2 + delta[1] ** 2) ** 0.5
                 if distance > (
@@ -542,8 +547,8 @@ class TransitionGraph:
                         (self.init_rad_factor - self.rad_factor) +
                         self.safe_margin
                 ):
-                    att_direct[0] += (strength * delta[0] / self.max_con_strength)
-                    att_direct[1] += (strength * delta[1] / self.max_con_strength)
+                    att_direct[0] += (edge['strength'] * delta[0])
+                    att_direct[1] += (edge['strength'] * delta[1])
 
             # total repulsion
             rep_direct = [0.0, 0.0]
