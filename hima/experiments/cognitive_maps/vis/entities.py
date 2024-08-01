@@ -28,6 +28,10 @@ EPS = 1e-24
 ACTIONS = ['l', 'r', 'u', 'd']
 
 
+def convert_color(color):
+    return tuple([int(round(255*x)) for x in color])
+
+
 class State(Sprite):
     def __init__(
             self,
@@ -37,6 +41,8 @@ class State(Sprite):
             bsize: int,
             *groups,
             additional_info: list = None,
+            custom_color: tuple[int, int, int] = None,
+            custom_color_mask: Surface = None
     ):
         """
             info: one float number is for relative size
@@ -50,6 +56,13 @@ class State(Sprite):
             size = (int(bsize * ratio), bsize)
         else:
             size = (bsize, int(bsize/ratio))
+
+        if custom_color is not None:
+            if custom_color_mask is not None:
+                bg_image = Surface(original_size).convert_alpha()
+                bg_image.fill(custom_color)
+                bg_image.blit(custom_color_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                image.blit(bg_image, (0, 0))
 
         self.image = scale(image, size)
         self.rect = self.image.get_rect()
@@ -133,9 +146,13 @@ class LearningHistory:
             canvas_size: tuple[int, int],
             step_size: tuple[int, int],
             sprites: tuple,
+            masks: tuple = None,
+            custom_cmap=None,
             debug=True
     ):
         self.sprites = sprites
+        self.masks = masks
+        self.custom_cmap = custom_cmap
         self.horizontal_step, self.vertical_step = step_size
         self.canvas = Surface(canvas_size)
         self.canvas.fill(COLORS['bg'])
@@ -179,13 +196,22 @@ class LearningHistory:
                 }
             )
 
+            if (self.custom_cmap is not None) and (self.masks is not None):
+                custom_color = convert_color(self.custom_cmap(obs_state))
+                color_mask = self.masks[0]
+            else:
+                custom_color = None
+                color_mask = None
+
             state_obj = State(
                 (str(obs_state), 0.4, -0.1, 0, COLORS['text']),
                 self.sprites[0],
                 self.center,
                 min(self.horizontal_step, self.vertical_step),
                 self.main_group,
-                additional_info=[(ACTIONS[action], 0.2, 0.3, 0, COLORS['text'])]
+                additional_info=[(ACTIONS[action], 0.2, 0.3, 0, COLORS['text'])],
+                custom_color=custom_color,
+                custom_color_mask=color_mask
             )
             state_obj.activate()
         elif event_type == 'set_state':
@@ -273,6 +299,14 @@ class LearningHistory:
         group = self.step_groups[pos]['predicted']
         shift_y = int(0.8*self.vertical_step) + len(group) * int(0.5 * self.vertical_step)
         shift_x = (self.current_step - pos) * self.horizontal_step
+
+        if (self.custom_cmap is not None) and (self.masks is not None):
+            custom_color = convert_color(self.custom_cmap(obs_state))
+            color_mask = self.masks[1]
+        else:
+            custom_color = None
+            color_mask = None
+
         state_obj = State(
             (str(clone), 0.4, -0.1, h_shifts[0], COLORS['text']),
             sprite,
@@ -282,7 +316,9 @@ class LearningHistory:
             additional_info=[
                 (str(obs_state), 0.2, 0.26, h_shifts[0], COLORS['text']),
                 (str(weight), 0.2, -0.25, h_shifts[1], (0, 0, 0))
-            ]
+            ],
+            custom_color=custom_color,
+            custom_color_mask=color_mask
         )
         group.append(state_obj)
         if correct:
