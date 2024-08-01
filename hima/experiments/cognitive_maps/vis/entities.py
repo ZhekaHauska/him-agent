@@ -456,10 +456,27 @@ class TransitionGraph:
                             self.speed_decay,
                             self.main_group
                         ),
-                        'edges': set(),
+                        'in_edges': set(),
+                        'out_edges': set(),
                     }
                 self.last_pos = self.vertices[node]['vis'].rect.center
-            self.vertices[node2]['edges'].add(edge)
+
+            self.vertices[node1]['out_edges'].add(edge)
+            self.vertices[node2]['in_edges'].add(edge)
+
+            # normalize out edge strength
+            for node in self.vertices.values():
+                max_strength = 1
+                for edge in node['out_edges']:
+                    edge = self.edges[edge]
+                    strength = sum(edge['actions'].values())
+                    edge['strength'] = strength
+                    if strength > max_strength:
+                        max_strength = strength
+
+                for edge in node['out_edges']:
+                    self.edges[edge]['strength'] /= max_strength
+
         elif event_type == 'remove_con':
             self.force = self.init_force
             self.gravitation = self.init_gravitation
@@ -472,7 +489,8 @@ class TransitionGraph:
                     actions = self.edges[edge]['actions']
                     actions[ACTIONS[prev_action]] -= 1
                     if sum(actions.values()) == 0:
-                        self.vertices[self.edges[edge]['node2']]['edges'].remove(edge)
+                        self.vertices[self.edges[edge]['node1']]['out_edges'].remove(edge)
+                        self.vertices[self.edges[edge]['node2']]['in_edges'].remove(edge)
                         self.edges.pop(edge)
 
     def update(self):
@@ -527,19 +545,10 @@ class TransitionGraph:
             att_direct = [0.0, 0.0]
             start_pos = node['vis'].rect.center
 
-            max_strength = 1
-            for edge in node['edges']:
-                edge = self.edges[edge]
-                strength = sum(edge['actions'].values())
-                edge['strength'] = strength
-                if strength > max_strength:
-                    max_strength = strength
-
-            for edge in node['edges']:
+            for edge in node['in_edges']:
                 edge = self.edges[edge]
                 end_pos = self.vertices[edge['node1']]['vis'].rect.center
 
-                edge['strength'] /= max_strength
                 delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
                 distance = (delta[0] ** 2 + delta[1] ** 2) ** 0.5
                 if distance > (
