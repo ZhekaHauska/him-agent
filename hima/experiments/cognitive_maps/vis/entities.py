@@ -553,9 +553,10 @@ class TransitionGraph:
                     delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
                     distance = (delta[0]**2 + delta[1]**2) ** 0.5
                     delta = self.normalize(delta)
-                    if distance < verx['vis'].radius * (self.init_rad_factor - self.rad_factor):
-                        rep_direct[0] -= delta[0]
-                        rep_direct[1] -= delta[1]
+                    effective_rad = verx['vis'].radius * (self.init_rad_factor - self.rad_factor)
+                    if distance < effective_rad:
+                        rep_direct[0] -= delta[0] / (distance / effective_rad + EPS)
+                        rep_direct[1] -= delta[1] / (distance / effective_rad + EPS)
 
             total_direct = (
                     self.att_factor * att_direct[0] + self.rep_factor * rep_direct[0],
