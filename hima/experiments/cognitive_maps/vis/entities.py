@@ -10,6 +10,7 @@ from pygame.transform import scale
 from pygame import Surface
 import numpy as np
 from math import copysign
+import colormap
 
 
 ANIMATION_SPEED = 2  # 1 is normal speed
@@ -387,6 +388,10 @@ class TransitionGraph:
         self.bgd = Surface(canvas_size)
         self.bgd.fill(COLORS['bg'])
         self.connection_font = pg.font.SysFont('arial',  int(node_size * 0.2))
+        self.connection_cmap = colormap.Colormap().cmap_bicolor(
+            'white', 'blue'
+        )
+        self.max_con_strength = 1
 
         self.center = (canvas_size[0]//2, canvas_size[1]//2)
 
@@ -429,7 +434,8 @@ class TransitionGraph:
                 self.edges[edge] = {
                     'node1': node1,
                     'node2': node2,
-                    'actions': {a: 0 for a in ACTIONS}
+                    'actions': {a: 0 for a in ACTIONS},
+                    'strength': 1
                 }
             self.edges[edge]['actions'][ACTIONS[prev_action]] += 1
 
@@ -477,7 +483,8 @@ class TransitionGraph:
         for edge in self.edges.values():
             start_pos = self.vertices[edge['node1']]['vis'].rect.center
             end_pos = self.vertices[edge['node2']]['vis'].rect.center
-
+            color = self.connection_cmap(int(round(255*edge['strength'])))
+            color = tuple([int(round(x*255)) for x in color])
             label = self.connection_font.render(
                 ' '.join([f'{x}:{v}' for x, v in edge['actions'].items() if v > 0]),
                 True,
@@ -491,7 +498,7 @@ class TransitionGraph:
 
                 pg.draw.aaline(
                     self.canvas,
-                    COLORS['connection'],
+                    color,
                     start_pos,
                     end_pos
                 )
@@ -501,7 +508,7 @@ class TransitionGraph:
                 )
                 pg.draw.arc(
                     self.canvas,
-                    COLORS['connection'],
+                    color,
                     pg.rect.Rect(
                         start_pos[0], start_pos[1],
                         0.5*self.node_size, 0.5*self.node_size
@@ -524,6 +531,10 @@ class TransitionGraph:
                 edge = self.edges[edge]
                 end_pos = self.vertices[edge['node1']]['vis'].rect.center
                 strength = sum(edge['actions'].values())
+                if strength > self.max_con_strength:
+                    self.max_con_strength = strength
+                edge['strength'] = strength / self.max_con_strength
+
                 delta = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])
                 distance = (delta[0] ** 2 + delta[1] ** 2) ** 0.5
                 if distance > (
@@ -531,8 +542,8 @@ class TransitionGraph:
                         (self.init_rad_factor - self.rad_factor) +
                         self.safe_margin
                 ):
-                    att_direct[0] += strength * delta[0]
-                    att_direct[1] += strength * delta[1]
+                    att_direct[0] += (strength * delta[0] / self.max_con_strength)
+                    att_direct[1] += (strength * delta[1] / self.max_con_strength)
 
             # total repulsion
             rep_direct = [0.0, 0.0]
