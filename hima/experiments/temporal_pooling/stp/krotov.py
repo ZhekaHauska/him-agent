@@ -166,15 +166,9 @@ class KrotovLayer:
                 f'| {active_mass:.3f} {y.sum():.3f}  {sdr.size}'
             )
         # if self.cnt % 10000 == 0:
-        #     import seaborn as sns
-        #     from matplotlib import pyplot as plt
-        #     w, r = self.weights, self.radius
-        #     w_p, r_p = self.get_weight_pow_p(p=2), self.radius ** 2
-        #     w = w / np.expand_dims(r, -1)
-        #     w_p = w_p / np.expand_dims(r_p, -1)
-        #     sns.histplot(w.flatten())
-        #     sns.histplot(w_p.flatten())
-        #     plt.show()
+        #     self.plot_weights_distr()
+        # if self.cnt % 10000 == 0:
+        #     self.plot_activation_distr(sdr, u, y)
 
         return output_sdr
 
@@ -218,6 +212,31 @@ class KrotovLayer:
 
         # update winners activation stats
         self.slow_output_sdr_size_trace.put(len(sdr))
+
+    def plot_activation_distr(self, sdr, u, y):
+        k = self.output_sds.active_size
+        ixs_ranked = sdr[np.argsort(y)][::-1]
+        kth, eth = ixs_ranked[k - 1], ixs_ranked[-1]
+        import matplotlib.pyplot as plt
+        plt.hist(u, bins=50)
+        plt.vlines([u[kth], u[eth]], 0, 20, colors=['r', 'y'])
+        plt.show()
+        _y = np.cumsum(np.sort(y))[::-1]
+        _y /= _y[0]
+        plt.plot(_y)
+        plt.vlines(k, 0, 1, color='r')
+        plt.show()
+
+    def plot_weights_distr(self):
+        import seaborn as sns
+        from matplotlib import pyplot as plt
+        w, r = self.weights, self.radius
+        w_p, r_p = self.get_weight_pow_p(), self.radius ** 2
+        w = w / np.expand_dims(r, -1)
+        w_p = w_p / np.expand_dims(r_p, -1)
+        sns.histplot(w.flatten())
+        sns.histplot(w_p.flatten())
+        plt.show()
 
     @property
     def ff_size(self):
