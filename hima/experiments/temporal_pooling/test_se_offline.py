@@ -175,6 +175,7 @@ class SpatialEncoderOfflineExperiment:
         while self.i_train_epoch < n_epochs:
             self.i_train_epoch += 1
             self.print_with_timestamp(f'Epoch {self.i_train_epoch}')
+
             self.train_epoch_se(self.data.train)
 
             # [on testing schedule] train and test ANN classifier in K-N mode
@@ -184,6 +185,7 @@ class SpatialEncoderOfflineExperiment:
         n_samples = len(data)
         order = self.rng.permutation(n_samples)
         self.encode_array(data.sdrs, order=order, learn=True, track=False)
+        self.print_encoding_speed('train')
 
     def test_epoch_se_ann_kn_mode(self, train_data, test_data):
         if not self.should_test():
@@ -191,6 +193,7 @@ class SpatialEncoderOfflineExperiment:
 
         print(f'==> Test after {self.i_train_epoch}')
 
+        train_run_time = self.encoder.computation_speed.get()
         entropy = None
         if self.sdr_tracker is not None:
             entropy = self.sdr_tracker.on_sequence_finished(None, ignore=False)['H']
@@ -203,6 +206,7 @@ class SpatialEncoderOfflineExperiment:
         encoded_train_sdrs = self.encode_array(
             train_data.sdrs, order=train_order, learn=False, track=track_sdrs
         )
+        eval_run_time = self.encoder.computation_speed.get()
 
         first_epoch_kn_losses = None
         final_epoch_kn_losses = None
@@ -231,11 +235,14 @@ class SpatialEncoderOfflineExperiment:
         epoch_metrics = {
             'kn_loss': final_epoch_kn_loss,
             'kn_accuracy': accuracy,
+            'train_speed_kcps': round(1.0 / train_run_time / 1000.0, 2),
+            'eval_speed_kcps': round(1.0 / eval_run_time / 1000.0, 2),
         }
         if entropy is not None:
             epoch_metrics['se_entropy'] = entropy
 
         self.log_progress(epoch_metrics)
+        self.print_encoding_speed('eval')
         print('<== Test')
 
     def run_ann(self):
@@ -386,6 +393,10 @@ class SpatialEncoderOfflineExperiment:
         if not cond:
             return
         print_with_timestamp(self.init_time, *args)
+
+    def print_encoding_speed(self, kind):
+        speed = round(1.0 / self.encoder.computation_speed.get() / 1000.0, 2)
+        print(f'{kind} speed_kcps: {speed:.2f}')
 
     def set_metrics(self):
         if self.logger is None:

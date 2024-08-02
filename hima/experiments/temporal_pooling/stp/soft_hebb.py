@@ -5,6 +5,8 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from enum import Enum, auto
+
 import numpy as np
 import numpy.typing as npt
 from numpy.random import Generator
@@ -18,10 +20,22 @@ from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.se import (
     get_normal_std
 )
-from hima.experiments.temporal_pooling.stp.se_general import (
-    NegativeHebbian, FilterOutput,
-    NormalizeOutput
-)
+
+
+class NegativeHebbian(Enum):
+    NO = 0
+    RATE = auto()
+    TOP_K = auto()
+
+
+class FilterOutput(Enum):
+    SOFT = 1
+    HARD = auto()
+
+
+class NormalizeOutput(Enum):
+    NO = 0
+    YES = auto()
 
 
 class SoftHebbLayer:
