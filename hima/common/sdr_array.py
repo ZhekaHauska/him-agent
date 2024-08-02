@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 from numpy import typing as npt
 
 from hima.common.sdr import RateSdr, AnySparseSdr
@@ -41,6 +42,20 @@ class SdrArray:
             dense = fn(self.dense)
 
         return SdrArray(sparse=sparse, dense=dense, sdr_size=self.sdr_size)
+
+    def get_batch_dense(self, ixs):
+        if self.dense is not None:
+            return self.dense[ixs]
+
+        batch = make_template_batch(self, ixs=ixs)
+        fill_dense(batch, self, ixs)
+        return batch
+
+
+def make_template_batch(sdrs: SdrArray, n: int = None, ixs=None):
+    n = n if n is not None else len(ixs)
+    shape = (n, sdrs.sdr_size)
+    return np.zeros(shape)
 
 
 def fill_dense(dst: npt.NDArray[float], srs: SdrArray, ixs):

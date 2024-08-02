@@ -16,6 +16,7 @@ from hima.common.config.base import TConfig
 from hima.common.sdr import (
     SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, unwrap_as_rate_sdr
 )
+from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
@@ -261,6 +262,9 @@ class SpatialEncoderLayer:
                 lr=fast_lr, initial_value=self.beta_active_mass[0]
             )
 
+    def compute_batch(self, batch: SdrArray, learn: bool = False) -> SdrArray:
+        ...
+
     def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
         output_sdr, run_time = self._compute(input_sdr, learn)
@@ -297,17 +301,16 @@ class SpatialEncoderLayer:
         if not learn:
             return output_sdr
 
+        self.cnt += 1
         # ==> Select learning set
         sdr_learn, y_learn = self.select_learning_set(hard_sdr, hard_y)
-
         # ==> Learn
         self.update_dense_weights(x, sdr_learn, y_learn, u_raw)
         self.update_beta(hard_sdr, hard_y)
 
         self.fast_soft_size_trace.put(len(soft_sdr))
-        self.fast_potentials_trace.put(u_raw)
-
-        self.cnt += 1
+        if self.bias_boosting == BoostingPolicy.ADDITIVE:
+            self.fast_potentials_trace.put(u_raw)
 
         if self.pruning_controller is not None:
             self.prune_newborns()
@@ -317,7 +320,6 @@ class SpatialEncoderLayer:
         # if self.cnt % 50000 == 0:
         #     self.plot_weights_distr()
         # if self.cnt % 10000 == 0:
-        #     self.plot_soft_threshold_accuracy()
         #     self.plot_activation_distr(sdr, u, y)
 
         return output_sdr
@@ -396,7 +398,6 @@ class SpatialEncoderLayer:
         y = y[:k_output].copy()
 
         if self.normalize_output:
-            # TODO: normalize by avg norm
             y = normalize(y, all_positive=True)
 
         if k_output > 0:
@@ -488,7 +489,7 @@ class SpatialEncoderLayer:
         if self.input_normalization:
             p = self.normalize_input_p
             x = normalize(x, p)
-            raise NotImplementedError('Normalize by avg norm')
+            raise NotImplementedError('Normalize by avg RF norm')
 
         # set new SDR
         self.sparse_input = sdr
@@ -692,77 +693,6 @@ class SpatialEncoderLayer:
         return entropy(self.output_rate)
 
 
-@jit()
-def get_active(a, size, thr):
-    thr, mn_thr, mx_thr = thr
-    mx_size = int(size * 4.0) + 1
-    i = 0
-    k = 2.0
-    sdr = sdr_mx = np.empty(0, np.integer)
-
-    while i <= 3:
-        i += 1
-        if sdr_mx.size == 0:
-            sdr = np.flatnonzero(a >= thr)
-        else:
-            sdr = sdr_mx[np.flatnonzero(a[sdr_mx] >= thr)]
-
-        if sdr.size < size:
-            mx_thr = thr
-            thr = (thr + mn_thr) / k
-        elif sdr.size > mx_size:
-            mn_thr = thr
-            thr = (thr + mx_thr) / k
-            sdr_mx = sdr
-        else:
-            return sdr, thr, (i, False, mn_thr, mx_thr)
-
-    if sdr.size < size:
-        if sdr_mx.size > size:
-            return sdr_mx, mn_thr, (i, False, mn_thr, mx_thr)
-        thr = 0.0
-        return np.flatnonzero(a > thr), thr, (i, True, thr, mx_thr)
-
-    # sdr.size > mx_size
-    return sdr, mn_thr, (i, True, thr, mx_thr * 2)
-
-
-@jit()
-def get_active2(a, size, thr):
-    thr, mn_thr, mx_thr = thr
-    mx_size = int(size * 2.5) + 1
-    i = 0
-    k = 2.0
-    sdr = sdr_mx = np.empty(0, np.integer)
-
-    while i <= 5:
-        i += 1
-        sdr = np.flatnonzero(a >= thr)
-
-        if sdr.size < size:
-            mx_thr = thr
-            thr = (thr + mn_thr) / k
-            continue
-
-        sdr_mx = sdr_mx[sdr] if sdr_mx.size != 0 else sdr
-
-        if sdr.size > mx_size:
-            mn_thr = thr
-            thr = (thr + mx_thr) / k
-            a = a[sdr].copy()
-        else:
-            return sdr_mx, thr, (i, False, mn_thr, mx_thr)
-
-    if sdr.size < size:
-        if sdr_mx.size > 0:
-            return sdr_mx, mn_thr, (i, False, mn_thr, mx_thr)
-        thr = mn_thr
-        return np.flatnonzero(a >= thr), thr, (i, True, thr, mx_thr)
-
-    # sdr.size > mx_size
-    return sdr, mn_thr, (i, True, thr, mx_thr * 2)
-
-
 def get_distr_std(distr: WeightsDistribution, required_r, n_samples: int, p: float) -> float:
     if distr == WeightsDistribution.NORMAL:
         return get_normal_std(required_r, n_samples, p)
@@ -793,6 +723,7 @@ def adapt_beta_mass(k, soft_extra, beta_active_mass):
 
     low, high = beta_active_mass
     return adapt_relation(low), adapt_relation(high)
+
 
 def exp_x(
         x: npt.NDArray[float], *, beta: float, axis: int = -1
@@ -864,18 +795,3 @@ def nb_choice(rng, p):
     # Get corresponding index
     ind = np.searchsorted(acc_w, r, side='right')
     return ind
-
-
-@jit()
-def get_important_simple(a, thr, size):
-    i = 1
-    k = 4.0
-    while i <= 3:
-        sdr = np.flatnonzero(a > thr)
-        if sdr.size < size:
-            thr /= k
-        else:
-            return i, thr, sdr
-        i += 1
-    thr = 0.0
-    return i, thr, np.flatnonzero(a > thr)

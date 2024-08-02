@@ -115,9 +115,7 @@ sp:
     # with respect to top K against second top K
     beta_active_mass: [0.75, 0.94]
 
-    # no | yes
-    normalize_output: no
-    # E = K * (1 + e)
+    normalize_output: False
     output_extra: 1.0
 
     learning_rate: 0.01
@@ -255,8 +253,8 @@ setups:
     input_mode: rate
     ds_norm: l1
 #    encoding_sds: [4000, 40]
-    encoding_sds: [2000, 20]
-#    encoding_sds: [800, 10]
+#    encoding_sds: [2000, 20]
+    encoding_sds: [800, 10]
   binary_htm_sparse:
     encoder:
       _base_: sp.htm_sp

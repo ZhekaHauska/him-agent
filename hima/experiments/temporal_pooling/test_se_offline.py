@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from functools import partial
-from itertools import zip_longest
 from pathlib import Path
 
 import numpy as np
@@ -16,8 +15,8 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
-from hima.common.sdr import OutputMode, unwrap_as_rate_sdr, wrap_as_rate_sdr
-from hima.common.sdr_array import SdrArray, fill_dense
+from hima.common.sdr import OutputMode, wrap_as_rate_sdr
+from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
 from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, prepend_dict_keys
@@ -273,7 +272,7 @@ class SpatialEncoderOfflineExperiment:
 
         losses = []
         for batch_ixs in batched_indices:
-            batch = make_batch(batch_ixs, sdrs)
+            batch = sdrs.get_batch_dense(batch_ixs)
             target_cls = targets[batch_ixs]
             classifier.learn(batch, target_cls)
             losses.append(classifier.losses[-1])
@@ -300,9 +299,9 @@ class SpatialEncoderOfflineExperiment:
         batched_indices = split_to_batches(order, self.training.batch_size)
 
         sum_accuracy = 0.0
-        for batch_ix in batched_indices:
-            batch = make_batch(batch_ix, sdrs)
-            target_cls = targets[batch_ix]
+        for batch_ixs in batched_indices:
+            batch = sdrs.get_batch_dense(batch_ixs)
+            target_cls = targets[batch_ixs]
 
             prediction = classifier.predict(batch)
             sum_accuracy += self.get_accuracy(prediction, target_cls)
@@ -318,7 +317,7 @@ class SpatialEncoderOfflineExperiment:
             # of encoding batch computing is reasonable.
             batched_indices = split_to_batches(order, self.training.batch_size)
             for batch_ixs in tqdm(batched_indices):
-                batch = make_batch(batch_ixs, sdrs)
+                batch = sdrs.get_batch_dense(batch_ixs)
                 encoded_batch = self.encoder.compute_batch(batch, learn=learn)
                 if track:
                     self.sdr_tracker.on_sdr_batch_updated(encoded_batch, ignore=False)
@@ -415,29 +414,6 @@ def personalize_metrics(metrics: dict, prefix: str):
 def split_to_batches(order, batch_size):
     n_samples = len(order)
     return np.array_split(order, n_samples // batch_size)
-
-
-def fill_batch(batch, ds, batch_ix, encoder=None, learn=False):
-    if encoder is None:
-        for i, sdr_ix in enumerate(batch_ix):
-            sdr, rates = unwrap_as_rate_sdr(ds[sdr_ix])
-            batch[i, sdr] = rates
-    else:
-        for i, sdr_ix in enumerate(batch_ix):
-            sdr, rates = unwrap_as_rate_sdr(
-                encoder.compute(ds[sdr_ix], learn=learn)
-            )
-            batch[i, sdr] = rates
-
-
-def make_batch(batch_ixs, sdrs: SdrArray):
-    if sdrs.dense is not None:
-        return sdrs.dense[batch_ixs]
-
-    shape = (len(batch_ixs), sdrs.sdr_size)
-    batch = np.zeros(shape)
-    fill_dense(batch, sdrs, batch_ixs)
-    return batch
 
 
 def normalize_ds(ds, norm, p=None):
