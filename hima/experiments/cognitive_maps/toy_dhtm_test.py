@@ -39,3 +39,5 @@ if __name__ == '__main__':
 
             env.act(action)
             env.step()
+
+    dhtm.draw_graph('test.png', connection_threshold=0.6, activation_threshold=5)

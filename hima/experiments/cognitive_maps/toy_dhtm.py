@@ -7,10 +7,13 @@ import numpy as np
 import socket
 import json
 import atexit
+import pygraphviz as pgv
+import colormap
 from hima.modules.belief.utils import get_data, send_string, NumpyEncoder
 
 HOST = "127.0.0.1"
 PORT = 5555
+EPS = 1e-24
 
 
 class ToyDHTM:
@@ -19,7 +22,7 @@ class ToyDHTM:
         for one hidden variable with visualizations.
         Stores transition matrix explicitly.
     """
-    vis_server: socket.socket
+    vis_server: socket.socket = None
 
     def __init__(
             self,
@@ -49,6 +52,7 @@ class ToyDHTM:
         self.action_buffer = list()
         self.state_buffer = list()
 
+        self.vis_server = None
         if self.visualize:
             self.connect_to_vis_server()
             if self.vis_server is not None:
@@ -307,3 +311,44 @@ class ToyDHTM:
 
     def _send_json_dict(self, data_dict):
         send_string(json.dumps(data_dict, cls=NumpyEncoder), self.vis_server)
+
+    def draw_graph(self, path=None, connection_threshold=0, activation_threshold=0):
+        g = pgv.AGraph(strict=False, directed=True)
+        outline_color = '#3655b3'
+        nonzero_states = np.flatnonzero(self.activation_counts > activation_threshold)
+        node_cmap = colormap.cmap_builder('Pastel1')
+        edge_cmap = colormap.Colormap().cmap_bicolor('white', 'blue')
+
+        for state in nonzero_states:
+            clone, obs_state = self._state_to_clone(state, return_obs_state=True)
+            g.add_node(
+                f'{obs_state}({clone})',
+                style='filled',
+                fillcolor=colormap.rgb2hex(
+                    *(node_cmap(obs_state)[:-1]),
+                    normalised=True
+                ),
+                color=outline_color
+            )
+
+        for u in nonzero_states:
+            u_clone, u_obs_state = self._state_to_clone(u, return_obs_state=True)
+            for action in range(self.n_actions):
+                transitions = self.transition_counts[action, u]
+                weights = transitions / (transitions.sum() + EPS)
+                nonzero_transitions = np.flatnonzero(weights > connection_threshold)
+
+                for v, weight in zip(nonzero_transitions, weights[nonzero_transitions]):
+                    v_clone, v_obs_state = self._state_to_clone(v, return_obs_state=True)
+                    line_color = colormap.rgb2hex(
+                        *(edge_cmap(int(255 * weight))[:-1]),
+                        normalised=True
+                    )
+                    g.add_edge(
+                        f'{u_obs_state}({u_clone})', f'{v_obs_state}({v_clone})',
+                        color=line_color,
+                        label=str(action)
+                    )
+
+        g.layout(prog='dot')
+        return g.draw(path, format='png')
