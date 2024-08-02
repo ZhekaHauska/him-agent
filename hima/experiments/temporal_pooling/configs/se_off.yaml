@@ -100,7 +100,7 @@ sp:
     init_radius: 20.0
     weights_bias: 0.0
     weights_distribution: normal
-    inhibitory_ratio: 0.1
+    inhibitory_ratio: 0.12
     persistent_signs: True
 
     # linear | sqrt | krotov
@@ -108,7 +108,6 @@ sp:
     # no | additive | multiplicative
     boosting_policy: multiplicative
     # powerlaw | exponential
-#    activation_func: exponential
     activation_func: powerlaw
     beta: 1.0
     beta_lr: 0.0
@@ -119,7 +118,7 @@ sp:
     # no | yes
     normalize_output: no
     # E = K * (1 + e)
-    output_extra: 0.5
+    output_extra: 1.0
 
     learning_rate: 0.01
     adaptive_lr: True
@@ -256,8 +255,8 @@ setups:
     input_mode: rate
     ds_norm: l1
 #    encoding_sds: [4000, 40]
-#    encoding_sds: [2000, 20]
-    encoding_sds: [800, 10]
+    encoding_sds: [2000, 20]
+#    encoding_sds: [800, 10]
   binary_htm_sparse:
     encoder:
       _base_: sp.htm_sp

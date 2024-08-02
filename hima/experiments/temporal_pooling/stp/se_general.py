@@ -353,7 +353,9 @@ class SpatialEncoderLayer:
     def activate(self, u):
         if self.activation_func == ActivationFunc.POWERLAW:
             y = u - u.min()
-            if abs(self.beta - 1.0) > 1e-2:
+            # set small, but big enough, range, where beta is still considered 1 mainly to
+            # avoid almost negligible differences at the cost of additional computations
+            if not (0.9 <= self.beta <= 1.2):
                 y **= self.beta
         elif self.activation_func == ActivationFunc.EXPONENTIAL:
             # NB: no need to subtract min before, as we have to subtract max anyway
@@ -363,7 +365,6 @@ class SpatialEncoderLayer:
             raise ValueError(f'Unsupported activation function: {self.activation_func}')
 
         y = normalize(y, all_positive=True)
-
         return y
 
     def match_input(self, x):
@@ -438,7 +439,10 @@ class SpatialEncoderLayer:
         lr = self.get_adaptive_lr(sdr) if self.adaptive_lr else self.learning_rate
         w = self.weights[sdr]
 
-        _x = np.expand_dims(x, 0)
+        if self.filter_input_policy == FilterInputPolicy.SUBTRACT_AVG:
+            _x = np.expand_dims(np.abs(x), 0)
+        else:
+            _x = np.expand_dims(x, 0)
         y_ = np.expand_dims(y, -1)
         lr_ = np.expand_dims(lr, -1)
 
