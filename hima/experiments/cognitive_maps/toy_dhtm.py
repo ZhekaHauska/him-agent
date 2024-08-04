@@ -312,7 +312,7 @@ class ToyDHTM:
     def _send_json_dict(self, data_dict):
         send_string(json.dumps(data_dict, cls=NumpyEncoder), self.vis_server)
 
-    def draw_graph(self, path=None, connection_threshold=0, activation_threshold=0):
+    def draw_graph(self, path=None, connection_threshold=0, activation_threshold=0, labels=None):
         g = pgv.AGraph(strict=False, directed=True)
         outline_color = '#3655b3'
         nonzero_states = np.flatnonzero(self.activation_counts > activation_threshold)
@@ -320,18 +320,27 @@ class ToyDHTM:
         edge_cmap = colormap.Colormap().cmap_bicolor('white', 'blue')
 
         for state in nonzero_states:
+            if labels is not None:
+                label = str(labels[state]) + '_'
+            else:
+                label = ''
             clone, obs_state = self._state_to_clone(state, return_obs_state=True)
             g.add_node(
-                f'{obs_state}({clone})',
+                f'{label}{obs_state}({clone})',
                 style='filled',
                 fillcolor=colormap.rgb2hex(
-                    *(node_cmap(obs_state)[:-1]),
+                    *(node_cmap(obs_state / self.n_obs_states)[:-1]),
                     normalised=True
                 ),
                 color=outline_color
             )
 
         for u in nonzero_states:
+            if labels is not None:
+                u_label = str(labels[u]) + '_'
+            else:
+                u_label = ''
+
             u_clone, u_obs_state = self._state_to_clone(u, return_obs_state=True)
             for action in range(self.n_actions):
                 transitions = self.transition_counts[action, u]
@@ -339,13 +348,17 @@ class ToyDHTM:
                 nonzero_transitions = np.flatnonzero(weights > connection_threshold)
 
                 for v, weight in zip(nonzero_transitions, weights[nonzero_transitions]):
+                    if labels is not None:
+                        v_label = str(labels[v]) + '_'
+                    else:
+                        v_label = ''
                     v_clone, v_obs_state = self._state_to_clone(v, return_obs_state=True)
                     line_color = colormap.rgb2hex(
                         *(edge_cmap(int(255 * weight))[:-1]),
                         normalised=True
                     )
                     g.add_edge(
-                        f'{u_obs_state}({u_clone})', f'{v_obs_state}({v_clone})',
+                        f'{u_label}{u_obs_state}({u_clone})', f'{v_label}{v_obs_state}({v_clone})',
                         color=line_color,
                         label=str(action)
                     )
