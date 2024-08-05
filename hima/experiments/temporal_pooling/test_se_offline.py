@@ -317,11 +317,11 @@ class SpatialEncoderOfflineExperiment:
             # of encoding batch computing is reasonable.
             batched_indices = split_to_batches(order, self.training.batch_size)
             for batch_ixs in tqdm(batched_indices):
-                batch = sdrs.get_batch_dense(batch_ixs)
-                encoded_batch = self.encoder.compute_batch(batch, learn=learn)
+                batch_sdrs = sdrs.create_slice(batch_ixs)
+                encoded_batch: SdrArray = self.encoder.compute_batch(batch_sdrs, learn=learn)
                 if track:
                     self.sdr_tracker.on_sdr_batch_updated(encoded_batch, ignore=False)
-                encoded_sdrs.extend(encoded_batch)
+                encoded_sdrs.extend(encoded_batch.sparse)
         else:
             # for single SDR encoding, compute expects a sparse SDR.
             for ix in tqdm(order):

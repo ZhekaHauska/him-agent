@@ -129,8 +129,6 @@ class SpatialEncoderLayer:
 
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
-        self.sparse_input = np.empty(0, dtype=int)
-        self.dense_input = np.zeros(self.ff_size, dtype=float)
 
         self.output_sds = Sds.make(output_sds)
         self.output_mode = OutputMode.RATE
@@ -219,6 +217,9 @@ class SpatialEncoderLayer:
         self.hard_top_k = k + max(k2, output_extra)
 
         # ==> Learning
+        # global learn flag that is switched each compute, to avoid passing it through
+        # the whole chain on demand. After compute it's set to False automatically
+        self.learn = False
         # [:k1] - hebbian, [k:k+k2] - anti-hebbian
         self.learning_set = (k1, k2)
         self.learning_rate = learning_rate
@@ -262,19 +263,29 @@ class SpatialEncoderLayer:
                 lr=fast_lr, initial_value=self.beta_active_mass[0]
             )
 
-    def compute_batch(self, batch: SdrArray, learn: bool = False) -> SdrArray:
-        ...
+    def compute_batch(self, input_sdrs: SdrArray, learn: bool = False) -> SdrArray:
+        self.learn = learn
+        output_sdr, run_time = self._compute_batch(input_sdrs)
+        # put average time per SDR
+        self.computation_speed.put(run_time / len(input_sdrs))
+        self.learn = False
+        return output_sdr
 
     def compute(self, input_sdr: AnySparseSdr, learn: bool = False) -> AnySparseSdr:
         """Compute the output SDR."""
-        output_sdr, run_time = self._compute(input_sdr, learn)
+        self.learn = learn
+        output_sdr, run_time = self._compute(input_sdr)
         self.computation_speed.put(run_time)
+        self.learn = False
         return output_sdr
 
     @timed
-    def _compute(self, input_sdr: AnySparseSdr, learn: bool) -> AnySparseSdr:
-        self.accept_input(input_sdr, learn=learn)
-        x = self.dense_input
+    def _compute(self, input_sdr: AnySparseSdr) -> AnySparseSdr:
+        input_sdr = RateSdr(*unwrap_as_rate_sdr(input_sdr))
+
+        prepr_input_sdr = self.preprocess_input(input_sdr)
+        x = np.zeros(self.ff_size)
+        x[prepr_input_sdr.sdr] = prepr_input_sdr.values
 
         # ==> Match input
         u_raw = self.match_input(x)
@@ -296,21 +307,16 @@ class SpatialEncoderLayer:
 
         # ==> Select output
         output_sdr = self.select_output(hard_sdr, hard_y)
-        self.accept_output(output_sdr, learn=learn)
 
-        if not learn:
+        if not self.learn:
             return output_sdr
 
-        self.cnt += 1
         # ==> Select learning set
         sdr_learn, y_learn = self.select_learning_set(hard_sdr, hard_y)
         # ==> Learn
         self.update_dense_weights(x, sdr_learn, y_learn, u_raw)
         self.update_beta(hard_sdr, hard_y)
-
-        self.fast_soft_size_trace.put(len(soft_sdr))
-        if self.bias_boosting == BoostingPolicy.ADDITIVE:
-            self.fast_potentials_trace.put(u_raw)
+        self.cnt += 1
 
         if self.pruning_controller is not None:
             self.prune_newborns()
@@ -324,9 +330,67 @@ class SpatialEncoderLayer:
 
         return output_sdr
 
+    @timed
+    def _compute_batch(self, input_sdrs: SdrArray) -> SdrArray:
+        batch_size = len(input_sdrs)
+        output_sdrs = []
+
+        prepr_input_sdrs = SdrArray(sparse=[
+            self.preprocess_input(input_sdrs.sparse[i]) for i in range(batch_size)
+        ], sdr_size=input_sdrs.sdr_size)
+        xs = prepr_input_sdrs.get_batch_dense(np.arange(batch_size))
+
+        # ==> Match input
+        u_raws = self.match_input(xs.T).T
+        us = self.apply_boosting(u_raws)
+
+        for i in range(batch_size):
+            u, u_raw = us[i], u_raws[i]
+
+            # ==> Soft partition
+            # with soft partition we take a very small subset, in [0, 10%] of the full array
+            # NB: with this, we simulate taking neurons with supra-average activity
+            soft_sdr = self.partition_potentials(u)
+
+            # make a copy for better performance
+            soft_u = u[soft_sdr].copy()
+
+            # ==> Activate
+            soft_y = self.activate(soft_u)
+
+            # ==> apply hard partition (optionally) and sort activations
+            # NB: both hard_sdr and y are sorted by activations in desc order
+            hard_sdr, hard_y = self.partition_and_rank_activations(soft_sdr, soft_y)
+
+            # ==> Select output
+            output_sdr = self.select_output(hard_sdr, hard_y)
+            output_sdrs.append(output_sdr)
+
+            if not self.learn:
+                continue
+
+            # ==> Select learning set
+            sdr_learn, y_learn = self.select_learning_set(hard_sdr, hard_y)
+            # ==> Learn
+            self.update_dense_weights(xs[i], sdr_learn, y_learn, u_raw)
+            self.update_beta(hard_sdr, hard_y)
+            self.cnt += 1
+
+            if self.pruning_controller is not None:
+                self.prune_newborns()
+
+            if self.cnt % 10000 == 0:
+                self.print_stats(u, output_sdr)
+            # if self.cnt % 50000 == 0:
+            #     self.plot_weights_distr()
+            # if self.cnt % 10000 == 0:
+            #     self.plot_activation_distr(sdr, u, y)
+
+        return SdrArray(sparse=output_sdrs, sdr_size=self.output_size)
+
     def partition_potentials(self, u):
         if self.exact_partitioning:
-            return arg_top_k(u, self.soft_top_k)
+            soft_sdr = arg_top_k(u, self.soft_top_k)
         else:
             # approximate by using max values distribution from square 2d regrouping
             b, sz, soft_k = self.soft_top_k
@@ -336,7 +400,11 @@ class SpatialEncoderLayer:
             # take the softK-th lowest max, where softK is specifically chosen to allow at least
             # K + ~E winners to pass through
             t = partitions_maxes[-soft_k]
-            return np.flatnonzero(u > t)
+            soft_sdr = np.flatnonzero(u > t)
+
+        if self.learn:
+            self.fast_soft_size_trace.put(len(soft_sdr))
+        return soft_sdr
 
     def partition_and_rank_activations(self, soft_sdr, y):
         sz = len(soft_sdr)
@@ -381,13 +449,19 @@ class SpatialEncoderLayer:
         return np.dot(w, x)
 
     def apply_boosting(self, u_raw):
-        u = u_raw
-        if self.bias_boosting == BoostingPolicy.ADDITIVE:
+        if self.bias_boosting == BoostingPolicy.NO:
+            u = u_raw
+        elif self.bias_boosting == BoostingPolicy.ADDITIVE:
             avg_u = self.fast_potentials_trace.get()
             u = u_raw - avg_u
+            if self.learn:
+                self.fast_potentials_trace.put(u_raw)
         elif self.bias_boosting == BoostingPolicy.MULTIPLICATIVE:
             boosting_k = boosting(relative_rate=self.output_relative_rate, k=self.pos_log_radius)
             u = u_raw * boosting_k
+        else:
+            raise ValueError(f'Unsupported boosting policy: {self.bias_boosting}')
+
         return u
 
     def select_output(self, sdr, y):
@@ -407,7 +481,11 @@ class SpatialEncoderLayer:
             sdr = sdr[mask]
             y = y[mask]
 
-        return RateSdr(sdr, y)
+        output_sdr = RateSdr(sdr, y)
+        if self.learn:
+            self.fast_output_sdr_size_trace.put(len(output_sdr.sdr))
+            self.slow_output_trace.put(output_sdr.values, output_sdr.sdr)
+        return output_sdr
 
     def select_learning_set(self, sdr, y):
         k1, k2 = self.learning_set
@@ -467,49 +545,29 @@ class SpatialEncoderLayer:
         self.pos_log_radius[sdr] = self.get_log_radius(sdr)
         self.recalculate_derivative_weights(sdr)
 
-    def accept_input(self, sdr: AnySparseSdr, *, learn: bool):
-        """Accept new input and move to the next time step"""
-        sdr, rates = unwrap_as_rate_sdr(sdr)
-
-        # forget prev SDR
-        self.dense_input[self.sparse_input] = 0.
-
+    def preprocess_input(self, input_sdr: RateSdr):
         # ==> subtract average rates
         if self.filter_input_policy == FilterInputPolicy.NO:
-            x = rates
+            rates = input_sdr.values
         elif self.filter_input_policy == FilterInputPolicy.SUBTRACT_AVG:
-            x = rates - self.fast_feedforward_trace.get(sdr)
+            rates = input_sdr.values - self.fast_feedforward_trace.get(input_sdr.sdr)
         elif self.filter_input_policy == FilterInputPolicy.SUBTRACT_AVG_AND_CLIP:
-            x = rates - self.fast_feedforward_trace.get(sdr)
-            x = np.maximum(x, 0)
+            rates = input_sdr.values - self.fast_feedforward_trace.get(input_sdr.sdr)
+            rates = np.maximum(rates, 0)
         else:
             raise ValueError(f'Unsupported filter input policy: {self.filter_input_policy}')
 
         # ==> normalize input
         if self.input_normalization:
             p = self.normalize_input_p
-            x = normalize(x, p)
+            rates = normalize(rates, p)
             raise NotImplementedError('Normalize by avg RF norm')
 
-        # set new SDR
-        self.sparse_input = sdr
-        self.dense_input[self.sparse_input] = x
+        if self.learn:
+            self.slow_feedforward_size_trace.put(len(input_sdr.sdr))
+            self.fast_feedforward_trace.put(input_sdr.values, input_sdr.sdr)
 
-        if not learn:
-            return
-
-        self.fast_feedforward_trace.put(rates, sdr)
-        self.slow_feedforward_size_trace.put(len(sdr))
-
-    def accept_output(self, sdr: RateSdr, *, learn: bool):
-        sdr, value = sdr.sdr, sdr.values
-
-        if not learn or sdr.shape[0] == 0:
-            return
-
-        # update winners activation stats
-        self.fast_output_sdr_size_trace.put(len(sdr))
-        self.slow_output_trace.put(value, sdr)
+        return RateSdr(input_sdr.sdr, rates)
 
     def prune_newborns(self):
         pc = self.pruning_controller
@@ -750,7 +808,7 @@ def normalize(x, p=1.0, all_positive=False):
 
 def arg_top_k(x, k):
     k = min(k, x.size)
-    return np.argpartition(x, -k)[-k:]
+    return np.argpartition(x, -k, axis=-1)[..., -k:]
 
 
 def parse_learning_set(ls, k):

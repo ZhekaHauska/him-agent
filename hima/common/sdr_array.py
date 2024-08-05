@@ -33,6 +33,24 @@ class SdrArray:
     def get_sdr(self, ind: int, binary: bool = False) -> AnySparseSdr:
         return self.sparse[ind].sdr if binary else self.sparse[ind]
 
+    def get_batch_dense(self, ixs):
+        if self.dense is not None:
+            return self.dense[ixs]
+
+        batch = make_template_batch(self, ixs=ixs)
+        fill_dense(batch, self, ixs)
+        return batch
+
+    def create_slice(self, ixs):
+        sparse, dense = None, None
+
+        if self.sparse is not None:
+            sparse = [self.sparse[ix] for ix in ixs]
+        if self.dense is not None:
+            dense = self.dense[ixs]
+
+        return SdrArray(sparse=sparse, dense=dense, sdr_size=self.sdr_size)
+
     def create_modified(self, fn):
         sparse, dense = None, None
 
@@ -42,14 +60,6 @@ class SdrArray:
             dense = fn(self.dense)
 
         return SdrArray(sparse=sparse, dense=dense, sdr_size=self.sdr_size)
-
-    def get_batch_dense(self, ixs):
-        if self.dense is not None:
-            return self.dense[ixs]
-
-        batch = make_template_batch(self, ixs=ixs)
-        fill_dense(batch, self, ixs)
-        return batch
 
 
 def make_template_batch(sdrs: SdrArray, n: int = None, ixs=None):
