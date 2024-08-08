@@ -4,6 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import numpy as np
+import numpy.typing as npt
 from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr, RateSdr
@@ -78,10 +79,10 @@ def sample_melded_sdr(rng: Generator, sds: Sds, sdr: SparseSdr, other: SparseSdr
 # ==================== Rate SDR generation ====================
 def sample_rates(rng: Generator, size: int, temp: float = 0.3):
     """Sample rates array in [0, 1] with the given size and the temperature (noise scale)."""
-    x = rng.normal(0, temp, size)
+    x: npt.NDArray[float] = rng.normal(0, temp, size)
     np.abs(x, out=x)
-    x[x > 1] = 1
-    x[:] = 1 - x
+    x[x > 1.0] = 1.0
+    x[:] = 1.0 - x
     return x
 
 

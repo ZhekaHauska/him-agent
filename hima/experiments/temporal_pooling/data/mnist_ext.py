@@ -32,7 +32,7 @@ class SdrDataset:
         self.images = images
         self.targets = targets
 
-        flatten_images = self.images.reshape(self.images.shape[0], -1)
+        flatten_images = self.images.reshape(self.images.shape[0], -1).copy()
         sdr_size = flatten_images.shape[1]
 
         if binary:
@@ -43,6 +43,7 @@ class SdrDataset:
             self.sdrs = SdrArray(sparse=bin_rate_sdrs, sdr_size=sdr_size)
         else:
             bin_sdrs = [np.flatnonzero(img >= threshold) for img in flatten_images]
+            flatten_images[flatten_images < threshold] = 0.0
             rate_sdrs = [
                 RateSdr(sdr, values=values[sdr])
                 for sdr, values in zip(bin_sdrs, flatten_images)
@@ -94,12 +95,9 @@ class MnistDataset:
         test_images, test_targets = test
         self.test = SdrDataset(test_images, test_targets, threshold, binary)
 
-        if binary:
-            sum_active = np.sum([len(rate_sdr.sdr) for rate_sdr in self.train.sdrs.sparse])
-            total_number = self.train.images.size
-            sparsity = sum_active / total_number
-        else:
-            sparsity = self.train.sdrs.dense.mean()
+        sum_active = np.sum([len(rate_sdr.sdr) for rate_sdr in self.train.sdrs.sparse])
+        total_number = self.train.images.size
+        sparsity = sum_active / total_number
         self.sds = Sds(shape=self.image_shape, sparsity=sparsity)
 
     @property
@@ -119,7 +117,7 @@ def _load_dataset(
     normalizer = 255.0
 
     # NB: to get sdr for rate sdrs
-    threshold = 1.0 / normalizer
+    threshold = 2.0 / normalizer
 
     from pathlib import Path
     cache_path = Path(f'~/data/_cache/{ds_name}{"_gs" if grayscale else ""}.pkl')
