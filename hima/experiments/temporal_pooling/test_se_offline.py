@@ -192,7 +192,7 @@ class SpatialEncoderOfflineExperiment:
 
         print(f'==> Test after {self.i_train_epoch}')
 
-        train_run_time = self.encoder.computation_speed.get()
+        train_speed = self.get_encoding_speed()
         entropy = None
         if self.sdr_tracker is not None:
             entropy = self.sdr_tracker.on_sequence_finished(None, ignore=False)['H']
@@ -205,7 +205,7 @@ class SpatialEncoderOfflineExperiment:
         encoded_train_sdrs = self.encode_array(
             train_data.sdrs, order=train_order, learn=False, track=track_sdrs
         )
-        eval_run_time = self.encoder.computation_speed.get()
+        eval_speed = self.get_encoding_speed()
 
         first_epoch_kn_losses = None
         final_epoch_kn_losses = None
@@ -234,9 +234,12 @@ class SpatialEncoderOfflineExperiment:
         epoch_metrics = {
             'kn_loss': final_epoch_kn_loss,
             'kn_accuracy': accuracy,
-            'train_speed_kcps': round(1.0 / train_run_time / 1000.0, 2),
-            'eval_speed_kcps': round(1.0 / eval_run_time / 1000.0, 2),
         }
+        if train_speed is not None and eval_speed is not None:
+            epoch_metrics |= {
+                'train_speed_kcps': train_speed,
+                'eval_speed_kcps': eval_speed,
+            }
         if entropy is not None:
             epoch_metrics['se_entropy'] = entropy
 
@@ -393,8 +396,16 @@ class SpatialEncoderOfflineExperiment:
             return
         print_with_timestamp(self.init_time, *args)
 
+    def get_encoding_speed(self):
+        if not hasattr(self.encoder, 'computation_speed'):
+            return None
+
+        return round(1.0 / self.encoder.computation_speed.get() / 1000.0, 2)
+
     def print_encoding_speed(self, kind):
-        speed = round(1.0 / self.encoder.computation_speed.get() / 1000.0, 2)
+        speed = self.get_encoding_speed()
+        if speed is None:
+            return
         print(f'{kind} speed_kcps: {speed:.2f}')
 
     def set_metrics(self):
