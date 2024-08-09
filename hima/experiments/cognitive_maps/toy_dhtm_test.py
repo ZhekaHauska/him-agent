@@ -13,6 +13,33 @@ import colormap
 import numpy as np
 
 
+def get_true_transitions(n_clones, env: GridWorld):
+    n_states = len(env.unique_colors)*n_clones
+    transition_matrix = np.zeros((len(env.actions), n_states, n_states))
+    true_map = env.get_true_map()
+    obs_counts = np.zeros_like(env.unique_colors)
+    clones = np.zeros_like(true_map)
+    for r in range(env.h):
+        for c in range(env.w):
+            obs = true_map[r, c]
+            clones[r, c] = obs_counts[obs]
+            obs_counts[obs] += 1
+    for r in range(env.h):
+        for c in range(env.w):
+            obs = true_map[r, c]
+            clone = clones[r, c]
+            u_state = clone + obs * n_clones
+            for a in env.actions:
+                env.r, env.c = r, c
+                env.act(a)
+                env.step()
+                obs = true_map[env.r, env.c]
+                clone = clones[env.r, env.c]
+                v_state = clone + obs * n_clones
+                transition_matrix[a, u_state, v_state] = 1
+    return transition_matrix
+
+
 if __name__ == '__main__':
     config = read_config('configs/dhtm_runner.yaml')
     if config['seed'] is None:
@@ -29,11 +56,22 @@ if __name__ == '__main__':
     config['dhtm']['n_actions'] = len(env.actions)
     dhtm = ToyDHTM(**config['dhtm'])
 
+    if config['set_true_transitions']:
+        true_transition_matrix = get_true_transitions(dhtm.n_clones, env).astype(
+            dhtm.transition_counts.dtype
+        )
+        dhtm.transition_counts = true_transition_matrix * (dhtm.consolidation_threshold + 1)
+
+    if 'initial_pos' in config:
+        init_r, init_c = config['initial_pos']
+    else:
+        init_r, init_c = None, None
+
     label_counts = np.zeros((dhtm.n_hidden_states, env.h * env.w))
     states_visited = list()
 
     for epoch in range(config['n_epochs']):
-        env.reset()
+        env.reset(init_r, init_c)
 
         if len(states_visited) > 0:
             for hidden_state, state in zip(dhtm.state_buffer, states_visited):
