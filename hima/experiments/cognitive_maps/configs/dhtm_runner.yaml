@@ -2,6 +2,8 @@ log: true
 project_name: 'dhtm_test'
 n_steps: 50
 n_epochs: 100
-env: 'configs/gridworld.yaml'
+env: 'configs/gridworld/2x2.yaml'
 dhtm: 'configs/dhtm.yaml'
+set_true_transitions: true
+initial_pos: [1, 0]
 seed: null

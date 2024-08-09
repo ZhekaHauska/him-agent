@@ -1,3 +1,3 @@
-n_clones: 10
+n_clones: 5
 consolidation_threshold: 1  # controls noise tolerance?
 visualize: true

@@ -22,7 +22,7 @@ room: [
   ]
 ]
 observation_radius: 0
-collision_hint: true
+collision_hint: false
 collision_reward: 0
 default_reward: -0.02
 random_floor_colors: true
