@@ -19,6 +19,7 @@ from hima.common.sdr import (
 from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
 from hima.common.timer import timed
+from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
@@ -37,22 +38,20 @@ class FilterInputPolicy(Enum):
     SUBTRACT_AVG_AND_CLIP = auto()
 
 
-class MatchPolicy(Enum):
-    # W \cdot x
-    LINEAR = 1
-    # W^{1/2} \cdot x
-    SQRT = auto()
-    # W^{p-1} \cdot x
-    KROTOV = auto()
-
-
 class BoostingPolicy(Enum):
     NO = 0
     ADDITIVE = auto()
     MULTIPLICATIVE = auto()
 
 
-class ActivationFunc(Enum):
+class LearningPolicy(Enum):
+    # W \cdot x
+    LINEAR = 1
+    # W^{p-1} \cdot x
+    KROTOV = auto()
+
+
+class ActivationPolicy(Enum):
     POWERLAW = 1
     EXPONENTIAL = auto()
 
@@ -83,7 +82,7 @@ class SpatialEncoderLayer:
     rf_sparsity: float
 
     # potentiation and learning
-    match_policy: MatchPolicy
+    learning_policy: LearningPolicy
     # [M, Q]: the number of neurons affected by hebb and anti-hebb
     learning_set: tuple[int, int]
     learning_rate: float
@@ -99,18 +98,17 @@ class SpatialEncoderLayer:
 
             normalize_input_p: float = 0.0, filter_input_policy: str = 'no',
             lebesgue_p: float = 1.0, init_radius: float = 10.0,
-            weights_bias: float = 0.0, weights_distribution: str = 'normal',
+            weights_distribution: str = 'normal',
             inhibitory_ratio: float = 0.0, persistent_signs: bool = False,
 
-            match_policy: str = 'linear', boosting_policy: str = 'no',
-            activation_func: str = 'powerlaw', activation_policy: str = 'top_k',
-            beta: float = 1.0, beta_lr: float = 0.01,
+            match_p: float | None = None, boosting_policy: str = 'no',
+            activation_policy: str = 'powerlaw', beta: float = 1.0, beta_lr: float = 0.01,
             # K-based extra for soft partitioning
             soft_extra: float = 1.0,
             # sum(topK) to sum(top2K) min and max ratio
             beta_active_mass: tuple[float] = (0.7, 0.9),
 
-            learning_rate: float = 0.01,
+            learning_policy: str = 'linear', learning_rate: float = 0.01,
             adaptive_lr: bool = False, lr_range: tuple[float, float] = (0.00001, 0.1),
             # K-based learning set: K1 | (K1, K2). K1 - hebb, K2 - anti-hebb
             learning_set: int | float | tuple[int | float] = 1.0,
@@ -140,21 +138,22 @@ class SpatialEncoderLayer:
         self.filter_input_policy = FilterInputPolicy[filter_input_policy.upper()]
 
         # ==> Weights initialization
+        w_shape = (self.output_size, self.ff_size)
+        learning_policy = LearningPolicy[learning_policy.upper()]
+        assert (
+            (learning_policy == LearningPolicy.LINEAR and lebesgue_p == 1.0) or
+            (learning_policy == LearningPolicy.KROTOV and lebesgue_p >= 2.0)
+        ), f'{learning_policy} is incompatible with p-norm {lebesgue_p}'
+
         self.lebesgue_p = lebesgue_p
         self.rf_sparsity = 1.0
         self.weights_distribution = WeightsDistribution[weights_distribution.upper()]
-        w_shape = (self.output_size, self.ff_size)
-        if self.weights_distribution == WeightsDistribution.NORMAL:
-            init_std = get_normal_std(init_radius, self.ff_size, self.lebesgue_p)
-            self.weights = np.abs(self.rng.normal(loc=weights_bias, scale=init_std, size=w_shape))
-        elif self.weights_distribution == WeightsDistribution.UNIFORM:
-            init_std = get_uniform_std(init_radius, self.ff_size, self.lebesgue_p)
-            self.weights = self.rng.uniform(weights_bias, init_std, size=w_shape)
-        else:
-            raise ValueError(f'Unsupported distribution: {weights_distribution}')
+        self.weights = sample_weights(
+            self.rng, w_shape, self.weights_distribution, init_radius, self.lebesgue_p
+        )
 
         self.radius = self.get_radius()
-        self.pos_log_radius = self.get_log_radius()
+        self.pos_log_radius = self.get_pos_log_radius()
 
         # make a portion of weights negative
         if inhibitory_ratio > 0.0:
@@ -162,12 +161,14 @@ class SpatialEncoderLayer:
             self.weights[inh_mask] *= -1.0
 
         # ==> Pattern matching
-        self.match_policy = MatchPolicy[match_policy.upper()]
-        if self.match_policy == MatchPolicy.SQRT:
-            self.sqrt_w = self.get_weight_pow_p(p=0.5)
-        elif self.match_policy == MatchPolicy.KROTOV:
-            self.weights_pow_p = self.get_weight_pow_p()
-
+        if learning_policy == LearningPolicy.LINEAR:
+            # for linear learning, we allow any weights power, default is 1.0 (linear)
+            self.match_p = isnone(match_p, 1.0)
+        elif learning_policy == LearningPolicy.KROTOV:
+            # for krotov learning, power is fixed to weights' norm p - 1
+            self.match_p = self.lebesgue_p - 1
+            # check for config consistency
+            assert isnone(match_p, self.match_p) == self.match_p
         self.bias_boosting = BoostingPolicy[boosting_policy.upper()]
 
         # ==> K-extras
@@ -197,18 +198,17 @@ class SpatialEncoderLayer:
             )
 
         # ==> Activation [applied to soft partition]
-        self.activation_func = ActivationFunc[activation_func.upper()]
-        if self.activation_func in [ActivationFunc.POWERLAW, ActivationFunc.EXPONENTIAL]:
-            # for Exp, beta is inverse temperature in the softmax
-            # for Powerlaw, beta is the power in the RePU (for simplicity I use the same name)
-            self.beta = beta
-            self.adaptive_beta = beta_lr > 0.0
-            if self.adaptive_beta:
-                if self.activation_func == ActivationFunc.POWERLAW:
-                    # compared to the softmax beta, the power beta is usually smaller, hence lr is
-                    # scaled down to equalize settings for diff activation policies
-                    beta_lr /= 10.0
-                self.beta_lr = beta_lr
+        self.activation_policy = ActivationPolicy[activation_policy.upper()]
+        # for Exp, beta is inverse temperature in the softmax
+        # for Powerlaw, beta is the power in the RePU (for simplicity I use the same name)
+        self.beta = beta
+        self.adaptive_beta = beta_lr > 0.0
+        if self.adaptive_beta:
+            if self.activation_policy == ActivationPolicy.POWERLAW:
+                # compared to the softmax beta, the power beta is usually smaller, hence lr is
+                # scaled down to equalize settings for diff activation policies
+                beta_lr /= 10.0
+            self.beta_lr = beta_lr
 
         # sum(topK) to sum(top2K) (min, max) ratio
         self.beta_active_mass = beta_active_mass
@@ -217,6 +217,7 @@ class SpatialEncoderLayer:
         self.hard_top_k = k + max(k2, output_extra)
 
         # ==> Learning
+        self.learning_policy = learning_policy
         # global learn flag that is switched each compute, to avoid passing it through
         # the whole chain on demand. After compute it's set to False automatically
         self.learn = False
@@ -240,7 +241,10 @@ class SpatialEncoderLayer:
 
         self.cnt = 0
         self.loops = 0
-        print(f'init_std: {init_std:.3f} | {self.avg_radius:.3f}')
+        print(
+            f'Init weights {self.lebesgue_p}-norm: {self.avg_radius:.3f}'
+            f' | {self.learning_policy} | match W^{self.match_p}'
+        )
 
         # stats collection
         slow_lr = LearningRateParam(window=40_000)
@@ -341,6 +345,7 @@ class SpatialEncoderLayer:
         xs = prepr_input_sdrs.get_batch_dense(np.arange(batch_size))
 
         # ==> Match input
+        # TODO: .copy()
         u_raws = self.match_input(xs.T).T
         us = self.apply_boosting(u_raws)
 
@@ -421,31 +426,26 @@ class SpatialEncoderLayer:
         return sdr, y
 
     def activate(self, u):
-        if self.activation_func == ActivationFunc.POWERLAW:
+        if self.activation_policy == ActivationPolicy.POWERLAW:
             y = u - u.min()
             # set small, but big enough, range, where beta is still considered 1 mainly to
             # avoid almost negligible differences at the cost of additional computations
             if not (0.9 <= self.beta <= 1.2):
                 y **= self.beta
-        elif self.activation_func == ActivationFunc.EXPONENTIAL:
+        elif self.activation_policy == ActivationPolicy.EXPONENTIAL:
             # NB: no need to subtract min before, as we have to subtract max anyway
             # for numerical stability (exp is shift-invariant)
             y = np.exp(self.beta * (u - u.max()))
         else:
-            raise ValueError(f'Unsupported activation function: {self.activation_func}')
+            raise ValueError(f'Unsupported activation function: {self.activation_policy}')
 
         y = normalize(y, all_positive=True)
         return y
 
     def match_input(self, x):
-        if self.match_policy == MatchPolicy.LINEAR:
-            w = self.weights
-        elif self.match_policy == MatchPolicy.SQRT:
-            w = self.sqrt_w
-        elif self.match_policy == MatchPolicy.KROTOV:
-            w = self.weights_pow_p
-        else:
-            raise ValueError(f'Unsupported match policy: {self.match_policy}')
+        w, p = self.weights, self.match_p
+        if p != 1.0:
+            w = np.sign(w) * (np.abs(w) ** p)
         return np.dot(w, x)
 
     def apply_boosting(self, u_raw):
@@ -526,7 +526,7 @@ class SpatialEncoderLayer:
         lr_ = np.expand_dims(lr, -1)
 
         sg = np.sign(w) if self.persistent_signs else 1.0
-        if self.match_policy == MatchPolicy.KROTOV:
+        if self.learning_policy == LearningPolicy.KROTOV:
             _u = np.expand_dims(u[sdr], -1)
             _u = np.maximum(0., _u)
             _u = _u / max(10.0, _u.max() + 1e-30)
@@ -542,8 +542,7 @@ class SpatialEncoderLayer:
         self.weights[sdr, :] += lr_ * dw
 
         self.radius[sdr] = self.get_radius(sdr)
-        self.pos_log_radius[sdr] = self.get_log_radius(sdr)
-        self.recalculate_derivative_weights(sdr)
+        self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
 
     def preprocess_input(self, input_sdr: RateSdr):
         # ==> subtract average rates
@@ -586,8 +585,6 @@ class SpatialEncoderLayer:
         new_rs = np.expand_dims(self.get_radius(), -1)
         self.weights *= rs / new_rs
 
-        self.recalculate_derivative_weights()
-
     def update_beta(self, hard_sdr, hard_y):
         if self.cnt % 10 != 0:
             # beta updates throttling, update every 10th step
@@ -624,30 +621,6 @@ class SpatialEncoderLayer:
             self.beta += beta_lr * d_beta
             self.beta = max(min(self.beta, 1e+5), 1e-4)
 
-    def recalculate_derivative_weights(self, sdr=None):
-        if self.match_policy == MatchPolicy.SQRT:
-            w = self.sqrt_w
-            new_w = self.get_weight_pow_p(sdr, p=0.5)
-        elif self.match_policy == MatchPolicy.KROTOV:
-            w = self.weights_pow_p
-            new_w = self.get_weight_pow_p(sdr)
-        else:
-            return
-
-        if sdr is None:
-            w[:] = new_w
-        else:
-            w[sdr, :] = new_w
-
-    def get_weight_pow_p(self, ixs: npt.NDArray[int] = None, p: float = None) -> npt.NDArray[float]:
-        if p is None:
-            p = self.lebesgue_p - 1
-        w = self.weights if ixs is None else self.weights[ixs]
-        if p == 1:
-            # shortcut to remove unnecessary calculations
-            return w
-        return np.sign(w) * (np.abs(w) ** p)
-
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.lebesgue_p
         w = self.weights if ixs is None else self.weights[ixs]
@@ -656,7 +629,7 @@ class SpatialEncoderLayer:
             return np.sum(np.abs(w), axis=-1)
         return np.sum(np.abs(w) ** p, axis=-1) ** (1 / p)
 
-    def get_log_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
+    def get_pos_log_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         r = self.radius if ixs is None else self.radius[ixs]
         return np.log2(np.maximum(r, 1.0))
 
@@ -709,9 +682,6 @@ class SpatialEncoderLayer:
         w, r = self.weights, self.radius
         w = w / np.expand_dims(r, -1)
         sns.histplot(w.flatten())
-        if self.match_policy == MatchPolicy.SQRT:
-            w_p = self.sqrt_w / np.expand_dims(r, -1)
-            sns.histplot(w_p.flatten())
         plt.show()
 
     @property
@@ -751,22 +721,28 @@ class SpatialEncoderLayer:
         return entropy(self.output_rate)
 
 
-def get_distr_std(distr: WeightsDistribution, required_r, n_samples: int, p: float) -> float:
-    if distr == WeightsDistribution.NORMAL:
-        return get_normal_std(required_r, n_samples, p)
-    elif distr == WeightsDistribution.UNIFORM:
-        return get_uniform_std(required_r, n_samples, p)
+def sample_weights(rng, w_shape, distribution, radius, lebesgue_p):
+    if distribution == WeightsDistribution.NORMAL:
+        init_std = get_normal_std(w_shape[1], lebesgue_p, radius)
+        weights = np.abs(rng.normal(loc=0., scale=init_std, size=w_shape))
+
+    elif distribution == WeightsDistribution.UNIFORM:
+        init_std = get_uniform_std(w_shape[1], lebesgue_p, radius)
+        weights = rng.uniform(0., init_std, size=w_shape)
+
     else:
-        raise ValueError(f'Unsupported distribution: {distr}')
+        raise ValueError(f'Unsupported distribution: {distribution}')
+
+    return weights
 
 
-def get_uniform_std(required_r, n_samples, p):
+def get_uniform_std(n_samples, p, required_r) -> float:
     alpha = 2 / n_samples
     alpha = alpha ** (1 / p)
     return required_r * alpha
 
 
-def get_normal_std(required_r, n_samples: int, p: float) -> float:
+def get_normal_std(n_samples: int, p: float, required_r) -> float:
     alpha = np.pi / (2 * n_samples)
     alpha = alpha ** (1 / p)
     return required_r * alpha
@@ -783,21 +759,9 @@ def adapt_beta_mass(k, soft_extra, beta_active_mass):
     return adapt_relation(low), adapt_relation(high)
 
 
-def exp_x(
-        x: npt.NDArray[float], *, beta: float, axis: int = -1
-) -> npt.NDArray[float]:
-    """
-    Compute softmax values for a vector `x` with a given temperature or inverse temperature.
-    The softmax operation is applied over the last axis by default, or over the specified axis.
-    """
-    beta = max(min(beta, 1e+5), 1e-4)
-    # TODO: check if subtracting max val is unnecessary
-    return np.exp((x - np.max(x, axis=axis, keepdims=True)) * beta)
-
-
 def normalize(x, p=1.0, all_positive=False):
     u = x if all_positive else np.abs(x)
-    r = np.sum(u ** p, axis=-1) if p != 1.0 else np.sum(u, axis=-1)
+    r = np.sum(u ** p, axis=-1) ** (1 / p) if p != 1.0 else np.sum(u, axis=-1)
     eps = 1e-30
     if x.ndim > 1:
         mask = r > eps
