@@ -13,6 +13,7 @@ test:
   eval_first: 3
   eval_schedule: 5
   n_epochs: 20
+  noise: 0.0
 
 classifier:
   classification: ???
@@ -102,7 +103,6 @@ sp:
     init_radius: 20.0
     weights_distribution: normal
     inhibitory_ratio: 0.12
-    persistent_signs: True
 
     # Weights power for matching [should be compatible with learning policy, i.e.
     #   lebesgue_p - 1 for krotov (use ... to make it auto-induced), and
@@ -129,14 +129,15 @@ sp:
     # M | [M, Q]: M - hebb, Q - anti-hebb; ints or floats — absolute or relative to K
     learning_set: [1.0, 0.4]
     anti_hebb_scale: 1.0
+    persistent_signs: True
     normalize_dw: False
 
-#    pruning:
-#      n_stages: 25
-#      cycle: 200.0
-#      # linear | powerlaw
-#      mode: powerlaw
-#      target_rf_sparsity: 0.5
+    pruning:
+      n_stages: 25
+      cycle: 200.0
+      # linear | powerlaw
+      mode: powerlaw
+      target_rf_sparsity: 0.5
 
   se:
     _type_: sp.se

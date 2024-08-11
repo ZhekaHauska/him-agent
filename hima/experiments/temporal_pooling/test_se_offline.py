@@ -47,11 +47,13 @@ class TestConfig:
     eval_first: int
     eval_countdown: RepeatingCountdown
     n_epochs: int
+    noise: float
 
-    def __init__(self, eval_first: int, eval_schedule: int, n_epochs: int):
+    def __init__(self, eval_first: int, eval_schedule: int, n_epochs: int, noise: float = 0.0):
         self.eval_first = eval_first
         self.eval_countdown = make_repeating_counter(eval_schedule)
         self.n_epochs = n_epochs
+        self.noise = noise
 
     def tick(self):
         now, self.eval_countdown = tick(self.eval_countdown)
@@ -223,7 +225,8 @@ class SpatialEncoderOfflineExperiment:
         n_test_samples = len(test_data)
         test_order = np.arange(n_test_samples)
         encoded_test_sdrs = self.encode_array(
-            test_data.sdrs, order=test_order, learn=False, track=track_sdrs
+            test_data.sdrs, order=test_order, learn=False, track=track_sdrs,
+            noise=self.testing.noise
         )
         accuracy = self.evaluate_ann_classifier(
             kn_ann_classifier, encoded_test_sdrs, self.data.test.targets
@@ -287,7 +290,9 @@ class SpatialEncoderOfflineExperiment:
             return
 
         nn_epoch_loss = np.mean(nn_epoch_losses)
-        accuracy = self.evaluate_ann_classifier(classifier, data.sdrs, data.targets)
+        accuracy = self.evaluate_ann_classifier(
+            classifier, data.sdrs, data.targets, noise=self.testing.noise
+        )
         self.print_decoder_quality(accuracy, nn_epoch_loss)
 
         epoch_metrics = {
@@ -296,22 +301,28 @@ class SpatialEncoderOfflineExperiment:
         }
         self.log_progress(epoch_metrics)
 
-    def evaluate_ann_classifier(self, classifier, sdrs, targets):
+    def evaluate_ann_classifier(self, classifier, sdrs, targets, noise=0.):
         n_samples = len(sdrs)
         order = np.arange(n_samples)
         batched_indices = split_to_batches(order, self.training.batch_size)
 
         sum_accuracy = 0.0
         for batch_ixs in batched_indices:
-            batch = sdrs.get_batch_dense(batch_ixs)
+            if noise > 0.0:
+                batch_sdrs = sdrs.create_slice(batch_ixs)
+                batch_sdrs = self.apply_noise_to_input(batch_sdrs, noise)
+                batch_sdrs = batch_sdrs.get_batch_dense(np.arange(len(batch_sdrs)))
+            else:
+                batch_sdrs = sdrs.get_batch_dense(batch_ixs)
+
             target_cls = targets[batch_ixs]
 
-            prediction = classifier.predict(batch)
+            prediction = classifier.predict(batch_sdrs)
             sum_accuracy += self.get_accuracy(prediction, target_cls)
 
         return sum_accuracy / n_samples
 
-    def encode_array(self, sdrs: SdrArray, *, order, learn=False, track=False):
+    def encode_array(self, sdrs: SdrArray, *, order, learn=False, track=False, noise=0.):
         assert self.encoder is not None, 'Encoder is not defined'
         encoded_sdrs = []
 
@@ -321,6 +332,8 @@ class SpatialEncoderOfflineExperiment:
             batched_indices = split_to_batches(order, self.training.batch_size)
             for batch_ixs in tqdm(batched_indices):
                 batch_sdrs = sdrs.create_slice(batch_ixs)
+                batch_sdrs = self.apply_noise_to_input(batch_sdrs, noise)
+
                 encoded_batch: SdrArray = self.encoder.compute_batch(batch_sdrs, learn=learn)
                 if track:
                     self.sdr_tracker.on_sdr_batch_updated(encoded_batch, ignore=False)
@@ -329,6 +342,8 @@ class SpatialEncoderOfflineExperiment:
             # for single SDR encoding, compute expects a sparse SDR.
             for ix in tqdm(order):
                 obs_sdr = sdrs.get_sdr(ix, binary=self.is_binary)
+                obs_sdr = self.apply_noise_to_input(obs_sdr, noise)
+
                 enc_sdr = self.encoder.compute(obs_sdr, learn=learn)
                 enc_sdr = wrap_as_rate_sdr(enc_sdr)
                 if track:
@@ -336,6 +351,30 @@ class SpatialEncoderOfflineExperiment:
                 encoded_sdrs.append(enc_sdr)
 
         return SdrArray(sparse=encoded_sdrs, sdr_size=self.encoding_sds.size)
+
+    def apply_noise_to_input(self, sdr, noise):
+        if noise == 0.0:
+            return sdr
+
+        from hima.common.sdr_sampling import (
+            sample_noisy_rates_rate_sdr, sample_noisy_sdr_rate_sdr, sample_noisy_sdr
+        )
+        from functools import partial
+        f_noise = (
+            partial(sample_noisy_rates_rate_sdr, self.rng, frac=noise)
+            if self.rng.random() > 0.5 else
+            partial(sample_noisy_sdr_rate_sdr, self.rng, sds=self.dataset_sds, frac=noise)
+        )
+        if isinstance(sdr, SdrArray):
+            batch_sdrs = sdr
+            return SdrArray(
+                sparse=[f_noise(rate_sdr=sdr) for sdr in batch_sdrs.sparse],
+                sdr_size=self.dataset_sds.size
+            )
+        elif not self.is_binary:
+            return f_noise(rate_sdr=sdr)
+        else:
+            return sample_noisy_sdr(self.rng, self.dataset_sds, sdr, noise)
 
     def log_progress(self, metrics: dict):
         if self.logger is None:
