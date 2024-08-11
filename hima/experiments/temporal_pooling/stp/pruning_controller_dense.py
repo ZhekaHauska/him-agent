@@ -5,15 +5,15 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from typing import Any
 
-import numba
 import numpy as np
 import numpy.typing as npt
+from numba import jit
 from numpy.random import Generator
 
 from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     RepeatingCountdown,
-    make_repeating_counter
+    make_repeating_counter, nb_choice_k
 )
 
 
@@ -69,7 +69,12 @@ class PruningController:
 
         # sample what connections to keep for each neuron independently
         new_rf_size = round(new_sparsity * self.sp.ff_size)
-        prune(self.sp.rng, self.sp.weights, new_rf_size)
+
+        from hima.common.timer import timed
+        _, t = timed(prune)(self.sp.rng, self.sp.weights, new_rf_size)
+        t = round(t * 1000.0, 2)
+        print(f'Pruning time: {t} ms')
+        # prune(self.sp.rng, self.sp.weights, new_rf_size)
         return new_sparsity, new_rf_size
 
     def get_target_rf_sparsity(self):
@@ -98,51 +103,20 @@ class PruningController:
         return current * decay
 
 
-@numba.jit(nopython=True, cache=True)
+@jit()
 def prune(rng: Generator, weights: npt.NDArray[float], k: int):
     n_neurons, n_synapses = weights.shape
     cache_mask = np.zeros(n_synapses, dtype=np.bool_)
 
     for row in range(n_neurons):
         abs_ws = np.abs(weights[row])
-        nz_ws = np.flatnonzero(abs_ws)
 
-        threshold = abs_ws[nz_ws].mean() + 1e-20
-        keep_prob = (abs_ws[nz_ws] / threshold + 0.1) ** 1.4
+        threshold = abs_ws.mean() + 1e-20
+        keep_prob = (abs_ws / threshold + 0.1) ** 1.4
 
         nb_choice_k(
             rng, k, keep_prob, None, False, cache_mask
         )
-        pruned_ixs = nz_ws[~cache_mask[:nz_ws.size]]
-        weights[row, pruned_ixs] = 0.
+        pruned_ixs = ~cache_mask
+        weights[row, pruned_ixs] = 0.0
         cache_mask.fill(False)
-
-
-@numba.jit(nopython=True, cache=True)
-def nb_choice_k(
-        rng: Generator, k: int, weights: npt.NDArray[np.float64] = None, n: int = None,
-        replace: bool = False, cache: npt.NDArray[np.bool_] = None
-):
-    """Choose k samples from max_n values, with optional weights and replacement."""
-    acc_w = np.cumsum(weights) if weights is not None else np.arange(0, n, 1, dtype=np.float64)
-    # Total of weights
-    mx_w = acc_w[-1]
-    # result
-    result = np.full(k, -1, dtype=np.int64)
-    if not replace and cache is None and n is not None:
-        cache = np.zeros(n, dtype=np.bool_)
-
-    i = 0
-    while i < k:
-        r = mx_w * rng.random()
-        ind = np.searchsorted(acc_w, r, side='right')
-
-        if not replace and cache[ind]:
-            continue
-        else:
-            result[i] = ind
-            if not replace:
-                cache[ind] = True
-            i += 1
-
-    return result

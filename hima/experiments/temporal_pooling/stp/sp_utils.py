@@ -61,6 +61,49 @@ def boosting(
     return np.power(k + 1, np.tanh(x / softness))
 
 
+@jit
+def nb_choice(rng, p):
+    """Choose a sample from N values with weights p (they could be non-normalized)."""
+    # Get cumulative weights
+    acc_w = np.cumsum(p)
+    # Total of weights
+    mx_w = acc_w[-1]
+    r = mx_w * rng.random()
+    # Get corresponding index
+    ind = np.searchsorted(acc_w, r, side='right')
+    return ind
+
+
+@jit()
+def nb_choice_k(
+        rng: Generator, k: int, weights: npt.NDArray[np.float64] = None, n: int = None,
+        replace: bool = False, cache: npt.NDArray[np.bool_] = None
+):
+    """Choose k samples from max_n values, with optional weights and replacement."""
+    acc_w = np.cumsum(weights) if weights is not None else np.arange(0, n, 1, dtype=np.float64)
+    # Total of weights
+    mx_w = acc_w[-1]
+    # result
+    result = np.full(k, -1, dtype=np.int64)
+    if not replace and cache is None and n is not None:
+        cache = np.zeros(n, dtype=np.bool_)
+
+    i = 0
+    while i < k:
+        r = mx_w * rng.random()
+        ind = np.searchsorted(acc_w, r, side='right')
+
+        if not replace and cache[ind]:
+            continue
+        else:
+            result[i] = ind
+            if not replace:
+                cache[ind] = True
+            i += 1
+
+    return result
+
+
 RepeatingCountdown = tuple[int, int]
 
 

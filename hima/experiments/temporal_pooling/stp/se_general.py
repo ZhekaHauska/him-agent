@@ -9,7 +9,6 @@ from enum import Enum, auto
 
 import numpy as np
 import numpy.typing as npt
-from numba import jit
 from numpy.random import Generator
 
 from hima.common.config.base import TConfig
@@ -99,7 +98,7 @@ class SpatialEncoderLayer:
             normalize_input_p: float = 0.0, filter_input_policy: str = 'no',
             lebesgue_p: float = 1.0, init_radius: float = 10.0,
             weights_distribution: str = 'normal',
-            inhibitory_ratio: float = 0.0, persistent_signs: bool = False,
+            inhibitory_ratio: float = 0.0,
 
             match_p: float | None = None, boosting_policy: str = 'no',
             activation_policy: str = 'powerlaw', beta: float = 1.0, beta_lr: float = 0.01,
@@ -113,6 +112,7 @@ class SpatialEncoderLayer:
             # K-based learning set: K1 | (K1, K2). K1 - hebb, K2 - anti-hebb
             learning_set: int | float | tuple[int | float] = 1.0,
             anti_hebb_scale: float = 0.4,
+            persistent_signs: bool = False,
             normalize_dw: bool = False,
 
             normalize_output: bool = False,
@@ -139,17 +139,15 @@ class SpatialEncoderLayer:
 
         # ==> Weights initialization
         w_shape = (self.output_size, self.ff_size)
-        learning_policy = LearningPolicy[learning_policy.upper()]
-        assert (
-            (learning_policy == LearningPolicy.LINEAR and lebesgue_p == 1.0) or
-            (learning_policy == LearningPolicy.KROTOV and lebesgue_p >= 2.0)
-        ), f'{learning_policy} is incompatible with p-norm {lebesgue_p}'
+        match_p, lebesgue_p, learning_policy = align_matching_learning_params(
+            match_p, lebesgue_p, learning_policy
+        )
 
         self.lebesgue_p = lebesgue_p
         self.rf_sparsity = 1.0
-        self.weights_distribution = WeightsDistribution[weights_distribution.upper()]
+        weights_distribution = WeightsDistribution[weights_distribution.upper()]
         self.weights = sample_weights(
-            self.rng, w_shape, self.weights_distribution, init_radius, self.lebesgue_p
+            self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p
         )
 
         self.radius = self.get_radius()
@@ -161,14 +159,7 @@ class SpatialEncoderLayer:
             self.weights[inh_mask] *= -1.0
 
         # ==> Pattern matching
-        if learning_policy == LearningPolicy.LINEAR:
-            # for linear learning, we allow any weights power, default is 1.0 (linear)
-            self.match_p = isnone(match_p, 1.0)
-        elif learning_policy == LearningPolicy.KROTOV:
-            # for krotov learning, power is fixed to weights' norm p - 1
-            self.match_p = self.lebesgue_p - 1
-            # check for config consistency
-            assert isnone(match_p, self.match_p) == self.match_p
+        self.match_p = match_p
         self.bias_boosting = BoostingPolicy[boosting_policy.upper()]
 
         # ==> K-extras
@@ -228,8 +219,8 @@ class SpatialEncoderLayer:
         if self.adaptive_lr:
             self.lr_range = lr_range
         self.anti_hebbian_scale = anti_hebb_scale
-        self.normalize_dw = normalize_dw
         self.persistent_signs = persistent_signs
+        self.normalize_dw = normalize_dw
 
         # ==> Output
         self.normalize_output = normalize_output
@@ -339,18 +330,23 @@ class SpatialEncoderLayer:
         batch_size = len(input_sdrs)
         output_sdrs = []
 
+        # ==> Accept input
         prepr_input_sdrs = SdrArray(sparse=[
             self.preprocess_input(input_sdrs.sparse[i]) for i in range(batch_size)
         ], sdr_size=input_sdrs.sdr_size)
-        xs = prepr_input_sdrs.get_batch_dense(np.arange(batch_size))
+
+        if self.filter_input_policy == FilterInputPolicy.NO and not self.input_normalization:
+            xs = input_sdrs.get_batch_dense(np.arange(batch_size))
+        else:
+            xs = prepr_input_sdrs.get_batch_dense(np.arange(batch_size))
 
         # ==> Match input
-        # TODO: .copy()
         u_raws = self.match_input(xs.T).T
         us = self.apply_boosting(u_raws)
 
         for i in range(batch_size):
-            u, u_raw = us[i], u_raws[i]
+            # NB: make a copy for better performance
+            u, u_raw = us[i].copy(), u_raws[i].copy()
 
             # ==> Soft partition
             # with soft partition we take a very small subset, in [0, 10%] of the full array
@@ -736,6 +732,29 @@ def sample_weights(rng, w_shape, distribution, radius, lebesgue_p):
     return weights
 
 
+def align_matching_learning_params(
+        match_p: float | None, lebesgue_p: float, learning_policy: str
+) -> tuple[float, float, LearningPolicy]:
+    learning_policy = LearningPolicy[learning_policy.upper()]
+    # check learning rule with p-norm compatibility
+    assert (
+            (learning_policy == LearningPolicy.LINEAR and lebesgue_p == 1.0) or
+            (learning_policy == LearningPolicy.KROTOV and lebesgue_p >= 2.0)
+    ), f'{learning_policy} is incompatible with p-norm {lebesgue_p}'
+
+    # check learning rule with matching power p compatibility
+    if learning_policy == LearningPolicy.LINEAR:
+        # for linear learning, we allow any weights power, default is 1.0 (linear)
+        match_p = isnone(match_p, 1.0)
+    elif learning_policy == LearningPolicy.KROTOV:
+        # for krotov learning, power is fixed to weights' norm p - 1
+        induced_match_p = lebesgue_p - 1
+        assert isnone(match_p, induced_match_p) == induced_match_p
+        match_p = induced_match_p
+
+    return match_p, lebesgue_p, learning_policy
+
+
 def get_uniform_std(n_samples, p, required_r) -> float:
     alpha = 2 / n_samples
     alpha = alpha ** (1 / p)
@@ -802,18 +821,3 @@ def parse_learning_set(ls, k):
 
     k1 = min(k, k1)
     return k1, k2
-
-
-@jit
-def nb_choice(rng, p):
-    """
-    Choose a sample from N values with weights p (they could be non-normalized).
-    """
-    # Get cumulative weights
-    acc_w = np.cumsum(p)
-    # Total of weights
-    mx_w = acc_w[-1]
-    r = mx_w * rng.random()
-    # Get corresponding index
-    ind = np.searchsorted(acc_w, r, side='right')
-    return ind
