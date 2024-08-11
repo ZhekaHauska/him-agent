@@ -16,8 +16,7 @@ from hima.common.sdr import (
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
 from hima.experiments.temporal_pooling.stp.se_general import (
-    LearningPolicy, WeightsDistribution,
-    ActivationPolicy
+    LearningPolicy, WeightsDistribution
 )
 from hima.experiments.temporal_pooling.stp.sp_utils import tick
 from hima.modules.htm.utils import abs_or_relative
@@ -59,13 +58,12 @@ class SpatialEncoderDenseBackend:
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds,
 
             lebesgue_p: float = 1.0, init_radius: float = 10.0,
-            weights_distribution: str = 'normal',
+            weights_distribution: WeightsDistribution = WeightsDistribution.NORMAL,
             inhibitory_ratio: float = 0.0,
 
             match_p: float = 1.0,
-            activation_policy: str = 'powerlaw', beta: float = 1.0,
 
-            learning_policy: str = 'linear', persistent_signs: bool = False,
+            learning_policy: LearningPolicy = LearningPolicy.LINEAR, persistent_signs: bool = True,
             normalize_dw: bool = False,
 
             pruning: TConfig = None,
@@ -80,11 +78,9 @@ class SpatialEncoderDenseBackend:
         # ==> Weights initialization
         n_out, n_in = self.output_sds.size, self.feedforward_sds.size
         w_shape = (n_out, n_in)
-        learning_policy = LearningPolicy[learning_policy.upper()]
 
         self.lebesgue_p = lebesgue_p
         self.rf_sparsity = 1.0
-        weights_distribution = WeightsDistribution[weights_distribution.upper()]
         self.weights = sample_weights(
             self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p
         )
@@ -100,12 +96,6 @@ class SpatialEncoderDenseBackend:
         # ==> Pattern matching
         self.match_p = match_p
 
-        # ==> Activation [applied to soft partition]
-        self.activation_policy = ActivationPolicy[activation_policy.upper()]
-        # for Exp, beta is inverse temperature in the softmax
-        # for Powerlaw, beta is the power in the RePU (for simplicity I use the same name)
-        self.beta = beta
-
         # ==> Learning
         self.learning_policy = learning_policy
         # global learn flag that is switched each compute, to avoid passing it through
@@ -119,6 +109,11 @@ class SpatialEncoderDenseBackend:
         if pruning is not None:
             self.pruning_controller = PruningController(self, **pruning)
 
+        print(
+            f'Init SE backend: {self.lebesgue_p}-norm | {self.avg_radius:.3f}'
+            f' | {self.learning_policy} | match W^{self.match_p}'
+        )
+
     def match_input(self, x):
         w, p = self.weights, self.match_p
         if p != 1.0:
@@ -126,10 +121,6 @@ class SpatialEncoderDenseBackend:
         return np.dot(w, x)
 
     def update_dense_weights(self, x, sdr, y, u, lr):
-        (sdr_hebb, sdr_anti_hebb), (y_hebb, y_anti_hebb) = sdr, y
-        sdr = np.concatenate([sdr_hebb, sdr_anti_hebb])
-        y = np.concatenate([y_hebb, y_anti_hebb])
-
         if sdr.size == 0:
             return
 

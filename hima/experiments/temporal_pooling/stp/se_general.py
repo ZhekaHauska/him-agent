@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from enum import Enum, auto
+from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
@@ -22,8 +23,11 @@ from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
-from hima.experiments.temporal_pooling.stp.sp_utils import tick, boosting
+from hima.experiments.temporal_pooling.stp.sp_utils import boosting
 from hima.modules.htm.utils import abs_or_relative
+
+if TYPE_CHECKING:
+    from hima.experiments.temporal_pooling.stp.se_dense import SpatialEncoderDenseBackend
 
 
 class WeightsDistribution(Enum):
@@ -74,8 +78,7 @@ class SpatialEncoderLayer:
     dense_input: DenseSdr
 
     # connections
-    weights: npt.NDArray[float]
-    lebesgue_p: float
+    weights_backend: SpatialEncoderDenseBackend
 
     pruning_controller: PruningController | None
     rf_sparsity: float
@@ -137,29 +140,26 @@ class SpatialEncoderLayer:
         self.normalize_input_p = normalize_input_p
         self.filter_input_policy = FilterInputPolicy[filter_input_policy.upper()]
 
-        # ==> Weights initialization
-        w_shape = (self.output_size, self.ff_size)
+        # ==> Weights backend initialization
         match_p, lebesgue_p, learning_policy = align_matching_learning_params(
             match_p, lebesgue_p, learning_policy
         )
-
-        self.lebesgue_p = lebesgue_p
-        self.rf_sparsity = 1.0
         weights_distribution = WeightsDistribution[weights_distribution.upper()]
-        self.weights = sample_weights(
-            self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p
-        )
 
-        self.radius = self.get_radius()
+        # TODO: after implementation of sparse backend, add conditional initialization
+        from hima.experiments.temporal_pooling.stp.se_dense import SpatialEncoderDenseBackend
+        self.weights_backend = SpatialEncoderDenseBackend(
+            seed=self.rng.integers(100_000_000),
+            feedforward_sds=self.feedforward_sds, output_sds=self.output_sds,
+            lebesgue_p=lebesgue_p, init_radius=init_radius,
+            weights_distribution=weights_distribution, inhibitory_ratio=inhibitory_ratio,
+            match_p=match_p,
+            learning_policy=learning_policy, persistent_signs=persistent_signs,
+            normalize_dw=normalize_dw, pruning=pruning
+        )
         self.pos_log_radius = self.get_pos_log_radius()
 
-        # make a portion of weights negative
-        if inhibitory_ratio > 0.0:
-            inh_mask = self.rng.binomial(1, inhibitory_ratio, size=w_shape).astype(bool)
-            self.weights[inh_mask] *= -1.0
-
         # ==> Pattern matching
-        self.match_p = match_p
         self.bias_boosting = BoostingPolicy[boosting_policy.upper()]
 
         # ==> K-extras
@@ -226,16 +226,8 @@ class SpatialEncoderLayer:
         self.normalize_output = normalize_output
         self.output_extra = output_extra
 
-        self.pruning_controller = None
-        if pruning is not None:
-            self.pruning_controller = PruningController(self, **pruning)
-
         self.cnt = 0
         self.loops = 0
-        print(
-            f'Init weights {self.lebesgue_p}-norm: {self.avg_radius:.3f}'
-            f' | {self.learning_policy} | match W^{self.match_p}'
-        )
 
         # stats collection
         slow_lr = LearningRateParam(window=40_000)
@@ -254,6 +246,7 @@ class SpatialEncoderLayer:
         self.fast_output_sdr_size_trace = MeanValue(lr=fast_lr, initial_value=k + self.output_extra)
 
         if self.adaptive_beta:
+            self.fast_hard_size_trace = MeanValue(lr=fast_lr)
             self.fast_active_mass_trace = MeanValue(
                 lr=fast_lr, initial_value=self.beta_active_mass[0]
             )
@@ -310,11 +303,9 @@ class SpatialEncoderLayer:
         sdr_learn, y_learn = self.select_learning_set(hard_sdr, hard_y)
         # ==> Learn
         self.update_dense_weights(x, sdr_learn, y_learn, u_raw)
-        self.update_beta(hard_sdr, hard_y)
+        self.update_beta()
+        self.prune_newborns()
         self.cnt += 1
-
-        if self.pruning_controller is not None:
-            self.prune_newborns()
 
         if self.cnt % 10000 == 0:
             self.print_stats(u, output_sdr)
@@ -374,11 +365,8 @@ class SpatialEncoderLayer:
             sdr_learn, y_learn = self.select_learning_set(hard_sdr, hard_y)
             # ==> Learn
             self.update_dense_weights(xs[i], sdr_learn, y_learn, u_raw)
-            self.update_beta(hard_sdr, hard_y)
+            self.prune_newborns()
             self.cnt += 1
-
-            if self.pruning_controller is not None:
-                self.prune_newborns()
 
             if self.cnt % 10000 == 0:
                 self.print_stats(u, output_sdr)
@@ -386,6 +374,9 @@ class SpatialEncoderLayer:
             #     self.plot_weights_distr()
             # if self.cnt % 10000 == 0:
             #     self.plot_activation_distr(sdr, u, y)
+
+        # single beta update with increased force (= batch size)
+        self.update_beta(mu=batch_size)
 
         return SdrArray(sparse=output_sdrs, sdr_size=self.output_size)
 
@@ -419,6 +410,11 @@ class SpatialEncoderLayer:
         # apply the order
         y = y[ixs]
         sdr = soft_sdr[ixs] if soft_sdr is not None else ixs
+
+        if self.learn and self.adaptive_beta:
+            k = self.output_sds.active_size
+            self.fast_hard_size_trace.put(len(sdr))
+            self.fast_active_mass_trace.put(y[:k].sum())
         return sdr, y
 
     def activate(self, u):
@@ -439,10 +435,7 @@ class SpatialEncoderLayer:
         return y
 
     def match_input(self, x):
-        w, p = self.weights, self.match_p
-        if p != 1.0:
-            w = np.sign(w) * (np.abs(w) ** p)
-        return np.dot(w, x)
+        return self.weights_backend.match_input(x)
 
     def apply_boosting(self, u_raw):
         if self.bias_boosting == BoostingPolicy.NO:
@@ -460,13 +453,12 @@ class SpatialEncoderLayer:
 
         return u
 
-    def select_output(self, sdr, y):
+    def select_output(self, hard_sdr, hard_y):
         k, extra = self.output_sds.active_size, self.output_extra
-        k_output = min(k + extra, len(sdr))
+        k_output = min(k + extra, len(hard_sdr))
 
-        sdr = sdr[:k_output].copy()
-        y = y[:k_output].copy()
-
+        sdr = hard_sdr[:k_output].copy()
+        y = hard_y[:k_output].copy()
         if self.normalize_output:
             y = normalize(y, all_positive=True)
 
@@ -474,8 +466,8 @@ class SpatialEncoderLayer:
             eps = 0.05 / k_output
             mask = y > eps
 
-            sdr = sdr[mask]
-            y = y[mask]
+            sdr = sdr[mask].copy()
+            y = y[mask].copy()
 
         output_sdr = RateSdr(sdr, y)
         if self.learn:
@@ -504,40 +496,18 @@ class SpatialEncoderLayer:
 
     def update_dense_weights(self, x, sdr, y, u):
         (sdr_hebb, sdr_anti_hebb), (y_hebb, y_anti_hebb) = sdr, y
-        y_anti_hebb = -self.anti_hebbian_scale * y_anti_hebb
         sdr = np.concatenate([sdr_hebb, sdr_anti_hebb])
-        y = np.concatenate([y_hebb, y_anti_hebb])
 
         if sdr.size == 0:
             return
 
+        y_anti_hebb = -self.anti_hebbian_scale * y_anti_hebb
+        y = np.concatenate([y_hebb, y_anti_hebb])
         lr = self.get_adaptive_lr(sdr) if self.adaptive_lr else self.learning_rate
-        w = self.weights[sdr]
-
         if self.filter_input_policy == FilterInputPolicy.SUBTRACT_AVG:
-            _x = np.expand_dims(np.abs(x), 0)
-        else:
-            _x = np.expand_dims(x, 0)
-        y_ = np.expand_dims(y, -1)
-        lr_ = np.expand_dims(lr, -1)
+            x = np.abs(x)
 
-        sg = np.sign(w) if self.persistent_signs else 1.0
-        if self.learning_policy == LearningPolicy.KROTOV:
-            _u = np.expand_dims(u[sdr], -1)
-            _u = np.maximum(0., _u)
-            _u = _u / max(10.0, _u.max() + 1e-30)
-            # Oja learning rule, Lp normalization, p >= 2
-            dw = y_ * (sg * _x - w * _u)
-        else:
-            # Willshaw learning rule, L1 normalization
-            dw = y_ * (sg * _x - w)
-
-        if self.normalize_dw:
-            dw /= np.abs(dw).max() + 1e-30
-
-        self.weights[sdr, :] += lr_ * dw
-
-        self.radius[sdr] = self.get_radius(sdr)
+        self.weights_backend.update_dense_weights(x, sdr, y, u, lr=lr)
         self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
 
     def preprocess_input(self, input_sdr: RateSdr):
@@ -565,38 +535,29 @@ class SpatialEncoderLayer:
         return RateSdr(input_sdr.sdr, rates)
 
     def prune_newborns(self):
-        pc = self.pruning_controller
-        if not pc.is_newborn_phase:
-            return
-        now, pc.countdown = tick(pc.countdown)
-        if not now:
-            return
+        self.weights_backend.prune_newborns()
 
-        sparsity, rf_size = pc.shrink_receptive_field()
-        self.rf_sparsity = sparsity
-        print(f'{sparsity:.4f} | {rf_size}')
+    def update_beta(self, mu: int = 1):
+        schedule = 16
+        # mu: additional learning scale (to make mu updates in one hop)
+        if mu == 1:
+            # sequential mode
+            if self.cnt % schedule != 0:
+                # beta updates throttling, update every xxx-th step
+                return
+            # make an update with accumulated force
+            mu = schedule
 
-        # rescale weights to keep the same norms
-        rs = np.expand_dims(self.radius, -1)
-        new_rs = np.expand_dims(self.get_radius(), -1)
-        self.weights *= rs / new_rs
-
-    def update_beta(self, hard_sdr, hard_y):
-        if self.cnt % 10 != 0:
-            # beta updates throttling, update every 10th step
+        if not self.adaptive_beta:
             return
 
         k = self.output_sds.active_size
-        k_extra = hard_y.size - k
-        if not self.adaptive_beta or k_extra < 0.4 * k:
+        k_extra = self.fast_output_sdr_size_trace.get() - k
+        if k_extra < 0.4 * k:
             return
 
-        # count active mass
-        k_active_mass = hard_y[:k].sum()
-        self.fast_active_mass_trace.put(k_active_mass)
-
-        avg_pos_log_radius = max(0.01, np.mean(self.pos_log_radius[hard_sdr]))
-        beta_lr = self.beta_lr * max(0.01, np.sqrt(avg_pos_log_radius))
+        avg_pos_log_radius = max(0.01, self.pos_log_radius.mean())
+        beta_lr = mu * self.beta_lr * max(0.01, np.sqrt(avg_pos_log_radius))
 
         avg_active_mass = self.fast_active_mass_trace.get()
         avg_active_size = self.output_active_size
@@ -617,14 +578,6 @@ class SpatialEncoderLayer:
             self.beta += beta_lr * d_beta
             self.beta = max(min(self.beta, 1e+5), 1e-4)
 
-    def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
-        p = self.lebesgue_p
-        w = self.weights if ixs is None else self.weights[ixs]
-        if p == 1:
-            # shortcut to remove unnecessary calculations
-            return np.sum(np.abs(w), axis=-1)
-        return np.sum(np.abs(w) ** p, axis=-1) ** (1 / p)
-
     def get_pos_log_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         r = self.radius if ixs is None else self.radius[ixs]
         return np.log2(np.maximum(r, 1.0))
@@ -636,11 +589,11 @@ class SpatialEncoderLayer:
 
     def print_stats(self, u, output_sdr):
         sdr, y = unwrap_as_rate_sdr(output_sdr)
-        r = self.avg_radius
+        r = self.radius.mean()
         k = self.output_sds.active_size
         active_mass = 100.0 * y[:k].sum()
         biases = self.output_rate / self.output_sds.sparsity
-        w = self.weights
+        w = self.weights_backend.weights
         eps = r * 0.2 / self.ff_size
         signs_w = np.sign(w)
         pos_w = 100.0 * np.count_nonzero(signs_w > eps) / w.size
@@ -672,17 +625,13 @@ class SpatialEncoderLayer:
         plt.vlines(k, 0, 1, color='r')
         plt.show()
 
-    def plot_weights_distr(self):
-        import seaborn as sns
-        from matplotlib import pyplot as plt
-        w, r = self.weights, self.radius
-        w = w / np.expand_dims(r, -1)
-        sns.histplot(w.flatten())
-        plt.show()
+    @property
+    def lebesgue_p(self):
+        return self.weights_backend.lebesgue_p
 
     @property
-    def avg_radius(self):
-        return self.radius.mean()
+    def radius(self):
+        return self.weights_backend.radius
 
     @property
     def ff_size(self):
