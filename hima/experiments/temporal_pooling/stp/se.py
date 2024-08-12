@@ -13,6 +13,7 @@ import numpy.typing as npt
 from numpy.random import Generator
 
 from hima.common.config.base import TConfig
+from hima.common.scheduler import Scheduler
 from hima.common.sdr import (
     SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, unwrap_as_rate_sdr
 )
@@ -250,6 +251,7 @@ class SpatialEncoderLayer:
             self.fast_active_mass_trace = MeanValue(
                 lr=fast_lr, initial_value=self.beta_active_mass[0]
             )
+        self.print_stats_scheduler = Scheduler(10_000)
 
     def compute_batch(self, input_sdrs: SdrArray, learn: bool = False) -> SdrArray:
         self.learn = learn
@@ -332,12 +334,12 @@ class SpatialEncoderLayer:
             xs = prepr_input_sdrs.get_batch_dense(np.arange(batch_size))
 
         # ==> Match input
-        u_raws = self.match_input(xs.T).T
-        us = self.apply_boosting(u_raws)
+        us_raw = self.match_input(xs.T).T
+        us = self.apply_boosting(us_raw)
 
         for i in range(batch_size):
-            # NB: make a copy for better performance
-            u, u_raw = us[i].copy(), u_raws[i].copy()
+            x = xs[i]
+            u, u_raw = us[i], us_raw[i]
 
             # ==> Soft partition
             # with soft partition we take a very small subset, in [0, 10%] of the full array
@@ -364,19 +366,20 @@ class SpatialEncoderLayer:
             # ==> Select learning set
             sdr_learn, y_learn = self.select_learning_set(hard_sdr, hard_y)
             # ==> Learn
-            self.update_dense_weights(xs[i], sdr_learn, y_learn, u_raw)
-            self.prune_newborns()
+            self.update_dense_weights(x, sdr_learn, y_learn, u_raw)
             self.cnt += 1
-
-            if self.cnt % 10000 == 0:
-                self.print_stats(u, output_sdr)
             # if self.cnt % 50000 == 0:
             #     self.plot_weights_distr()
             # if self.cnt % 10000 == 0:
             #     self.plot_activation_distr(sdr, u, y)
 
-        # single beta update with increased force (= batch size)
-        self.update_beta(mu=batch_size)
+        if self.learn:
+            # ==> Learn (continue)
+            self.prune_newborns(batch_size)
+            # single beta update with increased force (= batch size)
+            self.update_beta(mu=batch_size)
+            if self.print_stats_scheduler.tick(batch_size):
+                self.print_stats(us[-1], output_sdrs[-1])
 
         return SdrArray(sparse=output_sdrs, sdr_size=self.output_size)
 
@@ -445,7 +448,11 @@ class SpatialEncoderLayer:
             avg_u = self.fast_potentials_trace.get()
             u = u_raw - avg_u
             if self.learn:
-                self.fast_potentials_trace.put(u_raw)
+                if u_raw.ndim == 2:
+                    for i in range(u_raw.shape[0]):
+                        self.fast_potentials_trace.put(u_raw[i])
+                else:
+                    self.fast_potentials_trace.put(u_raw)
         elif self.bias_boosting == BoostingPolicy.MULTIPLICATIVE:
             boosting_k = boosting(relative_rate=self.output_relative_rate, k=self.pos_log_radius)
             u = u_raw * boosting_k
@@ -535,8 +542,8 @@ class SpatialEncoderLayer:
 
         return RateSdr(input_sdr.sdr, rates)
 
-    def prune_newborns(self):
-        self.weights_backend.prune_newborns()
+    def prune_newborns(self, ticks_passed):
+        self.weights_backend.prune_newborns(ticks_passed)
 
     def update_beta(self, mu: int = 1):
         schedule = 16
