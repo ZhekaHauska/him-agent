@@ -115,9 +115,6 @@ def _resolve_spatial_pooler(type_tag: str):
     if type_tag == 'sp.gse':
         from hima.experiments.temporal_pooling.stp.se_general import SpatialEncoderLayer
         return SpatialEncoderLayer
-    if type_tag == 'sp.se':
-        from hima.experiments.temporal_pooling.stp.se import SpatialEncoderLayer
-        return SpatialEncoderLayer
     if type_tag == 'sp.layer_bckp':
         from hima.experiments.temporal_pooling.stp.sp_layer_backup2 import SpatialPooler
         return SpatialPooler

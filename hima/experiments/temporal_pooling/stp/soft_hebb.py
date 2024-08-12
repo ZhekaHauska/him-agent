@@ -17,9 +17,7 @@ from hima.common.timer import timed
 from hima.common.utils import softmax
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.se import (
-    get_normal_std
-)
+from hima.experiments.temporal_pooling.stp.se_general import get_normal_std
 
 
 class NegativeHebbian(Enum):
@@ -98,7 +96,7 @@ class SoftHebbLayer:
 
         self.lebesgue_p = 2.0
         shape = (self.output_size, self.ff_size)
-        init_std = get_normal_std(init_radius, self.ff_size, self.lebesgue_p)
+        init_std = get_normal_std(self.ff_size, self.lebesgue_p, init_radius)
         self.weights = self.rng.normal(loc=weights_bias, scale=init_std, size=shape)
         self.normalize_dw = normalize_dw
         self.radius = self.get_radius()
