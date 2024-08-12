@@ -189,15 +189,11 @@ class SpatialEncoderOfflineExperiment:
             return
 
         print(f'==> Test after {self.i_train_epoch}')
-
         train_speed = self.get_encoding_speed()
-        entropy = None
-        if self.sdr_tracker is not None:
-            entropy = self.sdr_tracker.on_sequence_finished(None, ignore=False)['H']
 
         # ==> train and test epoch-specific ANN classifier
         kn_ann_classifier = self.make_ann_classifier()
-        track_sdrs = self.sdr_tracker is not None
+        track_sdrs = self.sdr_tracker is not None and self.logger is not None
         n_train_samples = len(train_data)
         train_order = np.arange(n_train_samples)
         encoded_train_sdrs = self.encode_array(
@@ -224,6 +220,10 @@ class SpatialEncoderOfflineExperiment:
             test_data.sdrs, order=test_order, learn=False, track=track_sdrs,
             noise=self.testing.noise
         )
+        entropy = None
+        if track_sdrs:
+            entropy = self.sdr_tracker.on_sequence_finished(None, ignore=False)['H']
+
         accuracy = self.evaluate_ann_classifier(
             kn_ann_classifier, encoded_test_sdrs, self.data.test.targets
         )
