@@ -61,6 +61,7 @@ if __name__ == '__main__':
             dhtm.transition_counts.dtype
         )
         dhtm.transition_counts = true_transition_matrix * (dhtm.consolidation_threshold + 1)
+        dhtm.activation_counts = dhtm.transition_counts.sum(axis=0).sum(axis=-1).flatten()
 
     if 'initial_pos' in config:
         init_r, init_c = config['initial_pos']
