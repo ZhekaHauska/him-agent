@@ -23,7 +23,7 @@ from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
-from hima.experiments.temporal_pooling.stp.sp_utils import boosting
+from hima.experiments.temporal_pooling.stp.se_utils import boosting
 from hima.modules.htm.utils import abs_or_relative
 
 if TYPE_CHECKING:
@@ -667,21 +667,6 @@ class SpatialEncoderLayer:
         return entropy(self.output_rate)
 
 
-def sample_weights(rng, w_shape, distribution, radius, lebesgue_p):
-    if distribution == WeightsDistribution.NORMAL:
-        init_std = get_normal_std(w_shape[1], lebesgue_p, radius)
-        weights = np.abs(rng.normal(loc=0., scale=init_std, size=w_shape))
-
-    elif distribution == WeightsDistribution.UNIFORM:
-        init_std = get_uniform_std(w_shape[1], lebesgue_p, radius)
-        weights = rng.uniform(0., init_std, size=w_shape)
-
-    else:
-        raise ValueError(f'Unsupported distribution: {distribution}')
-
-    return weights
-
-
 def align_matching_learning_params(
         match_p: float | None, lebesgue_p: float, learning_policy: str
 ) -> tuple[float, float, LearningPolicy]:
@@ -703,6 +688,21 @@ def align_matching_learning_params(
         match_p = induced_match_p
 
     return match_p, lebesgue_p, learning_policy
+
+
+def sample_weights(rng, w_shape, distribution, radius, lebesgue_p):
+    if distribution == WeightsDistribution.NORMAL:
+        init_std = get_normal_std(w_shape[1], lebesgue_p, radius)
+        weights = np.abs(rng.normal(loc=0., scale=init_std, size=w_shape))
+
+    elif distribution == WeightsDistribution.UNIFORM:
+        init_std = get_uniform_std(w_shape[1], lebesgue_p, radius)
+        weights = rng.uniform(0., init_std, size=w_shape)
+
+    else:
+        raise ValueError(f'Unsupported distribution: {distribution}')
+
+    return weights
 
 
 def get_uniform_std(n_samples, p, required_r) -> float:

@@ -11,8 +11,9 @@ from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     sample_for_each_neuron, gather_rows,
-    boosting, normalize_weights
+    normalize_weights
 )
+from hima.experiments.temporal_pooling.stp.se_utils import boosting
 
 
 class NewbornStageController:

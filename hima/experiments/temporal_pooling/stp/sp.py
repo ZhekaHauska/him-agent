@@ -13,9 +13,10 @@ from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp_utils import (
-    boosting, gather_rows,
+    gather_rows,
     sample_for_each_neuron
 )
+from hima.experiments.temporal_pooling.stp.se_utils import boosting
 
 
 class SpNewbornPruningMode(Enum):

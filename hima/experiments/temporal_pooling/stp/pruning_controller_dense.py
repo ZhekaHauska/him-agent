@@ -13,8 +13,9 @@ from numpy.random import Generator
 from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
     RepeatingCountdown,
-    make_repeating_counter, nb_choice_k
+    make_repeating_counter
 )
+from hima.experiments.temporal_pooling.stp.se_utils import nb_choice_k
 
 
 class PruningController:

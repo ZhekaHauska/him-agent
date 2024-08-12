@@ -11,7 +11,8 @@ from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
-from hima.experiments.temporal_pooling.stp.sp_utils import sample_rf, boosting
+from hima.experiments.temporal_pooling.stp.sp_utils import sample_rf
+from hima.experiments.temporal_pooling.stp.se_utils import boosting
 
 
 class NewbornNeuron:

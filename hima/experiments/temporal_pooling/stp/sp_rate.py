@@ -18,9 +18,10 @@ from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 from hima.experiments.temporal_pooling.stp.sp_utils import (
-    boosting, gather_rows,
+    gather_rows,
     sample_for_each_neuron
 )
+from hima.experiments.temporal_pooling.stp.se_utils import boosting
 
 
 # Intermediate version of SP during the migration to work with both
