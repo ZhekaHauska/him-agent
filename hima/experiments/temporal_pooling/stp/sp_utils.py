@@ -88,8 +88,10 @@ def nb_choice_k(
     if not replace and cache is None and n is not None:
         cache = np.zeros(n, dtype=np.bool_)
 
-    i = 0
-    while i < k:
+    i, j = 0, 0
+    timelimit = 1_000_000
+    while i < k and j < timelimit:
+        j += 1
         r = mx_w * rng.random()
         ind = np.searchsorted(acc_w, r, side='right')
 
@@ -100,6 +102,9 @@ def nb_choice_k(
             if not replace:
                 cache[ind] = True
             i += 1
+
+    if j >= timelimit:
+        raise ValueError('Infinite loop in nb_choice_k')
 
     return result
 

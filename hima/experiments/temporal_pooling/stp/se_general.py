@@ -401,6 +401,7 @@ class SpatialEncoderLayer:
     def partition_and_rank_activations(self, soft_sdr, y):
         sz = len(soft_sdr)
         if sz > 100 and sz / self.hard_top_k > 2.0:
+            # if the difference is significant, apply hard partitioning
             ixs = arg_top_k(y, self.hard_top_k)
             y = y[ixs].copy()
 

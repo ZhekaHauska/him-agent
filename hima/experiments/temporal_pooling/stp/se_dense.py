@@ -41,6 +41,7 @@ class SpatialEncoderDenseBackend:
     lebesgue_p: float
 
     pruning_controller: PruningController | None
+    pruned_mask: npt.NDArray[bool] | None
     rf_sparsity: float
 
     # potentiation and learning
@@ -108,6 +109,7 @@ class SpatialEncoderDenseBackend:
         self.pruning_controller = None
         if pruning is not None:
             self.pruning_controller = PruningController(self, **pruning)
+            self.pruned_mask = np.zeros_like(self.weights, dtype=bool)
 
         print(
             f'Init SE backend: {self.lebesgue_p}-norm | {self.avg_radius:.3f}'
@@ -157,14 +159,17 @@ class SpatialEncoderDenseBackend:
         if not now:
             return
 
-        sparsity, rf_size = pc.shrink_receptive_field()
-        self.rf_sparsity = sparsity
-        print(f'{sparsity:.4f} | {rf_size}')
+        from hima.common.timer import timed
+        (sparsity, rf_size), t = timed(pc.shrink_receptive_field)(self.pruned_mask)
+        stage = pc.stage
+        sparsity_pcnt = round(100.0 * sparsity, 1)
+        t = round(t * 1000.0, 2)
+        print(f'Prune #{stage}: {sparsity_pcnt:.1f}% | {rf_size} | {t} ms')
 
+        self.rf_sparsity = sparsity
         # rescale weights to keep the same norms
-        rs = np.expand_dims(self.radius, -1)
-        new_rs = np.expand_dims(self.get_radius(), -1)
-        self.weights *= rs / new_rs
+        old_radius, new_radius = self.radius, self.get_radius()
+        self.weights *= np.expand_dims(old_radius / new_radius, -1)
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.lebesgue_p
