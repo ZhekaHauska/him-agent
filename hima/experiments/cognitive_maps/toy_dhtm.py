@@ -156,18 +156,26 @@ class ToyDHTM:
                     events.append(('set_state', self._state_to_clone(state)))
                 # 2. correct set is empty
                 else:
-                    if state is None:
-                        state = column_states[np.argmax(self.activation_counts[column_states])]
-                        self.state_buffer[pos] = state
-
-                        events.append(('set_state', self._state_to_clone(state)))
-
                     if len(wrong_perm) == 0:
+                        if state is None:
+                            state = column_states[np.argmax(self.activation_counts[column_states])]
+                            self.state_buffer[pos] = state
+
+                            events.append(('set_state', self._state_to_clone(state)))
+
                         resolved = True
                     else:
                         # resampling previous clone
                         # try to use backward connections first
-                        prediction = self.transition_counts[prev_action, :, state].flatten()
+                        if state is None:
+                            prediction = self.transition_counts[
+                                prev_action, :, column_states
+                            ].sum(axis=0).flatten()
+                        else:
+                            prediction = self.transition_counts[
+                                prev_action, :, state
+                            ].flatten()
+
                         sparse_prediction = np.flatnonzero(prediction)
                         prev_obs_state = self.observation_buffer[pos - 1]
 
@@ -199,6 +207,20 @@ class ToyDHTM:
                                     self.activation_counts[correct_prediction]
                                 )
                             ]
+                            if state is None:
+                                prediction = self.transition_counts[prev_action, prev_state].flatten()
+                                sparse_prediction = np.flatnonzero(prediction)
+                                coincide = np.isin(sparse_prediction, column_states)
+                                correct_prediction = sparse_prediction[coincide]
+                                state = correct_prediction[
+                                    np.argmax(
+                                        prediction[correct_prediction] +
+                                        self.activation_counts[correct_prediction]
+                                    )
+                                ]
+                                self.state_buffer[pos] = state
+
+                                events.append(('set_state', self._state_to_clone(state)))
                         else:
                             # choose the least used clone
                             # (presumably with minimum outward connections)
@@ -207,6 +229,12 @@ class ToyDHTM:
                                     self.activation_counts[column_states]
                                 )
                             ]
+                            if state is None:
+                                state = column_states[
+                                    np.argmax(self.activation_counts[column_states])]
+                                self.state_buffer[pos] = state
+
+                                events.append(('set_state', self._state_to_clone(state)))
 
                         self.state_buffer[pos - 1] = prev_state
 
