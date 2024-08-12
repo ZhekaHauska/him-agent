@@ -16,10 +16,9 @@ from hima.common.sdr import (
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
 from hima.experiments.temporal_pooling.stp.se_general import (
-    LearningPolicy, WeightsDistribution
+    LearningPolicy, WeightsDistribution, sample_weights
 )
 from hima.experiments.temporal_pooling.stp.sp_utils import tick
-from hima.modules.htm.utils import abs_or_relative
 
 
 class SpatialEncoderDenseBackend:
@@ -162,9 +161,9 @@ class SpatialEncoderDenseBackend:
         from hima.common.timer import timed
         (sparsity, rf_size), t = timed(pc.shrink_receptive_field)(self.pruned_mask)
         stage = pc.stage
-        sparsity_pcnt = round(100.0 * sparsity, 1)
+        sparsity_pct = round(100.0 * sparsity, 1)
         t = round(t * 1000.0, 2)
-        print(f'Prune #{stage}: {sparsity_pcnt:.1f}% | {rf_size} | {t} ms')
+        print(f'Prune #{stage}: {sparsity_pct:.1f}% | {rf_size} | {t} ms')
 
         self.rf_sparsity = sparsity
         # rescale weights to keep the same norms
@@ -202,64 +201,3 @@ class SpatialEncoderDenseBackend:
     @property
     def output_size(self):
         return self.output_sds.size
-
-
-def sample_weights(rng, w_shape, distribution, radius, lebesgue_p):
-    if distribution == WeightsDistribution.NORMAL:
-        init_std = get_normal_std(w_shape[1], lebesgue_p, radius)
-        weights = np.abs(rng.normal(loc=0., scale=init_std, size=w_shape))
-
-    elif distribution == WeightsDistribution.UNIFORM:
-        init_std = get_uniform_std(w_shape[1], lebesgue_p, radius)
-        weights = rng.uniform(0., init_std, size=w_shape)
-
-    else:
-        raise ValueError(f'Unsupported distribution: {distribution}')
-
-    return weights
-
-
-def get_uniform_std(n_samples, p, required_r) -> float:
-    alpha = 2 / n_samples
-    alpha = alpha ** (1 / p)
-    return required_r * alpha
-
-
-def get_normal_std(n_samples: int, p: float, required_r) -> float:
-    alpha = np.pi / (2 * n_samples)
-    alpha = alpha ** (1 / p)
-    return required_r * alpha
-
-
-def arg_top_k(x, k):
-    k = min(k, x.size)
-    return np.argpartition(x, -k, axis=-1)[..., -k:]
-
-
-def parse_learning_set(ls, k):
-    # K - is a base number of active neuron as if we used k-WTA activation/learning.
-    # However, we can disentangle learning and activation, so we can have different number
-    # of active and learning neurons. It is useful in some cases to propagate more than K winners
-    # to the output. It can be also useful (and it does not depend on the previous case) to
-    # learn additional number of near-winners with anti-Hebbian learning. Sometimes we may want
-    # to propagate them to the output, sometimes not.
-    # TL;DR: K is the base number, it defines a desirable number of winning active neurons. But
-    # we also define:
-    #  - K1 <= K: the number of neurons affected by Hebbian learning
-    #  - K2: the number of neurons affected by anti-Hebbian learning, starting from K-th index
-
-    # ls: K1 | [K1, K2]
-    if not isinstance(ls, (tuple, list)):
-        k1 = round(abs_or_relative(ls, k))
-        k2 = 0
-    elif len(ls) == 1:
-        k1 = round(abs_or_relative(ls[0], k))
-        k2 = 0
-    elif len(ls) == 2:
-        k1 = round(abs_or_relative(ls[0], k))
-        k2 = round(abs_or_relative(ls[1], k))
-    else:
-        raise ValueError(f'Unsupported learning set: {ls}')
-
-    k1 = min(k, k1)
-    return k1, k2
