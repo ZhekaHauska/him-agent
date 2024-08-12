@@ -512,18 +512,7 @@ class TransitionGraph:
             self.vertices[node1]['out_edges'].add(edge)
             self.vertices[node2]['in_edges'].add(edge)
 
-            # normalize out edge strength
-            for node in self.vertices.values():
-                max_strength = 1
-                for edge in node['out_edges']:
-                    edge = self.edges[edge]
-                    strength = sum(edge['actions'].values())
-                    edge['strength'] = strength
-                    if strength > max_strength:
-                        max_strength = strength
-
-                for edge in node['out_edges']:
-                    self.edges[edge]['strength'] /= max_strength
+            self.normalize_edges()
 
         elif event_type == 'remove_con':
             self.force = self.init_force
@@ -540,6 +529,19 @@ class TransitionGraph:
                         self.vertices[self.edges[edge]['node1']]['out_edges'].remove(edge)
                         self.vertices[self.edges[edge]['node2']]['in_edges'].remove(edge)
                         self.edges.pop(edge)
+
+            self.normalize_edges()
+        elif event_type == 'punish_con':
+            self.force = self.init_force
+            self.gravitation = self.init_gravitation
+            self.rad_factor = self.init_rad_factor
+
+            prev_action, prev_state, state = event[1:]
+
+            edge = f'{prev_state}_{state}'
+            if edge in self.edges:
+                self.edges[edge]['actions'][ACTIONS[prev_action]] -= 1
+                self.normalize_edges()
 
     def update(self):
         self.canvas.blit(self.bgd, (0, 0))
@@ -655,6 +657,20 @@ class TransitionGraph:
     def normalize(x: tuple, s=1.0):
         mag = (x[0]**2 + x[1]**2)**0.5
         return s * x[0]/(mag+EPS), s * x[1]/(mag+EPS)
+
+    def normalize_edges(self):
+        # normalize out edge strength
+        for node in self.vertices.values():
+            max_strength = 1
+            for edge in node['out_edges']:
+                edge = self.edges[edge]
+                strength = sum(edge['actions'].values())
+                edge['strength'] = strength
+                if strength > max_strength:
+                    max_strength = strength
+
+            for edge in node['out_edges']:
+                self.edges[edge]['strength'] /= max_strength
 
 
 class Gridworld:

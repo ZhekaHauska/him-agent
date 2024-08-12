@@ -176,11 +176,25 @@ class ToyDHTM:
                                 prev_action, :, state
                             ].flatten()
 
+                            # punish connection
+                            self.activation_counts[prev_state] -= 1
+                            if self.transition_counts[prev_action, prev_state, state] > 0:
+                                assert self.transition_counts[prev_action, prev_state, state] > self.consolidation_threshold
+                                self.transition_counts[prev_action, prev_state, state] -= 1
+                                events.append(
+                                    (
+                                        'punish_con',
+                                        prev_action,
+                                        self._state_to_clone(prev_state, return_obs_state=True),
+                                        self._state_to_clone(state, return_obs_state=True)
+                                    )
+                                )
+
                         sparse_prediction = np.flatnonzero(prediction)
                         prev_obs_state = self.observation_buffer[pos - 1]
 
-                        column_states = self._get_column_states(prev_obs_state)
-                        coincide = np.isin(sparse_prediction, column_states)
+                        prev_column_states = self._get_column_states(prev_obs_state)
+                        coincide = np.isin(sparse_prediction, prev_column_states)
                         correct_prediction = sparse_prediction[coincide]
                         wrong_prediction = sparse_prediction[~coincide]
 
@@ -224,9 +238,9 @@ class ToyDHTM:
                         else:
                             # choose the least used clone
                             # (presumably with minimum outward connections)
-                            prev_state = column_states[
+                            prev_state = prev_column_states[
                                 np.argmin(
-                                    self.activation_counts[column_states]
+                                    self.activation_counts[prev_column_states]
                                 )
                             ]
                             if state is None:
