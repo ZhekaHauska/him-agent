@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 import numpy.typing as npt
+from numba import jit
 from numpy.random import Generator
 
 from hima.common.config.base import TConfig
@@ -14,6 +15,7 @@ from hima.common.sdr import (
     SparseSdr, DenseSdr, OutputMode
 )
 from hima.common.sds import Sds
+from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
 from hima.experiments.temporal_pooling.stp.se import (
     LearningPolicy, WeightsDistribution, sample_weights
@@ -67,9 +69,7 @@ class SpatialEncoderDenseBackend:
             normalize_dw: bool = False,
 
             pruning: TConfig = None,
-            **kwargs
     ):
-        print(f'kwargs: {kwargs}')
         self.rng = np.random.default_rng(seed)
 
         self.feedforward_sds = Sds.make(feedforward_sds)
@@ -125,39 +125,28 @@ class SpatialEncoderDenseBackend:
         if sdr.size == 0:
             return
 
-        w = self.weights[sdr]
-
-        _x = np.expand_dims(x, 0)
-        y_ = np.expand_dims(y, -1)
-        lr_ = np.expand_dims(lr, -1)
-
-        sg = np.sign(w) if self.persistent_signs else 1.0
+        # TODO: negative Xs is not supported ATM
         if self.learning_policy == LearningPolicy.KROTOV:
-            _u = np.expand_dims(u[sdr], -1)
-            _u = np.maximum(0., _u)
-            _u = _u / max(10.0, _u.max() + 1e-30)
-            # Oja learning rule, Lp normalization, p >= 2
-            dw = y_ * (sg * _x - w * _u)
+            if self.persistent_signs:
+                _oja_krotov_kuderov_update(self.weights, sdr, x, u, y, lr)
+            else:
+                _oja_krotov_update(self.weights, sdr, x, u, y, lr)
         else:
-            # Willshaw learning rule, L1 normalization
-            dw = y_ * (sg * _x - w)
-
-        if self.normalize_dw:
-            dw /= np.abs(dw).max() + 1e-30
-
-        self.weights[sdr, :] += lr_ * dw
+            if self.persistent_signs:
+                _willshaw_kuderov_update(self.weights, sdr, x, y, lr)
+            else:
+                _willshaw_update(self.weights, sdr, x, y, lr)
 
         self.radius[sdr] = self.get_radius(sdr)
         self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
 
-    def prune_newborns(self):
+    def prune_newborns(self, ticks_passed):
         pc = self.pruning_controller
-        if not pc.is_newborn_phase:
+        if pc is None or not pc.is_newborn_phase:
             return
-        if not pc.scheduler.tick():
+        if not pc.scheduler.tick(ticks_passed):
             return
 
-        from hima.common.timer import timed
         (sparsity, rf_size), t = timed(pc.shrink_receptive_field)(self.pruned_mask)
         stage = pc.stage
         sparsity_pct = round(100.0 * sparsity, 1)
@@ -200,3 +189,55 @@ class SpatialEncoderDenseBackend:
     @property
     def output_size(self):
         return self.output_sds.size
+
+
+@jit()
+def _willshaw_update(weights, sdr, x, y, lr):
+    # Willshaw learning rule, L1 normalization:
+    # dw = lr * y * (x - w)
+
+    v = y * lr
+    for ix, vi in zip(sdr, v):
+        w = weights[ix]
+        w += vi * (x - w)
+
+
+@jit()
+def _oja_krotov_update(weights, sdr, x, u, y, lr):
+    # Oja-Krotov learning rule, L^p normalization, p >= 2:
+    # dw = lr * y * (x - u * w)
+
+    # NB: u sign persistence is not supported ATM => clipping hack is used
+    # NB2: it also replaces dw normalization
+    uu = np.clip(u[sdr], 0.0, 10_000.0)
+
+    v = y * lr
+    for ix, vi, u in zip(sdr, v, uu):
+        w = weights[ix]
+        w += vi * (x - u * w)
+
+
+@jit()
+def _willshaw_kuderov_update(weights, sdr, x, y, lr):
+    # Willshaw-Kuderov learning rule, sign persistence, L1 normalization:
+    # dw = lr * y * [sign(w) * x - w] = lr * y * sign(w) * (x - |w|)
+
+    v = y * lr
+    for ix, vi in zip(sdr, v):
+        w = weights[ix]
+        w += vi * (np.sign(w) * x - w)
+
+
+@jit()
+def _oja_krotov_kuderov_update(weights, sdr, x, u, y, lr):
+    # Oja-Krotov-Kuderov learning rule, L^p normalization, p >= 2, sign persistence:
+    # dw = lr * y * (sign(w) * x - w * u)
+
+    # NB: u sign persistence is not supported ATM => clipping hack is used
+    # NB2: it also replaces dw normalization
+    uu = np.clip(u[sdr], 0.0, 10_000.0)
+
+    v = y * lr
+    for ix, vi, u in zip(sdr, v, uu):
+        w = weights[ix]
+        w += vi * (np.sign(w) * x - u * w)
