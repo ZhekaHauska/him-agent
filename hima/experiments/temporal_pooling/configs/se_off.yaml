@@ -87,8 +87,8 @@ sp:
     adaptive_lr: True
     weights_bias: 0.001
 
-  gse:
-    _type_: sp.gse
+  se:
+    _type_: sp.se
     seed: ???
     feedforward_sds: ???
     output_sds: ???
@@ -225,9 +225,9 @@ setups:
   rate_krotov_adaptive:
     _base_: setups.rate_krotov
     encoder: sp.krotov_adaptive
-  rate_gse:
+  rate_se:
     encoder:
-      _base_: sp.gse
+      _base_: sp.se
       output_mode: rate
     input_mode: rate
     ds_norm: lp

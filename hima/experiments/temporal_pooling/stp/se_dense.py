@@ -15,7 +15,7 @@ from hima.common.sdr import (
 )
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
-from hima.experiments.temporal_pooling.stp.se_general import (
+from hima.experiments.temporal_pooling.stp.se import (
     LearningPolicy, WeightsDistribution, sample_weights
 )
 from hima.experiments.temporal_pooling.stp.sp_utils import tick
