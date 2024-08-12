@@ -16,7 +16,7 @@ from hima.common.timer import timer, print_with_timestamp
 from hima.common.utils import isnone, safe_divide
 from hima.envs.mnist import MNISTEnv
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
-from hima.experiments.temporal_pooling.utils import resolve_random_seed, Scheduler
+from hima.experiments.temporal_pooling.utils import resolve_random_seed, LogScheduler
 
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
@@ -120,7 +120,7 @@ class SpAttractorMnistExperiment:
     def run(self):
         self.print_with_timestamp('==> Run')
         self.define_metrics()
-        log_scheduler = Scheduler(
+        log_scheduler = LogScheduler(
             schedule=self.iterate.log_schedule, max_value=self.iterate.n_episodes,
             always_report_first=True, always_report_last=True, zero_based=False
         )

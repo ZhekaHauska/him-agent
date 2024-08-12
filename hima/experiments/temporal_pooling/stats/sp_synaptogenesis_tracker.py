@@ -10,18 +10,15 @@ from typing import Any
 import numpy as np
 
 from hima.common.config.base import extracted
+from hima.common.scheduler import Scheduler
 from hima.experiments.temporal_pooling.stats.mc_sp_tracking_aggregator import \
     SpTrackingCompartmentalAggregator
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
-from hima.experiments.temporal_pooling.stp.sp_utils import (
-    RepeatingCountdown,
-    make_repeating_counter, tick, is_infinite
-)
 
 
 class SpSynaptogenesisTracker:
     sp: Any
-    step_flush_scheduler: RepeatingCountdown
+    step_flush_scheduler: Scheduler
 
     track_split: bool
 
@@ -31,7 +28,7 @@ class SpSynaptogenesisTracker:
         if not self.supported:
             return
 
-        self.step_flush_scheduler = make_repeating_counter(step_flush_schedule)
+        self.step_flush_scheduler = Scheduler(step_flush_schedule)
         self.target_rf_size = round(sp.get_target_rf_sparsity() * sp.feedforward_sds.size)
         self.track_split = track_split
         if self.track_split:
@@ -41,8 +38,7 @@ class SpSynaptogenesisTracker:
         if ignore:
             return {}
 
-        flush_now, self.step_flush_scheduler = tick(self.step_flush_scheduler)
-        if flush_now:
+        if self.step_flush_scheduler.tick():
             return self.flush_aggregate_metrics()
         return {}
 
@@ -50,7 +46,7 @@ class SpSynaptogenesisTracker:
         if ignore:
             return {}
 
-        if is_infinite(self.step_flush_scheduler):
+        if self.step_flush_scheduler.is_infinite:
             return self.flush_aggregate_metrics()
         return {}
 

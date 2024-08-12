@@ -10,11 +10,8 @@ import numpy.typing as npt
 from numba import jit
 from numpy.random import Generator
 
+from hima.common.scheduler import Scheduler
 from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
-from hima.experiments.temporal_pooling.stp.sp_utils import (
-    RepeatingCountdown,
-    make_repeating_counter
-)
 from hima.experiments.temporal_pooling.stp.se_utils import nb_choice_k
 
 
@@ -25,7 +22,7 @@ class PruningController:
     schedule: int
     n_stages: int
     stage: int
-    countdown: RepeatingCountdown
+    scheduler: Scheduler
 
     def __init__(
             self, owner,
@@ -35,10 +32,11 @@ class PruningController:
         self.owner = owner
 
         self.mode = SpNewbornPruningMode[mode.upper()]
-        self.schedule = int(cycle / owner.output_sds.sparsity)
         self.n_stages = n_stages
         self.stage = 0
-        self.countdown = make_repeating_counter(self.schedule)
+
+        schedule = int(cycle / owner.output_sds.sparsity)
+        self.scheduler = Scheduler(schedule)
 
         self.initial_rf_sparsity = 1.0
         self.target_rf_to_input_ratio = target_rf_to_input_ratio

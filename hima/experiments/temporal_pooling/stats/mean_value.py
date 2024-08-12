@@ -10,11 +10,9 @@ from typing import TypeVar, Generic
 import numpy as np
 import numpy.typing as npt
 
+from hima.common.scheduler import Scheduler
 from hima.common.sdr import SparseSdr
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.stp.sp_utils import (
-    tick, make_repeating_counter, is_infinite
-)
 
 T = TypeVar('T', float, npt.NDArray[float])
 
@@ -71,6 +69,8 @@ class MeanValue(Generic[T]):
     is_array: bool
     lr: LearningRateParam
 
+    _auto_decay_scheduler: Scheduler
+
     def __init__(
             self, *, lr: LearningRateParam, size: int = None, auto_decay: bool = True,
             initial_value: float = 0.
@@ -86,7 +86,7 @@ class MeanValue(Generic[T]):
         else:
             self.agg_value = self.initial_value
 
-        self.countdown = make_repeating_counter(self.safe_window if auto_decay else None)
+        self._auto_decay_scheduler = Scheduler(self.safe_window if auto_decay else None)
 
     def put(self, value: T | float, sdr: SparseSdr = None):
         if sdr is not None:
@@ -99,8 +99,7 @@ class MeanValue(Generic[T]):
         self.n_steps += 1.0
 
         # if auto-decay is on (counter is non-infinite), apply decay periodically
-        is_now, self.countdown = tick(self.countdown)
-        if is_now:
+        if self._auto_decay_scheduler.tick():
             self.reset()
 
     def get(self, ixs=None) -> T:
@@ -110,15 +109,12 @@ class MeanValue(Generic[T]):
     def reset(self, hard: bool = False):
         # it is expected to apply reset/decay only periodically, not after every
         # step to improve performance
-        auto_decay = not is_infinite(self.countdown)
-        if auto_decay:
-            n_steps = self.countdown[1]
-        else:
-            # -1 - (-n_steps - 1) = n_steps
-            n_steps = self.countdown[1] - self.countdown[0]
-            self.countdown = make_repeating_counter(None)
+        n_steps = self._auto_decay_scheduler.ticks_passed
+        if self._auto_decay_scheduler.is_infinite:
+            self._auto_decay_scheduler.reset()
 
         if hard:
+            # hard decay means full reset
             self.n_steps = self.safe_window
             if self.is_array:
                 self.agg_value = np.full_like(self.agg_value, fill_value=self.initial_value)

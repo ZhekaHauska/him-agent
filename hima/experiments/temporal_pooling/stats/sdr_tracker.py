@@ -8,16 +8,13 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
+from hima.common.scheduler import Scheduler
 from hima.common.sdr import unwrap_as_rate_sdr, RateSdr, AnySparseSdr
 from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy, TMetrics
-from hima.experiments.temporal_pooling.stp.sp_utils import (
-    RepeatingCountdown,
-    make_repeating_counter, tick, is_infinite
-)
 
 
 # TODO: standardize LearningRateParam and repeating countdowns setting via config,
@@ -27,8 +24,8 @@ from hima.experiments.temporal_pooling.stp.sp_utils import (
 
 class SdrTracker:
     sds: Sds
-    step_flush_countdown: RepeatingCountdown
-    aggregate_flush_countdown: RepeatingCountdown
+    step_flush_scheduler: Scheduler
+    aggregate_flush_scheduler: Scheduler
 
     # NB: ..._relative_rate means relative to the expected sds active size
 
@@ -43,8 +40,8 @@ class SdrTracker:
             self, sds: Sds, step_flush_schedule: int = None, aggregate_flush_schedule: int = None
     ):
         self.sds = sds
-        self.step_flush_countdown = make_repeating_counter(step_flush_schedule)
-        self.aggregate_flush_countdown = make_repeating_counter(aggregate_flush_schedule)
+        self.step_flush_scheduler = Scheduler(step_flush_schedule)
+        self.aggregate_flush_scheduler = Scheduler(aggregate_flush_schedule)
 
         self.prev_sdr = set()
         fast_lr = LearningRateParam(window=1_000)
@@ -83,12 +80,9 @@ class SdrTracker:
 
             self._on_sdr_updated(sdr)
 
-            flush_step_now, self.step_flush_countdown = tick(self.step_flush_countdown)
-            if flush_step_now:
+            if self.step_flush_scheduler.tick():
                 step_metrics = self.flush_step_metrics()
-
-            flush_agg_now, self.aggregate_flush_countdown = tick(self.aggregate_flush_countdown)
-            if flush_agg_now:
+            if self.aggregate_flush_scheduler.tick():
                 agg_metrics = self.flush_aggregate_metrics()
 
         return step_metrics | agg_metrics
@@ -100,14 +94,10 @@ class SdrTracker:
         self._on_sdr_updated(sdr)
 
         metrics = {}
-        flush_step_now, self.step_flush_countdown = tick(self.step_flush_countdown)
-        if flush_step_now:
+        if self.step_flush_scheduler.tick():
             metrics |= self.flush_step_metrics()
-
-        flush_aggregate_now, self.aggregate_flush_countdown = tick(self.aggregate_flush_countdown)
-        if flush_aggregate_now:
+        if self.aggregate_flush_scheduler.tick():
             metrics |= self.flush_aggregate_metrics()
-
         return metrics
 
     def _on_sdr_updated(self, sdr: AnySparseSdr):
@@ -131,9 +121,9 @@ class SdrTracker:
             return {}
 
         metrics = {}
-        if is_infinite(self.step_flush_countdown):
+        if self.step_flush_scheduler.is_infinite:
             metrics |= self.flush_step_metrics()
-        if is_infinite(self.aggregate_flush_countdown):
+        if self.aggregate_flush_scheduler.is_infinite:
             metrics |= self.flush_aggregate_metrics()
         return metrics
 

@@ -10,20 +10,17 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
+from hima.common.scheduler import Scheduler
 from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stats.mc_sp_tracking_aggregator import \
     SpTrackingCompartmentalAggregator
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics
-from hima.experiments.temporal_pooling.stp.sp_utils import (
-    RepeatingCountdown,
-    make_repeating_counter, tick, is_infinite
-)
 
 
 class SpMatchingTracker:
     sp: Any
-    countdown: RepeatingCountdown
+    scheduler: Scheduler
 
     potentials_quantile: float
 
@@ -38,7 +35,7 @@ class SpMatchingTracker:
         if not self.supported:
             return
 
-        self.countdown = make_repeating_counter(step_flush_schedule)
+        self.scheduler = Scheduler(step_flush_schedule)
 
         potentials_quantile = isnone(potentials_quantile, 3*sp.output_sds.sparsity)
         self.potentials_size = round(potentials_quantile * sp.output_sds.size)
@@ -67,8 +64,7 @@ class SpMatchingTracker:
             recognition_strength.mean() if len(recognition_strength) > 0 else 0.
         )
 
-        flush_now, self.countdown = tick(self.countdown)
-        if flush_now:
+        if self.scheduler.tick():
             return self.flush_aggregate_metrics()
         return {}
 
@@ -76,7 +72,7 @@ class SpMatchingTracker:
         if ignore:
             return {}
 
-        if is_infinite(self.countdown):
+        if self.scheduler.is_infinite:
             return self.flush_aggregate_metrics()
         return {}
 

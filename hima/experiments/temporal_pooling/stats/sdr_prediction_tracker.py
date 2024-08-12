@@ -7,21 +7,18 @@ from __future__ import annotations
 
 import numpy as np
 
+from hima.common.scheduler import Scheduler
 from hima.common.sdr import AnySparseSdr, unwrap_as_rate_sdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import TMetrics, sdr_similarity
-from hima.experiments.temporal_pooling.stp.sp_utils import (
-    RepeatingCountdown,
-    make_repeating_counter, tick, is_infinite
-)
 
 
 class SdrPredictionTracker:
     sds: Sds
     step_flush_schedule: int | None
-    countdown: RepeatingCountdown
+    scheduler: Scheduler
 
     miss_rate: MeanValue[float]
     imprecision: MeanValue[float]
@@ -30,7 +27,7 @@ class SdrPredictionTracker:
 
     def __init__(self, sds: Sds, step_flush_schedule: int = None):
         self.sds = sds
-        self.countdown = make_repeating_counter(step_flush_schedule)
+        self.scheduler = Scheduler(step_flush_schedule)
 
         self.dense_cache = np.zeros(sds.size, dtype=float)
         self.predicted_sdr = []
@@ -94,8 +91,7 @@ class SdrPredictionTracker:
         self.predicted_sdr = None
         self.observed_sdr = None
 
-        is_now, self.countdown = tick(self.countdown)
-        if is_now:
+        if self.scheduler.tick():
             return self.flush_step_metrics()
         return {}
 
@@ -103,7 +99,7 @@ class SdrPredictionTracker:
         if ignore:
             return {}
 
-        if is_infinite(self.countdown):
+        if self.scheduler.is_infinite:
             return self.flush_step_metrics()
         return {}
 

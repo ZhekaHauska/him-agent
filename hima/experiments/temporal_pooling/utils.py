@@ -31,7 +31,7 @@ def scheduled(
     return False
 
 
-class Scheduler:
+class LogScheduler:
     schedule: int
     max_value: int | None
     always_report_first: bool

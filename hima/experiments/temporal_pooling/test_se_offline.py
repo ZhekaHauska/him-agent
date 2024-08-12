@@ -15,6 +15,7 @@ from hima.common.config.base import TConfig
 from hima.common.config.global_config import GlobalConfig
 from hima.common.lazy_imports import lazy_import
 from hima.common.run.wandb import get_logger
+from hima.common.scheduler import Scheduler
 from hima.common.sdr import OutputMode, wrap_as_rate_sdr
 from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
@@ -23,10 +24,6 @@ from hima.common.utils import isnone, prepend_dict_keys
 from hima.experiments.temporal_pooling.resolvers.type_resolver import StpLazyTypeResolver
 from hima.experiments.temporal_pooling.stats.sdr_tracker import SdrTracker
 from hima.experiments.temporal_pooling.stp.mlp_torch import MlpClassifier
-from hima.experiments.temporal_pooling.stp.sp_utils import (
-    make_repeating_counter,
-    RepeatingCountdown, tick
-)
 from hima.experiments.temporal_pooling.utils import resolve_random_seed
 
 wandb = lazy_import('wandb')
@@ -45,19 +42,18 @@ class TrainConfig:
 
 class TestConfig:
     eval_first: int
-    eval_countdown: RepeatingCountdown
+    eval_scheduler: Scheduler
     n_epochs: int
     noise: float
 
     def __init__(self, eval_first: int, eval_schedule: int, n_epochs: int, noise: float = 0.0):
         self.eval_first = eval_first
-        self.eval_countdown = make_repeating_counter(eval_schedule)
+        self.eval_scheduler = Scheduler(eval_schedule)
         self.n_epochs = n_epochs
         self.noise = noise
 
     def tick(self):
-        now, self.eval_countdown = tick(self.eval_countdown)
-        return now
+        return self.eval_scheduler.tick()
 
 
 class EpochStats:

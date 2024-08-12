@@ -154,8 +154,7 @@ class SpatialEncoderDenseBackend:
         pc = self.pruning_controller
         if not pc.is_newborn_phase:
             return
-        now, pc.countdown = tick(pc.countdown)
-        if not now:
+        if not pc.scheduler.tick():
             return
 
         from hima.common.timer import timed
