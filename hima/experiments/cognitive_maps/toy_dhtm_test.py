@@ -70,6 +70,8 @@ if __name__ == '__main__':
 
     label_counts = np.zeros((dhtm.n_hidden_states, env.h * env.w))
     states_visited = list()
+    strategy = config.get('strategy', None)
+    action_step = 0
 
     for epoch in range(config['n_epochs']):
         env.reset(init_r, init_c)
@@ -86,7 +88,14 @@ if __name__ == '__main__':
             states_visited.append(env.c + env.r * env.w)
             observation = observation.flatten()[0]
             obs_state = np.flatnonzero(env.unique_colors == observation)[0]
-            action = rng.integers(0, len(env.actions))
+
+            if strategy is not None:
+                action = strategy[action_step]
+                action_step += 1
+                action_step %= len(strategy)
+            else:
+                action = rng.integers(0, len(env.actions))
+
             dhtm.observe(obs_state, action, (env.r, env.c))
 
             env.act(action)
@@ -97,5 +106,12 @@ if __name__ == '__main__':
     dhtm.draw_graph('graph.png', connection_threshold=0.6, activation_threshold=5, labels=labels)
     m = env.get_true_map().astype(np.float32)
     m[m < 0] = np.nan
-    sns.heatmap(m, cmap=colormap.cmap_builder('Pastel1'), annot=True, cbar=False, vmin=0, vmax=dhtm.n_obs_states)
+    sns.heatmap(
+        m,
+        cmap=colormap.cmap_builder('Pastel1'),
+        annot=True,
+        cbar=False,
+        vmin=0,
+        vmax=dhtm.n_obs_states
+    )
     plt.savefig('map.png')
