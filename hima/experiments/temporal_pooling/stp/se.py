@@ -158,7 +158,7 @@ class SpatialEncoderLayer:
         self.pos_log_radius = self.get_pos_log_radius()
 
         # ==> Pattern matching
-        self.bias_boosting = BoostingPolicy[boosting_policy.upper()]
+        self.boosting_policy = BoostingPolicy[boosting_policy.upper()]
 
         # ==> K-extras
         soft_extra = abs_or_relative(soft_extra, k)
@@ -440,9 +440,9 @@ class SpatialEncoderLayer:
         return self.weights_backend.match_input(x)
 
     def apply_boosting(self, u_raw):
-        if self.bias_boosting == BoostingPolicy.NO:
+        if self.boosting_policy == BoostingPolicy.NO:
             u = u_raw
-        elif self.bias_boosting == BoostingPolicy.ADDITIVE:
+        elif self.boosting_policy == BoostingPolicy.ADDITIVE:
             avg_u = self.fast_potentials_trace.get()
             u = u_raw - avg_u
             if self.learn:
@@ -451,11 +451,11 @@ class SpatialEncoderLayer:
                         self.fast_potentials_trace.put(u_raw[i])
                 else:
                     self.fast_potentials_trace.put(u_raw)
-        elif self.bias_boosting == BoostingPolicy.MULTIPLICATIVE:
+        elif self.boosting_policy == BoostingPolicy.MULTIPLICATIVE:
             boosting_k = boosting(relative_rate=self.output_relative_rate, k=self.pos_log_radius)
             u = u_raw * boosting_k
         else:
-            raise ValueError(f'Unsupported boosting policy: {self.bias_boosting}')
+            raise ValueError(f'Unsupported boosting policy: {self.boosting_policy}')
 
         return u
 

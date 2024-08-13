@@ -118,7 +118,6 @@ class KrotovLayer:
         x = np.zeros(self.ff_size)
         x[sdr] = value
 
-        w = self.weights
         p, hb_delta = self.lebesgue_p, self.hebb_delta
 
         u = self.match_input(x)
