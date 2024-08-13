@@ -24,16 +24,11 @@ from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
-from hima.experiments.temporal_pooling.stp.se_utils import boosting
+from hima.experiments.temporal_pooling.stp.se_utils import boosting, arg_top_k, WeightsDistribution
 from hima.modules.htm.utils import abs_or_relative
 
 if TYPE_CHECKING:
     from hima.experiments.temporal_pooling.stp.se_dense import SpatialEncoderDenseBackend
-
-
-class WeightsDistribution(Enum):
-    NORMAL = 1
-    UNIFORM = auto()
 
 
 class FilterInputPolicy(Enum):
@@ -124,6 +119,8 @@ class SpatialEncoderLayer:
             output_extra: int | float = 0.0,
 
             pruning: TConfig = None,
+
+            print_stats_schedule: int = 10_000,
             **kwargs
     ):
         print(f'kwargs: {kwargs}')
@@ -251,7 +248,7 @@ class SpatialEncoderLayer:
             self.fast_active_mass_trace = MeanValue(
                 lr=fast_lr, initial_value=self.beta_active_mass[0]
             )
-        self.print_stats_scheduler = Scheduler(10_000)
+        self.print_stats_scheduler = Scheduler(print_stats_schedule)
 
     def compute_batch(self, input_sdrs: SdrArray, learn: bool = False) -> SdrArray:
         self.learn = learn
@@ -309,7 +306,7 @@ class SpatialEncoderLayer:
         self.prune_newborns()
         self.cnt += 1
 
-        if self.cnt % 10000 == 0:
+        if self.print_stats_scheduler.tick():
             self.print_stats(u, output_sdr)
         # if self.cnt % 50000 == 0:
         #     self.plot_weights_distr()
@@ -698,33 +695,6 @@ def align_matching_learning_params(
     return match_p, lebesgue_p, learning_policy
 
 
-def sample_weights(rng, w_shape, distribution, radius, lebesgue_p):
-    if distribution == WeightsDistribution.NORMAL:
-        init_std = get_normal_std(w_shape[1], lebesgue_p, radius)
-        weights = np.abs(rng.normal(loc=0., scale=init_std, size=w_shape))
-
-    elif distribution == WeightsDistribution.UNIFORM:
-        init_std = get_uniform_std(w_shape[1], lebesgue_p, radius)
-        weights = rng.uniform(0., init_std, size=w_shape)
-
-    else:
-        raise ValueError(f'Unsupported distribution: {distribution}')
-
-    return weights
-
-
-def get_uniform_std(n_samples, p, required_r) -> float:
-    alpha = 2 / n_samples
-    alpha = alpha ** (1 / p)
-    return required_r * alpha
-
-
-def get_normal_std(n_samples: int, p: float, required_r) -> float:
-    alpha = np.pi / (2 * n_samples)
-    alpha = alpha ** (1 / p)
-    return required_r * alpha
-
-
 def adapt_beta_mass(k, soft_extra, beta_active_mass):
     a = (soft_extra / k) ** 0.7
 
@@ -745,11 +715,6 @@ def normalize(x, p=1.0, all_positive=False):
         return x[mask] / np.expand_dims(r[mask], -1)
 
     return x / r if r > eps else x
-
-
-def arg_top_k(x, k):
-    k = min(k, x.size)
-    return np.argpartition(x, -k, axis=-1)[..., -k:]
 
 
 def parse_learning_set(ls, k):

@@ -6,10 +6,54 @@
 
 from __future__ import annotations
 
+from enum import Enum, auto
+
 import numpy as np
 from numba import jit
 from numpy import typing as npt
 from numpy.random import Generator
+
+
+class WeightsDistribution(Enum):
+    NORMAL = 1
+    UNIFORM = auto()
+
+
+def sample_weights(rng, w_shape, distribution, radius, lebesgue_p, inhibitory_ratio=0.5):
+    if distribution == WeightsDistribution.NORMAL:
+        init_std = get_normal_std(w_shape[1], lebesgue_p, radius)
+        weights = np.abs(rng.normal(loc=0., scale=init_std, size=w_shape))
+
+    elif distribution == WeightsDistribution.UNIFORM:
+        init_std = get_uniform_std(w_shape[1], lebesgue_p, radius)
+        weights = rng.uniform(0., init_std, size=w_shape)
+
+    else:
+        raise ValueError(f'Unsupported distribution: {distribution}')
+
+    # make a portion of weights negative
+    if inhibitory_ratio > 0.0:
+        inh_mask = rng.binomial(1, inhibitory_ratio, size=w_shape).astype(bool)
+        weights[inh_mask] *= -1.0
+
+    return weights
+
+
+def get_uniform_std(n_samples, p, required_r) -> float:
+    alpha = 2 / n_samples
+    alpha = alpha ** (1 / p)
+    return required_r * alpha
+
+
+def get_normal_std(n_samples: int, p: float, required_r) -> float:
+    alpha = np.pi / (2 * n_samples)
+    alpha = alpha ** (1 / p)
+    return required_r * alpha
+
+
+def arg_top_k(x, k):
+    k = min(k, x.size)
+    return np.argpartition(x, -k, axis=-1)[..., -k:]
 
 
 def boosting(
