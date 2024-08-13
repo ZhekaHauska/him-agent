@@ -237,15 +237,30 @@ class ToyDHTM:
                                 events.append(('set_state', self._state_to_clone(state)))
                         else:
                             # choose the least used clone
-                            # (presumably with minimum outward connections)
-                            prev_state = prev_column_states[
-                                np.argmin(
+                            prev_column_states = prev_column_states[
+                                np.argsort(
                                     self.activation_counts[prev_column_states]
                                 )
-                            ]
+                            ][::-1]
+                            scores = np.zeros(len(prev_column_states))
+                            for i, ps in enumerate(prev_column_states):
+                                prediction = self.transition_counts[
+                                    prev_action, ps].flatten()
+                                sparse_prediction = np.flatnonzero(prediction)
+
+                                scores[i] = len(sparse_prediction)
+                                if len(sparse_prediction) == 0:
+                                    prev_state = ps
+                                    break
+                            else:
+                                prev_state = prev_column_states[
+                                    np.argmin(scores)
+                                ]
+
                             if state is None:
                                 state = column_states[
-                                    np.argmax(self.activation_counts[column_states])]
+                                    np.argmax(self.activation_counts[column_states])
+                                ]
                                 self.state_buffer[pos] = state
 
                                 events.append(('set_state', self._state_to_clone(state)))
