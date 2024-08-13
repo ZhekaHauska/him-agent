@@ -18,8 +18,9 @@ from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
 from hima.experiments.temporal_pooling.stp.se import (
-    LearningPolicy, WeightsDistribution, sample_weights
+    LearningPolicy
 )
+from hima.experiments.temporal_pooling.stp.se_utils import sample_weights, WeightsDistribution
 
 
 class SpatialEncoderDenseBackend:
@@ -81,16 +82,12 @@ class SpatialEncoderDenseBackend:
         self.lebesgue_p = lebesgue_p
         self.rf_sparsity = 1.0
         self.weights = sample_weights(
-            self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p
+            self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p,
+            inhibitory_ratio=inhibitory_ratio
         )
 
         self.radius = self.get_radius()
         self.pos_log_radius = self.get_pos_log_radius()
-
-        # make a portion of weights negative
-        if inhibitory_ratio > 0.0:
-            inh_mask = self.rng.binomial(1, inhibitory_ratio, size=w_shape).astype(bool)
-            self.weights[inh_mask] *= -1.0
 
         # ==> Pattern matching
         self.match_p = match_p
@@ -127,14 +124,14 @@ class SpatialEncoderDenseBackend:
         # TODO: negative Xs is not supported ATM
         if self.learning_policy == LearningPolicy.KROTOV:
             if self.persistent_signs:
-                _oja_krotov_kuderov_update(self.weights, sdr, x, u, y, lr)
+                oja_krotov_kuderov_update(self.weights, sdr, x, u, y, lr)
             else:
-                _oja_krotov_update(self.weights, sdr, x, u, y, lr)
+                oja_krotov_update(self.weights, sdr, x, u, y, lr)
         else:
             if self.persistent_signs:
-                _willshaw_kuderov_update(self.weights, sdr, x, y, lr)
+                willshaw_kuderov_update(self.weights, sdr, x, y, lr)
             else:
-                _willshaw_update(self.weights, sdr, x, y, lr)
+                willshaw_update(self.weights, sdr, x, y, lr)
 
         self.radius[sdr] = self.get_radius(sdr)
         self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
@@ -191,7 +188,7 @@ class SpatialEncoderDenseBackend:
 
 
 @jit()
-def _willshaw_update(weights, sdr, x, y, lr):
+def willshaw_update(weights, sdr, x, y, lr):
     # Willshaw learning rule, L1 normalization:
     # dw = lr * y * (x - w)
 
@@ -202,22 +199,25 @@ def _willshaw_update(weights, sdr, x, y, lr):
 
 
 @jit()
-def _oja_krotov_update(weights, sdr, x, u, y, lr):
+def oja_krotov_update(weights, sdr, x, u, y, lr):
     # Oja-Krotov learning rule, L^p normalization, p >= 2:
     # dw = lr * y * (x - u * w)
 
-    # NB: u sign persistence is not supported ATM => clipping hack is used
+    # NB: u sign persistence is not supported ATM
     # NB2: it also replaces dw normalization
-    uu = np.clip(u[sdr], 0.0, 10_000.0)
-
     v = y * lr
-    for ix, vi, u in zip(sdr, v, uu):
+    alpha = _get_scale(u)
+    if alpha > 1.0:
+        v /= alpha
+
+    for ix, vi in zip(sdr, v):
+        ui = u[ix]
         w = weights[ix]
-        w += vi * (x - u * w)
+        w += vi * (x - ui * w)
 
 
 @jit()
-def _willshaw_kuderov_update(weights, sdr, x, y, lr):
+def willshaw_kuderov_update(weights, sdr, x, y, lr):
     # Willshaw-Kuderov learning rule, sign persistence, L1 normalization:
     # dw = lr * y * [sign(w) * x - w] = lr * y * sign(w) * (x - |w|)
 
@@ -228,15 +228,24 @@ def _willshaw_kuderov_update(weights, sdr, x, y, lr):
 
 
 @jit()
-def _oja_krotov_kuderov_update(weights, sdr, x, u, y, lr):
+def oja_krotov_kuderov_update(weights, sdr, x, u, y, lr):
     # Oja-Krotov-Kuderov learning rule, L^p normalization, p >= 2, sign persistence:
     # dw = lr * y * (sign(w) * x - w * u)
 
-    # NB: u sign persistence is not supported ATM => clipping hack is used
+    # NB: u sign persistence is not supported ATM
     # NB2: it also replaces dw normalization
-    uu = np.clip(u[sdr], 0.0, 10_000.0)
-
     v = y * lr
-    for ix, vi, u in zip(sdr, v, uu):
+    alpha = _get_scale(u)
+    if alpha > 1.0:
+        v /= alpha
+
+    for ix, vi in zip(sdr, v):
+        ui = u[ix]
         w = weights[ix]
-        w += vi * (np.sign(w) * x - u * w)
+        w += vi * (np.sign(w) * x - ui * w)
+
+
+@jit()
+def _get_scale(u):
+    u_max = np.max(np.abs(u))
+    return 1.0 if u_max < 1.0 else u_max ** 0.75 if u_max < 100.0 else u_max ** 0.9
