@@ -406,7 +406,8 @@ class SpatialEncoderLayer:
         if sz > 100 and sz / self.hard_top_k > 2.0:
             # if the difference is significant, apply hard partitioning
             ixs = arg_top_k(y, self.hard_top_k)
-            y = y[ixs].copy()
+            y = y[ixs]
+            soft_sdr = soft_sdr[ixs] if soft_sdr is not None else ixs
 
         # rank by activations in DESC order
         ixs = np.argsort(y)[::-1]
@@ -542,7 +543,7 @@ class SpatialEncoderLayer:
 
         return RateSdr(input_sdr.sdr, rates)
 
-    def prune_newborns(self, ticks_passed):
+    def prune_newborns(self, ticks_passed: int = 1):
         self.weights_backend.prune_newborns(ticks_passed)
 
     def update_beta(self, mu: int = 1):

@@ -20,7 +20,6 @@ from hima.experiments.temporal_pooling.stp.pruning_controller_dense import Pruni
 from hima.experiments.temporal_pooling.stp.se import (
     LearningPolicy, WeightsDistribution, sample_weights
 )
-from hima.experiments.temporal_pooling.stp.sp_utils import tick
 
 
 class SpatialEncoderDenseBackend:
@@ -140,7 +139,7 @@ class SpatialEncoderDenseBackend:
         self.radius[sdr] = self.get_radius(sdr)
         self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
 
-    def prune_newborns(self, ticks_passed):
+    def prune_newborns(self, ticks_passed: int = 1):
         pc = self.pruning_controller
         if pc is None or not pc.is_newborn_phase:
             return
