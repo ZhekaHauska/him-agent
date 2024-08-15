@@ -430,20 +430,21 @@ class ToyDHTM:
                 nonzero_transitions = np.flatnonzero(weights > connection_threshold)
 
                 for v, weight in zip(nonzero_transitions, weights[nonzero_transitions]):
-                    if labels is not None:
-                        v_label = str(labels[v]) + '_'
-                    else:
-                        v_label = ''
-                    v_clone, v_obs_state = self._state_to_clone(v, return_obs_state=True)
-                    line_color = colormap.rgb2hex(
-                        *(edge_cmap(int(255 * weight))[:-1]),
-                        normalised=True
-                    )
-                    g.add_edge(
-                        f'{u_label}{u_obs_state}({u_clone})', f'{v_label}{v_obs_state}({v_clone})',
-                        color=line_color,
-                        label=str(action)
-                    )
+                    if self.activation_counts[v] > activation_threshold:
+                        if labels is not None:
+                            v_label = str(labels[v]) + '_'
+                        else:
+                            v_label = ''
+                        v_clone, v_obs_state = self._state_to_clone(v, return_obs_state=True)
+                        line_color = colormap.rgb2hex(
+                            *(edge_cmap(int(255 * weight))[:-1]),
+                            normalised=True
+                        )
+                        g.add_edge(
+                            f'{u_label}{u_obs_state}({u_clone})', f'{v_label}{v_obs_state}({v_clone})',
+                            color=line_color,
+                            label=str(action)
+                        )
 
         g.layout(prog='dot')
         return g.draw(path, format='png')
