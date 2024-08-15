@@ -121,7 +121,7 @@ class ToyDHTM:
             if step == 0:
                 # initial step
                 column_states = self._get_column_states(obs_state)
-                state = self._get_maximum_prior_state(column_states)
+                state = self._get_maximum_prior_state(column_states, pos)
                 self.state_buffer[pos] = state
                 resolved = True
 
@@ -185,7 +185,7 @@ class ToyDHTM:
                 else:
                     if len(wrong_perm) == 0:
                         if state is None:
-                            state = self._get_maximum_prior_state(column_states)
+                            state = self._get_maximum_prior_state(column_states, pos)
                             self.state_buffer[pos] = state
 
                             events.append(('set_state', self._state_to_clone(state)))
@@ -275,7 +275,7 @@ class ToyDHTM:
                                 ]
 
                             if state is None:
-                                state = self._get_maximum_prior_state(column_states)
+                                state = self._get_maximum_prior_state(column_states, pos)
                                 self.state_buffer[pos] = state
 
                                 events.append(('set_state', self._state_to_clone(state)))
@@ -329,13 +329,19 @@ class ToyDHTM:
 
             events.clear()
 
-    def _get_maximum_prior_state(self, candidates):
-        return candidates[
-            np.argmax(
-                self.activation_counts[candidates] +
-                self.activation_trace[candidates] * self.recent_boost
-            )
-        ]
+    def _get_maximum_prior_state(self, candidates, pos):
+        state = None
+        if pos > 0:
+            if np.isin(self.state_buffer[pos-1], candidates):
+                state = self.state_buffer[pos-1]
+        if state is None:
+            state = candidates[
+                np.argmax(
+                    self.activation_counts[candidates] +
+                    self.activation_trace[candidates] * self.recent_boost
+                )
+            ]
+        return state
 
     def _get_best_prediction(self, prediction, candidates):
         return candidates[
