@@ -22,6 +22,9 @@ def softmax(x, beta=1.0):
 
 
 def normalize(x, default_values=None, return_zeroed_variables_count=False):
+    if len(x.shape) == 1:
+        x = x[None]
+
     norm_x = x.copy()
     norm = x.sum(axis=-1)
     mask = norm == 0
