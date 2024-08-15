@@ -9,7 +9,7 @@ import json
 import atexit
 import pygraphviz as pgv
 import colormap
-from hima.modules.belief.utils import get_data, send_string, NumpyEncoder
+from hima.modules.belief.utils import get_data, send_string, NumpyEncoder, normalize
 
 HOST = "127.0.0.1"
 PORT = 5555
@@ -51,6 +51,7 @@ class ToyDHTM:
         self.observation_buffer = list()
         self.action_buffer = list()
         self.state_buffer = list()
+        self.belief_state = None
 
         self.vis_server = None
         if self.visualize:
@@ -59,6 +60,7 @@ class ToyDHTM:
                 atexit.register(self.close)
 
     def reset(self, gridworld_map):
+        self.belief_state = None
         self.clear_buffers()
         if self.vis_server is not None:
             self._send_events([('reset', {'gridworld_map': gridworld_map})])
@@ -68,10 +70,33 @@ class ToyDHTM:
         self.action_buffer.clear()
         self.state_buffer.clear()
 
+    def predict(self):
+        if self.belief_state is None:
+            prediction = self.activation_counts
+        else:
+            action = self.action_buffer[-1]
+            prediction = self.belief_state @ self.transition_counts[action]
+
+        prediction = prediction.reshape(-1, self.n_clones).sum(axis=-1)
+        prediction = normalize(prediction).flatten()
+        return prediction
+
     def observe(self, obs_state, action, true_pos=None):
         # for debugging
         # event type: (name: str, data: tuple)
         events = list()
+
+        # belief propagation
+        column_states = self._get_column_states(obs_state)
+        if self.belief_state is None:
+            belief_state = np.zeros(self.n_hidden_states)
+            belief_state[column_states] = self.activation_counts[column_states]
+            self.belief_state = normalize(belief_state).flatten()
+        else:
+            prediction = self.belief_state @ self.transition_counts[self.action_buffer[-1]]
+            belief_state = np.zeros(self.n_hidden_states)
+            belief_state[column_states] = prediction[column_states]
+            self.belief_state = normalize(belief_state).flatten()
 
         self.observation_buffer.append(obs_state)
         self.action_buffer.append(action)
