@@ -1,9 +1,17 @@
 log: true
-project_name: 'dhtm_test'
-n_steps: 50
-n_epochs: 100
-env: 'configs/gridworld/2x2.yaml'
+project_name: 'toy_dhtm_test'
+n_steps: 100
+n_epochs: 500
+env: 'configs/gridworld/5x5.yaml'
 dhtm: 'configs/dhtm.yaml'
 set_true_transitions: true
-initial_pos: [1, 0]
+initial_pos: [0, 0]
+# strategy: [3, 3, 3]
+
+graph_params:
+  path: graph.png
+  connection_threshold: 0.5
+  activation_threshold: 5
+map_path: map.png
+
 seed: null

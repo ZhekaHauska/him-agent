@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import wandb
+
 from hima.experiments.cognitive_maps.toy_dhtm import ToyDHTM
 from hima.envs.gridworld import GridWorld
 from hima.common.config.base import read_config
@@ -50,6 +52,16 @@ if __name__ == '__main__':
     config['env'] = read_config(config['env'])
     config['dhtm'] = read_config(config['dhtm'])
 
+    log = config.pop('log')
+    project_name = config.pop('project_name')
+    if log:
+        logger = wandb.init(
+            project=project_name,
+            config=config
+        )
+    else:
+        logger = None
+
     env = GridWorld(**config['env'], seed=config['seed'])
 
     config['dhtm']['n_obs_states'] = env.n_colors
@@ -72,6 +84,7 @@ if __name__ == '__main__':
     states_visited = list()
     strategy = config.get('strategy', None)
     action_step = 0
+    total_steps = 0
 
     for epoch in range(config['n_epochs']):
         env.reset(init_r, init_c)
@@ -96,22 +109,37 @@ if __name__ == '__main__':
             else:
                 action = rng.integers(0, len(env.actions))
 
+            surprise = - np.log(np.clip(dhtm.predict()[obs_state], 1e-24, 1.0))
             dhtm.observe(obs_state, action, (env.r, env.c))
 
             env.act(action)
             env.step()
 
+            if log:
+                logger.log({
+                    'clones_used': np.count_nonzero(dhtm.activation_counts > 0),
+                    'surprise': surprise
+                }, total_steps)
+
+            total_steps += 1
+
     labels = np.argmax(label_counts, axis=-1)
     labels = [(s//env.w, s % env.w) for s in labels]
-    dhtm.draw_graph('graph.png', connection_threshold=0.6, activation_threshold=5, labels=labels)
-    m = env.get_true_map().astype(np.float32)
-    m[m < 0] = np.nan
-    sns.heatmap(
-        m,
-        cmap=colormap.cmap_builder('Pastel1'),
-        annot=True,
-        cbar=False,
-        vmin=0,
-        vmax=dhtm.n_obs_states
-    )
-    plt.savefig('map.png')
+
+    graph_params = config.get('graph_params', None)
+    if graph_params is not None:
+        dhtm.draw_graph(**graph_params, labels=labels)
+
+    map_path = config.get('map_path', None)
+    if map_path is not None:
+        m = env.get_true_map().astype(np.float32)
+        m[m < 0] = np.nan
+        sns.heatmap(
+            m,
+            cmap=colormap.cmap_builder('Pastel1'),
+            annot=True,
+            cbar=False,
+            vmin=0,
+            vmax=dhtm.n_obs_states
+        )
+        plt.savefig('map.png')
