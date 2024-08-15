@@ -1,3 +1,6 @@
-n_clones: 5
+n_clones: 40
 consolidation_threshold: 1  # controls noise tolerance?
+gamma: 0.999
+recent_gamma: 0.5
+recent_boost: 1000
 visualize: true

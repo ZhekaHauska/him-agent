@@ -30,6 +30,9 @@ class ToyDHTM:
             n_actions,
             n_clones,
             consolidation_threshold: int = 1,  # controls noise tolerance?
+            gamma: float = 0.99,
+            recent_gamma: float = 0.9,
+            recent_boost: float = 10,
             visualize: bool = False,
             visualization_server=(HOST, PORT)
     ):
@@ -37,6 +40,9 @@ class ToyDHTM:
         self.n_obs_states = n_obs_states
         self.n_actions = n_actions
         self.n_hidden_states = self.n_clones * self.n_obs_states
+        self.gamma = gamma
+        self.recent_gamma = recent_gamma
+        self.recent_boost = recent_boost
         self.visualize = visualize
         self.vis_server_address = visualization_server
 
@@ -44,7 +50,8 @@ class ToyDHTM:
             (self.n_actions, self.n_hidden_states, self.n_hidden_states),
             dtype=np.int64
         )
-        self.activation_counts = np.zeros(self.n_hidden_states, dtype=np.int64)
+        self.activation_counts = np.zeros(self.n_hidden_states, dtype=np.float64)
+        self.activation_trace = np.zeros(self.n_hidden_states, dtype=np.float64)
         # determines, how many counts we need to get for a transition to make it permanent
         self.consolidation_threshold = consolidation_threshold
 
@@ -114,7 +121,7 @@ class ToyDHTM:
             if step == 0:
                 # initial step
                 column_states = self._get_column_states(obs_state)
-                state = column_states[np.argmax(self.activation_counts[column_states])]
+                state = self._get_maximum_prior_state(column_states)
                 self.state_buffer[pos] = state
                 resolved = True
 
@@ -169,12 +176,7 @@ class ToyDHTM:
                 # cases:
                 # 1. correct set is not empty
                 if len(correct_prediction) > 0:
-                    state = correct_prediction[
-                        np.argmax(
-                            prediction[correct_prediction] +
-                            self.activation_counts[correct_prediction]
-                        )
-                    ]
+                    state = self._get_best_prediction(prediction, correct_prediction)
                     self.state_buffer[pos] = state
                     resolved = True
 
@@ -183,7 +185,7 @@ class ToyDHTM:
                 else:
                     if len(wrong_perm) == 0:
                         if state is None:
-                            state = column_states[np.argmax(self.activation_counts[column_states])]
+                            state = self._get_maximum_prior_state(column_states)
                             self.state_buffer[pos] = state
 
                             events.append(('set_state', self._state_to_clone(state)))
@@ -240,23 +242,13 @@ class ToyDHTM:
                         )
 
                         if len(correct_prediction) > 0:
-                            prev_state = correct_prediction[
-                                np.argmax(
-                                    prediction[correct_prediction] +
-                                    self.activation_counts[correct_prediction]
-                                )
-                            ]
+                            prev_state = self._get_best_prediction(prediction, correct_prediction)
                             if state is None:
                                 prediction = self.transition_counts[prev_action, prev_state].flatten()
                                 sparse_prediction = np.flatnonzero(prediction)
                                 coincide = np.isin(sparse_prediction, column_states)
                                 correct_prediction = sparse_prediction[coincide]
-                                state = correct_prediction[
-                                    np.argmax(
-                                        prediction[correct_prediction] +
-                                        self.activation_counts[correct_prediction]
-                                    )
-                                ]
+                                state = self._get_best_prediction(prediction, correct_prediction)
                                 self.state_buffer[pos] = state
 
                                 events.append(('set_state', self._state_to_clone(state)))
@@ -283,9 +275,7 @@ class ToyDHTM:
                                 ]
 
                             if state is None:
-                                state = column_states[
-                                    np.argmax(self.activation_counts[column_states])
-                                ]
+                                state = self._get_maximum_prior_state(column_states)
                                 self.state_buffer[pos] = state
 
                                 events.append(('set_state', self._state_to_clone(state)))
@@ -311,7 +301,11 @@ class ToyDHTM:
                     )
 
                 self.transition_counts[prev_action, prev_state, state] += 1
+
+                self.activation_counts[column_states] *= self.gamma
                 self.activation_counts[state] += 1
+                self.activation_trace *= self.recent_gamma
+                self.activation_trace[state] += 1
 
                 events.append(
                     (
@@ -334,6 +328,22 @@ class ToyDHTM:
                 self._send_events(events)
 
             events.clear()
+
+    def _get_maximum_prior_state(self, candidates):
+        return candidates[
+            np.argmax(
+                self.activation_counts[candidates] +
+                self.activation_trace[candidates] * self.recent_boost
+            )
+        ]
+
+    def _get_best_prediction(self, prediction, candidates):
+        return candidates[
+            np.argmax(
+                prediction[candidates] +
+                self.activation_counts[candidates]
+            )
+        ]
 
     def _state_to_clone(self, state, return_obs_state=False):
         obs_state = state // self.n_clones
