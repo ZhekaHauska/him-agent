@@ -29,10 +29,7 @@ class ToyDHTM:
             n_obs_states,
             n_actions,
             n_clones,
-            consolidation_threshold: int = 1,  # controls noise tolerance?
             gamma: float = 0.99,
-            recent_gamma: float = 0.9,
-            recent_boost: float = 10,
             visualize: bool = False,
             visualization_server=(HOST, PORT)
     ):
@@ -41,19 +38,15 @@ class ToyDHTM:
         self.n_actions = n_actions
         self.n_hidden_states = self.n_clones * self.n_obs_states
         self.gamma = gamma
-        self.recent_gamma = recent_gamma
-        self.recent_boost = recent_boost
         self.visualize = visualize
         self.vis_server_address = visualization_server
 
         self.transition_counts = np.zeros(
             (self.n_actions, self.n_hidden_states, self.n_hidden_states),
-            dtype=np.int64
+            dtype=np.int32
         )
         self.activation_counts = np.zeros(self.n_hidden_states, dtype=np.float64)
-        self.activation_trace = np.zeros(self.n_hidden_states, dtype=np.float64)
         # determines, how many counts we need to get for a transition to make it permanent
-        self.consolidation_threshold = consolidation_threshold
 
         self.observation_buffer = list()
         self.action_buffer = list()
@@ -134,6 +127,7 @@ class ToyDHTM:
 
                 prev_state = self.state_buffer[pos - 1]
                 prev_action = self.action_buffer[pos - 1]
+
                 prediction = self.transition_counts[prev_action, prev_state].flatten()
                 sparse_prediction = np.flatnonzero(prediction)
 
@@ -144,14 +138,6 @@ class ToyDHTM:
 
                 correct_prediction = sparse_prediction[coincide]
                 wrong_prediction = sparse_prediction[~coincide]
-
-                permanence_mask = prediction[wrong_prediction] > self.consolidation_threshold
-                wrong_perm = wrong_prediction[
-                    permanence_mask
-                ]
-                wrong_temp = wrong_prediction[
-                    ~permanence_mask
-                ]
 
                 events.append(
                     (
@@ -164,12 +150,7 @@ class ToyDHTM:
                         [
                             self._state_to_clone(x, return_obs_state=True) + (w,)
                             for x, w in
-                            zip(wrong_perm, prediction[wrong_perm])
-                        ],
-                        [
-                            self._state_to_clone(x, return_obs_state=True) + (w,)
-                            for x, w in
-                            zip(wrong_temp, prediction[wrong_temp])
+                            zip(wrong_prediction, prediction[wrong_prediction])
                         ]
                     )
                 )
@@ -183,7 +164,7 @@ class ToyDHTM:
                     events.append(('set_state', self._state_to_clone(state)))
                 # 2. correct set is empty
                 else:
-                    if len(wrong_perm) == 0:
+                    if len(wrong_prediction) == 0:
                         if state is None:
                             state = self._get_maximum_prior_state(column_states, pos)
                             self.state_buffer[pos] = state
@@ -205,17 +186,30 @@ class ToyDHTM:
 
                             # punish connection
                             self.activation_counts[prev_state] -= 1
-                            if self.transition_counts[prev_action, prev_state, state] > 0:
-                                assert self.transition_counts[prev_action, prev_state, state] > self.consolidation_threshold
-                                self.transition_counts[prev_action, prev_state, state] -= 1
+                            if (pos - 2) >= 0:
+                                pp_action = self.action_buffer[pos - 2]
+                                pp_state = self.state_buffer[pos - 2]
+                                assert self.transition_counts[pp_action, pp_state, prev_state] > 0
+                                self.transition_counts[pp_action, pp_state, prev_state] -= 1
+
                                 events.append(
                                     (
                                         'punish_con',
-                                        prev_action,
-                                        self._state_to_clone(prev_state, return_obs_state=True),
-                                        self._state_to_clone(state, return_obs_state=True)
+                                        pp_action,
+                                        self._state_to_clone(pp_state, return_obs_state=True),
+                                        self._state_to_clone(prev_state, return_obs_state=True)
                                     )
                                 )
+
+                                if self.transition_counts[pp_action, pp_state, prev_state] == 0:
+                                    events.append(
+                                        (
+                                            'remove_con',
+                                            pp_action,
+                                            self._state_to_clone(pp_state, return_obs_state=True),
+                                            self._state_to_clone(prev_state, return_obs_state=True)
+                                        )
+                                    )
 
                         sparse_prediction = np.flatnonzero(prediction)
                         prev_obs_state = self.observation_buffer[pos - 1]
@@ -287,25 +281,9 @@ class ToyDHTM:
                         )
 
                 # in any case
-                if len(wrong_temp) > 0:
-                    self.transition_counts[prev_action, prev_state, wrong_temp] = 0
-                    self.activation_counts[wrong_temp] -= 1
-
-                    events.append(
-                        (
-                            'remove_con',
-                            prev_action,
-                            self._state_to_clone(prev_state, return_obs_state=True),
-                            [self._state_to_clone(x, return_obs_state=True) for x in wrong_temp]
-                        )
-                    )
-
                 self.transition_counts[prev_action, prev_state, state] += 1
-
                 self.activation_counts[column_states] *= self.gamma
                 self.activation_counts[state] += 1
-                self.activation_trace *= self.recent_gamma
-                self.activation_trace[state] += 1
 
                 events.append(
                     (
@@ -336,10 +314,7 @@ class ToyDHTM:
                 state = self.state_buffer[pos-1]
         if state is None:
             state = candidates[
-                np.argmax(
-                    self.activation_counts[candidates] +
-                    self.activation_trace[candidates] * self.recent_boost
-                )
+                np.argmax(self.activation_counts[candidates])
             ]
         return state
 
