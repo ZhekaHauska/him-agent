@@ -193,10 +193,10 @@ class SpatialEncoderLayer:
         self.beta = beta
         self.adaptive_beta = beta_lr > 0.0
         if self.adaptive_beta:
-            if self.activation_policy == ActivationPolicy.POWERLAW:
-                # compared to the softmax beta, the power beta is usually smaller, hence lr is
-                # scaled down to equalize settings for diff activation policies
-                beta_lr /= 10.0
+            # if self.activation_policy == ActivationPolicy.POWERLAW:
+            #     # compared to the softmax beta, the power beta is usually smaller, hence lr is
+            #     # scaled down to equalize settings for diff activation policies
+            #     beta_lr /= 10.0
             self.beta_lr = beta_lr
 
         # sum(topK) to sum(top2K) (min, max) ratio
@@ -249,6 +249,7 @@ class SpatialEncoderLayer:
                 lr=fast_lr, initial_value=self.beta_active_mass[0]
             )
         self.print_stats_scheduler = Scheduler(print_stats_schedule)
+        self.periodic_check_scheduler = Scheduler(1000)
 
     def compute_batch(self, input_sdrs: SdrArray, learn: bool = False) -> SdrArray:
         self.learn = learn
@@ -293,7 +294,7 @@ class SpatialEncoderLayer:
         hard_sdr, hard_y = self.partition_and_rank_activations(soft_sdr, soft_y)
 
         # ==> Select output
-        output_sdr = self.select_output(hard_sdr, hard_y)
+        output_sdr = self.select_output(hard_sdr, hard_y, len(soft_y))
 
         if not self.learn:
             return output_sdr
@@ -308,6 +309,8 @@ class SpatialEncoderLayer:
 
         if self.print_stats_scheduler.tick():
             self.print_stats(u, output_sdr)
+        if self.periodic_check_scheduler.tick():
+            self.periodic_check()
         # if self.cnt % 50000 == 0:
         #     self.plot_weights_distr()
         # if self.cnt % 10000 == 0:
@@ -354,7 +357,7 @@ class SpatialEncoderLayer:
             hard_sdr, hard_y = self.partition_and_rank_activations(soft_sdr, soft_y)
 
             # ==> Select output
-            output_sdr = self.select_output(hard_sdr, hard_y)
+            output_sdr = self.select_output(hard_sdr, hard_y, len(soft_y))
             output_sdrs.append(output_sdr)
 
             if not self.learn:
@@ -377,6 +380,8 @@ class SpatialEncoderLayer:
             self.update_beta(mu=batch_size)
             if self.print_stats_scheduler.tick(batch_size):
                 self.print_stats(us[-1], output_sdrs[-1])
+            if self.periodic_check_scheduler.tick(batch_size):
+                self.periodic_check()
 
         return SdrArray(sparse=output_sdrs, sdr_size=self.output_size)
 
@@ -452,14 +457,14 @@ class SpatialEncoderLayer:
                 else:
                     self.fast_potentials_trace.put(u_raw)
         elif self.boosting_policy == BoostingPolicy.MULTIPLICATIVE:
-            boosting_k = boosting(relative_rate=self.output_relative_rate, k=self.pos_log_radius)
-            u = u_raw * boosting_k
+            beta = boosting(relative_rate=self.output_relative_rate, k=self.pos_log_radius)
+            u = u_raw * beta
         else:
             raise ValueError(f'Unsupported boosting policy: {self.boosting_policy}')
 
         return u
 
-    def select_output(self, hard_sdr, hard_y):
+    def select_output(self, hard_sdr, hard_y, act_support):
         k, extra = self.output_sds.active_size, self.output_extra
         k_output = min(k + extra, len(hard_sdr))
 
@@ -469,7 +474,7 @@ class SpatialEncoderLayer:
             y = normalize(y, all_positive=True)
 
         if k_output > 0:
-            eps = 0.05 / k_output
+            eps = 0.05 / act_support
             mask = y > eps
 
             sdr = sdr[mask].copy()
@@ -551,8 +556,8 @@ class SpatialEncoderLayer:
             if self.cnt % schedule != 0:
                 # beta updates throttling, update every xxx-th step
                 return
-            # make an update with accumulated force
-            mu = schedule
+        else:
+            mu /= schedule
 
         if not self.adaptive_beta:
             return
@@ -572,7 +577,7 @@ class SpatialEncoderLayer:
 
         d_beta = 0.0
         if avg_active_size < k:
-            d_beta = -0.02
+            d_beta = -1.0
         elif not (m_low <= avg_active_mass <= m_high):
             target_mass = (m_low + m_high) / 2
             rel_mass = max(0.1, avg_active_mass / target_mass)
@@ -593,12 +598,19 @@ class SpatialEncoderLayer:
         rs = self.pos_log_radius if ixs is None else self.pos_log_radius[ixs]
         return np.clip(base_lr * rs, *self.lr_range)
 
+    def periodic_check(self):
+        # turn off boosting when its effect become negligible
+        if self.boosting_policy != BoostingPolicy.NO and self.pos_log_radius.mean() < 0.1:
+            self.boosting_policy = BoostingPolicy.NO
+
     def print_stats(self, u, output_sdr):
         sdr, y = unwrap_as_rate_sdr(output_sdr)
         r = self.radius.mean()
         k = self.output_sds.active_size
         active_mass = 100.0 * y[:k].sum()
-        biases = self.output_rate / self.output_sds.sparsity
+        u_max = u.max()
+        u_min = 100.0 * u.min() / u_max
+        ror = self.output_rate / self.output_sds.sparsity
         w = self.weights_backend.weights
         eps = r * 0.2 / self.ff_size
         signs_w = np.sign(w)
@@ -607,10 +619,10 @@ class SpatialEncoderLayer:
         zero_w = 100.0 - pos_w - neg_w
         print(
             f'R={r:.3f} H={self.output_entropy():.3f}'
-            f' B={self.beta:.3f} S={self.output_active_size:.1f}'
+            f' B={self.beta:.2f} S={self.output_active_size:.1f}'
             f' SfS={self.fast_soft_size_trace.get():.1f}'
-            f'| B[{biases.min():.2f}; {biases.max():.2f}]'
-            f'| U[{u.min():.3f}  {u.max():.3f}]'
+            f'| ROR[{ror.min():.2f}; {ror.max():.2f}]'
+            f'| U[{u_min:.1f}%  {u_max:.4f}]'
             f'| W {w.mean():.3f} [{w.min():.3f}; {w.max():.3f}]'
             f' NZP[{neg_w:.0f}; {zero_w:.0f}; {pos_w:.0f}]'
             f'| Y {active_mass:.0f} {sdr.size}'

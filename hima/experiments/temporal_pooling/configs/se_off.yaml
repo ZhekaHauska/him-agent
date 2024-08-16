@@ -7,7 +7,7 @@ setup: setups.binary_basic_sp
 debug: False
 
 train:
-  n_epochs: 5
+  n_epochs: 30
   batch_size: 64
 test:
   eval_first: 3
@@ -45,6 +45,8 @@ sp:
     seed: ???
     feedforward_sds: ???
     output_sds: ???
+    weights_distribution: normal
+    inhibitory_ratio: 0.5
     init_radius: 20.0
     learning_rate: 0.025
     adaptive_lr: True
@@ -56,7 +58,6 @@ sp:
   soft_hebb_ext:
     _base_: sp.soft_hebb
     init_radius: 20.0
-    weights_bias: 0.001
     learning_rate: 0.025
     adaptive_lr: True
     normalize_dw: False
@@ -85,7 +86,6 @@ sp:
   krotov_adaptive:
     _base_: sp.krotov
     adaptive_lr: True
-    weights_bias: 0.001
 
   se:
     _type_: sp.se
@@ -102,7 +102,7 @@ sp:
     lebesgue_p: 1.0
     init_radius: 20.0
     weights_distribution: normal
-    inhibitory_ratio: 0.12
+    inhibitory_ratio: 0.0
 
     # Weights power for matching [should be compatible with learning policy, i.e.
     #   lebesgue_p - 1 for krotov (use ... to make it auto-induced), and
@@ -115,29 +115,30 @@ sp:
     activation_policy: powerlaw
     beta: 1.0
     beta_lr: 0.0
+#    beta_lr: 0.0004
     soft_extra: 1.0
     # with respect to top K against second top K
-    beta_active_mass: [0.75, 0.94]
+    beta_active_mass: [0.72, 0.82]
 
     normalize_output: False
-    output_extra: 0.5
+    output_extra: 4.0
 
     # linear | krotov
     learning_policy: linear
     learning_rate: 0.01
     adaptive_lr: True
     # M | [M, Q]: M - hebb, Q - anti-hebb; ints or floats — absolute or relative to K
-    learning_set: [1.0, 0.4]
-    anti_hebb_scale: 1.0
-    persistent_signs: True
+    learning_set: [0.75, 0.75]
+    anti_hebb_scale: 0.8
+    persistent_signs: False
     normalize_dw: False
 
-    pruning:
-      n_stages: 25
-      cycle: 200.0
-      # linear | powerlaw
-      mode: powerlaw
-      target_rf_sparsity: 0.5
+#    pruning:
+#      n_stages: 20
+#      cycle: 250.0
+#      # linear | powerlaw
+#      mode: powerlaw
+#      target_rf_sparsity: 0.2
 
   float_sp:
     _base_: _common_base
@@ -209,8 +210,8 @@ setups:
     encoder: sp.soft_hebb
     input_mode: rate
     ds_norm: l2
-    encoding_sds: [2000, 20]
-#    encoding_sds: [800, 8]
+#    encoding_sds: [2000, 20]
+    encoding_sds: [800, 8]
   rate_soft_hebb_ext:
     _base_: setups.rate_soft_hebb
     encoder: sp.soft_hebb_ext
@@ -220,6 +221,7 @@ setups:
     encoder: sp.krotov
 #    sdr_tracker: False
     input_mode: rate
+    ds_norm: lp
     encoding_sds: [2000, 7]
 #    encoding_sds: [800, 3]
   rate_krotov_adaptive:
@@ -232,8 +234,8 @@ setups:
     input_mode: rate
     ds_norm: lp
 #    encoding_sds: [4000, 40]
-#    encoding_sds: [2000, 20]
-    encoding_sds: [800, 10]
+    encoding_sds: [2000, 20]
+#    encoding_sds: [800, 10]
   binary_htm_sparse:
     encoder:
       _base_: sp.htm_sp
