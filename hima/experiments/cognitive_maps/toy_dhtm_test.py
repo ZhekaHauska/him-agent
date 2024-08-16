@@ -49,8 +49,8 @@ if __name__ == '__main__':
 
     rng = np.random.default_rng(config['seed'])
 
-    config['env'] = read_config(config['env'])
-    config['dhtm'] = read_config(config['dhtm'])
+    config['env'] = read_config(config['env_path'])
+    config['dhtm'] = read_config(config['dhtm_path'])
 
     log = config.pop('log')
     project_name = config.pop('project_name')
@@ -72,8 +72,9 @@ if __name__ == '__main__':
         true_transition_matrix = get_true_transitions(dhtm.n_clones, env).astype(
             dhtm.transition_counts.dtype
         )
-        dhtm.transition_counts = true_transition_matrix * (dhtm.consolidation_threshold + 1)
-        dhtm.activation_counts = dhtm.transition_counts.sum(axis=0).sum(axis=-1).flatten()
+        dhtm.transition_counts = true_transition_matrix
+        dhtm.activation_counts = dhtm.transition_counts.sum(axis=0).sum(axis=-1).flatten(
+        ).astype(dhtm.activation_counts.dtype)
 
     if 'initial_pos' in config:
         init_r, init_c = config['initial_pos']
