@@ -228,7 +228,7 @@ class LearningHistory:
             self.clear_prediction(self.current_step)
         elif event_type == 'predict_forward':
             self.set_position(self.current_step)
-            correct, wrong_perm, wrong_temp = event[1:]
+            correct, wrong = event[1:]
             self.clear_prediction(self.current_step)
 
             for clone, obs_state, weight in correct:
@@ -236,15 +236,11 @@ class LearningHistory:
                     clone, obs_state, weight, self.current_step, True, False
                 )
 
-            for clone, obs_state, weight in wrong_perm:
+            for clone, obs_state, weight in wrong:
                 self.set_prediction(
                     clone, obs_state, weight, self.current_step, False, False
                 )
 
-            for clone, obs_state, weight in wrong_temp:
-                self.set_prediction(
-                    clone, obs_state, weight, self.current_step, False, True
-                )
         elif event_type == 'predict_backward':
             self.set_position(self.current_step)
             correct, wrong = event[1:]
@@ -519,16 +515,15 @@ class TransitionGraph:
             self.gravitation = self.init_gravitation
             self.rad_factor = self.init_rad_factor
 
-            prev_action, prev_state, states = event[1:]
-            edges = [f'{prev_state}_{x}' for x in states]
-            for edge in edges:
-                if edge in self.edges:
-                    actions = self.edges[edge]['actions']
-                    actions[ACTIONS[prev_action]] -= 1
-                    if sum(actions.values()) == 0:
-                        self.vertices[self.edges[edge]['node1']]['out_edges'].remove(edge)
-                        self.vertices[self.edges[edge]['node2']]['in_edges'].remove(edge)
-                        self.edges.pop(edge)
+            prev_action, prev_state, state = event[1:]
+            edge = f'{prev_state}_{state}'
+            if edge in self.edges:
+                actions = self.edges[edge]['actions']
+                actions[ACTIONS[prev_action]] -= 1
+                if sum(actions.values()) == 0:
+                    self.vertices[self.edges[edge]['node1']]['out_edges'].remove(edge)
+                    self.vertices[self.edges[edge]['node2']]['in_edges'].remove(edge)
+                    self.edges.pop(edge)
 
             self.normalize_edges()
         elif event_type == 'punish_con':
