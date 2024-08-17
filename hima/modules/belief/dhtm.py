@@ -1097,6 +1097,7 @@ class DHTM(Layer):
         )
 
         self.prediction_cells = np.zeros_like(self.internal_messages)
+        self.prior = np.zeros_like(self.internal_messages)
         self.observation_messages = np.zeros(self.input_sdr_size)
         self.prediction_columns = None
         self.is_any_segment_active = False
@@ -1138,6 +1139,7 @@ class DHTM(Layer):
         self.external_messages_buffer = list()
         self.forward_messages_buffer = list()
         self.backward_messages_buffer = list()
+        self.prediction_buffer = list()
         self.prior_buffer = list()
         self.can_clear_buffers = False
         self.column_prior = column_prior
@@ -1191,6 +1193,7 @@ class DHTM(Layer):
                 self.observation_messages_buffer.append(self.observation_messages.copy())
                 self.external_messages_buffer.append(self.initial_external_messages.copy())
                 self.forward_messages_buffer.append(self.internal_messages.copy())
+                self.prior_buffer.append(self.prior.copy())
                 # for alignment with backward messages
                 self.forward_messages_buffer.append(self.initial_backward_messages.copy())
 
@@ -1210,6 +1213,7 @@ class DHTM(Layer):
         self.external_active_cells.sparse = []
 
         self.prediction_cells = np.zeros_like(self.internal_messages)
+        self.prior = np.zeros_like(self.internal_messages)
         self.observation_messages = np.zeros(self.input_sdr_size)
         self.prediction_columns = None
         self.state_information = 0
@@ -1226,6 +1230,7 @@ class DHTM(Layer):
         self.external_messages_buffer.clear()
         self.forward_messages_buffer.clear()
         self.backward_messages_buffer.clear()
+        self.prediction_buffer.clear()
         self.prior_buffer.clear()
 
     def predict(self, context_factors=None, **_):
@@ -1277,14 +1282,15 @@ class DHTM(Layer):
                 self.clear_buffers()
                 self.can_clear_buffers = False
 
-            # save t prediction (prior)
-            self.prior_buffer.append(self.internal_messages.copy())
+            # save t prediction
+            self.prediction_buffer.append(self.internal_messages.copy())
             # t surprise
             self.surprise = - np.log(self.prediction_columns[observation] + EPS)
             # save t-1 messages
             self.observation_messages_buffer.append(self.observation_messages.copy())
             self.external_messages_buffer.append(self.external_messages.copy())
             self.forward_messages_buffer.append(self.context_messages.copy())
+            self.prior_buffer.append(self.prior.copy())
 
         observation_messages = sparse_to_dense(
             observation,
@@ -1366,8 +1372,7 @@ class DHTM(Layer):
                     self.internal_messages = self.backward_messages_buffer[t].copy()
                     internal_messages = self.internal_messages
                     backward_messages = self.backward_messages_buffer[t]
-
-                self.forward_messages_buffer[t] = self.internal_messages.copy()
+                    self.prior = np.zeros_like(self.prior)
 
                 # combine forward and backward messages
                 self.internal_messages = internal_messages * backward_messages
@@ -1388,9 +1393,15 @@ class DHTM(Layer):
                         default_values=default_messages.reshape(self.n_hidden_vars, -1)
                     )
                 ).flatten()
+
+                self.forward_messages_buffer[t] = self.internal_messages.copy()
             else:
                 self.set_context_messages(self.forward_messages_buffer[t-1].copy())
                 self.internal_messages = self.forward_messages_buffer[t].copy()
+                if t < len(self.observation_messages_buffer):
+                    self.prior = self.prior_buffer[t].copy()
+                else:
+                    self.prior = np.zeros_like(self.prior)
 
             # sample distributions
             self.context_active_cells.sparse = self.internal_active_cells.sparse.copy()
@@ -1405,6 +1416,8 @@ class DHTM(Layer):
             # resampling
             if (t + 1) < len(self.observation_messages_buffer):
                 messages_backup = self.internal_messages.copy()
+                context_backup = self.context_messages.copy()
+                messages = self.internal_messages.copy()
                 accept_sample = False
                 trial = 0
 
@@ -1422,6 +1435,10 @@ class DHTM(Layer):
                         )
                         if gamma > discard_prob:
                             accept_sample = True
+                        else:
+                            messages = self._apply_noise(
+                                messages, self.prior, discard_prob
+                            )
                     else:
                         accept_sample = True
 
@@ -1429,12 +1446,13 @@ class DHTM(Layer):
                         break
 
                     self.internal_active_cells.sparse = self._sample_cells(
-                        messages_backup.reshape(self.n_hidden_vars, -1)
+                        messages.reshape(self.n_hidden_vars, -1)
                     )
 
                 self.total_resamples += trial
 
                 self.internal_messages = messages_backup
+                self.context_messages = context_backup
 
             if obs_factor is not None:
                 self._update_frequencies(mask=obs_factor.astype(np.bool8))
@@ -1564,6 +1582,7 @@ class DHTM(Layer):
         else:
             raise ValueError(f"There is no such column prior mode: {column_prior_mode}!")
 
+        self.prior = prior
         prior = prior.reshape(self.n_hidden_vars, -1)
         messages, self.n_bursting_vars = normalize(
             messages * prior, prior, return_zeroed_variables_count=True
