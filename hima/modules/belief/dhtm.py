@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from copy import copy
 
 from hima.modules.belief.utils import softmax, normalize, sample_categorical_variables
 from hima.modules.belief.utils import EPS, UINT_DTYPE, REAL_DTYPE, REAL64_DTYPE
@@ -17,10 +18,8 @@ from hima.common.sdr import sparse_to_dense
 from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
 
-from functools import partial
 import matplotlib.pyplot as plt
 from scipy.stats import entropy
-from scipy.special import rel_entr
 import numpy as np
 import warnings
 import pygraphviz as pgv
@@ -978,6 +977,14 @@ class DHTM(Layer):
         Distributed Hebbian Temporal Memory.
         see https://arxiv.org/abs/2310.13391
     """
+    observation_messages_buffer: list[np.ndarray]
+    external_messages_buffer: list[np.ndarray]
+    internal_messages_buffer: list[np.ndarray]
+    forward_messages_buffer: list[np.ndarray]
+    backward_messages_buffer: list[np.ndarray]
+    prediction_buffer: list[np.ndarray]
+    prior_buffer: list[np.ndarray]
+    samples_buffer: list[np.ndarray]
     context_forward_factors: Factors
     context_backward_factors: Factors
 
@@ -1004,14 +1011,15 @@ class DHTM(Layer):
             column_prior: PRIOR_MODE = "dirichlet",
             alpha: float = 1.0,  # dirichlet only
             default_messages: DEFAULT_MESSAGES = 'forward',
-            max_resamples: int = 10,
-            noise_scale: float = 1.0,
+            max_resamples: int = 50,
+            min_resamples: int = 3,
             surprise_scale: float = 1.0,
             gamma: float = 0.9,
             otp_lr: float = 0.01,
             otp_beta: float = 1.0,
             freq_lr: float = 0.1,
             new_state_weight: float = 1.0,
+            reupdate_messages: bool = False,
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1042,8 +1050,9 @@ class DHTM(Layer):
         self.alpha = alpha
         self.default_messages = default_messages
         self.max_resamples = max_resamples
-        self.noise_scale = noise_scale
+        self.min_resamples = min_resamples
         self.surprise_scale = surprise_scale
+        self.reupdate_messages = reupdate_messages
         self.gamma = gamma
         self.inhibit_cells_by_default = inhibit_cells_by_default
 
@@ -1133,14 +1142,18 @@ class DHTM(Layer):
         self.state_information = 0
         self.surprise = 0
         self.n_bursting_vars = 0
-        self.total_resamples = 0
+        self.n_resamples = 0
+        self.sample_surprise = 0
+        self.resample_surprise_std = 0
 
         self.observation_messages_buffer = list()
         self.external_messages_buffer = list()
+        self.internal_messages_buffer = list()
         self.forward_messages_buffer = list()
         self.backward_messages_buffer = list()
         self.prediction_buffer = list()
         self.prior_buffer = list()
+        self.samples_buffer = list()
         self.can_clear_buffers = False
         self.column_prior = column_prior
 
@@ -1199,6 +1212,7 @@ class DHTM(Layer):
 
                 if self.use_backward_messages:
                     self._backward_pass()
+                self._forward_pass()
                 self._update_segments()
 
         self.internal_messages = np.zeros(
@@ -1228,10 +1242,12 @@ class DHTM(Layer):
     def clear_buffers(self):
         self.observation_messages_buffer.clear()
         self.external_messages_buffer.clear()
+        self.internal_messages_buffer.clear()
         self.forward_messages_buffer.clear()
         self.backward_messages_buffer.clear()
         self.prediction_buffer.clear()
         self.prior_buffer.clear()
+        self.samples_buffer.clear()
 
     def predict(self, context_factors=None, **_):
         if context_factors is None:
@@ -1339,50 +1355,43 @@ class DHTM(Layer):
         self.backward_messages_buffer.append(self.initial_forward_messages.copy())
         self.backward_messages_buffer = self.backward_messages_buffer[::-1]
 
-    def _update_segments(self):
-        self.total_resamples = 0
+    def _forward_pass(self):
+        # combine forward and backward messages
         self.internal_messages = self.initial_forward_messages.copy()
-        self.internal_active_cells.sparse = self._sample_cells(
-            self.internal_messages.reshape(self.n_hidden_vars, -1)
-        )
+        self.internal_messages_buffer.append(self.internal_messages.copy())
+
         for t in range(1, len(self.forward_messages_buffer)):
             self.set_external_messages(self.external_messages_buffer[t - 1].copy())
+            self.set_context_messages(self.internal_messages.copy())
             if t < len(self.observation_messages_buffer):
                 self.observation_messages = self.observation_messages_buffer[t].copy()
-                observation = np.flatnonzero(self.observation_messages)
-                cells = self._get_cells_for_observation(observation)
-                obs_factor = sparse_to_dense(cells, like=self.internal_messages)
+                self.prior = self.prior_buffer[t].copy()
             else:
-                obs_factor = None
                 self.observation_messages = np.zeros_like(self.observation_messages_buffer[-1])
+                self.prior = np.zeros_like(self.prior)
+            # reuse buffered messages
+            forward_messages = self.forward_messages_buffer[t].copy()
 
             if self.use_backward_messages:
-                # update forward messages
                 if t < len(self.observation_messages_buffer):
-                    self.set_context_messages(self.internal_messages.copy())
-                    self.predict()
-                    self.internal_messages = self._get_posterior(
-                        column_prior_mode=self.column_prior
-                    )
-                    internal_messages = self.internal_messages
-                    backward_messages = self.backward_messages_buffer[t]
-                else:
-                    # we don't have an observation for initial backward step
-                    # so just copy backward messages
-                    self.internal_messages = self.backward_messages_buffer[t].copy()
-                    internal_messages = self.internal_messages
-                    backward_messages = self.backward_messages_buffer[t]
-                    self.prior = np.zeros_like(self.prior)
+                    # update forward messages
+                    if self.reupdate_messages:
+                        self.predict()
+                        self.internal_messages = self._get_posterior(
+                            column_prior_mode=self.column_prior
+                        )
+                        forward_messages = self.internal_messages
 
+                backward_messages = self.backward_messages_buffer[t]
                 # combine forward and backward messages
-                self.internal_messages = internal_messages * backward_messages
+                self.internal_messages = forward_messages * backward_messages
                 if self.default_messages == 'forward':
-                    default_messages = internal_messages
+                    default_messages = forward_messages
                 elif self.default_messages == 'backward':
                     default_messages = backward_messages
                 elif self.default_messages == 'both':
                     default_messages = (
-                        internal_messages + backward_messages
+                            forward_messages + backward_messages
                     )
                 else:
                     raise ValueError(f'There is no such combine mode: {self.default_messages}!')
@@ -1393,70 +1402,78 @@ class DHTM(Layer):
                         default_values=default_messages.reshape(self.n_hidden_vars, -1)
                     )
                 ).flatten()
-
-                self.forward_messages_buffer[t] = self.internal_messages.copy()
             else:
-                self.set_context_messages(self.forward_messages_buffer[t-1].copy())
-                self.internal_messages = self.forward_messages_buffer[t].copy()
-                if t < len(self.observation_messages_buffer):
-                    self.prior = self.prior_buffer[t].copy()
-                else:
-                    self.prior = np.zeros_like(self.prior)
+                self.internal_messages = forward_messages
 
-            # sample distributions
-            self.context_active_cells.sparse = self.internal_active_cells.sparse.copy()
-            self.internal_active_cells.sparse = self._sample_cells(
-                self.internal_messages.reshape(self.n_hidden_vars, -1)
-            )
-            if len(self.external_messages) > 0:
-                self.external_active_cells.sparse = self._sample_cells(
-                    self.external_messages.reshape(self.n_external_vars, -1)
+            self.internal_messages_buffer.append(self.internal_messages.copy())
+
+    def _sample(self):
+        samples = list()
+        for t, messages in enumerate(self.internal_messages_buffer):
+            samples.append(
+                self._sample_cells(
+                    messages.reshape(self.n_hidden_vars, -1)
                 )
+            )
 
-            # resampling
-            if (t + 1) < len(self.observation_messages_buffer):
-                messages_backup = self.internal_messages.copy()
-                context_backup = self.context_messages.copy()
-                messages = self.internal_messages.copy()
-                accept_sample = False
-                trial = 0
+        total_surprise = 0
+        for t, sample in enumerate(samples):
+            if (t > 0) and (t < len(self.prior_buffer)):
+                total_surprise += -np.log(
+                    np.clip(self.prior_buffer[t][sample], EPS, 1.0)
+                ).sum()
+            self.internal_active_cells.sparse = sample
 
-                for trial in range(self.max_resamples):
-                    self.set_context_messages(self.internal_active_cells.dense.copy())
-                    self.predict()
+            if t+1 < len(samples):
+                self.set_context_messages(self.internal_active_cells.dense)
+                self.set_external_messages(self.external_messages_buffer[t])
+                self.predict()
+                prediction = normalize(
+                    self.prediction_cells.reshape(self.n_hidden_vars, -1)
+                ).flatten()
+                total_surprise += -np.log(
+                    np.clip(prediction[samples[t+1]], EPS, 1.0)
+                ).sum()
 
-                    if self.is_any_segment_active:
-                        observation = np.flatnonzero(self.observation_messages_buffer[t+1])
-                        surprise = -np.log(self.prediction_columns[observation] + EPS)
-                        gamma = self._rng.random()
-                        discard_prob = np.clip(
-                            self.surprise_scale * np.sum(surprise)/(self.surprise_scale * surprise+1),
-                            0, 1
-                        )
-                        if gamma > discard_prob:
-                            accept_sample = True
-                        else:
-                            messages = self._apply_noise(
-                                messages, self.prior, discard_prob
-                            )
-                    else:
-                        accept_sample = True
+        return samples, total_surprise / len(samples)
 
-                    if accept_sample:
-                        break
+    def _get_best_samples(self):
+        samples, surprise = self._sample()
+        best_samples, best_surprise = copy(samples), surprise
 
-                    self.internal_active_cells.sparse = self._sample_cells(
-                        messages.reshape(self.n_hidden_vars, -1)
-                    )
+        surprises = [surprise]
+        resamples = 0
+        std = 1
+        for _ in range(self.max_resamples):
+            gamma = self._rng.random()
+            if resamples >= self.min_resamples:
+                std = np.array(surprises).std()
+            discard_prob = np.clip(
+                std * self.surprise_scale * np.sum(surprise) /
+                (self.surprise_scale * surprise + 1),
+                0, 1
+            )
+            if surprise < best_surprise:
+                best_samples, best_surprise = copy(samples), surprise
 
-                self.total_resamples += trial
+            if gamma > discard_prob:
+                break
+            else:
+                samples, surprise = self._sample()
+                resamples += 1
+                surprises.append(surprise)
 
-                self.internal_messages = messages_backup
-                self.context_messages = context_backup
+        return resamples, best_samples, best_surprise, std
 
-            if obs_factor is not None:
-                self._update_frequencies(mask=obs_factor.astype(np.bool8))
+    def _update_segments(self):
+        (
+            self.n_resamples, self.samples_buffer, self.sample_surprise, self.resample_surprise_std
+        ) = self._get_best_samples()
 
+        for t in range(1, len(self.samples_buffer)):
+            self.external_active_cells.dense = self.external_messages_buffer[t-1]
+            self.context_active_cells.sparse = self.samples_buffer[t-1]
+            self.internal_active_cells.sparse = self.samples_buffer[t]
             # grow forward connections
             (
                 self.cells_to_grow_new_context_segments_forward,
@@ -1511,6 +1528,13 @@ class DHTM(Layer):
             self.internal_cells_activity += self.cells_activity_lr * (
                     self.internal_active_cells.dense - self.internal_cells_activity
             )
+
+            if t < len(self.observation_messages_buffer):
+                self.observation_messages = self.observation_messages_buffer[t].copy()
+                observation = np.flatnonzero(self.observation_messages)
+                cells = self._get_cells_for_observation(observation)
+                obs_factor = sparse_to_dense(cells, like=self.internal_messages)
+                self._update_frequencies(mask=obs_factor.astype(np.bool8))
 
             if self.vis_server is not None:
                 self._send_state('learning')
