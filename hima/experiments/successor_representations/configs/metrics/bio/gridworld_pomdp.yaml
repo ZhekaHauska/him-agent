@@ -55,15 +55,9 @@ step_scalar_metrics:
       layer/segments_backward:
         agg: np.mean
         att: agent.num_segments_backward
-      layer/n_bursting_columns:
-        agg: np.mean
-        att: agent.agent.cortical_column.layer.n_bursting_vars
       layer/state_information:
         agg: np.mean
         att: agent.agent.cortical_column.layer.state_information
-      layer/clean_surprise:
-        agg: np.mean
-        att: clean_surprise
 #      sf/td_error:
 #        agg: np.mean
 #        att: agent.agent.td_error
@@ -85,6 +79,15 @@ episodic_scalar_metrics:
       main_metrics/steps:
         agg: np.mean
         att: steps
+      layer/resamples:
+        agg: np.mean
+        att: agent.agent.cortical_column.layer.n_resamples
+      layer/sample_surprise:
+        agg: np.mean
+        att: agent.agent.cortical_column.layer.sample_surprise
+      layer/resample_surprise_std:
+        agg: np.mean
+        att: agent.agent.cortical_column.layer.resample_surprise_std
 #      agent/n_states:
 #        agg: np.mean
 #        att: agent.n_states
