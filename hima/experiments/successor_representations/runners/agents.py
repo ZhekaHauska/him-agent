@@ -269,15 +269,15 @@ class BioAgentWrapper(BaseAgent):
 
     @property
     def num_segments_forward(self):
-        if hasattr(self.agent.cortical_column.layer, 'context_forward_factors'):
-            return self.agent.cortical_column.layer.context_forward_factors.connections.numSegments()
+        if hasattr(self.agent.cortical_column.layer, 'forward_factors'):
+            return self.agent.cortical_column.layer.forward_factors.connections.numSegments()
         else:
             return 0
 
     @property
     def num_segments_backward(self):
-        if hasattr(self.agent.cortical_column.layer, 'context_backward_factors'):
-            return self.agent.cortical_column.layer.context_backward_factors.connections.numSegments()
+        if hasattr(self.agent.cortical_column.layer, 'backward_factors'):
+            return self.agent.cortical_column.layer.backward_factors.connections.numSegments()
         else:
             return 0
 

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from copy import copy
+from copy import copy, deepcopy
 
 from hima.modules.belief.utils import softmax, normalize, sample_categorical_variables
 from hima.modules.belief.utils import EPS, UINT_DTYPE, REAL_DTYPE, REAL64_DTYPE
@@ -985,8 +985,8 @@ class DHTM(Layer):
     prediction_buffer: list[np.ndarray]
     prior_buffer: list[np.ndarray]
     samples_buffer: list[np.ndarray]
-    context_forward_factors: Factors
-    context_backward_factors: Factors
+    forward_factors: Factors
+    backward_factors: Factors
 
     def __init__(
             self,
@@ -1015,11 +1015,10 @@ class DHTM(Layer):
             min_resamples: int = 3,
             surprise_scale: float = 1.0,
             gamma: float = 0.9,
-            otp_lr: float = 0.01,
-            otp_beta: float = 1.0,
             freq_lr: float = 0.1,
             new_state_weight: float = 1.0,
             reupdate_messages: bool = False,
+            factors_update_delay: int = 50,
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1033,6 +1032,7 @@ class DHTM(Layer):
 
         self.lr = 1.0
         self.timestep = 1
+        self.updates = 0
         self.developmental_period = developmental_period
         self.n_obs_vars = n_obs_vars
         self.n_hidden_vars_per_obs_var = n_hidden_vars_per_obs_var
@@ -1053,6 +1053,7 @@ class DHTM(Layer):
         self.min_resamples = min_resamples
         self.surprise_scale = surprise_scale
         self.reupdate_messages = reupdate_messages
+        self.factors_update_delay = factors_update_delay
         self.gamma = gamma
         self.inhibit_cells_by_default = inhibit_cells_by_default
 
@@ -1130,8 +1131,14 @@ class DHTM(Layer):
         context_factors_conf['n_vars'] = self.total_vars
         context_factors_conf['n_hidden_states'] = self.n_hidden_states
         context_factors_conf['n_hidden_vars'] = self.n_hidden_vars
-        self.context_forward_factors = Factors(**context_factors_conf)
-        self.context_backward_factors = Factors(**context_factors_conf)
+        self.forward_factors = Factors(**context_factors_conf)
+        self.backward_factors = Factors(**context_factors_conf)
+        if self.factors_update_delay > 0:
+            self.forward_factors_pred = Factors(**context_factors_conf)
+            self.backward_factors_pred = Factors(**context_factors_conf)
+        else:
+            self.forward_factors_pred = self.forward_factors
+            self.backward_factors_pred = self.backward_factors
 
         self.cells_to_grow_new_context_segments_forward = np.empty(0)
         self.new_context_segments_forward = np.empty(0)
@@ -1178,14 +1185,6 @@ class DHTM(Layer):
             like=self.external_messages
         )
 
-        # observation trace prior
-        self.otp_weights = self._rng.dirichlet(
-            alpha=[self.alpha] * self.n_obs_states,
-            size=self.n_hidden_vars * self.n_hidden_states
-        )
-        self.otp_lr = otp_lr
-        self.otp_beta = otp_beta
-
         # online Chinese Restaurant Prior
         self.state_activation_freq = np.zeros(self.n_hidden_states * self.n_hidden_vars)
         self.freq_lr = freq_lr
@@ -1214,6 +1213,9 @@ class DHTM(Layer):
                     self._backward_pass()
                 self._forward_pass()
                 self._update_segments()
+                if self.factors_update_delay > 0:
+                    if (self.updates % (self.factors_update_delay + 1)) == 0:
+                        self.update_prediction_model()
 
         self.internal_messages = np.zeros(
             self.internal_cells,
@@ -1251,7 +1253,7 @@ class DHTM(Layer):
 
     def predict(self, context_factors=None, **_):
         if context_factors is None:
-            context_factors = self.context_forward_factors
+            context_factors = self.forward_factors_pred
 
         messages = np.zeros(self.total_cells)
         messages[
@@ -1325,6 +1327,10 @@ class DHTM(Layer):
 
         self.timestep += 1
 
+    def update_prediction_model(self):
+        self.forward_factors_pred = deepcopy(self.forward_factors)
+        self.backward_factors_pred = deepcopy(self.backward_factors)
+
     def _backward_pass(self):
         #           u_t   h^k+1_t+1
         #           |   /
@@ -1340,7 +1346,7 @@ class DHTM(Layer):
                 self.set_external_messages(self.external_messages_buffer[t].copy())
 
             self.set_context_messages(self.internal_messages.copy())
-            self.predict(self.context_backward_factors)
+            self.predict(self.backward_factors_pred)
             self.surprise = - np.log(
                 self.prediction_columns[
                     np.flatnonzero(self.observation_messages)
@@ -1466,6 +1472,7 @@ class DHTM(Layer):
         return resamples, best_samples, best_surprise, std
 
     def _update_segments(self):
+        self.updates += 1
         (
             self.n_resamples, self.samples_buffer, self.sample_surprise, self.resample_surprise_std
         ) = self._get_best_samples()
@@ -1495,7 +1502,7 @@ class DHTM(Layer):
                     self.internal_cells_range[0] +
                     self.internal_active_cells.sparse
                 ),
-                self.context_forward_factors,
+                self.forward_factors,
                 prune_segments=(self.timestep % self.developmental_period) == 0
             )
 
@@ -1521,7 +1528,7 @@ class DHTM(Layer):
                         self.internal_cells_range[0] +
                         self.context_active_cells.sparse
                     ),
-                    self.context_backward_factors,
+                    self.backward_factors,
                     prune_segments=(self.timestep % self.developmental_period) == 0
                 )
 
@@ -2159,7 +2166,7 @@ class DHTM(Layer):
         g = pgv.AGraph(strict=False, directed=False)
 
         for factors, type_ in zip(
-            (self.context_forward_factors,),
+            (self.forward_factors,),
             ('c',)
         ):
             if factors is not None:
@@ -2216,8 +2223,8 @@ class DHTM(Layer):
 
     def hist2d_segments_per_cell(self):
         # segments in use -> cells -> unique counts -> 2d hist
-        cells = self.context_forward_factors.connections.mapSegmentsToCells(
-            self.context_forward_factors.segments_in_use
+        cells = self.forward_factors.connections.mapSegmentsToCells(
+            self.forward_factors.segments_in_use
         )
 
         cells, counts = np.unique(cells, return_counts=True)
@@ -2235,7 +2242,7 @@ class DHTM(Layer):
         return cells_to_grow_segments.reshape(-1, self.cells_per_column).T
 
     def hist2d_new_segments_receptive_fields(self):
-        receptive_fields = self.context_forward_factors.receptive_fields[
+        receptive_fields = self.forward_factors.receptive_fields[
             self.new_context_segments_forward
         ]
         cells, counts = np.unique(receptive_fields.flatten(), return_counts=True)
