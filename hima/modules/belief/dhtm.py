@@ -1424,21 +1424,20 @@ class DHTM(Layer):
 
         total_surprise = 0
         for t, sample in enumerate(samples):
-            if (t > 0) and (t < len(self.prior_buffer)):
-                total_surprise += -np.log(
-                    np.clip(self.prior_buffer[t][sample], EPS, 1.0)
-                ).sum()
             self.internal_active_cells.sparse = sample
 
-            if t+1 < len(samples):
+            if t+1 < len(self.observation_messages_buffer):
+                observation = np.flatnonzero(
+                    self.observation_messages_buffer[t+1]
+                )
                 self.set_context_messages(self.internal_active_cells.dense)
                 self.set_external_messages(self.external_messages_buffer[t])
                 self.predict()
                 prediction = normalize(
-                    self.prediction_cells.reshape(self.n_hidden_vars, -1)
+                    self.prediction_columns.reshape(self.n_obs_vars, -1)
                 ).flatten()
                 total_surprise += -np.log(
-                    np.clip(prediction[samples[t+1]], EPS, 1.0)
+                    np.clip(prediction[observation], EPS, 1.0)
                 ).sum()
 
         return samples, total_surprise / len(samples)
