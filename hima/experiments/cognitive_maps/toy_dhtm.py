@@ -16,6 +16,12 @@ PORT = 5555
 EPS = 1e-24
 
 
+def sparse_to_dense(sparse, size):
+    dense = np.zeros(size)
+    dense[sparse] = 1
+    return dense
+
+
 class ToyDHTM:
     """
         Simplified, fully deterministic DHTM
@@ -45,8 +51,8 @@ class ToyDHTM:
             (self.n_actions, self.n_hidden_states, self.n_hidden_states),
             dtype=np.int32
         )
+        self.prior = np.zeros(self.n_hidden_states, dtype=np.float64)
         self.activation_counts = np.zeros(self.n_hidden_states, dtype=np.float64)
-        # determines, how many counts we need to get for a transition to make it permanent
 
         self.observation_buffer = list()
         self.action_buffer = list()
@@ -60,10 +66,39 @@ class ToyDHTM:
                 atexit.register(self.close)
 
     def reset(self, gridworld_map):
+        if len(self.state_buffer) > 0:
+            self.prior[self.state_buffer[0]] += 1
+
         self.belief_state = None
         self.clear_buffers()
         if self.vis_server is not None:
             self._send_events([('reset', {'gridworld_map': gridworld_map})])
+
+    def replay(self):
+        if len(self.observation_buffer) == 0:
+            return 0.0
+
+        total_surprise = 0
+        self.belief_state = None
+        p_action = None
+        for obs_state, action in zip(self.observation_buffer, self.action_buffer):
+            if self.belief_state is None:
+                prediction = sparse_to_dense(self.state_buffer[0], self.n_hidden_states)
+                self.belief_state = prediction
+            else:
+                prediction = self.belief_state @ self.transition_counts[p_action]
+                self.belief_propagation(obs_state, p_action)
+
+            prediction = prediction.reshape(-1, self.n_clones).sum(axis=-1)
+            prediction = normalize(prediction).flatten()
+
+            surprise = - np.log(
+                np.clip(prediction[obs_state], EPS, 1.0)
+            )
+            total_surprise += surprise
+            p_action = action
+
+        return total_surprise / len(self.observation_buffer)
 
     def clear_buffers(self):
         self.observation_buffer.clear()
@@ -72,7 +107,7 @@ class ToyDHTM:
 
     def predict(self):
         if self.belief_state is None:
-            prediction = self.activation_counts
+            prediction = self.prior
         else:
             action = self.action_buffer[-1]
             prediction = self.belief_state @ self.transition_counts[action]
@@ -81,22 +116,30 @@ class ToyDHTM:
         prediction = normalize(prediction).flatten()
         return prediction
 
+    def belief_propagation(self, obs_state, action):
+        # belief propagation
+        column_states = self._get_column_states(obs_state)
+        if self.belief_state is None:
+            belief_state = np.zeros(self.n_hidden_states)
+            belief_state[column_states] = self.prior[column_states]
+            self.belief_state = normalize(belief_state).flatten()
+        else:
+            prediction = self.belief_state @ self.transition_counts[action]
+            belief_state = np.zeros(self.n_hidden_states)
+            belief_state[column_states] = prediction[column_states]
+            self.belief_state = normalize(belief_state).flatten()
+
     def observe(self, obs_state, action, true_pos=None):
         # for debugging
         # event type: (name: str, data: tuple)
         events = list()
 
-        # belief propagation
-        column_states = self._get_column_states(obs_state)
-        if self.belief_state is None:
-            belief_state = np.zeros(self.n_hidden_states)
-            belief_state[column_states] = self.activation_counts[column_states]
-            self.belief_state = normalize(belief_state).flatten()
+        if len(self.action_buffer) > 0:
+            p_action = self.action_buffer[-1]
         else:
-            prediction = self.belief_state @ self.transition_counts[self.action_buffer[-1]]
-            belief_state = np.zeros(self.n_hidden_states)
-            belief_state[column_states] = prediction[column_states]
-            self.belief_state = normalize(belief_state).flatten()
+            p_action = None
+
+        self.belief_propagation(obs_state, p_action)
 
         self.observation_buffer.append(obs_state)
         self.action_buffer.append(action)
@@ -257,9 +300,8 @@ class ToyDHTM:
                             for i, ps in enumerate(prev_column_states):
                                 prediction = self.transition_counts[
                                     prev_action, ps].flatten()
-                                sparse_prediction = np.flatnonzero(prediction)
 
-                                scores[i] = len(sparse_prediction)
+                                scores[i] = prediction.sum()
                                 if len(sparse_prediction) == 0:
                                     prev_state = ps
                                     break
@@ -321,8 +363,7 @@ class ToyDHTM:
     def _get_best_prediction(self, prediction, candidates):
         return candidates[
             np.argmax(
-                prediction[candidates] +
-                self.activation_counts[candidates]
+                prediction[candidates]
             )
         ]
 

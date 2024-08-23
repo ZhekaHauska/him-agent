@@ -94,6 +94,14 @@ if __name__ == '__main__':
             for hidden_state, state in zip(dhtm.state_buffer, states_visited):
                 label_counts[hidden_state, state] += 1
 
+        replay_surprise = dhtm.replay()
+        if log:
+            logger.log(
+                {
+                    'replay_surprise': replay_surprise
+                },
+                step=total_steps
+            )
         dhtm.reset(env.get_true_map())
         states_visited.clear()
 
@@ -120,7 +128,7 @@ if __name__ == '__main__':
                 logger.log({
                     'clones_used': np.count_nonzero(dhtm.activation_counts > 0),
                     'surprise': surprise
-                }, total_steps)
+                }, step=total_steps)
 
             total_steps += 1
 
