@@ -1404,12 +1404,10 @@ class DHTM(Layer):
                 self.set_context_messages(self.internal_active_cells.dense)
                 self.set_external_messages(self.external_messages_buffer[t])
                 self.predict()
-                prediction = normalize(
-                    self.prediction_columns.reshape(self.n_obs_vars, -1)
-                ).flatten()
-                total_surprise += -np.log(
-                    np.clip(prediction[observation], EPS, 1.0)
-                ).sum()
+                if self.is_any_segment_active:
+                    total_surprise += -np.log(
+                        np.clip(self.prediction_columns[observation], EPS, 1.0)
+                    ).sum()
 
         return samples, total_surprise / len(samples)
 
