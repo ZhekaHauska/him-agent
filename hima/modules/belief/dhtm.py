@@ -62,8 +62,6 @@ class BioDHTM(Layer):
             enable_context_connections: bool = True,
             enable_internal_connections: bool = True,
             cells_activity_lr: float = 0.1,
-            replace_prior: bool = False,
-            bursting_threshold: float = EPS,
             override_context: bool = True,
             seed: int = None,
     ):
@@ -88,8 +86,6 @@ class BioDHTM(Layer):
         self.external_vars_boost = external_vars_boost
         self.unused_vars_boost = unused_vars_boost
         self.cells_activity_lr = cells_activity_lr
-        self.replace_uniform_prior = replace_prior
-        self.bursting_threshold = bursting_threshold
         self.override_context = override_context
 
         self.cells_per_column = cells_per_column
@@ -360,31 +356,6 @@ class BioDHTM(Layer):
 
         messages = normalize(messages * obs_factor, obs_factor)
 
-        # detect bursting vars
-        bursting_vars_mask = self._detect_bursting_vars(messages, obs_factor)
-
-        if self.replace_uniform_prior:
-            # replace priors for bursting vars
-            if np.any(bursting_vars_mask):
-                # TODO decrease probability to sample frequently active cells
-                # TODO decrease probability to sample cells with many segments
-                bursting_factor = obs_factor[bursting_vars_mask]
-                winners = self._sample_cells(normalize(bursting_factor))
-                bursting_factor = sparse_to_dense(
-                    winners,
-                    size=bursting_factor.size,
-                    dtype=bursting_factor.dtype
-                ).reshape(bursting_factor.shape)
-
-                messages[bursting_vars_mask] = bursting_factor
-
-        self.internal_messages = messages.flatten()
-
-    def _detect_bursting_vars(self, messages, obs_factor):
-        """
-            messages: (n_vars, n_states)
-            obs_factor: (n_vars, n_states)
-        """
         n_states = obs_factor.sum(axis=-1)
         self.state_information = (
                 np.log(n_states) +
@@ -398,7 +369,7 @@ class BioDHTM(Layer):
                 )
         )
 
-        return self.state_information < self.bursting_threshold
+        self.internal_messages = messages.flatten()
 
     def _propagate_belief(
             self,
