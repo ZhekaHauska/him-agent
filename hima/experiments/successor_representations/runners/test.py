@@ -290,7 +290,7 @@ class ICMLRunner(BaseRunner):
         ext_buffer = np.array(layer.external_messages_buffer)
         fwd_buffer = np.array(layer.forward_messages_buffer)
         bwd_buffer = np.array(layer.backward_messages_buffer)
-        prior_buffer = np.array([layer.forward_messages_buffer[0]] + layer.prior_buffer)
+        prior_buffer = np.array([layer.forward_messages_buffer[0]] + layer.prediction_buffer)
         trajectory = np.array(
             [np.zeros_like(self.environment.trajectory[0])] + self.environment.trajectory
         )

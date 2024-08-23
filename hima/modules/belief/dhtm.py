@@ -36,7 +36,10 @@ PRIOR_MODE = Literal['uniform', 'one-hot', 'dirichlet', 'chinese-restaurant']
 
 class BioDHTM(Layer):
     """
-        This class represents a layer of the neocortex model.
+        Distributed Hebbian Temporal Memory.
+        Probabilistic Temporal Memory implementation,
+        see https://arxiv.org/abs/2310.13391
+        Fully online version.
     """
     context_factors: Factors | None
     internal_factors: Factors | None
@@ -63,6 +66,7 @@ class BioDHTM(Layer):
             enable_internal_connections: bool = True,
             cells_activity_lr: float = 0.1,
             override_context: bool = True,
+            inhibit_cells_by_default: bool = True,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -87,6 +91,7 @@ class BioDHTM(Layer):
         self.unused_vars_boost = unused_vars_boost
         self.cells_activity_lr = cells_activity_lr
         self.override_context = override_context
+        self.inhibit_cells_by_default = inhibit_cells_by_default
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -139,13 +144,28 @@ class BioDHTM(Layer):
             dtype=REAL64_DTYPE
         )
 
+        # instead of deliberately saving prior
+        # we use fixed initial messages
+        self.initial_forward_messages = sparse_to_dense(
+            np.arange(
+                self.n_hidden_vars
+            ) * self.n_hidden_states,
+            like=self.context_messages
+        )
+        self.initial_external_messages = sparse_to_dense(
+            np.arange(
+                self.n_external_vars
+            ) * self.n_external_states,
+            like=self.external_messages
+        )
+
         self.internal_cells_activity = np.zeros_like(
             self.internal_messages
         )
 
-        self.prediction_cells = None
-        self.prediction_columns = None
-        self.observation_messages = None
+        self.prediction_cells = np.zeros_like(self.internal_messages)
+        self.prediction_columns = np.zeros(self.input_sdr_size)
+        self.observation_messages = np.zeros(self.input_sdr_size)
 
         # cells are numbered in the following order:
         # internal cells | context cells | external cells
@@ -190,28 +210,30 @@ class BioDHTM(Layer):
 
         assert (self.context_factors is not None) or (self.internal_factors is not None)
 
+        # metrics
         self.state_information = 0
+        self.surprise = 0
+        self.is_any_segment_active = False
 
     def reset(self):
         self.internal_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
-        self.external_messages = np.zeros(
-            self.external_input_size,
-            dtype=REAL64_DTYPE
-        )
-        self.context_messages = np.zeros(
-            self.context_input_size,
-            dtype=REAL64_DTYPE
-        )
+        self.external_messages = self.initial_external_messages.copy()
+        self.context_messages = self.initial_forward_messages.copy()
 
         self.context_active_cells.sparse = []
         self.internal_active_cells.sparse = []
         self.external_active_cells.sparse = []
 
-        self.prediction_cells = None
-        self.prediction_columns = None
+        self.prediction_cells = np.zeros_like(self.internal_messages)
+        self.prediction_columns = np.zeros(self.input_sdr_size)
+        self.observation_messages = np.zeros(self.input_sdr_size)
+
+        self.state_information = 0
+        self.surprise = 0
+        self.is_any_segment_active = False
 
     def predict(self, include_context_connections=True, include_internal_connections=False, **_):
         # step 1: predict cells based on context and external messages
@@ -279,6 +301,11 @@ class BioDHTM(Layer):
         """
             observation: pattern in sparse representation
         """
+        self.surprise = - np.log(
+            np.clip(
+                self.prediction_columns[observation], EPS, 1.0
+            )
+        )
         # update messages
         self._update_posterior(observation)
 
@@ -400,12 +427,13 @@ class BioDHTM(Layer):
 
         log_next_messages = np.full(
             self.internal_cells,
-            fill_value=-np.inf,
+            fill_value=-np.inf if self.inhibit_cells_by_default else 0.0,
             dtype=REAL_DTYPE
         )
 
         # excitation activity
-        if len(active_segments) > 0:
+        self.is_any_segment_active = len(active_segments) > 0
+        if self.is_any_segment_active:
             factors_for_active_segments = factors.factor_for_segment[active_segments]
             log_factor_value = factors.log_factor_values_per_segment[active_segments]
 
@@ -455,30 +483,35 @@ class BioDHTM(Layer):
 
             log_next_messages[cells_with_factors] = log_prediction_for_cells_with_factors
 
-        log_next_messages = log_next_messages.reshape((self.n_hidden_vars, self.n_hidden_states))
+        if (not self.is_any_segment_active) and self.inhibit_cells_by_default:
+            self.internal_messages = np.zeros_like(self.internal_messages)
+        else:
+            log_next_messages = log_next_messages.reshape(
+                (self.n_hidden_vars, self.n_hidden_states)
+            )
 
-        # shift log value for stability
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', category=RuntimeWarning)
+            # shift log value for stability
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', category=RuntimeWarning)
 
-            means = log_next_messages.mean(
-                axis=-1,
-                where=~np.isinf(log_next_messages)
-            ).reshape((-1, 1))
+                means = log_next_messages.mean(
+                    axis=-1,
+                    where=~np.isinf(log_next_messages)
+                ).reshape((-1, 1))
 
-        means[np.isnan(means)] = 0
+            means[np.isnan(means)] = 0
 
-        log_next_messages -= means
+            log_next_messages -= means
 
-        log_next_messages = inverse_temperature * log_next_messages
+            log_next_messages = inverse_temperature * log_next_messages
 
-        next_messages = normalize(np.exp(log_next_messages))
+            next_messages = normalize(np.exp(log_next_messages))
 
-        next_messages = next_messages.flatten()
+            next_messages = next_messages.flatten()
 
-        assert ~np.any(np.isnan(next_messages))
+            assert ~np.any(np.isnan(next_messages))
 
-        self.internal_messages = next_messages
+            self.internal_messages = next_messages
 
     def _learn(
             self,
@@ -945,8 +978,7 @@ class BioDHTM(Layer):
 
 class DHTM(Layer):
     """
-        Distributed Hebbian Temporal Memory.
-        see https://arxiv.org/abs/2310.13391
+        Distributed Hebbian Temporal Memory. Batch version.
     """
     observation_messages_buffer: list[np.ndarray]
     external_messages_buffer: list[np.ndarray]
