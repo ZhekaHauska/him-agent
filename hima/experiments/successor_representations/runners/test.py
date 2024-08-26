@@ -61,23 +61,6 @@ class ICMLRunner(BaseRunner):
         elif strategy == 'non-random':
             self.reward_free = False
 
-    def set_learning(self, memory, striatum):
-        agent = self.agent.agent
-
-        if striatum:
-            if agent.max_striatum_lr == 0:
-                agent.max_striatum_lr = self.max_striatum_learning_rate
-        else:
-            self.max_striatum_learning_rate = agent.max_striatum_lr
-            agent.max_striatum_lr = 0
-
-        if memory:
-            if agent.cortical_column.layer.lr == 0:
-                agent.cortical_column.layer.lr = self.lr
-        else:
-            self.lr = agent.cortical_column.layer.lr
-            agent.cortical_column.layer.lr = 0
-
     @property
     def obs_reward(self):
         agent = self.agent.agent
@@ -236,10 +219,6 @@ class ICMLRunner(BaseRunner):
     def rewards(self):
         agent = self.agent.agent
         return agent.rewards.reshape(1, -1)
-
-    @property
-    def sf_diff(self):
-        return np.mean(self.agent.predicted_sf - self.agent.planned_sf)
 
     @property
     def raw_observation(self):

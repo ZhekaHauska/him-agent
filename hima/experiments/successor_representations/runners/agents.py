@@ -7,14 +7,10 @@ from __future__ import annotations
 
 from hima.experiments.successor_representations.runners.base import BaseAgent
 from hima.common.sdr import sparse_to_dense
-from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima
+from hima.agents.succesor_representations.agent import BioHIMA
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.dhtm import BioDHTM, DHTM
-from hima.modules.baselines.lstm import LstmLayer
-from hima.modules.baselines.rwkv import RwkvLayer
 from hima.modules.baselines.hmm import FCHMMLayer
-from hima.modules.baselines.srtd import SRTD
-from hima.agents.succesor_representations.striatum import Striatum
 from hima.modules.dvs import DVS
 from hima.agents.q.agent import QAgent
 from hima.agents.sr.table import SRAgent
@@ -97,7 +93,7 @@ class DatasetCreatorAgent(BaseAgent):
 
 
 class BioAgentWrapper(BaseAgent):
-    agent: BioHIMA | LstmBioHima
+    agent: BioHIMA
     camera: DVS | None
     layer_type: Literal['fchmm', 'dhtm', 'lstm', 'rwkv']
     encoder_type: Literal['sp_ensemble', 'sp_grouped']
@@ -151,12 +147,6 @@ class BioAgentWrapper(BaseAgent):
                 layer = DHTM(**layer_conf)
             else:
                 layer = BioDHTM(**layer_conf)
-        elif self.layer_type == 'lstm':
-            layer_conf['n_external_vars'] = 1
-            layer = LstmLayer(**layer_conf)
-        elif self.layer_type == 'rwkv':
-            layer_conf['n_external_vars'] = 1
-            layer = RwkvLayer(**layer_conf)
         else:
             raise NotImplementedError
 
@@ -168,13 +158,10 @@ class BioAgentWrapper(BaseAgent):
 
         conf['agent']['seed'] = self.seed
 
-        if self.layer_type in {'lstm', 'rwkv'}:
-            raise NotImplementedError
-        else:
-            self.agent = BioHIMA(
-                cortical_column,
-                **conf['agent']
-            )
+        self.agent = BioHIMA(
+            cortical_column,
+            **conf['agent']
+        )
 
         if self.layer_type == 'fchmm':
             self.initial_action = -1
