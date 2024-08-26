@@ -26,6 +26,7 @@ import pygraphviz as pgv
 import colormap
 import socket
 from typing import Literal
+from tqdm import trange
 
 HOST = "127.0.0.1"
 PORT = 5555
@@ -1011,6 +1012,7 @@ class DHTM(Layer):
             cells_activity_lr: float = 0.1,
             use_backward_messages: bool = False,
             inhibit_cells_by_default: bool = True,
+            min_log_factor_value: float = 0,
             column_prior: PRIOR_MODE = "dirichlet",
             alpha: float = 1.0,  # dirichlet only
             default_messages: DEFAULT_MESSAGES = 'forward',
@@ -1022,6 +1024,8 @@ class DHTM(Layer):
             new_state_weight: float = 1.0,
             reupdate_messages: bool = False,
             factors_update_delay: int = 50,
+            max_em_iterations: int = 1000,
+            em_early_stop: bool = True,
             seed: int = None,
             visualization_server=(HOST, PORT),
             visualize=True
@@ -1059,6 +1063,9 @@ class DHTM(Layer):
         self.factors_update_delay = factors_update_delay
         self.gamma = gamma
         self.inhibit_cells_by_default = inhibit_cells_by_default
+        self.min_log_factor_value = min_log_factor_value
+        self.max_em_iterations = max_em_iterations
+        self.em_early_stop = em_early_stop
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -1155,6 +1162,7 @@ class DHTM(Layer):
         self.n_resamples = 0
         self.sample_surprise = 0
         self.resample_surprise_std = 0
+        self.em_iterations = 0
 
         self.observation_messages_buffer = list()
         self.external_messages_buffer = list()
@@ -1207,15 +1215,9 @@ class DHTM(Layer):
             if len(self.observation_messages_buffer) > 0:
                 self.observation_messages_buffer.append(self.observation_messages.copy())
                 self.external_messages_buffer.append(self.initial_external_messages.copy())
-                self.forward_messages_buffer.append(self.internal_messages.copy())
-                self.prior_buffer.append(self.prior.copy())
-                # for alignment with backward messages
-                self.forward_messages_buffer.append(self.initial_backward_messages.copy())
 
-                if self.use_backward_messages:
-                    self._backward_pass()
-                self._forward_pass()
-                self._update_segments()
+                self._em(self.max_em_iterations, self.em_early_stop)
+
                 if self.factors_update_delay > 0:
                     if (self.updates % (self.factors_update_delay + 1)) == 0:
                         self.update_prediction_model()
@@ -1305,20 +1307,21 @@ class DHTM(Layer):
 
             # save t prediction
             self.prediction_buffer.append(self.internal_messages.copy())
-            # t surprise
-            self.surprise = - np.log(self.prediction_columns[observation] + EPS)
             # save t-1 messages
             self.observation_messages_buffer.append(self.observation_messages.copy())
             self.external_messages_buffer.append(self.external_messages.copy())
-            self.forward_messages_buffer.append(self.context_messages.copy())
-            self.prior_buffer.append(self.prior.copy())
 
         observation_messages = sparse_to_dense(
             observation,
             size=self.input_sdr_size,
             dtype=REAL64_DTYPE
         )
-
+        # t surprise
+        self.surprise = - np.log(
+            np.clip(
+                self.prediction_columns[observation], EPS, 1.0
+            )
+        )
         # update messages
         self.observation_messages = observation_messages
         self.internal_messages = self._get_posterior(
@@ -1334,10 +1337,38 @@ class DHTM(Layer):
         self.forward_factors_pred = deepcopy(self.forward_factors)
         self.backward_factors_pred = deepcopy(self.backward_factors)
 
+    def _em(self, iterations, early_stop=True):
+        prev_surprise = np.inf
+        it = -1
+        pbar = trange(iterations, position=0)
+        for it in pbar:
+            if self.use_backward_messages:
+                self._backward_pass()
+            self._forward_pass()
+
+            (
+                self.n_resamples, self.samples_buffer, self.sample_surprise,
+                self.resample_surprise_std
+            ) = self._get_best_samples()
+
+            if early_stop and (
+                    np.isclose(self.sample_surprise, prev_surprise) or
+                    (self.sample_surprise > prev_surprise)
+            ):
+                break
+            else:
+                prev_surprise = self.sample_surprise
+
+            pbar.set_postfix(train_surprise=self.sample_surprise)
+            self._update_segments()
+
+        self.em_iterations = it + 1
+
     def _backward_pass(self):
         #           u_t   h^k+1_t+1
         #           |   /
         #   h^k_t - [] - h^k_t+1
+        self.backward_messages_buffer.clear()
         self.internal_messages = self.initial_backward_messages.copy()
         self.backward_messages_buffer.append(self.internal_messages.copy())
 
@@ -1365,35 +1396,31 @@ class DHTM(Layer):
         self.backward_messages_buffer = self.backward_messages_buffer[::-1]
 
     def _forward_pass(self):
-        # combine forward and backward messages
+        self.internal_messages_buffer.clear()
+        self.forward_messages_buffer.clear()
         self.internal_messages = self.initial_forward_messages.copy()
         self.internal_messages_buffer.append(self.internal_messages.copy())
 
-        for t in range(1, len(self.forward_messages_buffer)):
+        T = len(self.observation_messages_buffer)
+        for t in range(1, T):
+            # compute forward messages
             self.set_external_messages(self.external_messages_buffer[t - 1].copy())
             self.set_context_messages(self.internal_messages.copy())
-            if t < len(self.observation_messages_buffer):
-                self.observation_messages = self.observation_messages_buffer[t].copy()
-                self.prior = self.prior_buffer[t].copy()
-            else:
-                self.observation_messages = np.zeros_like(self.observation_messages_buffer[-1])
-                self.prior = np.zeros_like(self.prior)
-            # reuse buffered messages
-            forward_messages = self.forward_messages_buffer[t].copy()
+            self.predict()
 
+            self.observation_messages = self.observation_messages_buffer[t].copy()
+            self.internal_messages = self._get_posterior(
+                column_prior_mode=self.column_prior
+            )
+            self.prior_buffer.append(self.prior.copy())
+
+            forward_messages = self.internal_messages
+
+            # combine forward and backward messages
             if self.use_backward_messages:
-                if t < len(self.observation_messages_buffer):
-                    # update forward messages
-                    if self.reupdate_messages:
-                        self.predict()
-                        self.internal_messages = self._get_posterior(
-                            column_prior_mode=self.column_prior
-                        )
-                        forward_messages = self.internal_messages
-
                 backward_messages = self.backward_messages_buffer[t]
                 # combine forward and backward messages
-                self.internal_messages = forward_messages * backward_messages
+                internal_messages = forward_messages * backward_messages
                 if self.default_messages == 'forward':
                     default_messages = forward_messages
                 elif self.default_messages == 'backward':
@@ -1405,16 +1432,21 @@ class DHTM(Layer):
                 else:
                     raise ValueError(f'There is no such combine mode: {self.default_messages}!')
 
-                self.internal_messages = (
+                internal_messages = (
                     normalize(
-                        self.internal_messages.reshape(self.n_hidden_vars, -1),
+                        internal_messages.reshape(self.n_hidden_vars, -1),
                         default_values=default_messages.reshape(self.n_hidden_vars, -1)
                     )
                 ).flatten()
-            else:
-                self.internal_messages = forward_messages
 
-            self.internal_messages_buffer.append(self.internal_messages.copy())
+                if self.reupdate_messages:
+                    self.internal_messages = internal_messages
+            else:
+                internal_messages = forward_messages
+
+            self.internal_messages_buffer.append(internal_messages.copy())
+        else:
+            self.internal_messages_buffer.append(self.initial_backward_messages.copy())
 
     def _sample(self):
         samples = list()
@@ -1473,10 +1505,6 @@ class DHTM(Layer):
 
     def _update_segments(self):
         self.updates += 1
-        (
-            self.n_resamples, self.samples_buffer, self.sample_surprise, self.resample_surprise_std
-        ) = self._get_best_samples()
-
         for t in range(1, len(self.samples_buffer)):
             self.external_active_cells.dense = self.external_messages_buffer[t-1]
             self.context_active_cells.sparse = self.samples_buffer[t-1]
@@ -1704,7 +1732,7 @@ class DHTM(Layer):
 
         log_next_messages = np.full(
             self.internal_cells,
-            fill_value=-np.inf if inhibit_cells_by_default else 0.0,
+            fill_value=-np.inf if inhibit_cells_by_default else self.min_log_factor_value,
             dtype=REAL_DTYPE
         )
 
