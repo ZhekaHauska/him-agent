@@ -24,34 +24,3 @@
   params:
     setup: blocked
     setup_id: 1
-
-#- condition: ['episodes', '>', 0, 'repeat']
-#  check_every: 'episodes'
-#  action: save_buffer
-#  params:
-#    path: 'logs/messages'
-
-# ---- pretrain ----
-#- condition: ['episodes', 'equal', 0, 'norepeat']
-#  check_every: 'episodes'
-#  action: set_parameters
-#  params:
-#    agent.agent.cortical_column.layer.use_backward_messages: false
-#    agent.agent.cortical_column.layer.grow_backward_connections: true
-#
-#- condition: ['episodes', 'equal', 100, 'norepeat']
-#  check_every: 'episodes'
-#  action: set_parameters
-#  params:
-#    agent.agent.cortical_column.layer.use_backward_messages: true
-
-#- condition: ['episodes', 'equal', 0, 'repeat']
-#  check_every: 'episodes'
-#  action: switch_strategy
-#  params:
-#    strategy: random
-#- condition: ['episodes', 'equal', 100, 'repeat']
-#  check_every: 'episodes'
-#  action: switch_strategy
-#  params:
-#    strategy: non-random

@@ -52,18 +52,9 @@ step_scalar_metrics:
       layer/segments_forward:
         agg: np.mean
         att: agent.num_segments_forward
-      layer/segments_backward:
-        agg: np.mean
-        att: agent.num_segments_backward
       layer/state_information:
         agg: np.mean
         att: agent.agent.cortical_column.layer.state_information
-#      sf/td_error:
-#        agg: np.mean
-#        att: agent.agent.td_error
-#      sf/predict_plan_diff:
-#        agg: np.mean
-#        att: sf_diff
       sf/steps:
         agg: np.mean
         att: agent.agent.sf_steps
@@ -79,18 +70,6 @@ episodic_scalar_metrics:
       main_metrics/steps:
         agg: np.mean
         att: steps
-      layer/resamples:
-        agg: np.mean
-        att: agent.agent.cortical_column.layer.n_resamples
-      layer/sample_surprise:
-        agg: np.mean
-        att: agent.agent.cortical_column.layer.sample_surprise
-      layer/resample_surprise_std:
-        agg: np.mean
-        att: agent.agent.cortical_column.layer.resample_surprise_std
-#      agent/n_states:
-#        agg: np.mean
-#        att: agent.n_states
     update_step: episodes
     update_period: 1
     log_step: episodes
@@ -103,9 +82,6 @@ cumulative_scalar_metrics:
       main_metrics/total_reward:
         agg: np.sum
         att: reward
-#      agent/n_states:
-#        agg: np.mean
-#        att: agent.n_states
     update_step: steps
     update_period: 1
     log_step: episodes
@@ -146,101 +122,3 @@ trajectory:
 #    log_step: episodes
 #    log_period: 100
 
-#sf_dkl_table_plan:
-#  class: SFDiff
-#  params:
-#    name: sr/dkl_table_plan
-#    att: agent.planned_sf
-#    state_att: environment.current_state
-#    difference_mode: dkl
-#    normalization_mode: categorical
-#    base_sf: load
-#    base_sf_path: logs/true_sf_wall_gridworld_radius_0_uniform.npy
-#    update_step: steps
-#    update_period: 1
-#    log_step: episodes
-#    log_period: 1
-##
-#sf_dkl_uniform_gen:
-#  class: SFDiff
-#  params:
-#    name: sf/dkl_uniform_plan
-#    att: agent.planned_sf
-#    state_att: environment.current_state
-#    difference_mode: dkl
-#    normalization_mode: categorical
-#    base_sf: uniform
-#    base_sf_path: null
-#    update_step: steps
-#    update_period: 1
-#    log_step: episodes
-#    log_period: 1
-
-#sf_dkl_table_pred:
-#  class: SFDiff
-#  params:
-#    name: sr/dkl_table_pred
-#    att: agent.predicted_sf
-#    state_att: environment.current_state
-#    difference_mode: dkl
-#    normalization_mode: categorical
-#    base_sf: load
-#    base_sf_path: logs/true_sf_wall_gridworld_radius_0_uniform.npy
-#    update_step: steps
-#    update_period: 1
-#    log_step: episodes
-#    log_period: 1
-#
-#sf_dkl_uniform_pred:
-#  class: SFDiff
-#  params:
-#    name: sf/dkl_uniform_pred
-#    att: agent.predicted_sf
-#    state_att: environment.current_state
-#    difference_mode: dkl
-#    normalization_mode: categorical
-#    base_sf: uniform
-#    base_sf_path: null
-#    update_step: steps
-#    update_period: 1
-#    log_step: episodes
-#    log_period: 1
-
-#sf_som:
-#  class: SOMClusters
-#  params:
-#    name: sf/som/
-#    att: agent.planned_sf
-#    label_att: environment.current_state
-#    size: 400
-#    iterations: 5000
-#    sigma: 0.5
-#    learning_rate: 0.5
-#    init: random
-#    font_size: 12
-#    update_step: steps
-#    update_period: 1
-#    log_step: episodes
-#    log_period: 100
-
-#sr_gridworld:
-#  class: GridworldSR
-#  params:
-#    name: sr
-#    sr_att: agent.planned_sf
-#    sf_att: agent.planned_sf
-#    repr_att: agent.state_repr
-#    state_att: environment.current_state
-#    state_information_att:
-#    update_step: steps
-#    log_step: episodes
-#    update_period: 1
-#    log_period: 1
-#    grid_shape: [ 5, 5 ]
-#    max_patterns: 10000
-#    state_detection_threshold: 0.1
-#    activity_lr: 0.001
-#    lr: 0.9
-#    norm: False
-#    preparing_period: 10
-#    log_fps: 2

@@ -1,7 +1,9 @@
 observation_radius: 0
-collision_hint: True
+collision_hint: true
 collision_reward: -0.1
 default_reward: -0.02
 random_floor_colors: true
 headless: true
+# seed: 192410450
 # seed: 257209842
+# seed: 223

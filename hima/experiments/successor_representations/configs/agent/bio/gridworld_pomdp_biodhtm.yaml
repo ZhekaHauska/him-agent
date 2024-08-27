@@ -3,7 +3,7 @@ camera_mode: null
 agent:
   gamma: 0.8
   reward_lr: 0.1
-  learn_rewards_from_state: true
+  learn_rewards_from_state: false
   inverse_temp: 25
 
   # p \in [0, 1]: eps-greedy | otherwise (use -1): softmax
