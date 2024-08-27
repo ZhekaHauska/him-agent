@@ -94,7 +94,8 @@ class GridWorld:
                 start_r = self._rng.integers(self.h)
                 start_c = self._rng.integers(self.w)
                 if self.colors[start_r + self.shift, start_c + self.shift] >= 0:
-                    break
+                    if self.terminals[start_r, start_c] == 0:
+                        break
         else:
             assert self.colors[start_r + self.shift, start_c + self.shift] >= 0
 
