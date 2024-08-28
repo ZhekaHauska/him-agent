@@ -14,7 +14,6 @@ from hima.common.sdr import sparse_to_dense
 from hima.common.utils import softmax, safe_divide
 from hima.common.smooth_values import SSValue
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
-from hima.modules.baselines.lstm import to_numpy, TLstmLayerHiddenState
 from copy import copy
 from hima.modules.belief.utils import EPS
 
@@ -38,7 +37,6 @@ class BioHIMA:
             gamma: float = 0.99,
             reward_lr: float = 0.01,
             learn_rewards_from_state: bool = True,
-            striatum_lr: float = 1.0,
             plan_steps: int = 1,
             inverse_temp: float = 1.0,
             exploration_eps: float = -1,
@@ -51,7 +49,6 @@ class BioHIMA:
     ):
         self.reward_lr = reward_lr
         self.learn_rewards_from_state = learn_rewards_from_state
-        self.max_striatum_lr = striatum_lr
         self.cortical_column = cortical_column
         self.gamma = gamma
         self.max_plan_steps = plan_steps
@@ -361,108 +358,3 @@ class BioHIMA:
     def surprise(self):
         return self.ss_surprise.current_value
 
-
-class LstmBioHima(BioHIMA):
-    """Patch-like adaptation of BioHIMA to work with LSTM layer."""
-
-    def __init__(
-            self, cortical_column: CorticalColumn,
-            **kwargs
-    ):
-        super().__init__(cortical_column, **kwargs)
-
-    # noinspection PyMethodOverriding
-    def generate_sf(
-            self,
-            n_steps,
-            initial_messages,
-            initial_prediction,
-            approximate_tail=True,
-            save_state=True,
-            return_predictions=False,
-    ):
-        """
-            n_steps: number of prediction steps. If n_steps is 0 and approximate_tail is True,
-            then this function is equivalent to predict_sr.
-        """
-        predictions = []
-
-        if save_state:
-            self._make_state_snapshot()
-
-        sr = np.zeros_like(self.observation_messages)
-
-        # represent state after getting observation
-        context_messages = initial_messages
-        # represent predicted observation
-        predicted_observation = initial_prediction
-
-        discount = 1.0
-        t = -1
-        for t in range(n_steps):
-            early_stop = self._early_stop_planning(predicted_observation)
-
-            sr += predicted_observation * discount
-
-            if self.sr_estimate_planning == SrEstimatePlanning.UNIFORM:
-                action_dist = None
-            else:
-                # on/off-policy
-                # NB: evaluate actions directly with prediction, not with n-step planning!
-                action_values = self.evaluate_actions(with_planning=False)
-                action_dist = self._get_action_selection_distribution(
-                    action_values,
-                    on_policy=self.sr_estimate_planning == SrEstimatePlanning.ON_POLICY
-                )
-
-            self.cortical_column.predict(context_messages, external_messages=action_dist)
-
-            context_messages = self.cortical_column.layer.internal_messages.copy()
-            predicted_observation = self.cortical_column.layer.prediction_columns
-
-            # THE ONLY ADDED CHANGE TO HIMA: explicitly observe predicted_observation
-            self.cortical_column.layer.observe(predicted_observation, learn=False)
-            # setting context is needed for action evaluation further on
-            self.cortical_column.layer.set_context_messages(
-                self.cortical_column.layer.internal_messages
-            )
-            # ======
-
-            discount *= self.gamma
-
-            if return_predictions:
-                predictions.append(copy(predicted_observation))
-
-            if early_stop:
-                break
-
-        if approximate_tail:
-            sr += self.predict_sf(context_messages) * discount
-
-        if save_state:
-            self._restore_last_snapshot()
-
-        # sr /= self.cortical_column.layer.n_hidden_vars
-
-        if return_predictions:
-            return sr, t+1, predictions
-        else:
-            return sr, t+1
-
-    def _extract_state_from_context(self, context_messages: TLstmLayerHiddenState):
-        # extract model state from layer state
-        state_out, _ = context_messages[1]
-
-        # convert model hidden state to probabilities
-        state_probs_out = self.cortical_column.layer.model.to_probabilistic_out_state(state_out)
-        return state_probs_out.detach()
-
-    def predict_sf(self, context_messages: TLstmLayerHiddenState):
-        msg = to_numpy(self._extract_state_from_context(context_messages))
-        return super().predict_sf(msg)
-
-    @property
-    def current_state(self):
-        return to_numpy(self._extract_state_from_context(
-            self.cortical_column.layer.internal_messages
-        ))
