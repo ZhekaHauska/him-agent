@@ -139,6 +139,11 @@ class Factors:
             self.factors_in_use = factors_with_segments.copy()
             self.factor_score = factor_score
         else:
+            for factor in self.factors_in_use:
+                self.factor_connections.destroySegment(factor)
+                self.factor_vars[factor] = np.full(self.n_vars_per_factor, fill_value=-1)
+
+            self.factors_in_use = np.empty(0, dtype=UINT_DTYPE)
             self.factor_score = np.empty(0)
 
     def prune_segments(self, n_segments):
