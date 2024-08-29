@@ -42,8 +42,7 @@ class BioDHTM(Layer):
         see https://arxiv.org/abs/2310.13391
         Fully online version.
     """
-    context_factors: Factors | None
-    internal_factors: Factors | None
+    context_factors: Factors
 
     def __init__(
             self,
@@ -52,7 +51,6 @@ class BioDHTM(Layer):
             cells_per_column: int,
             n_hidden_vars_per_obs_var: int = 1,
             context_factors_conf: dict = None,
-            internal_factors_conf: dict = None,
             n_context_vars: int = 0,
             n_context_states: int = 0,
             n_external_vars: int = 0,
@@ -63,8 +61,6 @@ class BioDHTM(Layer):
             inverse_temp_internal: float = 1.0,
             cell_activation_threshold: float = EPS,
             developmental_period: int = 10000,
-            enable_context_connections: bool = True,
-            enable_internal_connections: bool = True,
             cells_activity_lr: float = 0.1,
             override_context: bool = True,
             inhibit_cells_by_default: bool = True,
@@ -93,6 +89,7 @@ class BioDHTM(Layer):
         self.cells_activity_lr = cells_activity_lr
         self.override_context = override_context
         self.inhibit_cells_by_default = inhibit_cells_by_default
+        self.reward_modulation = reward_modulation
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -183,33 +180,14 @@ class BioDHTM(Layer):
             self.context_cells_range[1] + self.external_input_size
         )
 
-        self.enable_context_connections = enable_context_connections
-        self.enable_internal_connections = enable_internal_connections
-
-        if context_factors_conf is not None and self.enable_context_connections:
-            context_factors_conf['n_cells'] = self.total_cells
-            context_factors_conf['n_vars'] = self.total_vars
-            context_factors_conf['n_hidden_states'] = self.n_hidden_states
-            context_factors_conf['n_hidden_vars'] = self.n_hidden_vars
-            self.context_factors = Factors(**context_factors_conf)
-        else:
-            self.context_factors = None
-            self.enable_context_connections = False
+        context_factors_conf['n_cells'] = self.total_cells
+        context_factors_conf['n_vars'] = self.total_vars
+        context_factors_conf['n_hidden_states'] = self.n_hidden_states
+        context_factors_conf['n_hidden_vars'] = self.n_hidden_vars
+        self.context_factors = Factors(**context_factors_conf)
 
         self.cells_to_grow_new_context_segments = np.empty(0)
-        self.new_context_segments = np.empty(0)
-
-        if internal_factors_conf is not None and self.enable_internal_connections:
-            internal_factors_conf['n_cells'] = self.total_cells
-            internal_factors_conf['n_vars'] = self.total_vars
-            internal_factors_conf['n_hidden_states'] = self.n_hidden_states
-            internal_factors_conf['n_hidden_vars'] = self.n_hidden_vars
-            self.internal_factors = Factors(**internal_factors_conf)
-        else:
-            self.internal_factors = None
-            self.enable_internal_connections = False
-
-        assert (self.context_factors is not None) or (self.internal_factors is not None)
+        self.new_context_segments = list()
 
         # metrics
         self.state_information = 0
@@ -235,54 +213,25 @@ class BioDHTM(Layer):
         self.state_information = 0
         self.surprise = 0
         self.is_any_segment_active = False
+        self.new_context_segments.clear()
 
-    def predict(self, include_context_connections=True, include_internal_connections=False, **_):
-        # step 1: predict cells based on context and external messages
-        # block internal messages
-        # think about it as thalamus orchestration of the neocortex
-        if include_context_connections and self.enable_context_connections:
-            messages = np.zeros(self.total_cells)
-            messages[
-                self.context_cells_range[0]:
-                self.context_cells_range[1]
-            ] = self.context_messages
+    def predict(self, **_):
+        messages = np.zeros(self.total_cells)
+        messages[
+            self.context_cells_range[0]:
+            self.context_cells_range[1]
+        ] = self.context_messages
 
-            messages[
-                self.external_cells_range[0]:
-                self.external_cells_range[1]
-            ] = self.external_messages
+        messages[
+            self.external_cells_range[0]:
+            self.external_cells_range[1]
+        ] = self.external_messages
 
-            self._propagate_belief(
-                messages,
-                self.context_factors,
-                self.inverse_temp_context,
-            )
-
-        # step 2: update predictions based on internal and external connections
-        # block context and external messages
-        if include_internal_connections and self.enable_internal_connections:
-            previous_internal_messages = self.internal_messages.copy()
-
-            messages = np.zeros(self.total_cells)
-
-            messages[
-                self.internal_cells_range[0]:
-                self.internal_cells_range[1]
-            ] = self.internal_messages
-
-            self._propagate_belief(
-                messages,
-                self.internal_factors,
-                self.inverse_temp_internal,
-            )
-
-            # consolidate previous and new messages
-            self.internal_messages *= previous_internal_messages
-            self.internal_messages = normalize(
-                self.internal_messages.reshape(
-                    (self.n_hidden_vars, self.n_hidden_states)
-                )
-            ).flatten()
+        self._propagate_belief(
+            messages,
+            self.context_factors,
+            self.inverse_temp_context,
+        )
 
         self.prediction_cells = self.internal_messages.copy()
 
@@ -337,36 +286,27 @@ class BioDHTM(Layer):
 
             # learn context segments
             # use context cells and external cells to predict internal cells
-            if self.enable_context_connections:
-                (
-                    self.cells_to_grow_new_context_segments,
-                    self.new_context_segments
-                ) = self._learn(
-                    np.concatenate(
-                        [
-                            (
-                                    self.context_cells_range[0] +
-                                    self.context_active_cells.sparse
-                            ),
-                            (
-                                    self.external_cells_range[0] +
-                                    self.external_active_cells.sparse
-                            )
-                        ]
-                    ),
-                    self.internal_active_cells.sparse,
-                    self.context_factors,
-                    prune_segments=(self.timestep % self.developmental_period) == 0
-                )
-
-            # learn internal segments
-            if self.enable_internal_connections:
-                self._learn(
-                    self.internal_active_cells.sparse,
-                    self.internal_active_cells.sparse,
-                    self.internal_factors,
-                    prune_segments=(self.timestep % self.developmental_period) == 0
-                )
+            (
+                self.cells_to_grow_new_context_segments,
+                new_context_segments
+            ) = self._learn(
+                np.concatenate(
+                    [
+                        (
+                                self.context_cells_range[0] +
+                                self.context_active_cells.sparse
+                        ),
+                        (
+                                self.external_cells_range[0] +
+                                self.external_active_cells.sparse
+                        )
+                    ]
+                ),
+                self.internal_active_cells.sparse,
+                self.context_factors,
+                prune_segments=(self.timestep % self.developmental_period) == 0
+            )
+            self.new_context_segments.extend(new_context_segments)
 
             self.internal_cells_activity += self.cells_activity_lr * (
                     self.internal_active_cells.dense - self.internal_cells_activity
@@ -759,18 +699,18 @@ class BioDHTM(Layer):
 
         factor_score = factors.factor_score.copy()
         factors_with_segments = factors.factors_in_use
+        if len(factors_with_segments) > 0:
+            # filter non-active factors
+            active_vars = SDR(self.total_vars)
+            active_vars.sparse = candidate_vars
+            n_active_vars = factors.factor_connections.computeActivity(
+                active_vars,
+                False
+            )
+            active_factors_mask = n_active_vars >= factors.n_vars_per_factor
 
-        # filter non-active factors
-        active_vars = SDR(self.total_vars)
-        active_vars.sparse = candidate_vars
-        n_active_vars = factors.factor_connections.computeActivity(
-            active_vars,
-            False
-        )
-        active_factors_mask = n_active_vars >= factors.n_vars_per_factor
-
-        factor_score = factor_score[active_factors_mask[factors_with_segments]]
-        factors_with_segments = factors_with_segments[active_factors_mask[factors_with_segments]]
+            factor_score = factor_score[active_factors_mask[factors_with_segments]]
+            factors_with_segments = factors_with_segments[active_factors_mask[factors_with_segments]]
 
         new_segments = list()
 
@@ -816,14 +756,15 @@ class BioDHTM(Layer):
                 # select cells for a new factor
                 var_score = factors.var_score.copy()
 
-                used_vars, counts = np.unique(
-                    factors.factor_vars[factors.factors_in_use].flatten(),
-                    return_counts=True
-                )
-                # TODO can we make it more static to not compute it in cycle?
-                var_score[used_vars] *= np.exp(-self.unused_vars_boost * counts)
-                var_score[self.n_hidden_vars + self.n_context_vars:] += self.external_vars_boost
+                if len(factors.factors_in_use) > 0:
+                    used_vars, counts = np.unique(
+                        factors.factor_vars[factors.factors_in_use].flatten(),
+                        return_counts=True
+                    )
+                    # TODO can we make it more static to not compute it in cycle?
+                    var_score[used_vars] *= np.exp(-self.unused_vars_boost * counts)
 
+                var_score[self.n_hidden_vars + self.n_context_vars:] += self.external_vars_boost
                 var_score = var_score[candidate_vars_for_cell]
 
                 # sample size can't be bigger than number of variables
@@ -874,6 +815,10 @@ class BioDHTM(Layer):
             factors.factor_for_segment[new_segment] = factor_id
             factors.log_factor_values_per_segment[new_segment] = factors.initial_log_factor_value
             factors.receptive_fields[new_segment] = candidates
+            factors.synapse_efficiency[new_segments] = np.full_like(
+                factors.synapse_efficiency.shape[-1], fill_value=factors.initial_synapse_value
+            )
+            factors.segment_activity[new_segment] = 1.0
 
             new_segments.append(new_segment)
 
