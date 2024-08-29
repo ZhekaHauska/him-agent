@@ -30,6 +30,7 @@ class Factors:
             fraction_of_segments_to_prune,
             max_segments_per_cell,
             min_log_factor_value=-1,
+            min_segment_activity=0
     ):
         """
             hidden vars are those that we predict, or output vars
@@ -50,6 +51,7 @@ class Factors:
         self.n_hidden_states = n_hidden_states
         self.max_factors = n_hidden_vars * max_factors_per_var
         self.max_segments_per_cell = max_segments_per_cell
+        self.min_segment_activity = min_segment_activity
 
         self.connections = Connections(
             numCells=n_cells,
@@ -190,6 +192,11 @@ class Factors:
         )
         self.segment_activity[non_active_segments] -= (
                 self.segment_activity_lr * self.segment_activity[non_active_segments]
+        )
+        self.destroy_segments(
+            non_active_segments[
+                self.segment_activity[non_active_segments] < self.min_segment_activity
+            ]
         )
 
         w = self.log_factor_values_per_segment[active_segments]
