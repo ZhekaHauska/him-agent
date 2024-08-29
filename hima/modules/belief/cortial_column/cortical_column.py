@@ -42,7 +42,7 @@ class CorticalColumn:
             self.input_sdr = SDR(self.layer.input_sdr_size)
             self.output_sdr = SDR(self.layer.input_sdr_size)
 
-    def observe(self, local_input, external_input, learn=True):
+    def observe(self, local_input, external_input, reward, learn=True):
         # predict current local input step
         if external_input is not None and (self.layer.external_input_size > 0):
             external_messages = np.zeros(self.layer.external_input_size)
@@ -71,7 +71,7 @@ class CorticalColumn:
         else:
             self.output_sdr.sparse = self.input_sdr.sparse
 
-        self.layer.observe(self.output_sdr.sparse, learn=learn and self.learn_layer)
+        self.layer.observe(self.output_sdr.sparse, reward, learn=learn and self.learn_layer)
         self.layer.set_context_messages(self.layer.internal_messages)
 
         self.surprise = 0

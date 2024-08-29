@@ -78,7 +78,6 @@ class BioHIMA:
 
         self.state_snapshot_stack = deque()
 
-        self.sf = None
         self.action_values = None
         self.action_dist = None
         self.action = None
@@ -93,7 +92,6 @@ class BioHIMA:
     def reset(self):
         assert len(self.state_snapshot_stack) == 0
 
-        self.sf = None
         self.action_values = None
         self.action_dist = None
         self.action = None
@@ -110,7 +108,7 @@ class BioHIMA:
         self.action = self._rng.choice(self.n_actions, p=self.action_dist)
         return self.action
 
-    def observe(self, observation, learn=True):
+    def observe(self, observation, reward, learn=True):
         """
         Main learning routine
             observation: tuple (image, action)
@@ -121,7 +119,7 @@ class BioHIMA:
 
         if events is not None:
             # predict current events using observed action
-            self.cortical_column.observe(events, action, learn=learn)
+            self.cortical_column.observe(events, action, reward, learn=learn)
             encoded_obs = self.cortical_column.output_sdr.sparse
             self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
         else:
@@ -131,8 +129,6 @@ class BioHIMA:
             return
 
         self.ss_surprise.update(self.cortical_column.surprise)
-
-        return self.sf
 
     def reinforce(self, reward):
         if self.learn_rewards_from_state:
@@ -357,4 +353,3 @@ class BioHIMA:
     @property
     def surprise(self):
         return self.ss_surprise.current_value
-

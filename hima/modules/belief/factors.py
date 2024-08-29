@@ -151,11 +151,12 @@ class Factors:
             np.argpartition(score, n_segments)[:n_segments]
         ]
 
-        self._destroy_segments(segments_to_prune)
+        self.destroy_segments(segments_to_prune)
 
         return segments_to_prune
 
-    def _destroy_segments(self, segments):
+    def destroy_segments(self, segments):
+        # should we also reset segment metrics?
         filter_destroyed_segments = np.isin(
             self.segments_in_use, segments, invert=True
         )
@@ -192,7 +193,7 @@ class Factors:
         )
 
         w = self.log_factor_values_per_segment[active_segments]
-        self._destroy_segments(active_segments[w < self.min_log_factor_value])
+        self.destroy_segments(active_segments[w < self.min_log_factor_value])
 
         # prune segments based on their activity and factor value
         if prune:

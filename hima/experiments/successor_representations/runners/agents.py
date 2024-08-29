@@ -184,7 +184,7 @@ class BioAgentWrapper(BaseAgent):
             )
             self.agent.cortical_column.encoder.modulation = modulation
 
-        return self.agent.observe((self.events, action), learn=True)
+        return self.agent.observe((self.events, action), reward, learn=True)
 
     def sample_action(self):
         return self.agent.sample_action()

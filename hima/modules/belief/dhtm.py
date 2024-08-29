@@ -64,6 +64,7 @@ class BioDHTM(Layer):
             cells_activity_lr: float = 0.1,
             override_context: bool = True,
             inhibit_cells_by_default: bool = True,
+            reward_modulation: bool = False,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -193,8 +194,12 @@ class BioDHTM(Layer):
         self.state_information = 0
         self.surprise = 0
         self.is_any_segment_active = False
+        self.total_reward = 0
 
     def reset(self):
+        if self.reward_modulation and (self.total_reward < 0):
+            self.context_factors.destroy_segments(self.new_context_segments)
+
         self.internal_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
@@ -246,11 +251,13 @@ class BioDHTM(Layer):
     def observe(
             self,
             observation: np.ndarray,
+            reward: float = 0,
             learn: bool = True
     ):
         """
             observation: pattern in sparse representation
         """
+        self.total_reward += reward
         self.surprise = - np.log(
             np.clip(
                 self.prediction_columns[observation], EPS, 1.0
@@ -1236,6 +1243,7 @@ class DHTM(Layer):
     def observe(
             self,
             observation: np.ndarray,
+            reward: float = 0,
             learn: bool = True
     ):
         """

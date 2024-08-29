@@ -84,6 +84,7 @@ class Layer:
     def observe(
             self,
             observation: np.ndarray,
+            reward: float = 0,
             learn: bool = True
     ):
         raise NotImplemented
