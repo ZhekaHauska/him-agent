@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from hima.experiments.successor_representations.runners.base import BaseAgent
 from hima.common.sdr import sparse_to_dense
-from hima.agents.succesor_representations.agent import BioHIMA
+from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima
 from hima.modules.belief.cortial_column.cortical_column import CorticalColumn
 from hima.modules.belief.dhtm import BioDHTM, DHTM
 from hima.modules.baselines.hmm import FCHMMLayer
+from hima.modules.baselines.lstm import LstmLayer
 from hima.modules.dvs import DVS
 from hima.agents.q.agent import QAgent
 from hima.agents.sr.table import SRAgent
@@ -95,7 +96,7 @@ class DatasetCreatorAgent(BaseAgent):
 class BioAgentWrapper(BaseAgent):
     agent: BioHIMA
     camera: DVS | None
-    layer_type: Literal['fchmm', 'dhtm', 'lstm', 'rwkv']
+    layer_type: Literal['fchmm', 'dhtm', 'biodhtm', 'lstm']
     encoder_type: Literal['sp_ensemble', 'sp_grouped']
 
     def __init__(self, conf):
@@ -147,6 +148,9 @@ class BioAgentWrapper(BaseAgent):
                 layer = DHTM(**layer_conf)
             else:
                 layer = BioDHTM(**layer_conf)
+        elif self.layer_type == 'lstm':
+            layer_conf['n_external_vars'] = 1
+            layer = LstmLayer(**layer_conf)
         else:
             raise NotImplementedError
 
@@ -158,10 +162,13 @@ class BioAgentWrapper(BaseAgent):
 
         conf['agent']['seed'] = self.seed
 
-        self.agent = BioHIMA(
-            cortical_column,
-            **conf['agent']
-        )
+        if self.layer_type == 'lstm':
+            self.agent = LstmBioHima(cortical_column, **conf['agent'])
+        else:
+            self.agent = BioHIMA(
+                cortical_column,
+                **conf['agent']
+            )
 
         if self.layer_type == 'fchmm':
             self.initial_action = -1

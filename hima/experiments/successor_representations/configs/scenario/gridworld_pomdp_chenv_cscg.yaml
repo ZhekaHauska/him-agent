@@ -26,13 +26,24 @@
     setup_id: 1
 
 # ---- CSCG workarounds ----
-- condition: ['episodes', 'equal', 0, 'repeat']
+- condition: ['setup_episodes', 'equal', 0, 'repeat']
   check_every: 'episodes'
   action: switch_strategy
   params:
     strategy: random
-- condition: ['episodes', 'equal', 100, 'repeat']
+- condition: ['setup_episodes', 'equal', 100, 'repeat']
   check_every: 'episodes'
   action: switch_strategy
   params:
     strategy: non-random
+
+- condition: ['setup_episodes', 'equal', 0, 'repeat']
+  check_every: 'episodes'
+  action: reset_model
+  params: {}
+
+- condition: ['setup_episodes', 'equal', 0, 'repeat']
+  check_every: 'episodes'
+  action: reset_buffer
+  params: {}
+

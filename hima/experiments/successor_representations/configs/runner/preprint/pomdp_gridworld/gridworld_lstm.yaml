@@ -1,7 +1,7 @@
-log: True
+log: true
 visualize: False
-project_name: gridworld_pomdp_reproduce
-run_tag: no_oracle
+project_name: gridworld_pomdp_reproduce_lstm
+run_tag: test
 
 action_inertia: 1
 frame_skip: 0
@@ -11,7 +11,7 @@ reward_free: False
 
 setup: blocked
 
-scenario: 'configs/scenario/gridworld_pomdp_chenv_fchmm.yaml'
+scenario: 'configs/scenario/gridworld_pomdp_chenv_cscg.yaml'
 env_conf: 'configs/environment/gridworld/pomdp.yaml'
 agent_conf: 'configs/agent/bio/gridworld_pomdp_lstm.yaml'
 metrics_conf: 'configs/metrics/bio/gridworld_pomdp.yaml'

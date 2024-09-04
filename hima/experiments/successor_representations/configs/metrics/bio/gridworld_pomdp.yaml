@@ -52,9 +52,9 @@ step_scalar_metrics:
       layer/segments_forward:
         agg: np.mean
         att: agent.num_segments_forward
-      layer/state_information:
-        agg: np.mean
-        att: agent.agent.cortical_column.layer.state_information
+#      layer/state_information:
+#        agg: np.mean
+#        att: agent.agent.cortical_column.layer.state_information
       sf/steps:
         agg: np.mean
         att: agent.agent.sf_steps

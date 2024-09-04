@@ -14,6 +14,8 @@ from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.experiments.successor_representations.runners.base import BaseRunner
 from hima.modules.belief.utils import normalize
+from hima.modules.baselines.lstm import LstmLayer
+from hima.modules.baselines.hmm import FCHMMLayer
 
 
 class ICMLRunner(BaseRunner):
@@ -60,6 +62,18 @@ class ICMLRunner(BaseRunner):
             self.reward_free = True
         elif strategy == 'non-random':
             self.reward_free = False
+
+    def reset_buffer(self):
+        layer = self.agent.agent.cortical_column.layer
+        if isinstance(layer, LstmLayer):
+            layer.trajectories.clear()
+
+    def reset_model(self):
+        layer = self.agent.agent.cortical_column.layer
+        if isinstance(layer, LstmLayer):
+            layer.reset_model()
+        elif isinstance(layer, FCHMMLayer):
+            layer.reset_stats()
 
     @property
     def obs_reward(self):
