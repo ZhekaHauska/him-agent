@@ -13,6 +13,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 from tqdm import tqdm
 
 from hima.common.sdr import sparse_to_dense
+from hima.modules.belief.cortial_column.layer import Layer
 
 TLstmHiddenState = tuple[torch.Tensor, torch.Tensor]
 
@@ -20,13 +21,13 @@ TLstmHiddenState = tuple[torch.Tensor, torch.Tensor]
 TLstmLayerHiddenState = list[bool, TLstmHiddenState]
 
 
-class LstmLayer:
+class LstmLayer(Layer):
     # operational full state, i.e. used internally for any transition
     internal_state: TLstmLayerHiddenState
 
     # BOTH ARE USED OUTSIDE
     # final full state after any transition
-    internal_forward_messages: TLstmLayerHiddenState
+    internal_messages: TLstmLayerHiddenState
     # passed full state for prediction
     context_messages: TLstmLayerHiddenState
 
@@ -100,6 +101,7 @@ class LstmLayer:
 
         # o_t
         self.observations = list()
+        self.observation_messages = np.zeros(self.input_sdr_size)
         # a_{t-1}
         self.actions = list()
         self.trajectories = list()
@@ -111,20 +113,20 @@ class LstmLayer:
             torch.manual_seed(seed)
         self.rng = np.random.default_rng(seed)
 
-        with_decoder = not (
+        self.with_decoder = not (
                 self.n_hidden_vars == self.n_obs_vars
                 and self.n_hidden_states == self.n_obs_states
         )
-        print(f'LSTM {with_decoder=}')
+        print(f'LSTM {self.with_decoder=}')
 
         self.model = LstmWorldModel(
-            n_obs_vars=n_obs_vars,
-            n_obs_states=n_obs_states,
-            n_hidden_vars=n_hidden_vars,
-            n_hidden_states=n_hidden_states,
-            n_external_vars=n_external_vars,
-            n_external_states=n_external_states,
-            with_decoder=with_decoder
+            n_obs_vars=self.n_obs_vars,
+            n_obs_states=self.n_obs_states,
+            n_hidden_vars=self.n_hidden_vars,
+            n_hidden_states=self.n_hidden_states,
+            n_external_vars=self.n_external_vars,
+            n_external_states=self.n_external_states,
+            with_decoder=self.with_decoder
         ).to(self.device)
 
         if self.n_obs_states == 1:
@@ -140,6 +142,17 @@ class LstmLayer:
         self._reinit_model_state(reset_loss=True)
         self._reinit_messages_and_states()
 
+    def reset_model(self):
+        self.model = LstmWorldModel(
+            n_obs_vars=self.n_obs_vars,
+            n_obs_states=self.n_obs_states,
+            n_hidden_vars=self.n_hidden_vars,
+            n_hidden_states=self.n_hidden_states,
+            n_external_vars=self.n_external_vars,
+            n_external_states=self.n_external_states,
+            with_decoder=self.with_decoder
+        ).to(self.device)
+
     def _reinit_model_state(self, reset_loss: bool):
         self.internal_state = self.get_init_state()
         self.last_loss_value = 0.
@@ -148,8 +161,8 @@ class LstmLayer:
             self.accumulated_loss_steps = 0
 
     def _reinit_messages_and_states(self):
-        self.internal_forward_messages = self.internal_state
-        self.context_messages = self.internal_forward_messages
+        self.internal_messages = self.internal_state
+        self.context_messages = self.internal_messages
         self.external_messages = np.zeros(self.external_input_size)
 
         self.predicted_obs_logits = None
@@ -184,20 +197,26 @@ class LstmLayer:
         self.observations.clear()
         self.actions.clear()
 
-        if len(self.trajectories) == self.batch_size:
+        if len(self.trajectories) == self.batch_size and self.lr > 0:
             self._train()
             self.trajectories = self.trajectories[
-                :int(self.batch_size * self.retain_old_trajectories)
+                -int(self.batch_size * self.retain_old_trajectories):-1
             ]
 
-    def observe(self, observation, learn: bool = True):
+    def observe(
+            self,
+            observation: np.array,
+            reward: float = 0,
+            learn: bool = True
+    ):
         if observation.size == self.input_size:
             dense_obs = observation
         else:
             dense_obs = sparse_to_dense(observation, size=self.input_size)
+        self.observation_messages = dense_obs
         dense_obs = torch.from_numpy(dense_obs).float().to(self.device)
 
-        if learn:
+        if learn and self.lr > 0:
             with torch.set_grad_enabled(not self.use_batches):
                 loss = self.get_loss(self.predicted_obs_logits, dense_obs)
 
@@ -216,7 +235,7 @@ class LstmLayer:
             state = self.transition_with_observation(dense_obs, state)
 
         self.internal_state = [True, state]
-        self.internal_forward_messages = self.internal_state
+        self.internal_messages = self.internal_state
 
     def predict(self, learn: bool = False):
         is_observed, state = self.internal_state
@@ -233,8 +252,8 @@ class LstmLayer:
 
         self.internal_state = [False, state]
 
-        self.internal_forward_messages = self.internal_state
-        self.prediction_cells = self.internal_forward_messages
+        self.internal_messages = self.internal_state
+        self.prediction_cells = self.internal_messages
         self.prediction_columns = to_numpy(
             self.model.to_probabilistic_obs(self.predicted_obs_logits.detach())
         )
@@ -290,7 +309,7 @@ class LstmLayer:
 
             # immutable attributes:
             self.internal_state,
-            self.internal_forward_messages,
+            self.internal_messages,
             self.external_messages,
             self.context_messages,
             self.predicted_obs_logits,
@@ -304,7 +323,7 @@ class LstmLayer:
 
         (
             self.internal_state,
-            self.internal_forward_messages,
+            self.internal_messages,
             self.external_messages,
             self.context_messages,
             self.predicted_obs_logits,
