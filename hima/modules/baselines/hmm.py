@@ -505,6 +505,10 @@ class FCHMMLayer:
 
         self.state_uni_dkl = 0
 
+    def reset_stats(self):
+        self.transition_stats = np.zeros_like(self.transition_probs)
+        self.state_prior_stats = np.zeros_like(self.state_prior)
+
     def set_external_messages(self, messages=None):
         # update external cells
         if messages is not None:
