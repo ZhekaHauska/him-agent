@@ -142,6 +142,7 @@ class LstmLayer(Layer):
         self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
 
         self.loss_propagation_schedule = loss_propagation_schedule
+        self.mean_loss = 0
         self._reinit_model_state(reset_loss=True)
         self._reinit_messages_and_states()
 
@@ -369,14 +370,14 @@ class LstmLayer(Layer):
             mean_loss = accumulated_loss / accumulated_steps
             mean_loss.backward()
             self.optimizer.step()
-            mean_loss = mean_loss.item()
+            self.mean_loss = mean_loss.item()
 
             pbar.set_description(
-                f"loss: {round(mean_loss, 3)}",
+                f"loss: {round(self.mean_loss, 3)}",
                 refresh=True
             )
 
-            if mean_loss < self.early_stop_loss:
+            if self.mean_loss < self.early_stop_loss:
                 break
 
 

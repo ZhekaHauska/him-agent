@@ -126,6 +126,7 @@ class BaseRunner:
             self.scenario = None
 
         self.steps = 0
+        self.total_steps = 0
         self.episodes = 0
         self.setup_episodes = 0
         self.strategy = None
@@ -133,6 +134,8 @@ class BaseRunner:
         self.running = True
         self.action = self.agent.initial_action
         self.reward = 0
+        self.episodic_reward = 0
+        self.total_reward = 0
         self.events = None
         self.obs = None
         self.logging = False
@@ -150,6 +153,7 @@ class BaseRunner:
 
     def prepare_episode(self):
         self.steps = 0
+        self.episodic_reward = 0
         self.is_terminal = False
         self.end_of_episode = False
         self.action = self.agent.initial_action
@@ -179,6 +183,8 @@ class BaseRunner:
                     self.environment.step()
                     self.obs, reward, self.is_terminal = self.environment.obs()
                     self.reward += reward
+                    self.episodic_reward += reward
+                    self.total_reward += reward
 
                     if self.is_terminal:
                         self.end_of_episode = True
@@ -222,6 +228,7 @@ class BaseRunner:
                     self.metrics_rack.step()
 
                 self.steps += 1
+                self.total_steps += 1
         else:
             self.environment.close()
 

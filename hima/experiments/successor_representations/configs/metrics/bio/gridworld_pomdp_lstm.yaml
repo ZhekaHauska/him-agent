@@ -10,51 +10,13 @@ setup:
     log_period: 1
     log_fps: 5
 
-#heatmap_metrics:
-#  class: HeatmapMetrics
-#  params:
-#    metrics:
-#      agent/obs_reward:
-#        agg: np.mean
-#        att: obs_reward
-##      agent/striatum:
-##        agg: np.mean
-##        att: agent.agent.striatum_weights
-#    update_step: episodes
-#    update_period: 100
-#    log_step: episodes
-#    log_period: 100
-
-#state_image:
-#  class: GridworldStateImage
-#  params:
-#    name: representations/repr
-#    repr_att: state_representation
-#    state_att: environment.current_state
-#    normalized: True
-#    n_states: 25
-#    update_step: steps
-#    update_period: 1
-#    log_step: episodes
-#    log_period: 200
-
-
 step_scalar_metrics:
   class: ScalarMetrics
   params:
     metrics:
-      main_metrics/reward:
-        agg: np.sum
-        att: reward
       layer/surprise_hidden:
         agg: np.mean
         att: agent.agent.surprise
-      layer/segments_forward:
-        agg: np.mean
-        att: agent.num_segments_forward
-#      layer/state_information:
-#        agg: np.mean
-#        att: agent.agent.cortical_column.layer.state_information
       sf/steps:
         agg: np.mean
         att: agent.agent.sf_steps
@@ -70,22 +32,22 @@ episodic_scalar_metrics:
       main_metrics/steps:
         agg: np.mean
         att: steps
+      main_metrics/episodic_reward:
+        agg: np.mean
+        att: episodic_reward
+      main_metrics/total_reward:
+        agg: np.mean
+        att: total_reward
+      main_metrics/total_steps:
+        agg: np.mean
+        att: total_steps
+      layer/loss:
+        agg: np.mean
+        att: agent.agent.cortical_column.layer.mean_loss
     update_step: episodes
     update_period: 1
     log_step: episodes
     log_period: 1
-
-cumulative_scalar_metrics:
-  class: ScalarMetrics
-  params:
-    metrics:
-      main_metrics/total_reward:
-        agg: np.sum
-        att: reward
-    update_step: steps
-    update_period: 1
-    log_step: episodes
-    log_period: 299
 
 trajectory:
   class: Histogram
