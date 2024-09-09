@@ -37,6 +37,10 @@ class ICMLRunner(BaseRunner):
             from hima.experiments.successor_representations.runners.agents\
                 import DatasetCreatorAgent
             agent = DatasetCreatorAgent(**conf)
+        elif agent_type == 'ec':
+            from hima.experiments.successor_representations.runners.agents\
+                import ECAgentWrapper
+            agent = ECAgentWrapper(conf)
         else:
             raise NotImplementedError
 

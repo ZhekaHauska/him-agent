@@ -1,0 +1,26 @@
+- condition: ['episodes', 'equal', 1000, 'norepeat']
+  check_every: 'episodes'
+  action: stop_runner
+  params: {}
+- condition: ['steps', 'equal', 50, 'repeat']
+  check_every: 'steps'
+  action: stop_episode
+  params: {}
+- condition: ['episodes', 'equal', 0, 'norepeat']
+  check_every: 'episodes'
+  action: switch_logging
+  params: {}
+
+# ---- changing environment ----
+#- condition: ['episodes', 'equal', 0, 'norepeat']
+#  check_every: 'episodes'
+#  action: change_setup
+#  params:
+#    setup: free
+#    setup_id: 0
+#- condition: ['episodes', 'equal', 300, 'norepeat']
+#  check_every: 'episodes'
+#  action: change_setup
+#  params:
+#    setup: blocked
+#    setup_id: 1

@@ -1,0 +1,5 @@
+plan_steps: 50
+gamma: 0.8
+reward_lr: 0.1
+inverse_temp: 25
+exploration_eps: -1

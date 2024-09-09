@@ -15,6 +15,7 @@ from hima.modules.baselines.lstm import LstmLayer
 from hima.modules.dvs import DVS
 from hima.agents.q.agent import QAgent
 from hima.agents.sr.table import SRAgent
+from hima.agents.episodic_control.agent import ECAgent
 import os
 
 import numpy as np
@@ -460,3 +461,36 @@ class SRTableAgentWrapper(BaseAgent):
     @property
     def sr(self):
         return self.agent.sr
+
+
+class ECAgentWrapper(BaseAgent):
+    agent: ECAgent
+
+    def __init__(self, conf):
+        self.seed = conf['seed']
+        self.initial_action = 0
+        raw_obs_shape = conf.pop('raw_obs_shape')
+        assert raw_obs_shape[0] == 1
+        conf['n_obs_states'] = raw_obs_shape[1]
+        self.agent = ECAgent(**conf)
+
+    def observe(self, events, action, reward=0):
+        self.agent.observe((events, action), reward)
+
+    def sample_action(self):
+        return self.agent.sample_action()
+
+    def reinforce(self, reward):
+        self.agent.reinforce(reward)
+
+    def reset(self):
+        self.agent.reset()
+
+    @property
+    def state_value(self):
+        action_values = self.agent.action_values
+        if action_values is None:
+            action_values = self.agent.evaluate_actions()
+        state_value = np.sum(action_values)
+        return state_value
+

@@ -1,0 +1,18 @@
+log: true
+project_name: gridworld_pomdp_ec_test
+run_tag: test
+
+action_inertia: 1
+frame_skip: 0
+strategies: null
+observe_actions: true
+reward_free: false
+
+setup: blocked
+
+scenario: 'configs/scenario/gridworld_pomdp_chenv_ec.yaml'
+env_conf: 'configs/environment/gridworld/pomdp.yaml'
+agent_conf: 'configs/agent/ec/gridworld.yaml'
+metrics_conf: 'configs/metrics/bio/gridworld_pomdp_ec.yaml'
+
+seed: null
