@@ -17,6 +17,9 @@ step_scalar_metrics:
       sf/steps:
         agg: np.mean
         att: agent.agent.sf_steps
+      sf/goal_found:
+        agg: np.mean
+        att: agent.goal_found
     update_step: steps
     update_period: 1
     log_step: episodes

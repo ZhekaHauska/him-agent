@@ -41,6 +41,7 @@ class ECAgent:
         self.action_values = np.zeros(self.n_actions)
         self.surprise = 0
         self.sf_steps = 0
+        self.goal_found = False
         self.seed = seed
         self._rng = np.random.default_rng(self.seed)
 
@@ -54,6 +55,7 @@ class ECAgent:
 
     def reset(self):
         self.state = (0, 0)
+        self.goal_found = False
         self.surprise = 0
         self.sf_steps = 0
         self.action_values = np.zeros(self.n_actions)
@@ -92,9 +94,11 @@ class ECAgent:
         self.action_values = np.zeros(self.n_actions)
 
         planning_steps = 0
+        self.goal_found = False
         for action in range(self.n_actions):
             predicted_state = self.dictionaries[action].get(self.state)
-            sf, steps = self.generate_sf(predicted_state)
+            sf, steps, gf = self.generate_sf(predicted_state)
+            self.goal_found = gf or self.goal_found
             planning_steps += steps
             self.action_values[action] = np.sum(sf * self.rewards)
 
@@ -103,9 +107,10 @@ class ECAgent:
 
     def generate_sf(self, initial_state):
         sf = np.zeros(self.n_obs_states, dtype=np.float32)
+        goal_found = False
 
         if initial_state is None:
-            return sf, 0
+            return sf, 0, False
 
         sf[initial_state[0]] = 1
 
@@ -131,11 +136,12 @@ class ECAgent:
             if np.any(
                 self.rewards[list(obs_states)] > 0
             ):
+                goal_found = True
                 break
 
             discount *= self.gamma
 
-        return sf, i+1
+        return sf, i+1, goal_found
 
     def _new_state(self, obs_state):
         h = int(self.num_clones[obs_state])

@@ -494,3 +494,7 @@ class ECAgentWrapper(BaseAgent):
         state_value = np.sum(action_values)
         return state_value
 
+    @property
+    def goal_found(self):
+        return float(self.agent.goal_found)
+
