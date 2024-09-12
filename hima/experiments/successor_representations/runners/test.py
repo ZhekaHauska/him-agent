@@ -71,13 +71,15 @@ class ICMLRunner(BaseRunner):
         layer = self.agent.agent.cortical_column.layer
         if isinstance(layer, LstmLayer):
             layer.trajectories.clear()
+        elif isinstance(layer, FCHMMLayer):
+            layer.reset_buffer()
 
     def reset_model(self):
         layer = self.agent.agent.cortical_column.layer
         if isinstance(layer, LstmLayer):
             layer.reset_model()
         elif isinstance(layer, FCHMMLayer):
-            layer.reset_stats()
+            layer.reset_model()
 
     @property
     def obs_reward(self):
