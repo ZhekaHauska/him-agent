@@ -1,7 +1,6 @@
 log: true
-visualize: False
-project_name: gridworld_pomdp_reproduce_lstm
-run_tag: test
+project_name: gridworld_pomdp_reproduce_final
+run_tag: no_reset
 
 action_inertia: 1
 frame_skip: 0

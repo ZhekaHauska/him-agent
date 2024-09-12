@@ -28,22 +28,11 @@
 # ---- LSTM workarounds ----
 #- condition: ['setup_episodes', 'equal', 0, 'repeat']
 #  check_every: 'episodes'
-#  action: switch_strategy
-#  params:
-#    strategy: random
-#- condition: ['setup_episodes', 'equal', 100, 'repeat']
+#  action: reset_model
+#  params: {}
+#
+#- condition: ['setup_episodes', 'equal', 0, 'repeat']
 #  check_every: 'episodes'
-#  action: switch_strategy
-#  params:
-#    strategy: non-random
-
-- condition: ['setup_episodes', 'equal', 0, 'repeat']
-  check_every: 'episodes'
-  action: reset_model
-  params: {}
-
-- condition: ['setup_episodes', 'equal', 0, 'repeat']
-  check_every: 'episodes'
-  action: reset_buffer
-  params: {}
+#  action: reset_buffer
+#  params: {}
 
