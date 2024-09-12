@@ -1,19 +1,18 @@
-log: True
-visualize: False
-project_name: gridworld_pomdp_reproduce
-run_tag: no_oracle
+log: true
+project_name: gridworld_pomdp_reproduce_final
+run_tag: reset_model
 
 action_inertia: 1
 frame_skip: 0
 strategies: null
-observe_actions: True
-reward_free: False
+observe_actions: true
+reward_free: false
 
 setup: blocked
 
-scenario: 'configs/scenario/gridworld_pomdp_chenv_fchmm.yaml'
+scenario: 'configs/scenario/gridworld_pomdp_chenv_cscg.yaml'
 env_conf: 'configs/environment/gridworld/pomdp.yaml'
 agent_conf: 'configs/agent/bio/gridworld_pomdp_cscg.yaml'
-metrics_conf: 'configs/metrics/bio/gridworld_pomdp.yaml'
+metrics_conf: 'configs/metrics/bio/gridworld_pomdp_cscg.yaml'
 
 seed: null

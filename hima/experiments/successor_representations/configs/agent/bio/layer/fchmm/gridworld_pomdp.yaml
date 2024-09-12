@@ -1,5 +1,10 @@
 cells_per_column: 10
-batch_size: 2500
+min_buffer_size: -1
+discard_buffer: false
+update_period: 500
 em_iterations: 1000
-lr: 0.9
+pseudo_count: 0.002
+term_early: true
+lr: 1.0
+prev_matrix_as_init: false
 alpha: 1.0  # dirichlet initialization dist parameter
