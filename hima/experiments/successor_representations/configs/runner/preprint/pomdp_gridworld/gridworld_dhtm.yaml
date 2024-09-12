@@ -1,7 +1,7 @@
 log: true
 visualize: false
-project_name: gridworld_pomdp_reproduce2
-run_tag: random_pos
+project_name: gridworld_pomdp_reproduce_final
+run_tag: test
 
 action_inertia: 1
 frame_skip: 0
@@ -14,6 +14,6 @@ setup: blocked
 scenario: 'configs/scenario/gridworld_pomdp_chenv_dhtm.yaml'
 env_conf: 'configs/environment/gridworld/pomdp.yaml'
 agent_conf: 'configs/agent/bio/gridworld_pomdp_biodhtm.yaml'
-metrics_conf: 'configs/metrics/bio/gridworld_pomdp.yaml'
+metrics_conf: 'configs/metrics/bio/gridworld_pomdp_dhtm.yaml'
 
 seed: null
