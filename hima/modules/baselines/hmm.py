@@ -9,6 +9,8 @@ from hima.common.utils import softmax
 from hmmlearn.hmm import CategoricalHMM
 from copy import copy
 from hima.modules.baselines.cscg import CHMM
+from hima.modules.belief.cortial_column.layer import Layer
+from hima.common.sdr import sparse_to_dense
 
 import warnings
 from hima.modules.belief.utils import normalize, sample_categorical_variables
@@ -409,18 +411,24 @@ class HMM:
         self.emission_probs = self.model.emissionprob_.copy()
 
 
-class FCHMMLayer:
+class FCHMMLayer(Layer):
     def __init__(
             self,
             n_obs_vars: int,
             n_obs_states: int,
             cells_per_column: int,
-            n_external_states: int = 0,
+            n_external_states: int = 1,
             lr: float = 1.0,
-            batch_size: int = 100,
+            min_buffer_size: int = 1000,
+            discard_buffer: bool = False,
+            update_period: int = 50,
             em_iterations: int = 100,
+            pseudo_count: float = 1e-3,
+            term_early: bool = False,
             alpha: float = 1.0,
             use_backward_messages: bool = True,
+            prev_matrix_as_init: bool = False,
+            pretrain_data: str = None,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -430,13 +438,21 @@ class FCHMMLayer:
         self.n_hidden_vars = n_obs_vars
         self.n_obs_states = n_obs_states
         self.n_external_vars = 1
-        self.n_external_states = n_external_states
+        # we should have at least one action for compatibility
+        self.n_external_states = max(1, n_external_states)
         self.n_context_vars = n_obs_vars
         self.n_context_states = n_obs_states * cells_per_column
-        self.batch_size = batch_size
+        self.min_buffer_size = min_buffer_size
+        self.discard_buffer = discard_buffer
+        self.update_period = update_period
         self.em_iterations = em_iterations
+        self.term_early = term_early
+        self.pseudo_count = pseudo_count
         self.lr = lr
+        self.alpha = alpha
         self.use_backward_messages = use_backward_messages
+        self.prev_matrix_as_init = prev_matrix_as_init
+        self.pretrain_data = pretrain_data
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -461,15 +477,15 @@ class FCHMMLayer:
         self.state_prior_stats = np.zeros_like(self.state_prior)
 
         for i in range(self.n_hidden_vars):
-            self.transition_probs[i] = self._rng.dirichlet(
-                alpha=[alpha] * self.n_hidden_states * self.n_external_states,
-                size=self.n_hidden_states
-            ).reshape((self.n_external_states, self.n_hidden_states, self.n_hidden_states))
-            self.state_prior[i] = self._rng.dirichlet(alpha=[alpha] * self.n_hidden_states)
+            self.transition_probs[i], self.state_prior[i] = self.init_probs()
 
         self.n_columns = self.n_obs_states * self.n_obs_vars
 
-        self.internal_forward_messages = np.zeros(
+        self.observation_messages = np.zeros(
+            self.input_sdr_size,
+            dtype=REAL64_DTYPE
+        )
+        self.internal_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
@@ -477,10 +493,7 @@ class FCHMMLayer:
             self.external_input_size,
             dtype=REAL64_DTYPE
         )
-        self.context_messages = np.zeros(
-            self.context_input_size,
-            dtype=REAL64_DTYPE
-        )
+        self.context_messages = np.empty(0)
 
         self.prediction_cells = None
         self.prediction_columns = None
@@ -504,10 +517,32 @@ class FCHMMLayer:
         )
 
         self.state_uni_dkl = 0
+        self.episodes = 0
 
-    def reset_stats(self):
+        if self.pretrain_data is not None:
+            data = np.load(self.pretrain_data)
+            x, a = data['x'], data['a']
+            if len(data['x'].shape) == 1:
+                x = x[None]
+
+            for i in range(self.n_hidden_vars):
+                self.transition_probs[i], self.state_prior[i] = self.train(
+                    x=x[i][:self.min_buffer_size],
+                    a=a[:self.min_buffer_size],
+                    ini_trans=self.transition_probs[i],
+                    ini_prior=self.state_prior[i]
+                )
+
+    def reset_model(self):
+        for i in range(self.n_hidden_vars):
+            self.transition_probs[i], self.state_prior[i] = self.init_probs()
+
         self.transition_stats = np.zeros_like(self.transition_probs)
         self.state_prior_stats = np.zeros_like(self.state_prior)
+
+    def reset_buffer(self):
+        self.observations = [list() for _ in range(self.n_hidden_vars)]
+        self.actions = []
 
     def set_external_messages(self, messages=None):
         # update external cells
@@ -530,7 +565,7 @@ class FCHMMLayer:
     def make_state_snapshot(self):
         return (
             # mutable attributes:
-            self.internal_forward_messages.copy(),
+            self.internal_messages.copy(),
             # immutable attributes:
             self.external_messages,
             self.context_messages,
@@ -543,7 +578,7 @@ class FCHMMLayer:
             return
 
         (
-            self.internal_forward_messages,
+            self.internal_messages,
             self.external_messages,
             self.context_messages,
             self.prediction_cells,
@@ -551,10 +586,14 @@ class FCHMMLayer:
         ) = snapshot
 
         # explicitly copy mutable attributes:
-        self.internal_forward_messages = self.internal_forward_messages.copy()
+        self.internal_messages = self.internal_messages.copy()
 
     def reset(self):
-        self.internal_forward_messages = np.zeros(
+        self.observation_messages = np.zeros(
+            self.input_sdr_size,
+            dtype=REAL64_DTYPE
+        )
+        self.internal_messages = np.zeros(
             self.internal_cells,
             dtype=REAL64_DTYPE
         )
@@ -562,10 +601,7 @@ class FCHMMLayer:
             self.external_input_size,
             dtype=REAL64_DTYPE
         )
-        self.context_messages = np.zeros(
-            self.context_input_size,
-            dtype=REAL64_DTYPE
-        )
+        self.context_messages = np.empty(0)
 
         self.prediction_cells = None
         self.prediction_columns = None
@@ -573,21 +609,21 @@ class FCHMMLayer:
 
     def predict(self, include_context_connections=True, include_internal_connections=False, **_):
         if self.context_messages.size == 0:
-            self.internal_forward_messages = self.state_prior.flatten()
+            self.internal_messages = self.state_prior.flatten()
         else:
             trans_probs_action = np.sum(
                 self.transition_probs * self.external_messages.reshape((1, -1, 1, 1)),
                 axis=1
             )
-            self.internal_forward_messages = np.einsum('kj,kji->ki',
+            self.internal_messages = np.einsum('kj,kji->ki',
                 self.context_messages.reshape((self.n_hidden_vars, -1)),
                 trans_probs_action
             )
-            self.internal_forward_messages = normalize(
-                self.internal_forward_messages
+            self.internal_messages = normalize(
+                self.internal_messages
             ).flatten()
 
-        self.prediction_cells = self.internal_forward_messages.copy()
+        self.prediction_cells = self.internal_messages.copy()
         self.prediction_columns = self.prediction_cells.reshape(
             (self.n_columns, self.cells_per_column)
         ).sum(axis=-1)
@@ -595,23 +631,24 @@ class FCHMMLayer:
     def observe(
             self,
             observation: np.ndarray,
+            reward: float = 0,
             learn: bool = True
     ):
         # TODO handle missing observations
         if len(observation) == 0:
             return
-
+        self.observation_messages = sparse_to_dense(observation, size=self.input_sdr_size)
         # update messages
         cells = self._get_cells_for_observation(observation)
-        obs_factor = np.zeros_like(self.internal_forward_messages)
+        obs_factor = np.zeros_like(self.internal_messages)
         obs_factor[cells] = 1
 
-        self.internal_forward_messages *= obs_factor
+        self.internal_messages *= obs_factor
 
         with warnings.catch_warnings():
             warnings.filterwarnings('error')
-            self.internal_forward_messages = normalize(
-                self.internal_forward_messages.reshape((self.n_hidden_vars, -1)),
+            self.internal_messages = normalize(
+                self.internal_messages.reshape((self.n_hidden_vars, -1)),
                 obs_factor.reshape((self.n_hidden_vars, -1))
             ).flatten()
 
@@ -619,9 +656,9 @@ class FCHMMLayer:
         self.state_uni_dkl = (
                 np.log(n_states) +
                 np.sum(
-                    self.internal_forward_messages * np.log(
+                    self.internal_messages * np.log(
                         np.clip(
-                            self.internal_forward_messages, EPS, None
+                            self.internal_messages, EPS, None
                         )
                     ),
                     axis=-1
@@ -654,46 +691,61 @@ class FCHMMLayer:
             else:
                 self.actions.append(-1)
 
-            if (self.timestep % self.batch_size) == 0:
-                x = np.array(self.observations, dtype=np.int64)
-                self.actions.append(-1)
-                a = np.array(self.actions[1:], dtype=np.int64)
+            if (self.timestep % self.update_period) == 0:
+                if len(self.actions) >= self.min_buffer_size:
+                    x = np.array(self.observations, dtype=np.int64)
+                    self.actions.append(-1)
+                    a = np.array(self.actions[1:], dtype=np.int64)
+                    self.actions.pop()
 
-                for i in range(self.n_hidden_vars):
-                    chmm = CHMM(
-                        np.full(self.n_obs_states, fill_value=self.cells_per_column),
-                        x[i],
-                        a,
-                        pseudocount=EPS,
-                        dtype=REAL64_DTYPE,
-                        seed=self._rng.integers(np.iinfo(np.int32).max)
-                    )
-                    chmm.T = self.transition_probs[i]
-                    chmm.Pi_x = self.state_prior[i]
-                    chmm.learn_em_T_Pi_x(
-                        x[i],
-                        a,
-                        n_iter=self.em_iterations,
-                        term_early=False,
-                        use_backward_msg=self.use_backward_messages
-                    )
+                    for i in range(self.n_hidden_vars):
+                        if self.prev_matrix_as_init:
+                            trans, prior = self.transition_probs[i], self.state_prior[i]
+                        else:
+                            trans, prior = self.init_probs()
 
-                    self.transition_stats[i] += self.lr * (
-                            chmm.T.copy() - self.transition_stats[i]
-                    )
-                    self.state_prior_stats[i] += self.lr * (
-                            chmm.Pi_x.copy() - self.state_prior_stats[i]
-                    )
+                        new_trans, new_prior = self.train(
+                            x[i], a, trans, prior
+                        )
 
-                    self.transition_probs[i] = self.transition_stats[i] / self.transition_stats[i].sum(
-                        axis=2
-                    )[:, :, None]
-                    self.state_prior[i] = self.state_prior_stats[i] / self.state_prior_stats[i].sum()
+                        self.transition_stats[i] += self.lr * (
+                                new_trans - self.transition_stats[i]
+                        )
+                        self.state_prior_stats[i] += self.lr * (
+                                new_prior - self.state_prior_stats[i]
+                        )
 
-                self.observations = [list() for _ in range(self.n_hidden_vars)]
-                self.actions.clear()
+                        self.transition_probs[i] = self.transition_stats[i] / self.transition_stats[i].sum(
+                            axis=2
+                        )[:, :, None]
+                        self.state_prior[i] = self.state_prior_stats[i] / self.state_prior_stats[i].sum()
+
+                    if self.discard_buffer:
+                        self.reset_buffer()
 
         self.timestep += 1
+
+    def init_probs(self):
+        transition_probs = self._rng.dirichlet(
+            alpha=[self.alpha] * self.n_hidden_states * self.n_external_states,
+            size=self.n_hidden_states
+        ).reshape((self.n_external_states, self.n_hidden_states, self.n_hidden_states))
+        prior_probs = self._rng.dirichlet(alpha=[self.alpha] * self.n_hidden_states)
+        return transition_probs, prior_probs
+
+    def train(self, x, a, ini_trans, ini_prior):
+        chmm = CHMM(
+            np.full(self.n_obs_states, fill_value=self.cells_per_column),
+            x,
+            a,
+            pseudocount=self.pseudo_count,
+            dtype=REAL64_DTYPE,
+            seed=self._rng.integers(np.iinfo(np.int32).max)
+        )
+        chmm.T = ini_trans
+        chmm.Pi_x = ini_prior
+        chmm.learn_em_T_Pi_x(x, a, n_iter=self.em_iterations, term_early=self.term_early)
+        return chmm.T.copy(), chmm.Pi_x.copy()
 
     def _get_cells_for_observation(self, obs_states):
         vars_for_obs_states = obs_states // self.n_obs_states
