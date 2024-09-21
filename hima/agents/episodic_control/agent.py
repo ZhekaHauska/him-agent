@@ -124,9 +124,13 @@ class ECAgent:
             predicted_states = set().union(
                 *[{d.get(state) for d in self.dictionaries} for state in predicted_states]
             )
-            obs_states = {s[0] for s in predicted_states if s is not None}
+            obs_states = np.array(
+                [s[0] for s in predicted_states if s is not None],
+                dtype=np.uint32
+            )
+            obs_states, counts = np.unique(obs_states, return_counts=True)
             obs_probs = np.zeros_like(sf)
-            obs_probs[list(obs_states)] = 1
+            obs_probs[obs_states] = counts
             obs_probs /= (obs_probs.sum() + EPS)
             sf += discount * obs_probs
 
