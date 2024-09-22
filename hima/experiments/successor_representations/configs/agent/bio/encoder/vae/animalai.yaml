@@ -1,9 +1,10 @@
-checkpoint_path: "/home/evgenio/Activity/him-agent/hima/experiments/successor_representations/configs/agent/bio/encoder/vae/checkpoints/version0.ckpt"
+checkpoint_path: "/home/evgenio/Activity/HTM/htm_rl_tepo/hima_airi/him-agent/hima/experiments/successor_representations/configs/agent/bio/encoder/vae/checkpoints/version_10_10_t001.ckpt"
+use_camera: true
 model_params:
   in_channels: 1
-  latent_dim: 2
-  categorical_dim: 25
-  temperature: 0.5
+  latent_dim: 10
+  categorical_dim: 10
+  temperature: 0.01
   anneal_rate: 0.00003
   anneal_interval: 100
   alpha: 1.0

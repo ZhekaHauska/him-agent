@@ -145,7 +145,7 @@ class BioDHTM(Layer):
 
         # instead of deliberately saving prior
         # we use fixed initial messages
-        self.initial_forward_messages = sparse_to_dense(
+        self.initial_context_messages = sparse_to_dense(
             np.arange(
                 self.n_hidden_vars
             ) * self.n_hidden_states,
@@ -205,7 +205,7 @@ class BioDHTM(Layer):
             dtype=REAL64_DTYPE
         )
         self.external_messages = self.initial_external_messages.copy()
-        self.context_messages = self.initial_forward_messages.copy()
+        self.context_messages = self.initial_context_messages.copy()
 
         self.context_active_cells.sparse = []
         self.internal_active_cells.sparse = []
@@ -565,9 +565,11 @@ class BioDHTM(Layer):
         obs_states_per_var = obs_states - vars_for_obs_states * self.n_obs_states
 
         hid_vars = (
-                np.tile(np.arange(self.n_hidden_vars_per_obs_var), len(vars_for_obs_states)) +
-                vars_for_obs_states * self.n_hidden_vars_per_obs_var
-        )
+            np.tile(np.arange(self.n_hidden_vars_per_obs_var), len(vars_for_obs_states)).reshape(
+                -1, self.n_hidden_vars_per_obs_var
+            ) +
+            (vars_for_obs_states * self.n_hidden_vars_per_obs_var)[:, None]
+        ).flatten()
         hid_columns = (
                 np.repeat(obs_states_per_var, self.n_hidden_vars_per_obs_var) +
                 self.n_obs_states * hid_vars

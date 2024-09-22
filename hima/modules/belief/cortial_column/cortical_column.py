@@ -6,11 +6,9 @@
 from typing import Optional
 
 import numpy as np
-from htm.bindings.sdr import SDR
-
 from hima.common.metrics import get_surprise
 from hima.modules.belief.cortial_column.layer import Layer
-from hima.modules.htm.spatial_pooler import SPEnsemble, SPDecoder
+from hima.modules.belief.cortial_column.encoders.base import BaseEncoder
 
 
 class CorticalColumn:
@@ -21,26 +19,18 @@ class CorticalColumn:
     def __init__(
             self,
             layer: Layer,
-            encoder: Optional[SPEnsemble],
-            decoder: Optional[SPDecoder]
+            encoder: Optional[BaseEncoder],
     ):
         self.layer = layer
         self.encoder = encoder
-        self.decoder = decoder
 
         self.learn_layer = True
         self.learn_encoder = True
         self.learn_decoder = True
 
         self.predicted_image = None
+        self.encoded_sdr = None
         self.surprise = 0
-
-        if self.encoder is not None:
-            self.input_sdr = SDR(self.encoder.getNumInputs())
-            self.output_sdr = SDR(self.encoder.getNumColumns())
-        else:
-            self.input_sdr = SDR(self.layer.input_sdr_size)
-            self.output_sdr = SDR(self.layer.input_sdr_size)
 
     def observe(self, local_input, external_input, reward, learn=True):
         # predict current local input step
@@ -56,40 +46,31 @@ class CorticalColumn:
         self.layer.set_external_messages(external_messages)
         self.layer.predict(learn=learn and self.learn_layer)
 
-        self.input_sdr.sparse = local_input
+        self.predicted_image = self.encoder.decode(
+            self.layer.prediction_columns,
+            learn=learn and self.learn_decoder,
+            correct=local_input
+        )
 
-        if self.decoder is not None:
-            self.predicted_image = self.decoder.decode(
-                self.layer.prediction_columns, learn=learn and self.learn_decoder, correct_obs=self.input_sdr.dense
-            )
-        else:
-            self.predicted_image = self.layer.prediction_columns
-
-        # observe real outcome and optionally learn using prediction error
         if self.encoder is not None:
-            self.encoder.compute(self.input_sdr, learn and self.learn_encoder, self.output_sdr)
+            self.encoded_sdr = self.encoder.encode(local_input, learn and self.learn_encoder)
         else:
-            self.output_sdr.sparse = self.input_sdr.sparse
+            self.encoded_sdr = local_input
 
-        self.layer.observe(self.output_sdr.sparse, reward, learn=learn and self.learn_layer)
+        self.layer.observe(self.encoded_sdr, reward, learn=learn and self.learn_layer)
         self.layer.set_context_messages(self.layer.internal_messages)
 
         self.surprise = 0
-        encoded_obs = self.output_sdr.sparse
-        if len(encoded_obs) > 0:
+        if len(self.encoded_sdr) > 0:
             self.surprise = get_surprise(
-                self.layer.prediction_columns, encoded_obs, mode='categorical'
+                self.layer.prediction_columns, self.encoded_sdr, mode='categorical'
             )
 
     def predict(self, context_messages, external_messages=None):
         self.layer.set_context_messages(context_messages)
         self.layer.set_external_messages(external_messages)
         self.layer.predict()
-
-        if self.decoder is not None:
-            self.predicted_image = self.decoder.decode(self.layer.prediction_columns, learn=False)
-        else:
-            self.predicted_image = self.layer.prediction_columns
+        self.predicted_image = self.encoder.decode(self.layer.prediction_columns, learn=False)
 
     def reset(self, context_messages=None, external_messages=None):
         self.layer.reset()
@@ -97,6 +78,10 @@ class CorticalColumn:
             self.layer.set_context_messages(context_messages)
         if external_messages is not None:
             self.layer.set_external_messages(external_messages)
+
+        self.predicted_image = None
+        self.encoded_sdr = None
+        self.surprise = 0
 
     def make_state_snapshot(self):
         return (

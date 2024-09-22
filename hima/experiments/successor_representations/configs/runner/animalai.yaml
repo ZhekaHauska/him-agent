@@ -1,12 +1,12 @@
 log: true
 visualize: False
-project_name: animalai_test_vae
+project_name: animalai_debug_sp
 run_tag: null
 
 action_inertia: 1
 frame_skip: 3
 strategies: null
-  #- [ 0, 0, 1, 1, 2, 2 ]
+  # - [ 0, 0, 1, 1, 2, 2 ]
 observe_action: True
 reward_free: false
 

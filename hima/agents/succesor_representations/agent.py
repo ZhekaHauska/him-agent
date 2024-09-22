@@ -120,7 +120,7 @@ class BioHIMA:
         if events is not None:
             # predict current events using observed action
             self.cortical_column.observe(events, action, reward, learn=learn)
-            encoded_obs = self.cortical_column.output_sdr.sparse
+            encoded_obs = self.cortical_column.encoded_sdr
             self.observation_messages = sparse_to_dense(encoded_obs, like=self.observation_messages)
         else:
             return
