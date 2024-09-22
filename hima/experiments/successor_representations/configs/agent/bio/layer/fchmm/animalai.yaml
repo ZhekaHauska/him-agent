@@ -1,8 +1,11 @@
 cells_per_column: 20
-batch_size: 100000
-em_iterations: 500
+min_buffer_size: -1
+discard_buffer: false
+update_period: 500
+em_iterations: 1000
 pseudo_count: 0.002
 term_early: true
-lr: 0.0
+tolerance: 3
+lr: 1.0
+prev_matrix_as_init: false
 alpha: 1.0  # dirichlet initialization dist parameter
-pretrain_data: 'logs/animalai_trajectories_50.npz'

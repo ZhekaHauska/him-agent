@@ -1,0 +1,72 @@
+step_scalar_metrics:
+  class: ScalarMetrics
+  params:
+    metrics:
+      sf/steps:
+        agg: np.mean
+        att: agent.agent.sf_steps
+      layer/surprise_hidden:
+        agg: np.mean
+        att: agent.agent.surprise
+    update_step: steps
+    update_period: 1
+    log_step: episodes
+    log_period: 1
+
+episodic_scalar_metrics:
+  class: ScalarMetrics
+  params:
+    metrics:
+      main_metrics/steps:
+        agg: np.mean
+        att: steps
+      main_metrics/episodic_reward:
+        agg: np.mean
+        att: episodic_reward
+      main_metrics/total_reward:
+        agg: np.mean
+        att: total_reward
+      main_metrics/total_steps:
+        agg: np.mean
+        att: total_steps
+    update_step: episodes
+    update_period: 1
+    log_step: episodes
+    log_period: 1
+
+step_heatmap_metrics:
+  class: HeatmapMetrics
+  params:
+    metrics:
+      agent/encoded_reward:
+        agg: np.mean
+        att: encoded_reward
+      agent/total_encoded_reward:
+        agg: np.sum
+        att: encoded_reward
+      agent/real_reward:
+        agg: np.mean
+        att: real_reward
+      agent/encoded_observation:
+        agg: np.mean
+        att: encoder_output
+    update_step: steps
+    update_period: 1
+    log_step: episodes
+    log_period: 100
+
+#snapshots:
+#  class: ArrayMetrics
+#  params:
+#    metrics:
+#      raw_input:
+#        att: raw_observation
+#      camera:
+#        att: camera_output
+#      encoder:
+#        att: encoder_output
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 1
+#    log_dir: 'logs/debug_animalai'
