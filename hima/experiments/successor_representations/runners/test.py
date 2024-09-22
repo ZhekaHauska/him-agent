@@ -9,11 +9,13 @@ import os
 from typing import Union, Any
 
 import numpy as np
+
+import hima.envs.gridworld
 from hima.common.config.base import read_config, override_config
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.experiments.successor_representations.runners.base import BaseRunner
-from hima.modules.belief.utils import normalize
+from hima.experiments.successor_representations.runners.utils import to_gray_image
 from hima.modules.baselines.lstm import LstmLayer
 from hima.modules.baselines.hmm import FCHMMLayer
 
@@ -25,14 +27,6 @@ class ICMLRunner(BaseRunner):
             from hima.experiments.successor_representations.runners.agents\
                 import BioAgentWrapper
             agent = BioAgentWrapper(conf)
-        elif agent_type == 'q':
-            from hima.experiments.successor_representations.runners.agents\
-                import QTableAgentWrapper
-            agent = QTableAgentWrapper(conf)
-        elif agent_type == 'sr':
-            from hima.experiments.successor_representations.runners.agents\
-                import SRTableAgentWrapper
-            agent = SRTableAgentWrapper(conf)
         elif agent_type == 'data':
             from hima.experiments.successor_representations.runners.agents\
                 import DatasetCreatorAgent
@@ -82,31 +76,11 @@ class ICMLRunner(BaseRunner):
             layer.reset_model()
 
     @property
-    def obs_reward(self):
-        agent = self.agent.agent
-        decoder = agent.cortical_column.decoder
-        if decoder is not None:
-            obs_rewards = decoder.decode(
-                normalize(
-                    agent.rewards.reshape(
-                        agent.cortical_column.layer.n_obs_vars, -1
-                    )
-                ).flatten()
-            ).reshape(self.environment.raw_obs_shape)
-        else:
-            obs_rewards = agent.rewards.reshape(
-                agent.cortical_column.layer.n_obs_vars, -1
-            )
-        return obs_rewards
-
-    @property
-    def clean_surprise(self):
-        layer = self.agent.agent.cortical_column.layer
-        return self.agent.agent.surprise * layer.is_any_segment_active
-
-    @property
     def real_reward(self):
-        im = sparse_to_dense(self.agent.events, shape=self.environment.raw_obs_shape)
+        if self.agent.camera is not None:
+            im = sparse_to_dense(self.agent.events, shape=self.environment.raw_obs_shape)
+        else:
+            im = to_gray_image(self.agent.events)
         real_reward = im * self.reward
         return real_reward
 
@@ -118,6 +92,7 @@ class ICMLRunner(BaseRunner):
     @property
     def state_visited(self):
         env = self.environment.environment
+        assert isinstance(env, hima.envs.gridworld.GridWorld)
         r, c = env.r, env.c
         values = np.zeros((env.h, env.w))
         values[r, c] = 1
@@ -127,7 +102,7 @@ class ICMLRunner(BaseRunner):
     @property
     def state_value(self):
         env = self.environment.environment
-
+        assert isinstance(env, hima.envs.gridworld.GridWorld)
         r, c = env.r, env.c
         values = np.zeros((env.h, env.w))
         state_value = self.agent.state_value
@@ -146,6 +121,7 @@ class ICMLRunner(BaseRunner):
     @property
     def q_value(self):
         env = self.environment.environment
+        assert isinstance(env, hima.envs.gridworld.GridWorld)
         # left, right, up, down
         actions = self.environment.actions
         shifts = np.array([[0, 0], [0, env.w], [env.h, 0], [env.h, env.w]])
@@ -162,79 +138,6 @@ class ICMLRunner(BaseRunner):
 
         return values, counts
 
-    def get_true_sr(self, path=None, observation_radius=-1):
-        """
-            Save SR/SF formed by table-sr agent
-
-            observation_radius: if greater than -1, converts SR to SF
-            for corresponding observation window
-
-            Feature indexing for observation radius=1:
-
-            0 1 2
-            3 4 5 - center
-            6 7 8
-        """
-        agent = self.agent
-        env = self.environment.environment
-
-        t = agent.sr
-        t = np.mean(t, axis=0)
-
-        if observation_radius >= 0:
-            # convert sr to sf
-            n_features = (2*observation_radius + 1)**2
-            colors = env.unique_colors
-            colors_map = env.colors
-
-            if n_features == 1:
-                colors_map = colors_map[1:-1, 1:-1]
-
-            sfs = list()
-
-            for feature in range(n_features):
-                # form transformation matrix
-                row_shift = feature // (2*observation_radius + 1)
-                col_shift = feature % (2*observation_radius + 1)
-                state_to_color = colors_map[
-                    row_shift:row_shift+env.h,
-                    col_shift:col_shift+env.w
-                ].flatten()
-
-                masks = list()
-                for color in colors:
-                    masks.append(state_to_color == color)
-
-                masks = np.vstack(masks).T
-                # (n_states, colors)
-                sfs.append(np.dot(t, masks))
-
-            t = np.hstack(sfs)
-
-        if path is not None:
-            np.save(path, t)
-
-        return t
-
-    @property
-    def sr(self):
-        agent = self.agent
-        env = self.environment.environment
-
-        t = agent.sr
-        if len(t.shape) > 2:
-            t = np.mean(t, axis=0)
-
-        all_srs = list()
-        for r in range(env.h):
-            srs = list()
-            for c in range(env.w):
-                sr = t[r*env.w + c].reshape(env.h, env.w)
-                srs.append(sr)
-            all_srs.append(srs)
-
-        return np.block(all_srs)
-
     @property
     def rewards(self):
         agent = self.agent.agent
@@ -242,7 +145,7 @@ class ICMLRunner(BaseRunner):
 
     @property
     def raw_observation(self):
-        return np.dot(self.obs[:, :, :3], [299 / 1000, 587 / 1000, 114 / 1000])
+        return to_gray_image(self.obs)
 
     @property
     def camera_output(self):

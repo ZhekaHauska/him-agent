@@ -36,3 +36,6 @@ def print_digest(metrics: dict):
         digest += f'| Loss = {loss:.7f}'
     print(digest)
 
+
+def to_gray_image(im):
+    return np.dot(im[:, :, :3], [299 / 1000, 587 / 1000, 114 / 1000])
