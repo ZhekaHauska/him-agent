@@ -13,6 +13,6 @@ setup: blocked
 scenario: 'configs/scenario/gridworld_pomdp_chenv_ec.yaml'
 env_conf: 'configs/environment/gridworld/pomdp.yaml'
 agent_conf: 'configs/agent/ec/gridworld.yaml'
-metrics_conf: 'configs/metrics/bio/gridworld_pomdp_ec.yaml'
+metrics_conf: 'configs/metrics/ec/gridworld_pomdp.yaml'
 
 seed: null

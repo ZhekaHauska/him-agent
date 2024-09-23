@@ -271,12 +271,26 @@ class ECAgentWrapper(BaseAgent):
     def __init__(self, conf):
         self.seed = conf['seed']
         self.initial_action = 0
-        raw_obs_shape = conf.pop('raw_obs_shape')
-        assert raw_obs_shape[0] == 1
-        conf['n_obs_states'] = raw_obs_shape[1]
-        self.agent = ECAgent(**conf)
+        self.conf = conf
+        self.encoder_type = conf['encoder_type']
+
+        if self.encoder_type is not None:
+            self.encoder, n_obs_vars, n_obs_states = self._make_encoder()
+            assert n_obs_vars == 1
+            conf['agent']['n_obs_states'] = n_obs_states
+        else:
+            self.encoder = None
+            raw_obs_shape = conf['raw_obs_shape']
+            assert raw_obs_shape[0] == 1
+            conf['agent']['n_obs_states'] = raw_obs_shape[1]
+
+        conf['agent']['seed'] = conf['seed']
+        conf['agent']['n_actions'] = conf['n_actions']
+
+        self.agent = ECAgent(**conf['agent'])
 
     def observe(self, events, action, reward=0):
+        events = self.encoder.encode(events, learn=True)
         self.agent.observe((events, action), reward)
 
     def sample_action(self):
@@ -299,3 +313,34 @@ class ECAgentWrapper(BaseAgent):
     @property
     def goal_found(self):
         return float(self.agent.goal_found)
+
+    def _make_encoder(self):
+        if self.encoder_type == 'sp_grouped':
+            from hima.modules.belief.cortial_column.encoders.sp import (
+                SpatialPooler
+            )
+
+            encoder_conf = self.conf['encoder']
+            encoder_conf['seed'] = self.seed
+            encoder_conf['feedforward_sds'] = [self.conf['raw_obs_shape'], 0.1]
+
+            encoder = SpatialPooler(encoder_conf)
+            n_vars = encoder.n_vars
+            n_states = encoder.n_states
+        elif self.encoder_type == 'vae':
+            from hima.modules.belief.cortial_column.encoders.vae import CatVAE
+            encoder = CatVAE(**self.conf['encoder'])
+            n_vars = encoder.n_vars
+            n_states = encoder.n_states
+        elif self.encoder_type == 'kmeans':
+            from hima.modules.belief.cortial_column.encoders.kmeans import KMeansEncoder
+            encoder = KMeansEncoder(**self.conf['encoder'])
+            n_vars = encoder.n_vars
+            n_states = encoder.n_states
+        elif self.encoder_type is None:
+            encoder = None
+            n_vars, n_states = self.conf['raw_obs_shape']
+        else:
+            raise ValueError(f'Encoder type {self.encoder_type} is not supported')
+
+        return encoder, n_vars, n_states

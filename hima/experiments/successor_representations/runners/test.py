@@ -253,47 +253,16 @@ def main(config_path):
         config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
 
     # unfolding subconfigs
-    if config['agent_type'] == 'bio':
-        def load_subconfig(entity, conf):
+    def load_subconfig(entity, conf):
+        if f'{entity}_conf' in conf['agent']:
             conf_path = config['agent'].pop(f'{entity}_conf')
             conf['agent'][f'{entity}_type'] = conf_path.split('/')[-2]
             conf['agent'][entity] = read_config(conf_path)
-
-        load_subconfig('layer', config)
-
-        if 'encoder_conf' in config['agent']:
-            load_subconfig('encoder', config)
         else:
-            config['agent']['encoder_type'] = None
+            conf['agent'][f'{entity}_type'] = None
 
-        if 'decoder_conf' in config['agent']:
-            load_subconfig('decoder', config)
-        else:
-            config['agent']['decoder_type'] = None
-
-        if 'srtd_conf' in config['agent']:
-            load_subconfig('srtd', config)
-        else:
-            config['agent']['srtd_type'] = None
-
-        if 'striatum_conf' in config['agent']:
-            load_subconfig('striatum', config)
-        else:
-            config['agent']['striatum_type'] = None
-
-    elif config['agent_type'] == 'q':
-        config['agent']['qvn'] = read_config(config['agent'].pop('qvn_conf'))
-
-        if 'ucb_estimate_conf' in config['agent']:
-            config['agent']['ucb_estimate'] = read_config(config['agent'].pop('ucb_estimate_conf'))
-        else:
-            config['agent']['ucb_estimate'] = None
-
-        if 'eligibility_traces' in config['agent']:
-            config['agent']['eligibility_traces'] = read_config(
-                config['agent'].pop('eligibility_traces_conf'))
-        else:
-            config['agent']['eligibility_traces'] = None
+    load_subconfig('layer', config)
+    load_subconfig('encoder', config)
 
     # override some values
     overrides = parse_arg_list(sys.argv[2:])
