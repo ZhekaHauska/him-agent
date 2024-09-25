@@ -35,6 +35,7 @@ class DatasetCreatorAgent(BaseAgent):
         self.initial_action = None
         self.state_value = 0
         self.reward_boost = reward_boost
+        self.episodes = 0
 
         self.seed = seed
         self.dataset_path = dataset_path
@@ -52,6 +53,8 @@ class DatasetCreatorAgent(BaseAgent):
             self.camera = None
 
         self.images = []
+        self.rewards = []
+        self.actions = []
         self.chunk_id = 0
 
     def observe(self, events, action, reward=0):
@@ -62,9 +65,13 @@ class DatasetCreatorAgent(BaseAgent):
             im = events
 
         self.images.append(im.copy())
+        self.rewards.append(reward)
+        self.actions.append(action)
         if reward > 0:
             for _ in range(self.reward_boost):
                 self.images.append(im.copy())
+                self.rewards.append(reward)
+                self.actions.append(action)
 
     def sample_action(self):
         return None
@@ -73,23 +80,30 @@ class DatasetCreatorAgent(BaseAgent):
         return None
 
     def reset(self):
+        self.episodes += 1
         return None
 
     def save(self):
-        np.save(
+        self.actions.append(0)
+        np.savez(
             os.path.join(
                 self.dataset_path,
-                f'data{self.chunk_id}.npy'
+                f'data{self.chunk_id}'
             ),
-            np.array(self.images)
+            s=np.array(self.images),
+            a=np.array(self.actions[1:]),
+            r=np.array(self.rewards)
         )
         self.chunk_id += 1
         self.images.clear()
+        self.rewards.clear()
+        self.actions.clear()
 
     def print_digest(self):
-        print(f'dataset path: {self.dataset_path}')
-        print(f'image size: {self.raw_obs_shape}; camera mode: {self.camera_mode}')
-        print(f'chunk: {self.chunk_id}; images: {len(self.images)}')
+        print(f'{self.episodes=}')
+        print(f'{self.dataset_path=}')
+        print(f'{self.raw_obs_shape=}; {self.camera_mode=}')
+        print(f'{self.chunk_id=}; images: {len(self.images)}')
 
 
 class BioAgentWrapper(BaseAgent):

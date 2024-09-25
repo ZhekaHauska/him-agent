@@ -193,7 +193,7 @@ class BaseRunner:
                     if self.action is None:
                         break
 
-                # observe events_t and action_{t-1}
+                # observe events_t, action_{t-1}, reward_{t}
                 self.agent.observe(self.obs, self.action, self.reward)
                 self.agent.reinforce(self.reward)
 

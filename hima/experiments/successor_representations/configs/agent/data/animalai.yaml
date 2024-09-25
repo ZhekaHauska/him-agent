@@ -1,3 +1,3 @@
-reward_boost: 1
-dataset_path: ./animal_ai_dataset_kmeans
+reward_boost: 10
+dataset_path: ./animal_ai_dataset_vae
 camera_mode: null

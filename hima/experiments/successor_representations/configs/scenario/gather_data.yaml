@@ -7,7 +7,7 @@
   action: switch_logging
   params: {}
 
-- condition: ['episodes', 'mod', 1000, 'repeat']
+- condition: ['episodes', 'mod', 1999, 'repeat']
   check_every: 'episodes'
   action: agent.save
   params: {}
