@@ -425,6 +425,7 @@ class FCHMMLayer(Layer):
             em_iterations: int = 100,
             pseudo_count: float = 1e-3,
             term_early: bool = False,
+            tolerance: int = 3,
             alpha: float = 1.0,
             use_backward_messages: bool = True,
             prev_matrix_as_init: bool = False,
@@ -447,6 +448,7 @@ class FCHMMLayer(Layer):
         self.update_period = update_period
         self.em_iterations = em_iterations
         self.term_early = term_early
+        self.tolerance = tolerance
         self.pseudo_count = pseudo_count
         self.lr = lr
         self.alpha = alpha
@@ -744,7 +746,10 @@ class FCHMMLayer(Layer):
         )
         chmm.T = ini_trans
         chmm.Pi_x = ini_prior
-        chmm.learn_em_T_Pi_x(x, a, n_iter=self.em_iterations, term_early=self.term_early)
+        chmm.learn_em_T_Pi_x(
+            x, a,
+            n_iter=self.em_iterations, term_early=self.term_early, tolerance=self.tolerance
+        )
         return chmm.T.copy(), chmm.Pi_x.copy()
 
     def _get_cells_for_observation(self, obs_states):

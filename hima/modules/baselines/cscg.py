@@ -225,11 +225,12 @@ class CHMM(object):
         states = backtraceE(self.T, E, self.n_clones, x, a, mess_fwd)
         return -log2_lik, states
 
-    def learn_em_T_Pi_x(self, x, a, n_iter=100, term_early=True, use_backward_msg=True):
+    def learn_em_T_Pi_x(self, x, a, n_iter=100, term_early=True, tolerance=0, use_backward_msg=True):
         """Run EM training, keeping E deterministic and fixed, learning T"""
         sys.stdout.flush()
         convergence = []
         pbar = trange(n_iter, position=0)
+        tol = 0
         log2_lik_old = -np.inf
         for it in pbar:
             # E
@@ -253,8 +254,11 @@ class CHMM(object):
             convergence.append(-log2_lik.mean())
             pbar.set_postfix(train_bps=convergence[-1])
             if log2_lik.mean() <= log2_lik_old:
-                if term_early:
+                tol += 1
+                if term_early and (tol > tolerance):
                     break
+            else:
+                tol = 0
             log2_lik_old = log2_lik.mean()
         return convergence
 
