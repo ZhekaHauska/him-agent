@@ -20,7 +20,7 @@ class BaseEncoder:
     def decode(
             self,
             input_: np.ndarray,
-            learn: bool,
+            learn: bool = False,
             correct: Optional[np.ndarray] = None
     ):
         return input_
