@@ -68,12 +68,17 @@ class ICMLRunner(BaseRunner):
         elif isinstance(layer, FCHMMLayer):
             layer.reset_buffer()
 
-    def reset_model(self):
+    def reset_model(self, checkpoint_path=None):
         layer = self.agent.agent.cortical_column.layer
         if isinstance(layer, LstmLayer):
-            layer.reset_model()
+            layer.reset_model(checkpoint_path)
         elif isinstance(layer, FCHMMLayer):
             layer.reset_model()
+
+    def save_model(self, dir_path):
+        layer = self.agent.agent.cortical_column.layer
+        if isinstance(layer, LstmLayer):
+            layer.save_model(os.path.join(dir_path, f'{self.logger.name}_{self.episodes}.pt'))
 
     @property
     def real_reward(self):

@@ -1,0 +1,21 @@
+- condition: ['episodes', 'equal', 500, 'norepeat']
+  check_every: 'episodes'
+  action: stop_runner
+  params: {}
+- condition: ['episodes', 'equal', 0, 'norepeat']
+  check_every: 'episodes'
+  action: switch_logging
+  params: {}
+
+# pretrain
+#- condition: ['episodes', 'mod', 500, 'repeat']
+#  check_every: 'episodes'
+#  action: save_model
+#  params:
+#    dir_path: configs/agent/bio/layer/lstm/checkpoints/
+
+#- condition: ['episodes', 'equal', 0, 'norepeat']
+#  check_every: 'episodes'
+#  action: reset_model
+#  params:
+#    checkpoint_path: configs/agent/bio/layer/lstm/checkpoints/dutiful-firebrand-14_1000.pt

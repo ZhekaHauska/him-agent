@@ -131,6 +131,7 @@ class LstmLayer(Layer):
             n_external_states=self.n_external_states,
             with_decoder=self.with_decoder
         ).to(self.device)
+        self.model.eval()
 
         if self.n_obs_states == 1:
             # predicted values: logits for further sigmoid application
@@ -146,7 +147,7 @@ class LstmLayer(Layer):
         self._reinit_model_state(reset_loss=True)
         self._reinit_messages_and_states()
 
-    def reset_model(self):
+    def reset_model(self, checkpoint_path=None):
         self.model = LstmWorldModel(
             n_obs_vars=self.n_obs_vars,
             n_obs_states=self.n_obs_states,
@@ -156,6 +157,20 @@ class LstmLayer(Layer):
             n_external_states=self.n_external_states,
             with_decoder=self.with_decoder
         ).to(self.device)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
+        if checkpoint_path is not None:
+            checkpoint = torch.load(checkpoint_path, weights_only=False)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.model.eval()
+
+    def save_model(self, path):
+        torch.save(
+            {
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+            }, path
+        )
 
     def _reinit_model_state(self, reset_loss: bool):
         self.internal_state = self.get_init_state()
@@ -343,7 +358,7 @@ class LstmLayer(Layer):
         ) = snapshot
 
     def _train(self):
-        self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
+        self.model.train()
         indx = np.arange(len(self.trajectories))
 
         for update in (pbar := tqdm(range(self.num_updates))):
@@ -379,6 +394,7 @@ class LstmLayer(Layer):
 
             if self.mean_loss < self.early_stop_loss:
                 break
+        self.model.eval()
 
 
 class LstmWorldModel(nn.Module):

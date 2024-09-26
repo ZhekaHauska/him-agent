@@ -29,6 +29,9 @@ episodic_scalar_metrics:
       main_metrics/total_steps:
         agg: np.mean
         att: total_steps
+      layer/loss:
+        agg: np.mean
+        att: agent.agent.cortical_column.layer.mean_loss
     update_step: episodes
     update_period: 1
     log_step: episodes
