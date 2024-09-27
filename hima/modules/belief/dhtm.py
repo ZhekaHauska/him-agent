@@ -56,6 +56,7 @@ class BioDHTM(Layer):
             n_external_vars: int = 0,
             n_external_states: int = 0,
             external_vars_boost: float = 0,
+            parallel_var_boost: float = 0,
             unused_vars_boost: float = 0,
             inverse_temp_context: float = 1.0,
             inverse_temp_internal: float = 1.0,
@@ -86,6 +87,7 @@ class BioDHTM(Layer):
         self.n_context_vars = n_context_vars
         self.n_context_states = n_context_states
         self.external_vars_boost = external_vars_boost
+        self.parallel_var_boost = parallel_var_boost
         self.unused_vars_boost = unused_vars_boost
         self.cells_activity_lr = cells_activity_lr
         self.override_context = override_context
@@ -774,6 +776,15 @@ class BioDHTM(Layer):
                     var_score[used_vars] *= np.exp(-self.unused_vars_boost * counts)
 
                 var_score[self.n_hidden_vars + self.n_context_vars:] += self.external_vars_boost
+                if self.n_hidden_vars == self.n_context_vars:
+                    # boost all vars in the same hidden cluster
+                    # which is a set of hidden vars that copy the same observation var
+                    hid_cluster = var // self.n_hidden_vars_per_obs_var
+                    var_score[
+                        np.arange(self.n_hidden_vars_per_obs_var) +
+                        hid_cluster * self.n_hidden_vars_per_obs_var +
+                        self.n_hidden_vars  # shift to context
+                    ] += self.parallel_var_boost
                 var_score = var_score[candidate_vars_for_cell]
 
                 # sample size can't be bigger than number of variables
