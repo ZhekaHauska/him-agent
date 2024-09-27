@@ -27,6 +27,8 @@ import colormap
 import socket
 from typing import Literal
 from tqdm import trange
+from PIL import Image
+import io
 
 HOST = "127.0.0.1"
 PORT = 5555
@@ -882,64 +884,54 @@ class BioDHTM(Layer):
             )
         return fig
 
-    def draw_factor_graph(self, path=None, show_messages=False):
+    @property
+    def draw_factor_graph(self):
         g = pgv.AGraph(strict=False, directed=False)
 
-        for factors, type_ in zip(
-                (self.context_factors, self.internal_factors),
-                ('c', 'i')
-        ):
-            if factors is not None:
-                if type_ == 'c':
-                    line_color = "#625f5f"
+        type_ = 'c'
+        factors = self.context_factors
+        line_color = "#625f5f"
+        # count segments per factor
+        factors_in_use, n_segments = np.unique(
+            factors.factor_for_segment[factors.segments_in_use],
+            return_counts=True
+        )
+        cmap = colormap.Colormap().get_cmap_heat()
+        factor_score = n_segments / n_segments.max()
+        var_score = entropy(
+            self.internal_messages.reshape((self.n_hidden_vars, -1)),
+            axis=-1
+        )
+        var_score /= (EPS + var_score.max())
+
+        for fid, score in zip(factors_in_use, factor_score):
+            var_next = factors.factor_connections.cellForSegment(fid)
+            g.add_node(
+                f'f{fid}{type_}',
+                shape='box',
+                style='filled',
+                fillcolor=colormap.rgb2hex(
+                    *(cmap(int(255 * score))[:-1]),
+                    normalised=True
+                ),
+                color=line_color
+            )
+
+            g.add_edge(f'h{var_next}', f'f{fid}{type_}', color=line_color)
+            for var_prev in factors.factor_vars[fid]:
+                if var_prev < self.n_hidden_vars:
+                    g.add_edge(f'f{fid}{type_}', f'h{var_prev}', color=line_color)
+                elif self.n_hidden_vars <= var_prev < self.n_hidden_vars + self.n_context_vars:
+                    g.add_edge(f'f{fid}{type_}', f'c{var_prev}', color=line_color)
                 else:
-                    line_color = "#5968ff"
-                # count segments per factor
-                factors_in_use, n_segments = np.unique(
-                    factors.factor_for_segment[factors.segments_in_use],
-                    return_counts=True
-                )
-                cmap = colormap.Colormap().get_cmap_heat()
-                factor_score = n_segments / n_segments.max()
-                var_score = entropy(
-                    self.internal_messages.reshape((self.n_hidden_vars, -1)),
-                    axis=-1
-                )
-                var_score /= (EPS + var_score.max())
-
-                for fid, score in zip(factors_in_use, factor_score):
-                    var_next = factors.factor_connections.cellForSegment(fid)
-                    g.add_node(
-                        f'f{fid}{type_}',
-                        shape='box',
-                        style='filled',
-                        fillcolor=colormap.rgb2hex(
-                            *(cmap(int(255 * score))[:-1]),
-                            normalised=True
-                        ),
-                        color=line_color
-                    )
-                    if show_messages:
-                        g.add_node(
-                            f'h{var_next}',
-                            style='filled',
-                            fillcolor=colormap.rgb2hex(
-                                *(cmap(int(255 * var_score[var_next]))[:-1]),
-                                normalised=True
-                            ),
-                        )
-
-                    g.add_edge(f'h{var_next}', f'f{fid}{type_}', color=line_color)
-                    for var_prev in factors.factor_vars[fid]:
-                        if var_prev < self.n_hidden_vars:
-                            g.add_edge(f'f{fid}{type_}', f'h{var_prev}', color=line_color)
-                        elif self.n_hidden_vars <= var_prev < self.n_hidden_vars + self.n_context_vars:
-                            g.add_edge(f'f{fid}{type_}', f'c{var_prev}', color=line_color)
-                        else:
-                            g.add_edge(f'f{fid}{type_}', f'e{var_prev}', color=line_color)
+                    g.add_edge(f'f{fid}{type_}', f'e{var_prev}', color=line_color)
 
         g.layout(prog='dot')
-        return g.draw(path, format='png')
+        buf = io.BytesIO()
+        g.draw(buf, format='png')
+        buf.seek(0)
+        im = Image.open(buf)
+        return im
 
 
 class DHTM(Layer):
