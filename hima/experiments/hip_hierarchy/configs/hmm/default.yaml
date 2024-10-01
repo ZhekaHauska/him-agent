@@ -1,4 +1,0 @@
-cells_per_column: 10
-learning_mode: bw_iter
-initialization: dirichlet
-alpha: 0.1

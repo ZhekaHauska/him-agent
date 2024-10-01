@@ -1,7 +1,0 @@
-log: true
-project_name: 'trace_test'
-n_steps: 50
-n_epochs: 100
-env: '../configs/gridworld.yaml'
-model: '../configs/trace.yaml'
-seed: null

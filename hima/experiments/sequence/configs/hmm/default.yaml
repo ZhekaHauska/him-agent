@@ -1,4 +1,0 @@
-n_hidden_states: 1440
-learn_every: 25
-n_iter: 10
-tol: 0.01
