@@ -1,0 +1,19 @@
+log: true
+visualize: false
+project_name: animalai_reproduce3
+run_tag: null
+
+action_inertia: 1
+frame_skip: 3
+strategies: null
+observe_action: true
+reward_free: false
+
+setup: custom/free10x10.yaml
+
+scenario: 'configs/scenario/animalai.yaml'
+env_conf: 'configs/environment/animalai/default.yaml'
+agent_conf: 'configs/agent/ec/animalai.yaml'
+metrics_conf: 'configs/metrics/ec/animalai.yaml'
+
+seed: null

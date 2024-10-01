@@ -1,12 +1,12 @@
 from setuptools import setup
 
 setup(
-    name='hima',
+    name='dhtm',
     version='1.1',
-    description='Hierarchical intrinsically motivated agent, HIMA',
-    url='https://github.com/AIRI-Institute/him-agent',
-    author='Petr Kuderov',
-    author_email='kuderov@airi.net',
+    description='Distributed Hebbian Temporal Memory',
+    url='',
+    author='Anonymous Author',
+    author_email='',
     license='AGPLv3',
-    packages=['hima'],
+    packages=['dhtm'],
 )
