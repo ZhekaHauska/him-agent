@@ -1,7 +1,7 @@
 log: true
 visualize: false
-project_name: animalai_lstm_test_pretrain
-run_tag: test2
+project_name: animalai_reproduce2
+run_tag: test1
 
 action_inertia: 1
 frame_skip: 3

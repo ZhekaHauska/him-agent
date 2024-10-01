@@ -1,7 +1,7 @@
 log: true
 visualize: false
 project_name: animalai_reproduce2
-run_tag: null
+run_tag: test3
 
 action_inertia: 1
 frame_skip: 3

@@ -1,11 +1,12 @@
 cells_per_column: 40
-n_hidden_vars_per_obs_var: 3
+n_hidden_vars_per_obs_var: 1
 
 override_context: True
 inhibit_cells_by_default: True
 
 external_vars_boost: 10  # set it non-zero to shift probability of choosing external var for factor
 unused_vars_boost: 0
+parallel_var_boost: 10  # set it non-zero to make the factor graph more parallel
 
 inverse_temp_context: 1.0
 inverse_temp_internal: 1.0
@@ -23,7 +24,7 @@ context_factors_conf:
   min_log_factor_value: -5
   synapse_lr: 0.1
   initial_synapse_value: 0.5
-  max_segments: 30000
+  max_segments: 50000
   var_score_lr: 0.001
   fraction_of_segments_to_prune: 0.0
   segment_activity_lr: 0.001

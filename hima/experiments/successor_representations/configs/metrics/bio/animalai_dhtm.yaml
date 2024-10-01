@@ -1,3 +1,15 @@
+factor_graph:
+  class: ImageMetrics
+  params:
+    metrics:
+      layer/factor_graph:
+        att: agent.agent.cortical_column.layer.draw_factor_graph
+    update_step: episodes
+    update_period: 100
+    log_step: episodes
+    log_period: 100
+    log_fps: 5
+
 step_scalar_metrics:
   class: ScalarMetrics
   params:
