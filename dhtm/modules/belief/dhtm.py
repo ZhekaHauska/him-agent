@@ -40,8 +40,7 @@ PRIOR_MODE = Literal['uniform', 'one-hot', 'dirichlet', 'chinese-restaurant']
 class BioDHTM(Layer):
     """
         Distributed Hebbian Temporal Memory.
-        Probabilistic Temporal Memory implementation,
-        see https://arxiv.org/abs/2310.13391
+        Probabilistic Temporal Memory implementation
         Fully online version.
     """
     context_factors: Factors
