@@ -9,6 +9,5 @@
 *.pkl filter=lfs diff=lfs merge=lfs -text
 *.csv filter=lfs diff=lfs merge=lfs -text
 *.csv.tar.gz filter=lfs diff=lfs merge=lf
+*.ckpt filter=lfs diff=lfs merge=lfs - text
 
-# coppelia model
-*.ttt filter=lfs diff=lfs merge=lfs -text
