@@ -1,13 +1,9 @@
 # ============ Project specific =======================
 
 # media files in package folder
-/hima/**/*.png
-/hima/**/*.svg
-/hima/**/*.gif
-
-# data files in package folder
-/hima/**/*.pkl
-/hima/**/*.csv.tar.gz
+/dhtm/**/*.png
+/dhtm/**/*.svg
+/dhtm/**/*.gif
 
 # build folder
 /build/
@@ -17,9 +13,6 @@ wandb/
 
 # pycharm settings: ignore all with some exceptions
 .idea/*
-!.idea/scopes
-!.idea/copyright
-!.idea/codeStyles
 
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 # please, place all project specific rules above this line
@@ -40,5 +33,3 @@ __pycache__/
 
 # VS Code settings
 .vscode/
-/hima/experiments/successor_representations/configs/agent/bio/encoder/vae/checkpoints/
-/hima/experiments/successor_representations/configs/agent/bio/encoder/kmeans/checkpoints/
