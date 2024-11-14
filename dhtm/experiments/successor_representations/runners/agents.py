@@ -12,6 +12,7 @@ from dhtm.modules.belief.cortial_column.cortical_column import CorticalColumn
 from dhtm.modules.belief.dhtm import BioDHTM, DHTM
 from dhtm.modules.baselines.hmm import FCHMMLayer
 from dhtm.modules.baselines.lstm import LstmLayer
+from dhtm.modules.baselines.rwkv import RwkvLayer
 from dhtm.modules.dvs import DVS
 from dhtm.agents.episodic_control.agent import ECAgent
 import os
@@ -109,7 +110,7 @@ class DatasetCreatorAgent(BaseAgent):
 class BioAgentWrapper(BaseAgent):
     agent: BioHIMA
     camera: DVS | None
-    layer_type: Literal['fchmm', 'dhtm', 'biodhtm', 'lstm']
+    layer_type: Literal['fchmm', 'dhtm', 'biodhtm', 'lstm', 'rwkv']
     encoder_type: Literal['sp_grouped', 'vae', 'kmeans']
 
     def __init__(self, conf):
@@ -160,6 +161,9 @@ class BioAgentWrapper(BaseAgent):
         elif self.layer_type == 'lstm':
             layer_conf['n_external_vars'] = 1
             layer = LstmLayer(**layer_conf)
+        elif self.layer_type == 'rwkv':
+            layer_conf['n_external_vars'] = 1
+            layer = RwkvLayer(**layer_conf)
         else:
             raise NotImplementedError
 
@@ -170,7 +174,7 @@ class BioAgentWrapper(BaseAgent):
 
         conf['agent']['seed'] = self.seed
 
-        if self.layer_type == 'lstm':
+        if self.layer_type in {'lstm', 'rwkv'}:
             self.agent = LstmBioHima(cortical_column, **conf['agent'])
         else:
             self.agent = BioHIMA(
