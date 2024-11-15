@@ -1,6 +1,6 @@
-log: false
-project_name: gridworld_pomdp_reproduce3
-run_tag: no_reset
+log: true
+project_name: gridworld_pomdp_reproduce_final
+run_tag: reset_model
 
 action_inertia: 1
 frame_skip: 0

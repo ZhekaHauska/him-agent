@@ -17,6 +17,7 @@ from dhtm.common.sdr import sparse_to_dense
 from dhtm.experiments.successor_representations.runners.base import BaseRunner
 from dhtm.experiments.successor_representations.runners.utils import to_gray_image
 from dhtm.modules.baselines.lstm import LstmLayer
+from dhtm.modules.baselines.rwkv import RwkvLayer
 from dhtm.modules.baselines.hmm import FCHMMLayer
 
 
@@ -63,21 +64,21 @@ class ICMLRunner(BaseRunner):
 
     def reset_buffer(self):
         layer = self.agent.agent.cortical_column.layer
-        if isinstance(layer, LstmLayer):
+        if isinstance(layer, LstmLayer) or isinstance(layer, RwkvLayer):
             layer.trajectories.clear()
         elif isinstance(layer, FCHMMLayer):
             layer.reset_buffer()
 
     def reset_model(self, checkpoint_path=None):
         layer = self.agent.agent.cortical_column.layer
-        if isinstance(layer, LstmLayer):
+        if isinstance(layer, LstmLayer) or isinstance(layer, RwkvLayer):
             layer.reset_model(checkpoint_path)
         elif isinstance(layer, FCHMMLayer):
             layer.reset_model()
 
     def save_model(self, dir_path):
         layer = self.agent.agent.cortical_column.layer
-        if isinstance(layer, LstmLayer):
+        if isinstance(layer, LstmLayer) or isinstance(layer, RwkvLayer):
             layer.save_model(os.path.join(dir_path, f'{self.logger.name}_{self.episodes}.pt'))
 
     @property
