@@ -1,0 +1,21 @@
+log: true
+visualize: false
+project_name: gridworld_pomdp_scale
+run_tag: test_blocked
+
+action_inertia: 1
+frame_skip: 0
+strategies: null
+observe_actions: true
+reward_free: false
+
+setup: blocked_10x10
+
+scenario: 'configs/scenario/gridworld_pomdp_chenv_dhtm.yaml'
+env_conf: 'configs/environment/gridworld/pomdp.yaml'
+agent_conf: 'configs/agent/bio/gridworld_pomdp_biodhtm.yaml'
+# agent_conf: 'configs/agent/ec/gridworld.yaml'
+metrics_conf: 'configs/metrics/bio/gridworld_pomdp_dhtm.yaml'
+# metrics_conf: 'configs/metrics/ec/gridworld_pomdp.yaml'
+
+seed: null
