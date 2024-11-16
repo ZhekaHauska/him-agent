@@ -14,6 +14,7 @@ from dhtm.modules.belief.utils import get_data, send_string, NumpyEncoder
 from dhtm.modules.belief.factors import Factors
 from dhtm.modules.belief.cortial_column.layer import Layer
 from dhtm.common.sdr import sparse_to_dense
+from dhtm.common.smooth_values import SSValue
 
 from htm.bindings.sdr import SDR
 from htm.bindings.math import Random
@@ -67,6 +68,7 @@ class BioDHTM(Layer):
             override_context: bool = True,
             inhibit_cells_by_default: bool = True,
             reward_modulation: bool = False,
+            reward_mod_lr=(0.2, 0.01),
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -197,11 +199,17 @@ class BioDHTM(Layer):
         self.state_information = 0
         self.surprise = 0
         self.is_any_segment_active = False
+        self.last_reward = 0
         self.total_reward = 0
+        self.ss_reward = SSValue(*reward_mod_lr)
 
     def reset(self):
-        if self.reward_modulation and (self.total_reward < 0):
-            self.context_factors.destroy_segments(self.new_context_segments)
+        self.ss_reward.update(self.total_reward)
+        self.total_reward = 0
+        if self.reward_modulation and (self.last_reward < 0):
+            gamma = self._rng.random()
+            if gamma > abs(self.ss_reward.norm_value):
+                self.context_factors.destroy_segments(self.new_context_segments)
 
         self.internal_messages = np.zeros(
             self.internal_cells,
@@ -260,6 +268,7 @@ class BioDHTM(Layer):
         """
             observation: pattern in sparse representation
         """
+        self.last_reward = reward
         self.total_reward += reward
         self.surprise = - np.log(
             np.clip(
