@@ -1,5 +1,6 @@
 checkpoint_path: "configs/agent/bio/encoder/vae/checkpoints/cat5_50_beta1_0.ckpt"
 use_camera: false
+max_vocab_size: 10000
 model_params:
   in_channels: 3
   latent_dim: 5
