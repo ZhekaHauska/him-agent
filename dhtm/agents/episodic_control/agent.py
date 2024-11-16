@@ -179,3 +179,7 @@ class ECAgent:
     @property
     def total_num_clones(self):
         return self.num_clones.sum()
+
+    @property
+    def dict_size(self):
+        return sum([len(d) for d in self.dictionaries])
