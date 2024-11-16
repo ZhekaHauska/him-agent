@@ -13,7 +13,14 @@ from dhtm.modules.belief.cortial_column.encoders.base import BaseEncoder
 
 
 class CatVAE(BaseEncoder):
-    def __init__(self, checkpoint_path, use_camera, model_params):
+    def __init__(
+            self,
+            checkpoint_path,
+            use_camera,
+            model_params,
+            force_one_hot=False,
+            max_vocab_size=1000
+    ):
         self.use_camera = use_camera
         self.model = CategoricalVAE(**model_params)
         self.input_shape = (64, 64)
@@ -27,8 +34,17 @@ class CatVAE(BaseEncoder):
         self.model = self.model.to(self.device)
         self.model.eval()
 
-        self.n_states = self.model.categorical_dim
-        self.n_vars = self.model.latent_dim
+        self.force_one_hot = force_one_hot
+        self.max_vocab_size = max_vocab_size
+        self.vocab = dict()
+        self.vocab_size = 0
+
+        if self.force_one_hot:
+            self.n_states = self.max_vocab_size
+            self.n_vars = 1
+        else:
+            self.n_states = self.model.categorical_dim
+            self.n_vars = self.model.latent_dim
 
     def encode(self, input_: np.ndarray, learn: bool) -> np.ndarray:
         if self.use_camera:
@@ -44,10 +60,32 @@ class CatVAE(BaseEncoder):
         with torch.no_grad():
             z = self.model.encode(input_)[0]
             dense = F.softmax(z / self.model.temp, dim=-1)
-        dense = dense.squeeze(0).view(self.n_vars, self.n_states)
+        dense = dense.squeeze(0).view(self.model.latent_dim, self.model.categorical_dim)
         dense = dense.detach().cpu().numpy()
-        result = (
+        sparse = (
                 np.argmax(dense, axis=-1) +
-                np.arange(self.n_vars) * self.n_states
+                np.arange(self.model.latent_dim) * self.model.categorical_dim
         )
+
+        if self.force_one_hot:
+            sparse = str(sparse)
+            if sparse in self.vocab:
+                result = self.vocab[sparse]
+            else:
+                if self.vocab_size < self.max_vocab_size:
+                    self.vocab[sparse] = self.vocab_size
+                    result = self.vocab_size
+                    self.vocab_size += 1
+                else:
+                    # randomly replace old key
+                    result = self.vocab.pop(next(iter(self.vocab.keys())))
+                    self.vocab[sparse] = result
+            result = [result]
+        else:
+            result = sparse
+
         return result
+
+    @property
+    def dict_size(self):
+        return len(self.vocab)
