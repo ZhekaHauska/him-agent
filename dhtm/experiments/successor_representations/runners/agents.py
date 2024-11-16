@@ -266,6 +266,8 @@ class BioAgentWrapper(BaseAgent):
             n_states = encoder.n_states
         elif self.encoder_type == 'vae':
             from dhtm.modules.belief.cortial_column.encoders.vae import CatVAE
+            if self.layer_type == 'cscg':
+                self.conf['encoder']['force_one_hot'] = True
             encoder = CatVAE(**self.conf['encoder'])
             n_vars = encoder.n_vars
             n_states = encoder.n_states
@@ -349,6 +351,7 @@ class ECAgentWrapper(BaseAgent):
             n_states = encoder.n_states
         elif self.encoder_type == 'vae':
             from dhtm.modules.belief.cortial_column.encoders.vae import CatVAE
+            self.conf['encoder']['force_one_hot'] = True
             encoder = CatVAE(**self.conf['encoder'])
             n_vars = encoder.n_vars
             n_states = encoder.n_states
