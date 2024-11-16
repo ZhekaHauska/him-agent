@@ -32,6 +32,9 @@ episodic_scalar_metrics:
       layer/num_clones:
         agg: np.mean
         att: agent.agent.total_num_clones
+      encoder/vocab_size:
+        agg: np.mean
+        att: agent.encoder.dict_size
     update_step: episodes
     update_period: 1
     log_step: episodes
