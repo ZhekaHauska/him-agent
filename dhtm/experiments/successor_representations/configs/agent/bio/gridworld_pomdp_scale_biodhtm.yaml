@@ -1,0 +1,18 @@
+layer_conf: configs/agent/bio/layer/biodhtm/gridworld_pomdp_scale.yaml
+camera_mode: null
+agent:
+  gamma: 0.7
+  reward_lr: 0.05
+  learn_rewards_from_state: false
+  inverse_temp: 50
+
+  # p \in [0, 1]: eps-greedy | otherwise (use -1): softmax
+  exploration_eps: -1
+  plan_steps: 100
+  sr_early_stop_uniform: 0.1
+  sr_early_stop_goal: 0.4
+
+  # uniform | on_policy | off_policy
+  sr_estimate_planning: uniform
+
+  lr_surprise: [0.2, 0.01]

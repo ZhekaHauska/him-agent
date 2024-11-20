@@ -1,0 +1,7 @@
+# encoder_conf:
+agent:
+  plan_steps: 100
+  gamma: 0.9
+  reward_lr: 0.1
+  inverse_temp: 500
+  exploration_eps: -1
