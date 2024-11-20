@@ -9,11 +9,11 @@ strategies: null
 observe_actions: true
 reward_free: false
 
-setup: free_10x10
+setup: free_7x7
 
 scenario: 'configs/scenario/gridworld_pomdp_scale.yaml'
 env_conf: 'configs/environment/gridworld/pomdp.yaml'
-agent_conf: 'configs/agent/bio/gridworld_pomdp_scale_biodhtm.yaml'
-metrics_conf: 'configs/metrics/bio/gridworld_pomdp_dhtm.yaml'
+agent_conf: 'configs/agent/ec/gridworld_scale.yaml'
+metrics_conf: 'configs/metrics/ec/gridworld_pomdp.yaml'
 
 seed: null
