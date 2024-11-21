@@ -130,7 +130,7 @@ class BioAgentWrapper(BaseAgent):
         self.encoder_type = conf['encoder_type']
         self.seed = conf['seed']
         self.camera_mode = conf['camera_mode']
-        self.events = None
+        self.events = np.empty(0, dtype=np.uint32)
         self.steps = 0
 
         if self.camera_mode is not None:
