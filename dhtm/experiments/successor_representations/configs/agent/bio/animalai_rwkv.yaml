@@ -1,5 +1,5 @@
 layer_conf: configs/agent/bio/layer/rwkv/animalai.yaml
-encoder_conf: configs/agent/bio/encoder/kmeans/animalai.yaml
+encoder_conf: configs/agent/bio/encoder/vae/animalai.yaml
 camera_mode: null  # null | clip | abs
 agent:
   gamma: 0.9
