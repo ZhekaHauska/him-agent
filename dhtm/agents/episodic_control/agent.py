@@ -60,6 +60,11 @@ class ECAgent:
         self.sf_steps = 0
         self.action_values = np.zeros(self.n_actions)
 
+    def reset_model(self):
+        self.dictionaries = [dict() for _ in range(self.n_actions)]
+        self.rewards = np.zeros(self.n_obs_states, dtype=np.float32)
+        self.num_clones = np.zeros(self.n_obs_states, dtype=np.uint32)
+
     def observe(self, observation, _reward, learn=True):
         # o_t, a_{t-1}
         obs_state, action = observation
