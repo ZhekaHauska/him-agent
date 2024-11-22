@@ -187,7 +187,10 @@ class GridWorld:
         plt.figure()
         sns.heatmap(im, annot=True, cmap='Pastel1', square=True, vmin=min_vis_color, cbar=False)
         if (self.r is not None) and (self.c is not None):
-            plt.text(self.c, self.r+1, 'A')
+            plt.text(self.c, self.r+1, 'A', size='x-large')
+
+        for s in np.flatnonzero(self.terminals):
+            plt.text(s % self.w, s // self.w + 1, 'G', size='x-large')
         plt.axis('off')
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches="tight")
