@@ -19,8 +19,13 @@ class CatVAE(BaseEncoder):
             use_camera,
             model_params,
             force_one_hot=False,
-            max_vocab_size=1000
+            max_vocab_size=1000,
+            n_noise_vars=0,
+            seed=None
     ):
+        self.seed = seed
+        self._rng = np.random.default_rng(self.seed)
+
         self.use_camera = use_camera
         self.model = CategoricalVAE(**model_params)
         self.input_shape = (64, 64)
@@ -34,6 +39,7 @@ class CatVAE(BaseEncoder):
         self.model = self.model.to(self.device)
         self.model.eval()
 
+        self.n_noise_vars = n_noise_vars
         self.force_one_hot = force_one_hot
         self.max_vocab_size = max_vocab_size
         self.vocab = dict()
@@ -45,6 +51,8 @@ class CatVAE(BaseEncoder):
         else:
             self.n_states = self.model.categorical_dim
             self.n_vars = self.model.latent_dim
+            if self.n_noise_vars > 0:
+                self.n_vars += self.n_noise_vars
 
     def encode(self, input_: np.ndarray, learn: bool) -> np.ndarray:
         if self.use_camera:
@@ -62,9 +70,13 @@ class CatVAE(BaseEncoder):
             dense = F.softmax(z / self.model.temp, dim=-1)
         dense = dense.squeeze(0).view(self.model.latent_dim, self.model.categorical_dim)
         dense = dense.detach().cpu().numpy()
+        if self.n_noise_vars > 0:
+            noise = self._rng.random((self.n_noise_vars, self.model.categorical_dim))
+            dense = np.vstack([dense, noise])
+
         sparse = (
                 np.argmax(dense, axis=-1) +
-                np.arange(self.model.latent_dim) * self.model.categorical_dim
+                np.arange(self.model.latent_dim + self.n_noise_vars) * self.model.categorical_dim
         )
 
         if self.force_one_hot:
