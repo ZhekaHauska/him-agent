@@ -60,6 +60,7 @@ class BioDHTM(Layer):
             external_vars_boost: float = 0,
             parallel_var_boost: float = 0,
             unused_vars_boost: float = 0,
+            non_overlap_boost: float = 0,
             inverse_temp_context: float = 1.0,
             inverse_temp_internal: float = 1.0,
             cell_activation_threshold: float = EPS,
@@ -92,6 +93,7 @@ class BioDHTM(Layer):
         self.external_vars_boost = external_vars_boost
         self.parallel_var_boost = parallel_var_boost
         self.unused_vars_boost = unused_vars_boost
+        self.non_overlap_boost = non_overlap_boost
         self.cells_activity_lr = cells_activity_lr
         self.override_context = override_context
         self.inhibit_cells_by_default = inhibit_cells_by_default
@@ -785,6 +787,15 @@ class BioDHTM(Layer):
                     # TODO can we make it more static to not compute it in cycle?
                     var_score[used_vars] *= np.exp(-self.unused_vars_boost * counts)
 
+                if len(cell_factors) > 0:
+                    local_used_vars, local_counts = np.unique(
+                        factors.factor_vars[cell_factors].flatten(),
+                        return_counts=True
+                    )
+                    var_score[
+                        candidate_vars[np.isin(candidate_vars, local_used_vars, invert=True)]
+                    ] += self.non_overlap_boost
+
                 var_score[self.n_hidden_vars + self.n_context_vars:] += self.external_vars_boost
                 if self.n_hidden_vars == self.n_context_vars:
                     # boost all vars in the same hidden cluster
@@ -906,11 +917,6 @@ class BioDHTM(Layer):
         )
         cmap = colormap.Colormap().get_cmap_heat()
         factor_score = n_segments / n_segments.max()
-        var_score = entropy(
-            self.internal_messages.reshape((self.n_hidden_vars, -1)),
-            axis=-1
-        )
-        var_score /= (EPS + var_score.max())
 
         for fid, score in zip(factors_in_use, factor_score):
             var_next = factors.factor_connections.cellForSegment(fid)
