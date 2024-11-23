@@ -821,47 +821,13 @@ class BioDHTM(Layer):
                     replace=False
                 )
 
-                factor_id = factors.factor_connections.createSegment(
-                    var,
-                    maxSegmentsPerCell=factors.max_factors_per_var
-                )
-
-                factors.factor_connections.growSynapses(
-                    factor_id,
-                    variables,
-                    0.6,
-                    self._legacy_rng,
-                    maxNew=factors.n_vars_per_factor
-                )
-
-                factors.factor_vars[factor_id] = variables
-                factors.factors_in_use = np.append(factors.factors_in_use, factor_id)
+                factor_id = factors.create_factor(variables, var)
 
             candidates = self._filter_cells_by_vars(growth_candidates, variables)
 
-            # don't create a segment that will never activate
-            if len(candidates) < factors.n_vars_per_factor:
-                continue
-
-            new_segment = factors.connections.createSegment(cell, factors.max_segments_per_cell)
-
-            factors.connections.growSynapses(
-                new_segment,
-                candidates,
-                0.6,
-                self._legacy_rng,
-                maxNew=factors.n_vars_per_factor
-            )
-
-            factors.factor_for_segment[new_segment] = factor_id
-            factors.log_factor_values_per_segment[new_segment] = factors.initial_log_factor_value
-            factors.receptive_fields[new_segment] = candidates
-            factors.synapse_efficiency[new_segments] = np.full_like(
-                factors.synapse_efficiency.shape[-1], fill_value=factors.initial_synapse_value
-            )
-            factors.segment_activity[new_segment] = 1.0
-
-            new_segments.append(new_segment)
+            new_segment = factors.create_segment(candidates, cell, factor_id)
+            if new_segment is not None:
+                new_segments.append(new_segment)
 
         return np.array(new_segments, dtype=UINT_DTYPE)
 
