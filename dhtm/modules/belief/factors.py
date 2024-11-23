@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dhtm.modules.htm.connections import Connections
 from dhtm.modules.belief.utils import EPS, INT_TYPE, UINT_DTYPE, REAL_DTYPE, REAL64_DTYPE
+from htm.bindings.math import Random
 import numpy as np
 
 
@@ -30,7 +31,8 @@ class Factors:
             fraction_of_segments_to_prune,
             max_segments_per_cell,
             min_log_factor_value=-1,
-            min_segment_activity=0
+            min_segment_activity=0,
+            seed=None
     ):
         """
             hidden vars are those that we predict, or output vars
@@ -106,6 +108,12 @@ class Factors:
         self.segments_in_use = np.empty(0, dtype=UINT_DTYPE)
         self.factors_in_use = np.empty(0, dtype=UINT_DTYPE)
         self.factor_score = np.empty(0, dtype=REAL_DTYPE)
+
+        self.seed = seed
+        if self.seed:
+            self._legacy_rng = Random(self.seed)
+        else:
+            self._legacy_rng = Random()
 
     def update_factor_score(self):
         # sum factor values for every factor
@@ -250,3 +258,46 @@ class Factors:
         log_likelihood = dependent_part + independent_part
 
         return log_likelihood
+
+    def create_factor(self, vars_from, var_to):
+        factor_id = self.factor_connections.createSegment(
+            var_to,
+            maxSegmentsPerCell=self.max_factors_per_var
+        )
+
+        self.factor_connections.growSynapses(
+            factor_id,
+            vars_from,
+            0.6,
+            self._legacy_rng,
+            maxNew=self.n_vars_per_factor
+        )
+
+        self.factor_vars[factor_id] = vars_from
+        self.factors_in_use = np.append(self.factors_in_use, factor_id)
+        return factor_id
+
+    def create_segment(self, candidates, cell, factor_id):
+        # don't create a segment that will never activate
+        if len(candidates) < self.n_vars_per_factor:
+            return
+
+        new_segment = self.connections.createSegment(cell, self.max_segments_per_cell)
+
+        self.connections.growSynapses(
+            new_segment,
+            candidates,
+            0.6,
+            self._legacy_rng,
+            maxNew=self.n_vars_per_factor
+        )
+
+        self.factor_for_segment[new_segment] = factor_id
+        self.log_factor_values_per_segment[new_segment] = self.initial_log_factor_value
+        self.receptive_fields[new_segment] = candidates
+        self.synapse_efficiency[new_segment] = np.full_like(
+            self.synapse_efficiency.shape[-1], fill_value=self.initial_synapse_value
+        )
+        self.segment_activity[new_segment] = 1.0
+
+        return new_segment
