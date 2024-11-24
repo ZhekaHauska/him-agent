@@ -70,6 +70,7 @@ class BioDHTM(Layer):
             inhibit_cells_by_default: bool = True,
             reward_modulation: bool = False,
             reward_mod_lr=(0.2, 0.01),
+            inverse_temp_factor_score: float = 1.0,
             seed: int = None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -98,6 +99,7 @@ class BioDHTM(Layer):
         self.override_context = override_context
         self.inhibit_cells_by_default = inhibit_cells_by_default
         self.reward_modulation = reward_modulation
+        self.inverse_temp_factor_score = inverse_temp_factor_score
 
         self.cells_per_column = cells_per_column
         self.n_hidden_states = cells_per_column * n_obs_states
@@ -756,7 +758,7 @@ class BioDHTM(Layer):
                 cell_factors, factors_with_segments
             )]
 
-            score = np.zeros(factors.max_factors_per_var)
+            score = np.ones(factors.max_factors_per_var)
             candidate_factors = np.full(factors.max_factors_per_var, fill_value=-1)
 
             if len(cell_factors) > 0:
@@ -768,7 +770,7 @@ class BioDHTM(Layer):
             factor_id = self._rng.choice(
                 candidate_factors,
                 size=1,
-                p=softmax(score)
+                p=softmax(score, beta=self.inverse_temp_factor_score)
             )
 
             if factor_id != -1:
