@@ -90,11 +90,11 @@ class AnimalAIWrapper(BaseEnvironment):
 
         if len(dec) > 0:
             obs = self.environment.get_obs_dict(dec.obs)["camera"]
-            reward += dec.reward
+            reward += dec.reward[0]
 
         if len(term):
             obs = self.environment.get_obs_dict(term.obs)["camera"]
-            reward += term.reward
+            reward += term.reward[0]
             is_terminal = True
 
         return obs, reward, is_terminal
