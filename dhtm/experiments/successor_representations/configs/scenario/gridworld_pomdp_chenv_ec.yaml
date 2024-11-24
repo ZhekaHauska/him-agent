@@ -24,3 +24,8 @@
   params:
     setup: blocked
     setup_id: 1
+
+#- condition: ['setup_episodes', 'equal', 0, 'repeat']
+#  check_every: 'episodes'
+#  action: reset_model
+#  params: {}
