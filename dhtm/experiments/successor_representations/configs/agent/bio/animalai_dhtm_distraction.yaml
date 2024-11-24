@@ -12,6 +12,7 @@ agent:
   plan_steps: 50
   sr_early_stop_uniform: 0.1
   sr_early_stop_goal: 0.5
+  reward_threshold: null
 
   # uniform | on_policy | off_policy
   sr_estimate_planning: uniform
