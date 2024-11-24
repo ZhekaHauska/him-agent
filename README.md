@@ -24,18 +24,29 @@ To run an experiment from the paper:
 All configs are in the folder `him-agent/hima/experiments/successor_representations/configs/runner`.
 The folder contains configs for the following experiments:
 ```    
-## Gridworld experiments with changing partially observable environment (Figure 2):
+# Gridworld experiments with changing partially observable environment (Figure 2):
 girdworld_dhtm.yaml
 gridworld_cscg.yaml
 gridworld_lstm.yaml
+gridworld_rwkv.yaml
 girdworld_ec.yaml
 
-## AnimalAI experiment (Figure 3)
+# AnimalAI experiment (Figure 3)
 animalai_dhtm.yaml
 animalai_dhtm_vae.yaml  # DHTM with Categorical VAE encoder
 animalai_ec.yaml
 animalai_cscg.yaml
 animalai_lstm.yaml
+animalai_rwkv.yaml
+
+# Additional experiments (Appendix H)
+## H.2 Scalability
+gridworld_dhtm_scale.yaml
+gridworld_ec_scale.yaml
+
+## H.3 Noise tolerance
+animalai_dhtm_distraction.yaml
+animalai_ec_distraction.yaml
 
 ```
 To reproduce figures from the paper, run each config at least 5 times with wandb logging enabled.
