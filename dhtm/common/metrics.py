@@ -83,9 +83,10 @@ class ScalarMetrics(BaseMetric):
                  update_step, log_step, update_period, log_period):
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
 
-        self.metrics = {metric: [] for metric in metrics.keys()}
+        self.metrics = list(metrics.keys())
+        self.values = dict()
 
-        for metric in metrics.keys():
+        for metric in self.metrics:
             self.logger.define_metric(metric, step_metric=self.log_step)
 
         self.agg_func = {
@@ -98,9 +99,17 @@ class ScalarMetrics(BaseMetric):
         }
 
     def update(self):
-        for name in self.metrics.keys():
+        for name in self.metrics:
             value = self.get_attr(self.att_to_log[name])
-            self.metrics[name].append(value)
+            if hasattr(value, '__len__'):
+                for i, x in enumerate(value):
+                    if not (name+f'#{i}' in self.values):
+                        self.values[name+f'#{i}'] = list()
+                    self.values[name+f'#{i}'].append(x)
+            else:
+                if not (name in self.values):
+                    self.values[name] = list()
+                self.values[name].append(value)
 
     def log(self, step):
         log_dict = {self.log_step: step}
@@ -109,12 +118,12 @@ class ScalarMetrics(BaseMetric):
         self._reset()
 
     def _reset(self):
-        self.metrics = {metric: [] for metric in self.metrics.keys()}
+        self.values = dict()
 
     def _summarize(self):
         return {
-            key: self.agg_func[key](values)
-            for key, values in self.metrics.items()
+            key: self.agg_func[key.split('#')[0]](values)
+            for key, values in self.values.items()
             if len(values) > 0
         }
 
