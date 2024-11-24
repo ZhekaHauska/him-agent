@@ -108,6 +108,7 @@ class Factors:
         self.segments_in_use = np.empty(0, dtype=UINT_DTYPE)
         self.factors_in_use = np.empty(0, dtype=UINT_DTYPE)
         self.factor_score = np.empty(0, dtype=REAL_DTYPE)
+        self.segments_per_factor = np.empty(0, dtype=UINT_DTYPE)
 
         self.seed = seed
         if self.seed:
@@ -146,6 +147,7 @@ class Factors:
 
             self.factors_in_use = factors_with_segments.copy()
             self.factor_score = factor_score
+            self.segments_per_factor = counts
         else:
             for factor in self.factors_in_use:
                 self.factor_connections.destroySegment(factor)
