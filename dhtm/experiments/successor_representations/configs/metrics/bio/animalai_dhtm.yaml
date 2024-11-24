@@ -44,6 +44,12 @@ episodic_scalar_metrics:
       main_metrics/total_steps:
         agg: np.mean
         att: total_steps
+      layer/factor_score:
+        agg: np.mean
+        att: agent.agent.cortical_column.layer.context_factors.factor_score
+      layer/segments_per_factor:
+        agg: np.mean
+        att: agent.agent.cortical_column.layer.context_factors.segments_per_factor
     update_step: episodes
     update_period: 1
     log_step: episodes
