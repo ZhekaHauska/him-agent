@@ -1,0 +1,7 @@
+encoder_conf: configs/agent/bio/encoder/vae/animalai_distraction.yaml
+agent:
+  plan_steps: 50
+  gamma: 0.9
+  reward_lr: 0.1
+  inverse_temp: 100
+  exploration_eps: -1
