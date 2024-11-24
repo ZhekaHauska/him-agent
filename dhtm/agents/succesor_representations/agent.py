@@ -44,6 +44,7 @@ class BioHIMA:
             sr_early_stop_uniform: float | None = None,
             sr_early_stop_goal: float | None = None,
             sr_early_stop_surprise: float | None = None,
+            reward_threshold: float | None = 0.0,
             lr_surprise=(0.2, 0.01),
             seed: int | None,
     ):
@@ -64,6 +65,7 @@ class BioHIMA:
         self.sr_early_stop_uniform = sr_early_stop_uniform
         self.sr_early_stop_goal = sr_early_stop_goal
         self.sr_early_stop_surprise = sr_early_stop_surprise
+        self.reward_threshold = reward_threshold
 
         self.sr_estimate_planning = SrEstimatePlanning[sr_estimate_planning.upper()]
 
@@ -148,6 +150,7 @@ class BioHIMA:
         action_values = np.zeros(n_actions)
         dense_action = np.zeros_like(action_values)
 
+        self.sf_steps = 0
         for action in range(n_actions):
             # hacky way to clean previous one-hot, for 0-th does nothing
             dense_action[action - 1] = 0
@@ -160,7 +163,7 @@ class BioHIMA:
             )
 
             if self.learn_rewards_from_state:
-                sf, self.sf_steps, sr = self.generate_sf(
+                sf, sf_steps, sr = self.generate_sf(
                     self.max_plan_steps,
                     initial_messages=self.cortical_column.layer.prediction_cells,
                     initial_prediction=self.cortical_column.layer.prediction_columns,
@@ -172,7 +175,7 @@ class BioHIMA:
                     sr * self.rewards
                 ) / self.cortical_column.layer.n_hidden_vars
             else:
-                sf, self.sf_steps = self.generate_sf(
+                sf, sf_steps = self.generate_sf(
                     self.max_plan_steps,
                     initial_messages=self.cortical_column.layer.prediction_cells,
                     initial_prediction=self.cortical_column.layer.prediction_columns,
@@ -182,7 +185,7 @@ class BioHIMA:
                 action_values[action] = np.sum(
                     sf * self.rewards
                 ) / self.cortical_column.layer.n_obs_vars
-
+            self.sf_steps += sf_steps
             self._restore_last_snapshot(pop=False)
 
         self.state_snapshot_stack.pop()
@@ -328,9 +331,17 @@ class BioHIMA:
             uniform = False
 
         if self.sr_early_stop_goal is not None:
+            if self.reward_threshold is None:
+                positive_mask = self.rewards > 0
+                if np.any(positive_mask):
+                    threshold = self.rewards[positive_mask].mean()
+                else:
+                    threshold = 0
+            else:
+                threshold = self.reward_threshold
             goal = np.any(
                 np.sum(
-                    (messages.flatten() * (self.rewards > 0)).reshape(
+                    (messages.flatten() * (self.rewards > threshold)).reshape(
                         n_vars, -1
                     ),
                     axis=-1
