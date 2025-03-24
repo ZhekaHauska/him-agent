@@ -54,7 +54,7 @@ class ECAgent:
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
 
         self.state = (-1, -1)
-        self.cluster = {(-1, -1)}
+        self.cluster = {(-1, -1): 1.0}
         self.gamma = gamma
         self.trace_gamma = trace_gamma
         self.reward_lr = reward_lr
@@ -88,7 +88,7 @@ class ECAgent:
 
     def reset(self):
         self.state = (-1, -1)
-        self.cluster = {(-1, -1)}
+        self.cluster = {(-1, -1): 1.0}
         self.goal_found = False
         self.surprise = 0
         self.first_level_error = 0
@@ -116,28 +116,34 @@ class ECAgent:
             self.first_level_error = 0
             current_state = predicted_state
 
-        predicted_cluster = set()
+        predicted_clusters = dict()
         obs_probs = np.zeros(self.n_obs_states)
         for c in self.cluster:
             pcs = self.second_level_transitions[action].get(c)
             if pcs is not None:
                 for pc in pcs:
                     pc, prob = pc[:2], pc[-1]
-                    predicted_cluster.add(pc)
+                    prob = self.cluster[c] * prob
+                    if pc in predicted_clusters:
+                        predicted_clusters[pc] += prob
+                    else:
+                        predicted_clusters[pc] = prob
                     obs_probs[pc[0]] += prob
 
         self.second_level_none = obs_probs.sum()
         self.second_level_error = - np.log(obs_probs[obs_state] + EPS)
         # posterior update of predicted clusters (IMPORTANT! we didn't do that for previous tests)
-        predicted_cluster = {c for c in predicted_cluster if c[0] == obs_state}
+        predicted_clusters = {c: p for c, p in predicted_clusters.items() if c[0] == obs_state}
+        norm = sum(list(predicted_clusters.values())) + EPS
+        predicted_clusters = {c: p/norm for c, p in predicted_clusters.items()}
 
         self.generalised = self.second_level_error < self.first_level_error
         # state induced cluster
         cluster = self.state_to_cluster.get(current_state)
         if cluster is not None:
-            predicted_cluster = {(current_state[0], cluster)}
+            predicted_clusters = {(current_state[0], cluster): 1.0}
 
-        current_cluster = predicted_cluster
+        current_clusters = predicted_clusters
 
         if learn:
             if current_state is not None:
@@ -195,7 +201,7 @@ class ECAgent:
                 self._update_second_level()
 
         self.state = current_state
-        self.cluster = current_cluster
+        self.cluster = current_clusters
         self.time_step += 1
 
     def sample_action(self):
