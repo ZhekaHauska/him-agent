@@ -161,7 +161,8 @@ class ECAgent:
             if len(traces) > 0:
                 traces = np.column_stack(traces)
                 # TODO add different similarity functions
-                scores = self.memory_trace @ traces
+                norms = np.linalg.norm(traces, axis=0) * np.linalg.norm(self.memory_trace)
+                scores = (self.memory_trace @ traces) / (norms + EPS)
             else:
                 scores = np.empty(0, dtype=np.float32)
             scores = np.append(scores, self.merge_threshold)

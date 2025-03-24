@@ -2,7 +2,7 @@
 agent:
   plan_steps: 50
   new_cluster_weight: 1  # the bigger this number the more clusters will be created
-  merge_threshold: 0.0
+  merge_threshold: 0.5
   update_period: 1000
   gamma: 0.8
   trace_gamma: 0.8
