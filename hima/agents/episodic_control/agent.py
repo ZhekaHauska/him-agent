@@ -55,6 +55,10 @@ class ECAgent:
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
+        self.cluster_to_states[-1] = {(-1, -1)}
+        self.state_to_cluster[(-1, -1)] = -1
+        self.cluster_to_obs[-1] = -1
+
         self.gamma = gamma
         self.trace_gamma = trace_gamma
         self.reward_lr = reward_lr
@@ -138,6 +142,7 @@ class ECAgent:
         predicted_clusters = {c: p/norm for c, p in predicted_clusters.items()}
 
         self.generalised = self.second_level_error < self.first_level_error
+
         # state induced cluster
         cluster = self.state_to_cluster.get(current_state)
         if cluster is not None:
@@ -152,50 +157,51 @@ class ECAgent:
             if (self.state is not None) and (current_state is not None):
                 self.first_level_transitions[action][self.state] = current_state
 
-            # add state to a cluster with the most similar memory trace
-            # or create a new cluster
-            # p(c | s) = N * p(c) * exp(mem_s * mem_c)
-            # where p(c) - chinese-restaurant prior
-            candidates = list(self.obs_to_clusters[obs_state])
+            if cluster is None:
+                # add state to a cluster with the most similar memory trace
+                # or create a new cluster
+                # p(c | s) = N * p(c) * exp(mem_s * mem_c)
+                # where p(c) - chinese-restaurant prior
+                candidates = list(self.obs_to_clusters[obs_state])
 
-            traces = list()
-            for c in candidates:
-                trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
-                trace = np.vstack(trace).mean(axis=0)
-                traces.append(trace)
+                traces = list()
+                for c in candidates:
+                    trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
+                    trace = np.vstack(trace).mean(axis=0)
+                    traces.append(trace)
 
-            if len(traces) > 0:
-                traces = np.column_stack(traces)
-                # TODO add different similarity functions
-                norms = np.linalg.norm(traces, axis=0) * np.linalg.norm(self.memory_trace)
-                scores = (self.memory_trace @ traces) / (norms + EPS)
-            else:
-                scores = np.empty(0, dtype=np.float32)
-            scores = np.append(scores, self.merge_threshold)
-            scores = np.exp(scores)
+                if len(traces) > 0:
+                    traces = np.column_stack(traces)
+                    # TODO add different similarity functions
+                    norms = np.linalg.norm(traces, axis=0) * np.linalg.norm(self.memory_trace)
+                    scores = (self.memory_trace @ traces) / (norms + EPS)
+                else:
+                    scores = np.empty(0, dtype=np.float32)
+                scores = np.append(scores, self.merge_threshold)
+                scores = np.exp(scores)
 
-            lengths = [
-                len(self.cluster_to_states[c])
-                for c in candidates
-            ]
-            lengths.append(self.new_cluster_weight)
-            lengths = np.array(lengths, dtype=np.float32)
+                lengths = [
+                    len(self.cluster_to_states[c])
+                    for c in candidates
+                ]
+                lengths.append(self.new_cluster_weight)
+                lengths = np.array(lengths, dtype=np.float32)
 
-            c_prior = lengths / (lengths.sum() + EPS)
-            c_posterior = c_prior * scores
-            c_posterior = c_posterior / (c_posterior.sum() + EPS)
-            
-            candidates.append(-1)
-            winner = self._rng.choice(candidates, p=c_posterior)
-            if winner == -1:
-                winner = self.cluster_counter
-                self.cluster_counter += 1
-                self.cluster_to_states[winner] = set()
-                self.cluster_to_obs[winner] = obs_state
-                self.obs_to_clusters[obs_state].add(winner)
+                c_prior = lengths / (lengths.sum() + EPS)
+                c_posterior = c_prior * scores
+                c_posterior = c_posterior / (c_posterior.sum() + EPS)
 
-            self.cluster_to_states[winner].add(current_state)
-            self.state_to_cluster[current_state] = winner
+                candidates.append(-1)
+                winner = self._rng.choice(candidates, p=c_posterior)
+                if winner == -1:
+                    winner = self.cluster_counter
+                    self.cluster_counter += 1
+                    self.cluster_to_states[winner] = set()
+                    self.cluster_to_obs[winner] = obs_state
+                    self.obs_to_clusters[obs_state].add(winner)
+
+                self.cluster_to_states[winner].add(current_state)
+                self.state_to_cluster[current_state] = winner
 
             if (self.time_step % self.update_period) == 0:
                 self._update_second_level()
