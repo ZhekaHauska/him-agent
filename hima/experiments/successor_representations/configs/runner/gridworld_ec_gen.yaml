@@ -1,6 +1,6 @@
-log: false
-project_name: gridworld_ec_gen
-run_tag: test6
+log: true
+project_name: gridworld_ec_gen2
+run_tag: test1
 
 action_inertia: 1
 frame_skip: 0

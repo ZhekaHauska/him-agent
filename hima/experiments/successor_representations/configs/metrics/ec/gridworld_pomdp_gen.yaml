@@ -76,9 +76,6 @@ episodic_scalar_metrics:
       layer/num_clones:
         agg: np.mean
         att: agent.agent.total_num_clones
-      layer/num_free_states:
-        agg: np.mean
-        att: agent.agent.num_free_states
     update_step: episodes
     update_period: 1
     log_step: episodes

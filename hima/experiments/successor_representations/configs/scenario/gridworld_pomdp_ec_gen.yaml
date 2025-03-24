@@ -10,11 +10,11 @@
   check_every: 'episodes'
   action: switch_logging
   params: {}
-- condition: ['episodes', 'equal', 500, 'norepeat']
-  check_every: 'episodes'
-  action: agent.agent.sleep_phase
-  params:
-    clustering_iterations: 10000
+#- condition: ['episodes', 'equal', 500, 'norepeat']
+#  check_every: 'episodes'
+#  action: agent.agent.sleep_phase
+#  params:
+#    clustering_iterations: 10000
 
 #- condition: ['steps', 'mod', 1000, 'repeat']
 #  check_every: 'steps'
