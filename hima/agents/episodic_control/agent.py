@@ -423,14 +423,15 @@ class ECAgent:
         return sum([len(d_a) for d_a in self.second_level_transitions])
 
     @property
-    def draw_transition_graph(self):
+    def draw_transition_graph(self, threshold=0.1):
         g = pgv.AGraph(strict=False, directed=True)
 
         for a, d_a in enumerate(self.second_level_transitions):
             for c in d_a:
                 outs = d_a[c]
                 for out in outs:
-                    g.add_edge(c, out, label=a)
+                    if out[-1] > threshold:
+                        g.add_edge(c, out[:2], label=f"{a}:{round(out[-1], 2)}")
 
         g.layout(prog='dot')
         buf = io.BytesIO()

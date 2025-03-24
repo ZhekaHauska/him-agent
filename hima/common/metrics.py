@@ -983,6 +983,8 @@ class EClusterPurity(BaseMetric):
         cluster_error = list()
         clusters = self.runner.agent.agent.cluster_to_states
         for cluster_id in clusters:
+            if cluster_id == -1:
+                continue
             cluster = clusters[cluster_id]
             cluster_labels = np.array([self.state_labels[s] for s in cluster])
             labels, counts = np.unique(cluster_labels, return_counts=True)

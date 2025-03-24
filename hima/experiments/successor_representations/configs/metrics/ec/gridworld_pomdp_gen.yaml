@@ -4,25 +4,23 @@ setup:
     metrics:
       agent/setup:
         att: environment.render
-      layer/second_level_transitions:
-        att: agent.agent.draw_transition_graph
     update_step: current_setup_id
     update_period: 1
     log_step: current_setup_id
     log_period: 1
     log_fps: 5
 
-#transition:
-#  class: ImageMetrics
-#  params:
-#    metrics:
-#      layer/second_level_transitions:
-#        att: agent.agent.draw_transition_graph
-#    update_step: episodes
-#    update_period: 100
-#    log_step: episodes
-#    log_period: 100
-#    log_fps: 5
+transition:
+  class: ImageMetrics
+  params:
+    metrics:
+      layer/second_level_transitions:
+        att: agent.agent.draw_transition_graph
+    update_step: episodes
+    update_period: 500
+    log_step: episodes
+    log_period: 500
+    log_fps: 5
 
 step_scalar_metrics:
   class: ScalarMetrics
