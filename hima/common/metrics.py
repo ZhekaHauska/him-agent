@@ -988,8 +988,8 @@ class EClusterPurity(BaseMetric):
             cluster = clusters[cluster_id]
             cluster_labels = np.array([self.state_labels[s] for s in cluster])
             labels, counts = np.unique(cluster_labels, return_counts=True)
-            score = counts / np.max(counts)
-            cluster_error.append(score.sum())
+            score = np.max(counts) / counts.sum()
+            cluster_error.append(score)
 
         log_dict[self.name] = np.median(np.array(cluster_error))
         self.logger.log(log_dict)
