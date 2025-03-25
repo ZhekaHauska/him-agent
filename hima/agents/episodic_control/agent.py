@@ -108,7 +108,7 @@ class ECAgent:
         # o_t, a_{t-1}
         obs_state, action = observation
         obs_dense = sparse_to_dense(obs_state, size=self.n_obs_states, dtype=np.float32)
-        self.memory_trace = obs_dense + self.trace_gamma * self.memory_trace
+        self.memory_trace = self.trace_gamma * self.memory_trace
 
         obs_state = int(obs_state[0])
         predicted_state = self.first_level_transitions[action].get(self.state)
@@ -206,6 +206,7 @@ class ECAgent:
             if (self.time_step % self.update_period) == 0:
                 self._update_second_level()
 
+        self.memory_trace += obs_dense
         self.state = current_state
         self.cluster = current_clusters
         self.time_step += 1
@@ -423,7 +424,7 @@ class ECAgent:
         return sum([len(d_a) for d_a in self.second_level_transitions])
 
     @property
-    def draw_transition_graph(self, threshold=0.1):
+    def draw_transition_graph(self, threshold=0.2):
         g = pgv.AGraph(strict=False, directed=True)
 
         for a, d_a in enumerate(self.second_level_transitions):
