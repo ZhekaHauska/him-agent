@@ -7,6 +7,7 @@
 import os
 import numpy as np
 
+from hima.agents.episodic_control.agent import ECAgent
 from hima.common.lazy_imports import lazy_import
 from typing import Dict, Literal, Optional
 
@@ -14,6 +15,7 @@ from hima.common.sdr import sparse_to_dense
 from hima.modules.belief.utils import normalize
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
+from sklearn.metrics.pairwise import cosine_similarity
 
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
@@ -953,6 +955,49 @@ class ArrayMetrics(BaseMetric):
         self.metrics = {metric: [] for metric in self.metrics.keys()}
 
 
+class EClusterSimilarity(BaseMetric):
+    agent: ECAgent
+    def __init__(
+            self, name,
+            logger, runner,
+            update_step, log_step, update_period, log_period,
+    ):
+        """
+            Cluster pairwise similarity within one observational state.
+        """
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.agent = self.runner.agent.agent
+
+    def update(self):
+        pass
+
+    def log(self, step):
+        log_dict = {
+            self.log_step: step
+        }
+
+        for obs_state in self.agent.obs_to_clusters:
+            clusters = self.agent.obs_to_clusters[obs_state]
+            if len(clusters) == 0:
+                continue
+
+            traces = list()
+            for c in clusters:
+                trace = [
+                    self.agent.state_to_memory_trace[s]
+                    for s in self.agent.cluster_to_states[c]
+                ]
+                trace = np.vstack(trace).mean(axis=0)
+                traces.append(trace)
+            traces = np.vstack(traces)
+            pws = cosine_similarity(traces)
+            log_dict[self.name + f'/obs_state_{obs_state}'] = wandb.Image(sns.heatmap(pws))
+            plt.close()
+
+        self.logger.log(log_dict)
+
+
 class EClusterPurity(BaseMetric):
     def __init__(
             self, name, state_att,
@@ -960,7 +1005,7 @@ class EClusterPurity(BaseMetric):
             update_step, log_step, update_period, log_period,
     ):
         """
-            Effective number of state labels per cluster
+            Relative weight of cluster's the most common label
         """
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
         self.name = name
@@ -993,4 +1038,3 @@ class EClusterPurity(BaseMetric):
 
         log_dict[self.name] = np.median(np.array(cluster_error))
         self.logger.log(log_dict)
-

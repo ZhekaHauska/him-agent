@@ -10,17 +10,17 @@ setup:
     log_period: 1
     log_fps: 5
 
-transition:
-  class: ImageMetrics
-  params:
-    metrics:
-      layer/second_level_transitions:
-        att: agent.agent.draw_transition_graph
-    update_step: episodes
-    update_period: 500
-    log_step: episodes
-    log_period: 500
-    log_fps: 5
+#transition:
+#  class: ImageMetrics
+#  params:
+#    metrics:
+#      layer/second_level_transitions:
+#        att: agent.agent.draw_transition_graph
+#    update_step: episodes
+#    update_period: 500
+#    log_step: episodes
+#    log_period: 500
+#    log_fps: 5
 
 step_scalar_metrics:
   class: ScalarMetrics
@@ -130,12 +130,21 @@ state_prediction:
 cluster_purity:
   class: EClusterPurity
   params:
-    name: agent/cluster_error
+    name: agent/cluster_purity
     state_att: state
     update_step: steps
     update_period: 1
     log_step: episodes
     log_period: 10
+
+cluster_similarity:
+  class: EClusterSimilarity
+  params:
+    name: cluster_similarity
+    update_step: episodes
+    update_period: 100
+    log_step: episodes
+    log_period: 100
 
 #value_function:
 #  class: Histogram
