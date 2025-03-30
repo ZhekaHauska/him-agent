@@ -65,7 +65,13 @@ class ECAgent:
         self.rewards = np.zeros(self.n_obs_states, dtype=np.float32)
         self.num_clones = np.zeros(self.n_obs_states, dtype=np.uint32)
         self.action_values = np.zeros(self.n_actions)
-        self.memory_trace = np.zeros(self.n_obs_states)
+
+        if isinstance(self.trace_gamma, float):
+            self.trace_gamma = np.array([self.trace_gamma])
+        else:
+            self.trace_gamma = np.array(self.trace_gamma)
+
+        self.memory_trace = np.zeros((len(self.trace_gamma), self.n_obs_states))
 
         self.first_level_error = 0
         self.second_level_error = 0
@@ -108,7 +114,7 @@ class ECAgent:
         # o_t, a_{t-1}
         obs_state, action = observation
         obs_dense = sparse_to_dense(obs_state, size=self.n_obs_states, dtype=np.float32)
-        self.memory_trace = self.trace_gamma * self.memory_trace
+        self.memory_trace = self.trace_gamma[:, None] * self.memory_trace
 
         obs_state = int(obs_state[0])
         predicted_state = self.first_level_transitions[action].get(self.state)
@@ -151,8 +157,9 @@ class ECAgent:
         current_clusters = predicted_clusters
 
         if learn:
+            current_mem_trace = self.memory_trace.flatten()
             if current_state is not None:
-                self.state_to_memory_trace[current_state] = self.memory_trace.copy()
+                self.state_to_memory_trace[current_state] = current_mem_trace
 
             if (self.state is not None) and (current_state is not None):
                 self.first_level_transitions[action][self.state] = current_state
@@ -173,8 +180,8 @@ class ECAgent:
                 if len(traces) > 0:
                     traces = np.column_stack(traces)
                     # TODO add different similarity functions
-                    norms = np.linalg.norm(traces, axis=0) * np.linalg.norm(self.memory_trace)
-                    scores = (self.memory_trace @ traces) / (norms + EPS)
+                    norms = np.linalg.norm(traces, axis=0) * np.linalg.norm(current_mem_trace)
+                    scores = (current_mem_trace @ traces) / (norms + EPS)
                 else:
                     scores = np.empty(0, dtype=np.float32)
                 scores = np.append(scores, self.merge_threshold)
@@ -206,7 +213,7 @@ class ECAgent:
             if (self.time_step % self.update_period) == 0:
                 self._update_second_level()
 
-        self.memory_trace += obs_dense
+        self.memory_trace += obs_dense[None]
         self.state = current_state
         self.cluster = current_clusters
         self.time_step += 1
