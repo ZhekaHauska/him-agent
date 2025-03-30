@@ -1038,3 +1038,57 @@ class EClusterPurity(BaseMetric):
 
         log_dict[self.name] = np.median(np.array(cluster_error))
         self.logger.log(log_dict)
+
+class ECTrueClusterSim(BaseMetric):
+    def __init__(
+            self, name, state_att,
+            logger, runner,
+            update_step, log_step, update_period, log_period,
+    ):
+        """
+            Relative weight of cluster's the most common label
+        """
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.state_att = state_att
+        self.true_clusters = dict()
+        self.obs_to_clusters = dict()
+        self.agent = self.runner.agent.agent
+
+    def update(self):
+        state = self.get_attr(self.state_att)
+        estimated_state = self.runner.agent.agent.state
+        obs = estimated_state[0]
+
+        if state not in self.true_clusters:
+            self.true_clusters[state] = set()
+        if obs not in self.obs_to_clusters:
+            self.obs_to_clusters[obs] = set()
+
+        self.true_clusters[state].add(estimated_state)
+        self.obs_to_clusters[obs].add(state)
+
+    def log(self, step):
+        log_dict = {
+            self.log_step: step
+        }
+
+        for obs_state in self.obs_to_clusters:
+            clusters = self.obs_to_clusters[obs_state]
+            if len(clusters) == 0:
+                continue
+
+            traces = list()
+            for c in clusters:
+                trace = [
+                    self.agent.state_to_memory_trace[s]
+                    for s in self.true_clusters[c]
+                ]
+                trace = np.vstack(trace).mean(axis=0)
+                traces.append(trace)
+            traces = np.vstack(traces)
+            pws = cosine_similarity(traces)
+            log_dict[self.name + f'/obs_state_{obs_state}'] = wandb.Image(sns.heatmap(pws))
+            plt.close()
+
+        self.logger.log(log_dict)

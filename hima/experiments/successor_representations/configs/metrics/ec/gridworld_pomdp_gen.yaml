@@ -137,6 +137,16 @@ cluster_purity:
     log_step: episodes
     log_period: 10
 
+cluster_true_sim:
+  class: ECTrueClusterSim
+  params:
+    name: cluster_true_sim
+    state_att: state
+    update_step: steps
+    update_period: 1
+    log_step: episodes
+    log_period: 100
+
 cluster_similarity:
   class: EClusterSimilarity
   params:
