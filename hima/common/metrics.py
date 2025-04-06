@@ -1043,8 +1043,10 @@ class EClusterPurity(BaseMetric):
 class ECTrueClusterSim(BaseMetric):
     agent: ECAgent
     similarities = {"cos": cosine_similarity, "euc": euclidian_sim}
+    mode: Literal['sampled', 'average']
+
     def __init__(
-            self, name, state_att, metric,
+            self, name, state_att, metric, mode, iterations,
             logger, runner,
             update_step, log_step, update_period, log_period,
     ):
@@ -1058,6 +1060,8 @@ class ECTrueClusterSim(BaseMetric):
         self.obs_to_clusters = dict()
         self.agent = self.runner.agent.agent
         self.sim_func = self.similarities[metric]
+        self.mode = mode
+        self.iterations = iterations
 
     def update(self):
         state = self.get_attr(self.state_att)
@@ -1082,17 +1086,51 @@ class ECTrueClusterSim(BaseMetric):
             if len(clusters) == 0:
                 continue
 
-            traces = list()
-            for c in clusters:
-                trace = [
-                    self.agent.state_to_memory_trace[s]
-                    for s in self.true_clusters[c]
-                ]
-                trace = np.vstack(trace).mean(axis=0)
-                traces.append(trace)
-            traces = np.vstack(traces)
-            pws = self.sim_func(traces)
+            if self.mode == 'sampled':
+                pws = self.sampled(clusters, self.iterations)
+            else:
+                pws = self.average(clusters)
+
             log_dict[self.name + f'/obs_state_{obs_state}'] = wandb.Image(sns.heatmap(pws))
             plt.close()
 
         self.logger.log(log_dict)
+
+    def sampled(self, clusters, iterations: int = 100):
+        """
+            Computes sampled similarity between clusters.
+        """
+        av_pws = np.zeros((len(clusters), len(clusters)))
+        for _ in range(iterations):
+            traces_x = list()
+            traces_y = list()
+            for c in clusters:
+                states = list(self.true_clusters[c])
+                s_ids = np.random.choice(
+                    np.arange(len(states)),
+                    size=2
+                )
+                s = states[s_ids[0]]
+                trace = self.agent.state_to_memory_trace[s]
+                traces_x.append(trace)
+                s = states[s_ids[1]]
+                trace = self.agent.state_to_memory_trace[s]
+                traces_y.append(trace)
+            av_pws += self.sim_func(np.vstack(traces_x), np.vstack(traces_y))
+        return av_pws / iterations
+
+    def average(self, clusters):
+        """
+            Average similarity of clusters.
+        """
+        traces = list()
+        for c in clusters:
+            trace = [
+                self.agent.state_to_memory_trace[s]
+                for s in self.true_clusters[c]
+            ]
+            trace = np.vstack(trace).mean(axis=0)
+            traces.append(trace)
+        traces = np.vstack(traces)
+        pws = self.sim_func(traces)
+        return pws
