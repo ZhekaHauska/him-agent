@@ -23,6 +23,7 @@ class GridWorld:
             collision_reward=0,
             headless=True,
             random_floor_colors=False,
+            markov_radius=0,
             seed=None,
     ):
         self._rng = np.random.default_rng(seed)
@@ -36,7 +37,10 @@ class GridWorld:
         if self.random_floor_colors:
             # last color reserved for terminal state
             # negative colors reserved for obstacles
-            colors = self._rng.integers(0, np.max(self.colors), size=self.colors.shape)
+            if markov_radius == 0:
+                colors = self._rng.integers(0, np.max(self.colors), size=self.colors.shape)
+            else:
+                colors = generate_map(markov_radius, self.colors.shape, seed)
             floor_mask = ~((self.colors < 0) | (self.terminals == 1))
             self.colors[floor_mask] = colors[floor_mask]
 
@@ -208,3 +212,31 @@ class GridWorld:
             true_map[true_map == color] = i
 
         return true_map
+
+
+def generate_map(markov_radius: int, size: tuple[int, int], seed: int = None) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    colors = np.full(size, fill_value=-1, dtype=np.int32)
+    for r in range(size[0]):
+        for c in range(size[1]):
+            start_r, start_c = max(0, r - markov_radius), max(0, c - markov_radius)
+            end_r, end_c = r + markov_radius + 1, c + markov_radius + 1
+            window = colors[start_r:end_r, start_c:end_c]
+            shape = window.shape
+            window = window.flatten()
+            empty_mask = window == -1
+            n_nonzero = np.count_nonzero(empty_mask)
+            if n_nonzero == 0:
+                continue
+
+            candidates = np.arange(window.size)
+            candidates = candidates[np.isin(candidates, window, invert=True)]
+            candidates = candidates[:n_nonzero]
+            rng.shuffle(candidates)
+            window[empty_mask] = candidates
+            colors[start_r:end_r, start_c:end_c] = window.reshape(shape)
+
+            plt.figure()
+            sns.heatmap(colors, annot=True, cmap='Pastel1', square=True, vmin=0, cbar=False)
+            plt.show()
+    return colors
