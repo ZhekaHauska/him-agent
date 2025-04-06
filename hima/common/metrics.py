@@ -7,7 +7,7 @@
 import os
 import numpy as np
 
-from hima.agents.episodic_control.agent import ECAgent
+from hima.agents.episodic_control.agent import ECAgent, euclidian_sim, cosine_similarity
 from hima.common.lazy_imports import lazy_import
 from typing import Dict, Literal, Optional
 
@@ -15,7 +15,6 @@ from hima.common.sdr import sparse_to_dense
 from hima.modules.belief.utils import normalize
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
-from sklearn.metrics.pairwise import cosine_similarity
 
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
@@ -957,8 +956,9 @@ class ArrayMetrics(BaseMetric):
 
 class EClusterSimilarity(BaseMetric):
     agent: ECAgent
+    similarities = {"cos": cosine_similarity, "euc": euclidian_sim}
     def __init__(
-            self, name,
+            self, name, metric,
             logger, runner,
             update_step, log_step, update_period, log_period,
     ):
@@ -968,6 +968,7 @@ class EClusterSimilarity(BaseMetric):
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
         self.name = name
         self.agent = self.runner.agent.agent
+        self.sim_func = self.similarities[metric]
 
     def update(self):
         pass
@@ -991,7 +992,7 @@ class EClusterSimilarity(BaseMetric):
                 trace = np.vstack(trace).mean(axis=0)
                 traces.append(trace)
             traces = np.vstack(traces)
-            pws = cosine_similarity(traces)
+            pws = self.sim_func(traces)
             log_dict[self.name + f'/obs_state_{obs_state}'] = wandb.Image(sns.heatmap(pws))
             plt.close()
 
@@ -1025,7 +1026,7 @@ class EClusterPurity(BaseMetric):
             self.log_step: step
         }
 
-        cluster_error = list()
+        cluster_purity = list()
         clusters = self.runner.agent.agent.cluster_to_states
         for cluster_id in clusters:
             if cluster_id == -1:
@@ -1034,14 +1035,16 @@ class EClusterPurity(BaseMetric):
             cluster_labels = np.array([self.state_labels[s] for s in cluster])
             labels, counts = np.unique(cluster_labels, return_counts=True)
             score = np.max(counts) / counts.sum()
-            cluster_error.append(score)
+            cluster_purity.append(score)
 
-        log_dict[self.name] = np.median(np.array(cluster_error))
+        log_dict[self.name] = np.median(np.array(cluster_purity))
         self.logger.log(log_dict)
 
 class ECTrueClusterSim(BaseMetric):
+    agent: ECAgent
+    similarities = {"cos": cosine_similarity, "euc": euclidian_sim}
     def __init__(
-            self, name, state_att,
+            self, name, state_att, metric,
             logger, runner,
             update_step, log_step, update_period, log_period,
     ):
@@ -1054,6 +1057,7 @@ class ECTrueClusterSim(BaseMetric):
         self.true_clusters = dict()
         self.obs_to_clusters = dict()
         self.agent = self.runner.agent.agent
+        self.sim_func = self.similarities[metric]
 
     def update(self):
         state = self.get_attr(self.state_att)
@@ -1087,7 +1091,7 @@ class ECTrueClusterSim(BaseMetric):
                 trace = np.vstack(trace).mean(axis=0)
                 traces.append(trace)
             traces = np.vstack(traces)
-            pws = cosine_similarity(traces)
+            pws = self.sim_func(traces)
             log_dict[self.name + f'/obs_state_{obs_state}'] = wandb.Image(sns.heatmap(pws))
             plt.close()
 

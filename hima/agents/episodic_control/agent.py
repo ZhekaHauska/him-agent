@@ -3,18 +3,22 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import pickle
 
 import numpy as np
 from enum import Enum, auto
 
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import softmax, safe_divide
+from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 from PIL import Image
 import pygraphviz as pgv
 import io
 
 EPS = 1e-24
 
+def euclidian_sim(X, Y=None):
+    return np.exp(-euclidean_distances(X, Y))
 
 class ExplorationPolicy(Enum):
     SOFTMAX = 1
@@ -22,6 +26,7 @@ class ExplorationPolicy(Enum):
 
 
 class ECAgent:
+    similarities = {"cos": cosine_similarity, "euc": euclidian_sim}
     def __init__(
             self,
             n_obs_states,
@@ -35,6 +40,7 @@ class ECAgent:
             inverse_temp,
             exploration_eps,
             trace_gamma,
+            sim_metric,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -61,6 +67,7 @@ class ECAgent:
 
         self.gamma = gamma
         self.trace_gamma = trace_gamma
+        self.sim_func = self.similarities[sim_metric]
         self.reward_lr = reward_lr
         self.rewards = np.zeros(self.n_obs_states, dtype=np.float32)
         self.num_clones = np.zeros(self.n_obs_states, dtype=np.uint32)
@@ -178,10 +185,8 @@ class ECAgent:
                     traces.append(trace)
 
                 if len(traces) > 0:
-                    traces = np.column_stack(traces)
-                    # TODO add different similarity functions
-                    norms = np.linalg.norm(traces, axis=0) * np.linalg.norm(current_mem_trace)
-                    scores = (current_mem_trace @ traces) / (norms + EPS)
+                    traces = np.vstack(traces)
+                    scores = self.sim_func(traces, current_mem_trace[None])
                 else:
                     scores = np.empty(0, dtype=np.float32)
                 scores = np.append(scores, self.merge_threshold)
