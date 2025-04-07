@@ -30,8 +30,8 @@ class GridWorld:
         self._rng = np.random.default_rng(seed)
 
         room = np.asarray(room)
-        self.colors, self.rewards, self.terminals = (
-            room[0, :, :], room[1, :, :], room[2, :, :]
+        self.colors, self.rewards, self.terminals, self.landmarks = (
+            room[0, :, :], room[1, :, :], room[2, :, :], room[3, :, :]
         )
 
         self.random_floor_colors = random_floor_colors
@@ -46,6 +46,10 @@ class GridWorld:
             floor_mask = self.colors >= 0
             self.colors[floor_mask] = colors[floor_mask]
             self.colors[self.terminals == 1] = np.max(colors) + 1
+
+        self.colors[self.landmarks == 1] = (
+                np.max(self.colors) + np.arange(np.count_nonzero(self.landmarks)) + 1
+        )
 
         self.h, self.w = self.colors.shape
 
