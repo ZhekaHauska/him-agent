@@ -1034,6 +1034,12 @@ class EClusterPurity(BaseMetric):
             cluster = clusters[cluster_id]
             cluster_labels = np.array([self.state_labels[s] for s in cluster])
             labels, counts = np.unique(cluster_labels, return_counts=True)
+            if len(labels) == 1:
+                l = labels[0]
+                # don't take into account landmarks
+                # they always have purity == 1
+                if self.runner.environment.environment.landmarks.flatten()[l]:
+                    continue
             score = np.max(counts) / counts.sum()
             cluster_purity.append(score)
 
