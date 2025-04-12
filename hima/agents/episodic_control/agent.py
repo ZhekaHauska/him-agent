@@ -33,7 +33,8 @@ class ECAgent:
             n_actions,
             plan_steps,
             new_cluster_weight,
-            merge_threshold,
+            mt_merge_threshold,
+            sf_merge_threshold,
             update_period,
             gamma,
             reward_lr,
@@ -47,7 +48,8 @@ class ECAgent:
         self.n_actions = n_actions
         self.plan_steps = plan_steps
         self.new_cluster_weight = new_cluster_weight
-        self.merge_threshold = merge_threshold
+        self.mt_merge_threshold = mt_merge_threshold
+        self.sf_merge_threshold = sf_merge_threshold
         self.update_period = update_period
 
         self.first_level_transitions = [dict() for _ in range(n_actions)]
@@ -189,7 +191,7 @@ class ECAgent:
                     scores = self.sim_func(traces, current_mem_trace[None])
                 else:
                     scores = np.empty(0, dtype=np.float32)
-                scores = np.append(scores, self.merge_threshold)
+                scores = np.append(scores, self.mt_merge_threshold)
                 scores = np.exp(scores)
 
                 lengths = [
@@ -246,7 +248,7 @@ class ECAgent:
         self.goal_found = False
         for action in range(self.n_actions):
             predicted_state = self.first_level_transitions[action].get(self.state)
-            sf, steps, gf = self.generate_sf(predicted_state)
+            sf, steps, gf = self.generate_sf({predicted_state})
             self.goal_found = gf or self.goal_found
             planning_steps += steps
             self.action_values[action] = np.sum(sf * self.rewards)
@@ -254,50 +256,88 @@ class ECAgent:
         self.sf_steps = planning_steps / self.n_actions
         return self.action_values
 
-    def generate_sf(self, initial_state):
+    def generate_sf(self, initial_state: set, early_stop: bool = True, expand_clusters: bool = False):
         sf = np.zeros(self.n_obs_states, dtype=np.float32)
         goal_found = False
 
-        if initial_state is None:
+        if (initial_state is None) or (len(initial_state) == 0):
             return sf, 0, False
 
-        sf[initial_state[0]] = 1
-
-        predicted_states = {initial_state}
+        predicted_states = initial_state
+        sf, _ = self._states_obs_dist(initial_state)
 
         discount = self.gamma
-
         i = -1
         for i in range(self.plan_steps):
             # uniform strategy
             predicted_states = set().union(
-                *[self._predict(predicted_states, a) for a in range(self.n_actions)]
+                *[self._predict(predicted_states, a, expand_clusters) for a in range(self.n_actions)]
             )
-            obs_states = np.array(
-                self._convert_to_obs_states(predicted_states),
-                dtype=np.uint32
-            )
-            obs_states, counts = np.unique(obs_states, return_counts=True)
-            obs_probs = np.zeros_like(sf)
-            obs_probs[obs_states] = counts
-            obs_probs /= (obs_probs.sum() + EPS)
-            sf += discount * obs_probs
-
-            if len(obs_states) == 0:
+            if len(predicted_states) == 0:
                 break
+
+            obs_probs, obs_states = self._states_obs_dist(predicted_states)
+            sf += discount * obs_probs
 
             if np.any(
                 self.rewards[list(obs_states)] > 0
             ):
                 goal_found = True
-                break
+                if early_stop:
+                    break
 
             discount *= self.gamma
 
         return sf, i+1, goal_found
 
     def sleep_phase(self, iterations):
-        ...
+        for _ in range(iterations):
+            n_clusters = [len(self.obs_to_clusters[obs]) for obs in range(self.n_obs_states)]
+            n_clusters = np.array(n_clusters, dtype=np.float32)
+
+            # sample obs state to start replay from
+            probs = np.clip(n_clusters - 1, 0, None)
+            norm = probs.sum()
+            if norm == 0:
+                # no pairs of clusters
+                break
+            probs /= norm
+            obs_state = self._rng.choice(self.n_obs_states, p=probs)
+
+            clusters = np.array(list(self.obs_to_clusters[obs_state]))
+            sfs = list()
+            for c in clusters:
+                states = self.cluster_to_states[c]
+                sf, _, _ = self.generate_sf(states, early_stop=False)
+                sfs.append(sf)
+
+            sfs = np.vstack(sfs)
+            # merge candidates
+            pairs = np.triu_indices(sfs.shape[0], k=1)
+            scores = self.sim_func(sfs)
+            scores = scores[pairs].flatten()
+
+            scores = np.append(scores, self.sf_merge_threshold)
+            probs = softmax(scores)
+            pairs = np.column_stack(pairs)
+            pair = self._rng.choice(np.arange(pairs.shape[0]+1), p=probs)
+            if pair < pairs.shape[0]:
+                clusters_to_merge = clusters[pairs[pair]]
+                self._merge_clusters(clusters_to_merge[0], clusters_to_merge[1], obs_state)
+
+    def _merge_clusters(self, c1, c2, obs_state):
+        new_states = self.cluster_to_states[c1].union(self.cluster_to_states[c2])
+        self.cluster_to_states[c1] = new_states
+
+        states = self.cluster_to_states.pop(c2)
+        for s in states:
+            self.state_to_cluster[s] = c1
+
+        self.obs_to_clusters[obs_state].remove(c2)
+
+        for d_a in self.second_level_transitions:
+            if c2 in d_a:
+                d_a.pop(c2)
 
     def _update_second_level(self):
         for cluster_id in self.cluster_to_states:
@@ -319,59 +359,6 @@ class ECAgent:
                     cluster = (self.cluster_to_obs[cluster_id], cluster_id)
                     pred_clusters = {(self.cluster_to_obs[pc], pc, p) for pc, p in zip(predicted_clusters, probs)}
                     d_a[cluster] = pred_clusters
-
-    def _update_cluster(
-            self,
-            new_states: set,
-            cluster_id: int,
-            obs_state: int,
-            old_cluster_assignment: dict=None
-    ):
-        """
-            Update cluster state diff
-            Assign new_states to another cluster and also update clusters that are affected.
-
-            old_cluster_assignment: dict
-        """
-        for s in new_states:
-            if s in self.state_to_cluster:
-                # remove from old cluster
-                old_c = self.state_to_cluster[s]
-                if old_c != cluster_id:
-                    self.cluster_to_states[old_c].remove(s)
-            self.state_to_cluster[s] = cluster_id
-
-        if cluster_id in self.cluster_to_states:
-            removed_states = self.cluster_to_states[cluster_id].difference(new_states)
-            for s in removed_states:
-                old_cluster = None
-                if old_cluster_assignment is not None:
-                    old_cluster = old_cluster_assignment.get(s)
-                if (old_cluster is not None) and (old_cluster != cluster_id):
-                    self.state_to_cluster[s] = old_cluster
-                    self.cluster_to_states[old_cluster].add(s)
-                else:
-                    if s in self.state_to_cluster:
-                        self.state_to_cluster.pop(s)
-
-        self.cluster_to_states[cluster_id] = new_states
-        self.cluster_to_obs[cluster_id] = obs_state
-        self.obs_to_clusters[obs_state].add(cluster_id)
-
-    def _destroy_cluster(self, cluster: tuple):
-        obs_state, cluster_id = cluster
-        if cluster_id in self.cluster_to_states:
-            states = self.cluster_to_states.pop(cluster_id)
-            for s in states:
-                if s in self.state_to_cluster:
-                    self.state_to_cluster.pop(s)
-
-        if obs_state in self.obs_to_clusters:
-            self.obs_to_clusters[obs_state].remove(cluster_id)
-
-        for d_a in self.second_level_transitions:
-            if cluster in d_a:
-                d_a.pop(cluster)
 
     def _predict(self, state: set, action: int, expand_clusters: bool = False) -> set:
         state_expanded = state
@@ -395,6 +382,17 @@ class ECAgent:
         h = int(self.num_clones[obs_state])
         self.num_clones[obs_state] += 1
         return obs_state, h
+
+    def _states_obs_dist(self, states: set):
+        obs_states = np.array(
+            self._convert_to_obs_states(states),
+            dtype=np.uint32
+        )
+        obs_states, counts = np.unique(obs_states, return_counts=True)
+        obs_probs = np.zeros(self.n_obs_states, dtype=np.float32)
+        obs_probs[obs_states] = counts
+        obs_probs /= (obs_probs.sum() + EPS)
+        return obs_probs, obs_states
 
     def _get_action_selection_distribution(
             self, action_values, on_policy: bool = True
