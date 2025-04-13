@@ -1052,7 +1052,7 @@ class ECTrueClusterSim(BaseMetric):
     mode: Literal['sampled', 'average']
 
     def __init__(
-            self, name, state_att, metric, mode, iterations,
+            self, name, state_att, metric, mode, iterations, embedding_type,
             logger, runner,
             update_step, log_step, update_period, log_period,
     ):
@@ -1067,6 +1067,7 @@ class ECTrueClusterSim(BaseMetric):
         self.agent = self.runner.agent.agent
         self.sim_func = self.similarities[metric]
         self.mode = mode
+        self.embedding_type = embedding_type
         self.iterations = iterations
 
     def update(self):
@@ -1117,10 +1118,10 @@ class ECTrueClusterSim(BaseMetric):
                     size=2
                 )
                 s = states[s_ids[0]]
-                trace = self.agent.state_to_memory_trace[s]
+                trace = self.embedding({s})
                 traces_x.append(trace)
                 s = states[s_ids[1]]
-                trace = self.agent.state_to_memory_trace[s]
+                trace = self.embedding({s})
                 traces_y.append(trace)
             av_pws += self.sim_func(np.vstack(traces_x), np.vstack(traces_y))
         return av_pws / iterations
@@ -1129,14 +1130,25 @@ class ECTrueClusterSim(BaseMetric):
         """
             Average similarity of clusters.
         """
-        traces = list()
+        embds = list()
         for c in clusters:
-            trace = [
-                self.agent.state_to_memory_trace[s]
-                for s in self.true_clusters[c]
-            ]
-            trace = np.vstack(trace).mean(axis=0)
-            traces.append(trace)
-        traces = np.vstack(traces)
+            embd = self.embedding(self.true_clusters[c])
+            embds.append(embd)
+        traces = np.vstack(embds)
         pws = self.sim_func(traces)
         return pws
+
+    def embedding(self, states):
+        embd = list()
+        if "mt" in self.embedding_type:
+            trace = [
+                self.agent.state_to_memory_trace[s]
+                for s in states
+            ]
+            trace = np.vstack(trace).mean(axis=0)
+            embd.append(trace)
+        if "sf" in self.embedding_type:
+            sf, _, _ = self.agent.generate_sf(states, early_stop=False)
+            embd.append(sf)
+
+        return np.concatenate(embd)
