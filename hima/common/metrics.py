@@ -1049,7 +1049,7 @@ class EClusterPurity(BaseMetric):
 class ECTrueClusterSim(BaseMetric):
     agent: ECAgent
     similarities = {"cos": cosine_similarity, "euc": euclidian_sim}
-    mode: Literal['sampled', 'average']
+    mode: Literal['sampled', 'average', 'sampled_averaged']
 
     def __init__(
             self, name, state_att, metric, mode, iterations, embedding_type,
@@ -1095,8 +1095,10 @@ class ECTrueClusterSim(BaseMetric):
 
             if self.mode == 'sampled':
                 pws = self.sampled(clusters, self.iterations)
+            elif self.mode == 'averaged':
+                pws = self.averaged(clusters)
             else:
-                pws = self.average(clusters)
+                pws = self.sampled_averaged(clusters)
 
             log_dict[self.name + f'/obs_state_{obs_state}'] = wandb.Image(sns.heatmap(pws))
             plt.close()
@@ -1126,7 +1128,31 @@ class ECTrueClusterSim(BaseMetric):
             av_pws += self.sim_func(np.vstack(traces_x), np.vstack(traces_y))
         return av_pws / iterations
 
-    def average(self, clusters):
+    def sampled_averaged(self, clusters, iterations: int = 100):
+        """
+            Computes sampled similarity between clusters.
+        """
+        embds = list()
+        for c in clusters:
+            embd = self.embedding(self.true_clusters[c])
+            embds.append(embd)
+        av_traces = np.vstack(embds)
+
+        av_pws = np.zeros((len(clusters), len(clusters)))
+        for _ in range(iterations):
+            traces = list()
+            for c in clusters:
+                states = list(self.true_clusters[c])
+                s_id = np.random.choice(
+                    np.arange(len(states))
+                )
+                s = states[s_id]
+                trace = self.embedding({s})
+                traces.append(trace)
+            av_pws += self.sim_func(av_traces, np.vstack(traces))
+        return av_pws / iterations
+
+    def averaged(self, clusters):
         """
             Average similarity of clusters.
         """
