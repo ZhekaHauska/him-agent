@@ -15,11 +15,12 @@ from hima.common.sdr import sparse_to_dense
 from hima.modules.belief.utils import normalize
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
-
 wandb = lazy_import('wandb')
 sns = lazy_import('seaborn')
 imageio = lazy_import('imageio')
 minisom = lazy_import('minisom')
+
+EPS = 1e-24
 
 
 class BaseMetric:
@@ -1087,30 +1088,46 @@ class ECTrueClusterSim(BaseMetric):
         log_dict = {
             self.log_step: step
         }
-
+        separability = []
         for obs_state in self.obs_to_clusters:
             clusters = self.obs_to_clusters[obs_state]
             if len(clusters) == 0:
                 continue
 
             if self.mode == 'sampled':
-                pws = self.sampled(clusters, self.iterations)
+                pws = self.sampled(clusters)
             elif self.mode == 'averaged':
                 pws = self.averaged(clusters)
             else:
                 pws = self.sampled_averaged(clusters)
-
+            # measure true cluster separability
+            if pws.size > 1:
+                diff = (
+                    np.diagonal(pws) -
+                    np.max(
+                            pws, axis=-1,
+                            where=~np.eye(pws.shape[0], dtype=np.bool8),
+                            initial=-np.inf
+                        )
+                )
+                sep = diff / (np.max(pws, axis=-1) - np.min(pws, axis=-1) + EPS)
+                sep = np.mean(sep)
+                separability.append(sep)
+                log_dict[self.name + f'/obs_state_{obs_state}_sep'] = sep
             log_dict[self.name + f'/obs_state_{obs_state}'] = wandb.Image(sns.heatmap(pws))
             plt.close()
-
+        separability = np.array(separability)
+        separability = separability[separability != 0]
+        if len(separability) > 0:
+            log_dict[self.name + '/average_sep'] = np.mean(separability)
         self.logger.log(log_dict)
 
-    def sampled(self, clusters, iterations: int = 100):
+    def sampled(self, clusters):
         """
             Computes sampled similarity between clusters.
         """
         av_pws = np.zeros((len(clusters), len(clusters)))
-        for _ in range(iterations):
+        for _ in range(self.iterations):
             traces_x = list()
             traces_y = list()
             for c in clusters:
@@ -1126,9 +1143,9 @@ class ECTrueClusterSim(BaseMetric):
                 trace = self.embedding({s})
                 traces_y.append(trace)
             av_pws += self.sim_func(np.vstack(traces_x), np.vstack(traces_y))
-        return av_pws / iterations
+        return av_pws / self.iterations
 
-    def sampled_averaged(self, clusters, iterations: int = 100):
+    def sampled_averaged(self, clusters):
         """
             Computes sampled similarity between clusters.
         """
@@ -1139,7 +1156,7 @@ class ECTrueClusterSim(BaseMetric):
         av_traces = np.vstack(embds)
 
         av_pws = np.zeros((len(clusters), len(clusters)))
-        for _ in range(iterations):
+        for _ in range(self.iterations):
             traces = list()
             for c in clusters:
                 states = list(self.true_clusters[c])
@@ -1150,7 +1167,7 @@ class ECTrueClusterSim(BaseMetric):
                 trace = self.embedding({s})
                 traces.append(trace)
             av_pws += self.sim_func(av_traces, np.vstack(traces))
-        return av_pws / iterations
+        return av_pws / self.iterations
 
     def averaged(self, clusters):
         """
