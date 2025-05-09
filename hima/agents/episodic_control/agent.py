@@ -11,6 +11,7 @@ from enum import Enum, auto
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import softmax, safe_divide
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
+from scipy.stats import entropy
 from PIL import Image
 import pygraphviz as pgv
 import io
@@ -59,6 +60,7 @@ class ECAgent:
         self.cluster_to_states = dict()
         self.cluster_to_obs = dict()
         self.state_to_cluster = dict()
+        self.cluster_to_entropy = dict()
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
 
         self.state = (-1, -1)
@@ -290,8 +292,8 @@ class ECAgent:
 
         return sf, i+1, goal_found
 
-    def sleep_phase(self, iterations):
-        for _ in range(iterations):
+    def sleep_phase(self, merge_iterations, split_iterations):
+        for _ in range(merge_iterations):
             n_clusters = [len(self.obs_to_clusters[obs]) for obs in range(self.n_obs_states)]
             n_clusters = np.array(n_clusters, dtype=np.float32)
 
@@ -325,6 +327,63 @@ class ECAgent:
                 clusters_to_merge = clusters[pairs[pair]]
                 self._merge_clusters(clusters_to_merge[0], clusters_to_merge[1], obs_state)
 
+        if split_iterations > 0:
+            self._update_second_level()
+
+        for _ in range(split_iterations):
+            # sample clusters proportionally to
+            # the entropy of their predictions
+            cluster_entropies = np.array(list(self.cluster_to_entropy.values()), dtype=np.float32)
+            clusters = np.array(list(self.cluster_to_entropy.keys()), dtype=np.int32)
+            probs = 1 - np.exp(-cluster_entropies)
+            g = self._rng.random(len(probs))
+            clusters_to_split = clusters[g<probs]
+
+            if len(clusters_to_split) == 0:
+                break
+
+            n_split = 0
+            for cluster in clusters_to_split:
+                if self._split_cluster(cluster):
+                    n_split += 1
+
+            if n_split:
+                self._update_second_level()
+
+    def _split_cluster(self, cluster_id):
+        mask = self._test_cluster(cluster_id)
+        states = np.array(list(self.cluster_to_states[cluster_id]))
+        obs_state = self.cluster_to_obs[cluster_id]
+        old_cluster = states[mask]
+        new_cluster = states[~mask]
+        if len(new_cluster) == 0:
+            return
+        # update old cluster
+        self.cluster_to_states[cluster_id] = {tuple(s) for s in old_cluster}
+        # create new cluster
+        new_cluster_id = self.cluster_counter
+        self.cluster_counter += 1
+        self.cluster_to_states[new_cluster_id] = {tuple(s) for s in new_cluster}
+        self.cluster_to_obs[new_cluster_id] = obs_state
+        self.obs_to_clusters[obs_state].add(new_cluster_id)
+        return new_cluster_id
+
+    def _test_cluster(self, cluster_id):
+        states = self.cluster_to_states[cluster_id]
+        test = np.ones(len(states)).astype(np.bool8)
+
+        for d_a in self.first_level_transitions:
+            clusters = np.full(len(states), fill_value=np.nan)
+            for pos, s in enumerate(states):
+                ps = d_a.get(s)
+                clusters[pos] = self.state_to_cluster.get(ps, np.nan)
+            # detect contradiction
+            empty = np.isnan(clusters)
+            cls, counts = np.unique(clusters[~empty], return_counts=True)
+            if len(counts) > 0:
+                test = (clusters == cls[np.argmax(counts)]) | empty
+        return test
+
     def _merge_clusters(self, c1, c2, obs_state):
         new_states = self.cluster_to_states[c1].union(self.cluster_to_states[c2])
         self.cluster_to_states[c1] = new_states
@@ -335,6 +394,9 @@ class ECAgent:
 
         self.obs_to_clusters[obs_state].remove(c2)
 
+        if c2 in self.cluster_to_entropy:
+            self.cluster_to_entropy.pop(c2)
+
         for d_a in self.second_level_transitions:
             if c2 in d_a:
                 d_a.pop(c2)
@@ -342,6 +404,7 @@ class ECAgent:
     def _update_second_level(self):
         for cluster_id in self.cluster_to_states:
             # update transition matrix
+            cluster_entropy = 0
             for a, d_a in enumerate(self.second_level_transitions):
                 predicted_states = [
                     self.first_level_transitions[a][s]
@@ -356,9 +419,12 @@ class ECAgent:
                 # assert len(set([self.cluster_to_obs[c] for c in predicted_clusters])) <= 1
                 if len(counts) > 0:
                     probs = counts / counts.sum()
+                    cluster_entropy += entropy(probs)
                     cluster = (self.cluster_to_obs[cluster_id], cluster_id)
                     pred_clusters = {(self.cluster_to_obs[pc], pc, p) for pc, p in zip(predicted_clusters, probs)}
                     d_a[cluster] = pred_clusters
+
+            self.cluster_to_entropy[cluster_id] = cluster_entropy
 
     def _predict(self, state: set, action: int, expand_clusters: bool = False) -> set:
         state_expanded = state
