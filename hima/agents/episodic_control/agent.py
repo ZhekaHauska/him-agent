@@ -9,6 +9,7 @@ import numpy as np
 from enum import Enum, auto
 
 from hima.common.sdr import sparse_to_dense
+from hima.common.smooth_values import SSValue
 from hima.common.utils import softmax, safe_divide
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 from scipy.stats import entropy
@@ -17,6 +18,16 @@ import pygraphviz as pgv
 import io
 
 EPS = 1e-24
+
+def norm_cdf(z):
+    """
+        Normal CDF approximation https://doi.org/10.1016/0096-3003(95)00190-5
+        works for z in [-8, 8]
+        x: standard normal random variable, i.e. z = (x - mean)/std
+    """
+    b1, b2, b3 = -0.0004406, 0.0418198, 0.9
+    pol = b1 * np.power(z, 5) + b2 * np.power(z, 3) + b3 * z
+    return 1/(1 + np.exp(-np.sqrt(np.pi) * pol))
 
 def euclidian_sim(X, Y=None):
     return np.exp(-euclidean_distances(X, Y))
@@ -33,9 +44,10 @@ class ECAgent:
             n_obs_states,
             n_actions,
             plan_steps,
-            new_cluster_weight,
-            mt_merge_threshold,
-            sf_merge_threshold,
+            mt_lr,
+            sf_lr,
+            mt_beta,
+            sf_beta,
             update_period,
             gamma,
             reward_lr,
@@ -48,9 +60,6 @@ class ECAgent:
         self.n_obs_states = n_obs_states
         self.n_actions = n_actions
         self.plan_steps = plan_steps
-        self.new_cluster_weight = new_cluster_weight
-        self.mt_merge_threshold = mt_merge_threshold
-        self.sf_merge_threshold = sf_merge_threshold
         self.update_period = update_period
 
         self.first_level_transitions = [dict() for _ in range(n_actions)]
@@ -62,6 +71,11 @@ class ECAgent:
         self.state_to_cluster = dict()
         self.cluster_to_entropy = dict()
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
+        self.mt_merge_thresholds = dict()
+        self.sf_merge_threshold = SSValue(1.0, sf_lr)
+        self.mt_lr = mt_lr
+        self.mt_beta = mt_beta
+        self.sf_beta = sf_beta
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -178,10 +192,7 @@ class ECAgent:
             if cluster is None:
                 # add state to a cluster with the most similar memory trace
                 # or create a new cluster
-                # p(c | s) = N * p(c) * exp(mem_s * mem_c)
-                # where p(c) - chinese-restaurant prior
-                candidates = list(self.obs_to_clusters[obs_state])
-
+                candidates = np.array(list(self.obs_to_clusters[obs_state]))
                 traces = list()
                 for c in candidates:
                     trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
@@ -189,27 +200,38 @@ class ECAgent:
                     traces.append(trace)
 
                 if len(traces) > 0:
+                    means, stds = self.extract_thresholds(
+                        candidates, self.mt_merge_thresholds
+                    )
+                    means = np.array(means)
+                    stds = np.array(stds)
+
                     traces = np.vstack(traces)
-                    scores = self.sim_func(traces, current_mem_trace[None])
+                    scores = self.sim_func(traces, current_mem_trace[None])[0]
+                    self.update_thresholds(
+                        scores, candidates, self.mt_merge_thresholds, self.mt_lr
+                    )
+                    # filter noisy scores
+                    scores = (scores - means) / (stds + EPS)
+                    filter_scores = norm_cdf(scores)
+                    filter_mask = self._rng.random(len(filter_scores)) < filter_scores
+                    scores = scores[filter_mask]
+                    candidates = candidates[filter_mask]
                 else:
                     scores = np.empty(0, dtype=np.float32)
-                scores = np.append(scores, self.mt_merge_threshold)
-                scores = np.exp(scores)
 
-                lengths = [
-                    len(self.cluster_to_states[c])
-                    for c in candidates
-                ]
-                lengths.append(self.new_cluster_weight)
-                lengths = np.array(lengths, dtype=np.float32)
-
-                c_prior = lengths / (lengths.sum() + EPS)
-                c_posterior = c_prior * scores
-                c_posterior = c_posterior / (c_posterior.sum() + EPS)
-
-                candidates.append(-1)
-                winner = self._rng.choice(candidates, p=c_posterior)
-                if winner == -1:
+                if len(scores) > 0:
+                    scores = np.exp(self.mt_beta * scores)
+                    lengths = [
+                        len(self.cluster_to_states[c])
+                        for c in candidates
+                    ]
+                    lengths = np.array(lengths, dtype=np.float32)
+                    c_prior = lengths / (lengths.sum() + EPS)
+                    c_posterior = c_prior * scores
+                    c_posterior = c_posterior / (c_posterior.sum() + EPS)
+                    winner = self._rng.choice(candidates, p=c_posterior)
+                else:
                     winner = self.cluster_counter
                     self.cluster_counter += 1
                     self.cluster_to_states[winner] = set()
@@ -226,6 +248,28 @@ class ECAgent:
         self.state = current_state
         self.cluster = current_clusters
         self.time_step += 1
+
+    @staticmethod
+    def update_thresholds(score, clusters, thresholds, lr):
+        for s, c in zip(score, clusters):
+            if c in thresholds:
+                thresholds[c].update(s)
+            else:
+                thresholds[c] = SSValue(1.0, lr, mean_ini=s)
+
+    @staticmethod
+    def extract_thresholds(clusters, thresholds):
+        means = list()
+        stds = list()
+        for c in clusters:
+            if c in thresholds:
+                sv = thresholds[c]
+                means.append(sv.mean)
+                stds.append(sv.std)
+            else:
+                means.append(0.0)
+                stds.append(1.0)
+        return means, stds
 
     def sample_action(self):
         action_values = self.evaluate_actions()
@@ -318,12 +362,20 @@ class ECAgent:
             pairs = np.triu_indices(sfs.shape[0], k=1)
             scores = self.sim_func(sfs)
             scores = scores[pairs].flatten()
+            self.sf_merge_threshold.update(scores.mean(), scores.std())
 
-            scores = np.append(scores, self.sf_merge_threshold)
-            probs = softmax(scores)
+            # filter noisy pairs
+            mean, std = self.sf_merge_threshold.mean, self.sf_merge_threshold.std
+            scores = (scores - mean) / (std + EPS)
+            filter_scores = norm_cdf(scores)
+            filter_mask = self._rng.random(len(filter_scores)) < filter_scores
+            scores = scores[filter_mask]
             pairs = np.column_stack(pairs)
-            pair = self._rng.choice(np.arange(pairs.shape[0]+1), p=probs)
-            if pair < pairs.shape[0]:
+            pairs = pairs[filter_mask]
+
+            if len(scores) > 0:
+                probs = softmax(scores, beta=self.sf_beta)
+                pair = self._rng.choice(np.arange(pairs.shape[0]), p=probs)
                 clusters_to_merge = clusters[pairs[pair]]
                 self._merge_clusters(clusters_to_merge[0], clusters_to_merge[1], obs_state)
 
