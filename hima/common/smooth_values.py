@@ -39,7 +39,7 @@ class SSValue:
             self.var = lin_sum(
                 self.var,
                 self.lr_norm,
-                self.std ** 2
+                std ** 2
             )
 
         self.std = self.var ** 0.5
