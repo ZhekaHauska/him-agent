@@ -1,11 +1,15 @@
 # encoder_conf:
 agent:
   plan_steps: 50
-  new_cluster_weight: 1  # the bigger this number the more clusters will be created
-  merge_threshold: 0.5
-  update_period: 1000
   gamma: 0.8
-  trace_gamma: 0.8
   reward_lr: 0.1
   inverse_temp: 100
   exploration_eps: -1
+  # second level
+  trace_gamma: [ 0.8 ]
+  sim_metric: 'euc'  # 'cos' | 'euc'
+  update_period: 1000  # (steps) second level matrix updates
+  mt_lr: 0.01
+  sf_lr: 0.01
+  mt_beta: 10.0
+

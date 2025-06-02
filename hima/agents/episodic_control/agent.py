@@ -8,6 +8,8 @@ import pickle
 import numpy as np
 from enum import Enum, auto
 
+import wandb
+
 from hima.common.sdr import sparse_to_dense
 from hima.common.smooth_values import SSValue
 from hima.common.utils import softmax, safe_divide
@@ -47,7 +49,6 @@ class ECAgent:
             mt_lr,
             sf_lr,
             mt_beta,
-            sf_beta,
             update_period,
             gamma,
             reward_lr,
@@ -75,7 +76,6 @@ class ECAgent:
         self.sf_merge_threshold = SSValue(1.0, sf_lr)
         self.mt_lr = mt_lr
         self.mt_beta = mt_beta
-        self.sf_beta = sf_beta
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -369,15 +369,24 @@ class ECAgent:
             scores = (scores - mean) / (std + EPS)
             filter_scores = norm_cdf(scores)
             filter_mask = self._rng.random(len(filter_scores)) < filter_scores
-            scores = scores[filter_mask]
             pairs = np.column_stack(pairs)
             pairs = pairs[filter_mask]
 
-            if len(scores) > 0:
-                probs = softmax(scores, beta=self.sf_beta)
-                pair = self._rng.choice(np.arange(pairs.shape[0]), p=probs)
-                clusters_to_merge = clusters[pairs[pair]]
-                self._merge_clusters(clusters_to_merge[0], clusters_to_merge[1], obs_state)
+            for i in range(pairs.shape[0]):
+                pair = pairs[i]
+                if pair[0] != pair[1]:
+                    self._merge_clusters(clusters[pair[0]], clusters[pair[1]], obs_state)
+                    # replace merged clusters ids
+                    pairs[pairs == pair[1]] = pair[0]
+
+            prefix = "sleep/merge/"
+            wandb.log(
+                {
+                    prefix + 'num_candidates': len(scores),
+                    prefix + 'mean_sf_sim': mean,
+                    prefix + 'mean_sf_std': std
+                }
+            )
 
         if split_iterations > 0:
             self._update_second_level()
@@ -401,6 +410,15 @@ class ECAgent:
 
             if n_split:
                 self._update_second_level()
+
+            prefix = "sleep/split/"
+            wandb.log(
+                {
+                    prefix + 'num_candidates': len(clusters_to_split),
+                    prefix + 'num_split': n_split,
+                    prefix + 'mean_entropy': cluster_entropies.mean()
+                }
+            )
 
     def _split_cluster(self, cluster_id):
         mask = self._test_cluster(cluster_id)
