@@ -165,7 +165,7 @@ class ECAgent:
                         predicted_clusters[pc] = prob
                     obs_probs[pc[0]] += prob
 
-        self.second_level_none = obs_probs.sum()
+        self.second_level_none = 1 - obs_probs.sum()
         self.second_level_error = - np.log(obs_probs[obs_state] + EPS)
         # posterior update of predicted clusters (IMPORTANT! we didn't do that for previous tests)
         predicted_clusters = {c: p for c, p in predicted_clusters.items() if c[0] == obs_state}
@@ -380,16 +380,18 @@ class ECAgent:
                     pairs[pairs == pair[1]] = pair[0]
 
             prefix = "sleep/merge/"
-            wandb.log(
-                {
-                    prefix + 'num_candidates': len(scores),
-                    prefix + 'mean_sf_sim': mean,
-                    prefix + 'mean_sf_std': std
-                }
-            )
+            try:
+                wandb.log(
+                    {
+                        prefix + 'num_candidates': len(scores),
+                        prefix + 'mean_sf_sim': mean,
+                        prefix + 'mean_sf_std': std
+                    }
+                )
+            except wandb.errors.Error:
+                pass
 
-        if split_iterations > 0:
-            self._update_second_level()
+        self._update_second_level()
 
         for _ in range(split_iterations):
             # sample clusters proportionally to
@@ -412,13 +414,16 @@ class ECAgent:
                 self._update_second_level()
 
             prefix = "sleep/split/"
-            wandb.log(
-                {
-                    prefix + 'num_candidates': len(clusters_to_split),
-                    prefix + 'num_split': n_split,
-                    prefix + 'mean_entropy': cluster_entropies.mean()
-                }
-            )
+            try:
+                wandb.log(
+                    {
+                        prefix + 'num_candidates': len(clusters_to_split),
+                        prefix + 'num_split': n_split,
+                        prefix + 'mean_entropy': cluster_entropies.mean()
+                    }
+                )
+            except wandb.errors.Error:
+                pass
 
     def _split_cluster(self, cluster_id):
         mask = self._test_cluster(cluster_id)
@@ -434,6 +439,10 @@ class ECAgent:
         new_cluster_id = self.cluster_counter
         self.cluster_counter += 1
         self.cluster_to_states[new_cluster_id] = {tuple(s) for s in new_cluster}
+
+        for s in self.cluster_to_states[new_cluster_id]:
+            self.state_to_cluster[s] = new_cluster_id
+
         self.cluster_to_obs[new_cluster_id] = obs_state
         self.obs_to_clusters[obs_state].add(new_cluster_id)
         return new_cluster_id
