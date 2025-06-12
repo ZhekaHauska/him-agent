@@ -98,8 +98,9 @@ class ECAgent:
 
         self.memory_trace = np.zeros((len(self.trace_gamma), self.n_obs_states))
 
-        self.first_level_error = 0
+        self.first_level_acc = 0
         self.second_level_error = 0
+        self.second_level_acc = 0
         self.first_level_none = 0
         self.second_level_none = 0
         self.generalised = 0
@@ -126,8 +127,9 @@ class ECAgent:
         self.cluster = {(-1, -1): 1.0}
         self.goal_found = False
         self.surprise = 0
-        self.first_level_error = 0
+        self.first_level_acc = 0
         self.second_level_error = 0
+        self.second_level_acc = 0
         self.generalised = 0
         self.first_level_none = 0
         self.second_level_none = 0
@@ -145,10 +147,10 @@ class ECAgent:
         predicted_state = self.first_level_transitions[action].get(self.state)
         self.first_level_none = float(predicted_state is None)
         if (predicted_state is None) or (predicted_state[0] != obs_state):
-            self.first_level_error = 1
+            self.first_level_acc = 0
             current_state = self._new_state(obs_state)
         else:
-            self.first_level_error = 0
+            self.first_level_acc = 1
             current_state = predicted_state
 
         predicted_clusters = dict()
@@ -167,12 +169,13 @@ class ECAgent:
 
         self.second_level_none = 1 - obs_probs.sum()
         self.second_level_error = - np.log(obs_probs[obs_state] + EPS)
+        self.second_level_acc = np.argmax(obs_probs) == obs_state
         # posterior update of predicted clusters (IMPORTANT! we didn't do that for previous tests)
         predicted_clusters = {c: p for c, p in predicted_clusters.items() if c[0] == obs_state}
         norm = sum(list(predicted_clusters.values())) + EPS
         predicted_clusters = {c: p/norm for c, p in predicted_clusters.items()}
 
-        self.generalised = self.second_level_error < self.first_level_error
+        self.generalised = self.second_level_acc > self.first_level_acc
 
         # state induced cluster
         cluster = self.state_to_cluster.get(current_state)
@@ -192,6 +195,7 @@ class ECAgent:
             if cluster is None:
                 # TODO take into account cluster prediction probabilities
                 # TODO softly combine trace based and prediction based cluster assignments
+                # (top down and bottom up predictions)
                 # add state to a cluster with the most similar memory trace
                 # or create a new cluster
                 if len(predicted_clusters) > 0:
