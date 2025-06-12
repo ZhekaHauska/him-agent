@@ -190,9 +190,15 @@ class ECAgent:
                 self.first_level_transitions[action][self.state] = current_state
 
             if cluster is None:
+                # TODO take into account cluster prediction probabilities
+                # TODO softly combine trace based and prediction based cluster assignments
                 # add state to a cluster with the most similar memory trace
                 # or create a new cluster
-                candidates = np.array(list(self.obs_to_clusters[obs_state]))
+                if len(predicted_clusters) > 0:
+                    candidates = np.array([c[1] for c in predicted_clusters.keys()])
+                else:
+                    candidates = np.array(list(self.obs_to_clusters[obs_state]))
+
                 traces = list()
                 for c in candidates:
                     trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
@@ -246,6 +252,7 @@ class ECAgent:
 
         self.memory_trace += obs_dense[None]
         self.state = current_state
+        # TODO cluster and current_cluster may be incongruent
         self.cluster = current_clusters
         self.time_step += 1
 
