@@ -19,6 +19,8 @@ from PIL import Image
 import pygraphviz as pgv
 import io
 
+from hima.modules.belief.utils import normalize
+
 EPS = 1e-24
 
 def norm_cdf(z):
@@ -48,7 +50,9 @@ class ECAgent:
             plan_steps,
             mt_lr,
             sf_lr,
+            jn_lr,
             mt_beta,
+            use_cluster_size_bias,
             update_period,
             gamma,
             reward_lr,
@@ -74,8 +78,10 @@ class ECAgent:
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
         self.mt_merge_thresholds = dict()
         self.sf_merge_threshold = SSValue(1.0, sf_lr)
+        self.joint_norm = SSValue(1.0, jn_lr, mean_ini=1.0)
         self.mt_lr = mt_lr
         self.mt_beta = mt_beta
+        self.use_cluster_size_bias = use_cluster_size_bias
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -193,55 +199,11 @@ class ECAgent:
                 self.first_level_transitions[action][self.state] = current_state
 
             if cluster is None:
-                # TODO take into account cluster prediction probabilities
-                # TODO softly combine trace based and prediction based cluster assignments
-                # (top down and bottom up predictions)
                 # add state to a cluster with the most similar memory trace
+                winner = self.assign_cluster(obs_state, current_mem_trace, predicted_clusters)
+
                 # or create a new cluster
-                if len(predicted_clusters) > 0:
-                    candidates = np.array([c[1] for c in predicted_clusters.keys()])
-                else:
-                    candidates = np.array(list(self.obs_to_clusters[obs_state]))
-
-                traces = list()
-                for c in candidates:
-                    trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
-                    trace = np.vstack(trace).mean(axis=0)
-                    traces.append(trace)
-
-                if len(traces) > 0:
-                    means, stds = self.extract_thresholds(
-                        candidates, self.mt_merge_thresholds
-                    )
-                    means = np.array(means)
-                    stds = np.array(stds)
-
-                    traces = np.vstack(traces)
-                    scores = self.sim_func(traces, current_mem_trace[None])[0]
-                    self.update_thresholds(
-                        scores, candidates, self.mt_merge_thresholds, self.mt_lr
-                    )
-                    # filter noisy scores
-                    scores = (scores - means) / (stds + EPS)
-                    filter_scores = norm_cdf(scores)
-                    filter_mask = self._rng.random(len(filter_scores)) < filter_scores
-                    scores = scores[filter_mask]
-                    candidates = candidates[filter_mask]
-                else:
-                    scores = np.empty(0, dtype=np.float32)
-
-                if len(scores) > 0:
-                    scores = np.exp(self.mt_beta * scores)
-                    lengths = [
-                        len(self.cluster_to_states[c])
-                        for c in candidates
-                    ]
-                    lengths = np.array(lengths, dtype=np.float32)
-                    c_prior = lengths / (lengths.sum() + EPS)
-                    c_posterior = c_prior * scores
-                    c_posterior = c_posterior / (c_posterior.sum() + EPS)
-                    winner = self._rng.choice(candidates, p=c_posterior)
-                else:
+                if winner is None:
                     winner = self.cluster_counter
                     self.cluster_counter += 1
                     self.cluster_to_states[winner] = set()
@@ -259,6 +221,76 @@ class ECAgent:
         # TODO cluster and current_cluster may be incongruent
         self.cluster = current_clusters
         self.time_step += 1
+
+    def assign_cluster(self, obs_state, mem_trace, predicted_clusters):
+        # transition-based predictions
+        candidates = list(self.obs_to_clusters[obs_state])
+        # TODO check case with one candidate
+        if len(candidates) < 2:
+            return None
+
+        pred_probs = np.array(
+            [predicted_clusters.get((obs_state, c), 0.0) for c in candidates]
+        )
+        candidates = np.array(candidates)
+
+        # memory-trace-based predictions
+        traces = list()
+        for c in candidates:
+            trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
+            trace = np.vstack(trace).mean(axis=0)
+            traces.append(trace)
+
+        means, stds = self.extract_thresholds(
+            candidates, self.mt_merge_thresholds
+        )
+        means = np.array(means)
+        stds = np.array(stds)
+
+        traces = np.vstack(traces)
+        scores = self.sim_func(traces, mem_trace[None])[0]
+        self.update_thresholds(
+            scores, candidates, self.mt_merge_thresholds, self.mt_lr
+        )
+        # standardise scores
+        scores = (scores - means) / (stds + EPS)
+        mt_probs = np.exp(self.mt_beta * scores)
+
+        # filter noisy scores
+        filter_scores = norm_cdf(scores)
+        filter_mask = self._rng.random(len(filter_scores)) > filter_scores
+        mt_probs[filter_mask] = 0.0
+        mt_probs = mt_probs / (mt_probs.sum() + EPS)
+
+        # main formula
+        joint_probs = pred_probs * mt_probs
+        joint_norm = joint_probs.sum()
+        jm = joint_norm / self.joint_norm.mean
+        q = (
+                np.power(joint_probs, jm) *
+                np.power(pred_probs + mt_probs, max(0, 1 - jm))
+        )
+        self.joint_norm.update(joint_norm)
+
+        if self.use_cluster_size_bias:
+            # cluster-size-based prior
+            lengths = [
+                len(self.cluster_to_states[c])
+                for c in candidates
+            ]
+            lengths = np.array(lengths, dtype=np.float32)
+            c_prior = lengths / (lengths.sum() + EPS)
+            q *= c_prior
+
+        q = normalize(q).squeeze()
+
+        # decide if we create a new cluster
+        new_cluster_prob = np.exp(entropy(q)) / len(candidates)
+        if self._rng.random() > new_cluster_prob:
+            winner = self._rng.choice(candidates, p=q)
+        else:
+            winner = None
+        return winner
 
     @staticmethod
     def update_thresholds(score, clusters, thresholds, lr):
