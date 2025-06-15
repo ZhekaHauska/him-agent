@@ -67,6 +67,7 @@ class ECAgent:
         self.plan_steps = plan_steps
         self.update_period = update_period
 
+        self.first_order_transitions = np.zeros((n_actions, n_obs_states, n_obs_states))
         self.first_level_transitions = [dict() for _ in range(n_actions)]
         self.state_to_memory_trace = dict()
         self.state_to_sf = dict()
@@ -104,6 +105,8 @@ class ECAgent:
 
         self.memory_trace = np.zeros((len(self.trace_gamma), self.n_obs_states))
 
+        self.first_order_error = 0
+        self.first_order_acc = 0
         self.first_level_acc = 0
         self.second_level_error = 0
         self.second_level_acc = 0
@@ -133,6 +136,8 @@ class ECAgent:
         self.cluster = {(-1, -1): 1.0}
         self.goal_found = False
         self.surprise = 0
+        self.first_order_error = 0
+        self.first_order_acc = 0
         self.first_level_acc = 0
         self.second_level_error = 0
         self.second_level_acc = 0
@@ -158,6 +163,12 @@ class ECAgent:
         else:
             self.first_level_acc = 1
             current_state = predicted_state
+
+        # first order baseline
+        obs_probs = self.first_order_transitions[action][self.state[0]]
+        obs_probs = normalize(obs_probs).squeeze()
+        self.first_order_error = - np.log(obs_probs[obs_state] + EPS)
+        self.first_order_acc = np.argmax(obs_probs) == obs_state
 
         predicted_clusters = dict()
         obs_probs = np.zeros(self.n_obs_states)
@@ -197,6 +208,7 @@ class ECAgent:
 
             if (self.state is not None) and (current_state is not None):
                 self.first_level_transitions[action][self.state] = current_state
+                self.first_order_transitions[action][self.state[0]][current_state[0]] += 1
 
             if cluster is None:
                 # add state to a cluster with the most similar memory trace
