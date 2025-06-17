@@ -66,8 +66,8 @@ class ECAgent:
         self.n_actions = n_actions
         self.plan_steps = plan_steps
         self.update_period = update_period
-
-        self.first_order_transitions = np.zeros((n_actions, n_obs_states, n_obs_states))
+        # +1 for the initial state (the last state)
+        self.first_order_transitions = np.zeros((n_actions, n_obs_states + 1, n_obs_states + 1))
         self.first_level_transitions = [dict() for _ in range(n_actions)]
         self.state_to_memory_trace = dict()
         self.state_to_sf = dict()
@@ -438,7 +438,8 @@ class ECAgent:
             try:
                 wandb.log(
                     {
-                        prefix + 'num_candidates': len(scores),
+                        prefix + 'num_candidate_pairs': len(scores),
+                        prefix + 'num_clusters': self.num_clusters,
                         prefix + 'mean_sf_sim': mean,
                         prefix + 'mean_sf_std': std
                     }
@@ -473,6 +474,7 @@ class ECAgent:
                 wandb.log(
                     {
                         prefix + 'num_candidates': len(clusters_to_split),
+                        prefix + 'num_clusters': self.num_clusters,
                         prefix + 'num_split': n_split,
                         prefix + 'mean_entropy': cluster_entropies.mean()
                     }
