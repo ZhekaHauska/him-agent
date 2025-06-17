@@ -1030,10 +1030,14 @@ class EClusterPurity(BaseMetric):
         cluster_purity = list()
         clusters = self.runner.agent.agent.cluster_to_states
         for cluster_id in clusters:
+            # skip initial state cluster
             if cluster_id == -1:
                 continue
             cluster = clusters[cluster_id]
             cluster_labels = np.array([self.state_labels[s] for s in cluster])
+            # skip one-state clusters
+            if len(cluster_labels) == 1:
+                continue
             labels, counts = np.unique(cluster_labels, return_counts=True)
             if len(labels) == 1:
                 l = labels[0]
@@ -1044,7 +1048,7 @@ class EClusterPurity(BaseMetric):
             score = np.max(counts) / counts.sum()
             cluster_purity.append(score)
 
-        log_dict[self.name] = np.median(np.array(cluster_purity))
+        log_dict[self.name] = np.mean(np.array(cluster_purity))
         self.logger.log(log_dict)
 
 class ECTrueClusterSim(BaseMetric):
