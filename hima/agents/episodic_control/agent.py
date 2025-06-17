@@ -53,6 +53,7 @@ class ECAgent:
             jn_lr,
             mt_beta,
             use_cluster_size_bias,
+            use_memory_trace,
             update_period,
             gamma,
             reward_lr,
@@ -60,12 +61,18 @@ class ECAgent:
             exploration_eps,
             trace_gamma,
             sim_metric,
+            sleep_period,
+            merge_iterations,
+            split_iterations,
             seed
     ):
         self.n_obs_states = n_obs_states
         self.n_actions = n_actions
         self.plan_steps = plan_steps
         self.update_period = update_period
+        self.sleep_period = sleep_period
+        self.merge_iterations = merge_iterations
+        self.split_iterations = split_iterations
         # +1 for the initial state (the last state)
         self.first_order_transitions = np.zeros((n_actions, n_obs_states + 1, n_obs_states + 1))
         self.first_level_transitions = [dict() for _ in range(n_actions)]
@@ -83,6 +90,7 @@ class ECAgent:
         self.mt_lr = mt_lr
         self.mt_beta = mt_beta
         self.use_cluster_size_bias = use_cluster_size_bias
+        self.use_memory_trace = use_memory_trace
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -228,6 +236,9 @@ class ECAgent:
             if (self.time_step % self.update_period) == 0:
                 self._update_second_level()
 
+            if (self.time_step % self.sleep_period) == 0:
+                self.sleep_phase(self.merge_iterations, self.split_iterations)
+
         self.memory_trace += obs_dense[None]
         self.state = current_state
         # TODO cluster and current_cluster may be incongruent
@@ -246,43 +257,46 @@ class ECAgent:
         )
         candidates = np.array(candidates)
 
-        # memory-trace-based predictions
-        traces = list()
-        for c in candidates:
-            trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
-            trace = np.vstack(trace).mean(axis=0)
-            traces.append(trace)
+        if self.use_memory_trace:
+            # memory-trace-based predictions
+            traces = list()
+            for c in candidates:
+                trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
+                trace = np.vstack(trace).mean(axis=0)
+                traces.append(trace)
 
-        means, stds = self.extract_thresholds(
-            candidates, self.mt_merge_thresholds
-        )
-        means = np.array(means)
-        stds = np.array(stds)
+            means, stds = self.extract_thresholds(
+                candidates, self.mt_merge_thresholds
+            )
+            means = np.array(means)
+            stds = np.array(stds)
 
-        traces = np.vstack(traces)
-        scores = self.sim_func(traces, mem_trace[None])[0]
-        self.update_thresholds(
-            scores, candidates, self.mt_merge_thresholds, self.mt_lr
-        )
-        # standardise scores
-        scores = (scores - means) / (stds + EPS)
-        mt_probs = np.exp(self.mt_beta * scores)
+            traces = np.vstack(traces)
+            scores = self.sim_func(traces, mem_trace[None])[0]
+            self.update_thresholds(
+                scores, candidates, self.mt_merge_thresholds, self.mt_lr
+            )
+            # standardise scores
+            scores = (scores - means) / (stds + EPS)
+            mt_probs = np.exp(self.mt_beta * scores)
 
-        # filter noisy scores
-        filter_scores = norm_cdf(scores)
-        filter_mask = self._rng.random(len(filter_scores)) > filter_scores
-        mt_probs[filter_mask] = 0.0
-        mt_probs = mt_probs / (mt_probs.sum() + EPS)
+            # filter noisy scores
+            filter_scores = norm_cdf(scores)
+            filter_mask = self._rng.random(len(filter_scores)) > filter_scores
+            mt_probs[filter_mask] = 0.0
+            mt_probs = mt_probs / (mt_probs.sum() + EPS)
 
-        # main formula
-        joint_probs = pred_probs * mt_probs
-        joint_norm = joint_probs.sum()
-        jm = joint_norm / self.joint_norm.mean
-        q = (
-                np.power(joint_probs, jm) *
-                np.power(pred_probs + mt_probs, max(0, 1 - jm))
-        )
-        self.joint_norm.update(joint_norm)
+            # main formula
+            joint_probs = pred_probs * mt_probs
+            joint_norm = joint_probs.sum()
+            jm = joint_norm / self.joint_norm.mean
+            q = (
+                    np.power(joint_probs, jm) *
+                    np.power(pred_probs + mt_probs, max(0, 1 - jm))
+            )
+            self.joint_norm.update(joint_norm)
+        else:
+            q = pred_probs
 
         if self.use_cluster_size_bias:
             # cluster-size-based prior
