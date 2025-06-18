@@ -70,6 +70,7 @@ class ECAgent:
             sleep_period,
             merge_iterations,
             split_iterations,
+            clusters_per_obs,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -103,6 +104,21 @@ class ECAgent:
         self.cluster_to_states[-1] = {(-1, -1)}
         self.state_to_cluster[(-1, -1)] = -1
         self.cluster_to_obs[-1] = -1
+
+        self.clusters_allocated = clusters_per_obs > 0
+        if self.clusters_allocated:
+            for obs_state in self.obs_to_clusters:
+                clusters = set(
+                        range(
+                            obs_state * clusters_per_obs, (obs_state + 1) * clusters_per_obs
+                        )
+                    )
+                self.obs_to_clusters[obs_state].update(
+                    clusters
+                )
+                for c in clusters:
+                    self.cluster_to_states[c] = set()
+                    self.cluster_to_obs[c] = obs_state
 
         self.gamma = gamma
         self.trace_gamma = trace_gamma
@@ -318,7 +334,7 @@ class ECAgent:
 
         # decide if we create a new cluster
         new_cluster_prob = np.exp(entropy(q)) / len(candidates)
-        if self._rng.random() > new_cluster_prob:
+        if (self._rng.random() > new_cluster_prob) or self.clusters_allocated:
             winner = self._rng.choice(candidates, p=q)
         else:
             winner = None
