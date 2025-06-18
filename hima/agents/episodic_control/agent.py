@@ -36,13 +36,19 @@ def norm_cdf(z):
 def euclidian_sim(X, Y=None):
     return np.exp(-euclidean_distances(X, Y))
 
+def dummy_sim(X, Y=None):
+    if Y is None:
+        return np.zeros((X.shape[0], X.shape[0]))
+    else:
+        return np.zeros((X.shape[0], Y.shape[0]))
+
 class ExplorationPolicy(Enum):
     SOFTMAX = 1
     EPS_GREEDY = auto()
 
 
 class ECAgent:
-    similarities = {"cos": cosine_similarity, "euc": euclidian_sim}
+    similarities = {"cos": cosine_similarity, "euc": euclidian_sim, "dummy": dummy_sim}
     def __init__(
             self,
             n_obs_states,
