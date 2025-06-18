@@ -1035,8 +1035,8 @@ class EClusterPurity(BaseMetric):
                 continue
             cluster = clusters[cluster_id]
             cluster_labels = np.array([self.state_labels[s] for s in cluster])
-            # skip one-state clusters
-            if len(cluster_labels) == 1:
+            # skip one-state and empty clusters
+            if len(cluster_labels) <= 1:
                 continue
             labels, counts = np.unique(cluster_labels, return_counts=True)
             if len(labels) == 1:
