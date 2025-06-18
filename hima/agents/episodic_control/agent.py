@@ -320,6 +320,8 @@ class ECAgent:
         else:
             q = pred_probs
 
+        q = normalize(q).squeeze()
+
         if self.use_cluster_size_bias:
             # cluster-size-based prior
             lengths = [
