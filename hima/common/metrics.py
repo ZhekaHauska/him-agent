@@ -408,6 +408,41 @@ def get_surprise_2(probs, obs, mode='bernoulli', normalize=True):
     return surprise
 
 
+class Distribution(BaseMetric):
+    def __init__(self, metrics, logger, runner,
+                 update_step, log_step, update_period, log_period, is_cumulative):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.logger = logger
+        self.is_cumulative = is_cumulative
+        self.metrics = {metric: [] for metric in metrics.keys()}
+        self.att_to_log = {
+            metric: params['att']
+            for metric, params in metrics.items()
+        }
+
+    def update(self):
+        for name in self.metrics.keys():
+            value = self.get_attr(self.att_to_log[name])
+            self.metrics[name].append(value)
+
+    def log(self, step):
+        from matplotlib import pyplot as plt
+
+        log_dict = {self.log_step: step}
+        for key, value in self.metrics.items():
+            plt.figure()
+            log_dict[key] = wandb.Image(sns.histplot(value))
+
+        self.logger.log(log_dict)
+        plt.close('all')
+
+        if not self.is_cumulative:
+            self._reset()
+
+    def _reset(self):
+        self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+
 class Histogram(BaseMetric):
     def __init__(
             self, name, att, normalized,
