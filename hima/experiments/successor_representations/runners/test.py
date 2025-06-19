@@ -80,6 +80,16 @@ class ICMLRunner(BaseRunner):
         if isinstance(layer, LstmLayer):
             layer.save_model(os.path.join(dir_path, f'{self.logger.name}_{self.episodes}.pt'))
 
+    def save_agent(self, dir_path):
+        if self.logger is not None:
+            name = self.logger.name
+        else:
+            from names_generator import generate_name
+            name = generate_name()
+
+        with open(os.path.join(dir_path, f'agent_{name}.pkl'), 'wb') as file:
+            pickle.dump(self.agent.agent, file)
+
     @property
     def real_reward(self):
         if self.agent.camera is not None:
