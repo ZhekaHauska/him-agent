@@ -55,7 +55,6 @@ class ECAgent:
             n_actions,
             plan_steps,
             mt_lr,
-            sf_lr,
             jn_lr,
             mt_beta,
             use_cluster_size_bias,
@@ -71,6 +70,7 @@ class ECAgent:
             merge_iterations,
             split_iterations,
             clusters_per_obs,
+            top_percent_to_merge,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -92,12 +92,12 @@ class ECAgent:
         self.cluster_to_entropy = dict()
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
         self.mt_merge_thresholds = dict()
-        self.sf_merge_threshold = SSValue(1.0, sf_lr)
         self.joint_norm = SSValue(1.0, jn_lr, mean_ini=1.0)
         self.mt_lr = mt_lr
         self.mt_beta = mt_beta
         self.use_cluster_size_bias = use_cluster_size_bias
         self.use_memory_trace = use_memory_trace
+        self.top_percent_to_merge = top_percent_to_merge
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -455,17 +455,13 @@ class ECAgent:
             pairs = np.triu_indices(sfs.shape[0], k=1)
             scores = self.sim_func(sfs)
             scores = scores[pairs].flatten()
-            self.sf_merge_threshold.update(scores.mean(), scores.std())
-
-            # filter noisy pairs
-            mean, std = self.sf_merge_threshold.mean, self.sf_merge_threshold.std
-            scores = (scores - mean) / (std + EPS)
-            filter_scores = norm_cdf(scores)
-            filter_mask = self._rng.random(len(filter_scores)) < filter_scores
             pairs = np.column_stack(pairs)
-            pairs = pairs[filter_mask]
+            # merge most similar pairs
+            k = int(self.top_percent_to_merge * len(scores))
+            top_k_inds = np.argpartition(scores, -k)[-k:]
+            pairs_to_merge = pairs[top_k_inds]
 
-            for i in range(pairs.shape[0]):
+            for i in range(pairs_to_merge.shape[0]):
                 pair = pairs[i]
                 if pair[0] != pair[1]:
                     self._merge_clusters(clusters[pair[0]], clusters[pair[1]], obs_state)
@@ -476,10 +472,10 @@ class ECAgent:
             try:
                 wandb.log(
                     {
-                        prefix + 'num_candidate_pairs': len(scores),
+                        prefix + 'num_candidate_pairs': k,
                         prefix + 'num_clusters': self.num_clusters,
-                        prefix + 'mean_sf_sim': mean,
-                        prefix + 'mean_sf_std': std
+                        prefix + 'mean_sf_sim': scores.mean(),
+                        prefix + 'mean_sf_std': scores.std()
                     }
                 )
             except wandb.errors.Error:
