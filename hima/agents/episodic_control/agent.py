@@ -431,6 +431,7 @@ class ECAgent:
 
     def sleep_phase(self, merge_iterations, split_iterations):
         for _ in range(merge_iterations):
+            n_cls = self.num_clusters
             n_clusters = [len(self.obs_to_clusters[obs]) for obs in range(self.n_obs_states)]
             n_clusters = np.array(n_clusters, dtype=np.float32)
 
@@ -473,7 +474,7 @@ class ECAgent:
                 wandb.log(
                     {
                         prefix + 'num_candidate_pairs': k,
-                        prefix + 'num_clusters': self.num_clusters,
+                        prefix + 'delta_num_clusters': self.num_clusters - n_cls,
                         prefix + 'mean_sf_sim': scores.mean(),
                         prefix + 'mean_sf_std': scores.std()
                     }
@@ -484,6 +485,7 @@ class ECAgent:
         self._update_second_level()
 
         for _ in range(split_iterations):
+            n_cls = self.num_clusters
             # sample clusters proportionally to
             # the entropy of their predictions
             cluster_entropies = np.array(list(self.cluster_to_entropy.values()), dtype=np.float32)
@@ -508,7 +510,7 @@ class ECAgent:
                 wandb.log(
                     {
                         prefix + 'num_candidates': len(clusters_to_split),
-                        prefix + 'num_clusters': self.num_clusters,
+                        prefix + 'delta_num_clusters': self.num_clusters - n_cls,
                         prefix + 'num_split': n_split,
                         prefix + 'mean_entropy': cluster_entropies.mean()
                     }
