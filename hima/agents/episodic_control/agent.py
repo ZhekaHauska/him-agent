@@ -574,6 +574,8 @@ class ECAgent:
                 d_a.pop(c2)
 
     def _update_second_level(self):
+        for d_a in self.second_level_transitions:
+            d_a.clear()
         for cluster_id in self.cluster_to_states:
             # update transition matrix
             cluster_entropy = 0
