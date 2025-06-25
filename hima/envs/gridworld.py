@@ -39,7 +39,15 @@ class GridWorld:
             # last color reserved for terminal state
             # negative colors reserved for obstacles
             if markov_radius == 0:
-                colors = self._rng.integers(0, n_random_colors, size=self.colors.shape)
+                colors = np.tile(
+                    np.arange(n_random_colors),
+                    (
+                        int(self.colors.size//n_random_colors) +
+                        int((self.colors.size % n_random_colors) > 0)
+                    )
+                )
+                self._rng.shuffle(colors)
+                colors = colors[:self.colors.size].reshape(self.colors.shape)
             else:
                 colors = generate_map(markov_radius, self.colors.shape, seed)
 
