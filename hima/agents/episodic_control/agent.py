@@ -71,6 +71,12 @@ class ECAgent:
             split_iterations,
             clusters_per_obs,
             top_percent_to_merge,
+            check_contradictions,
+            n_rollouts,
+            cluster_test_steps,
+            expand_clusters,
+            minimum_test_steps,
+            test_policy_beta,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -98,6 +104,13 @@ class ECAgent:
         self.use_cluster_size_bias = use_cluster_size_bias
         self.use_memory_trace = use_memory_trace
         self.top_percent_to_merge = top_percent_to_merge
+        # contradictions parameters
+        self.check_contradictions = check_contradictions
+        self.n_rollouts = n_rollouts
+        self.cluster_test_steps = cluster_test_steps
+        self.expand_clusters = expand_clusters
+        self.minimum_test_steps = minimum_test_steps
+        self.test_policy_beta = test_policy_beta
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -435,7 +448,7 @@ class ECAgent:
             n_clusters = [len(self.obs_to_clusters[obs]) for obs in range(self.n_obs_states)]
             n_clusters = np.array(n_clusters, dtype=np.float32)
 
-            # sample obs state to start replay from
+            # choose obs state to perform merging
             probs = np.clip(n_clusters - 1, 0, None)
             norm = probs.sum()
             if norm == 0:
@@ -445,6 +458,7 @@ class ECAgent:
             obs_state = self._rng.choice(self.n_obs_states, p=probs)
 
             clusters = np.array(list(self.obs_to_clusters[obs_state]))
+
             sfs = list()
             for c in clusters:
                 states = self.cluster_to_states[c]
@@ -457,6 +471,7 @@ class ECAgent:
             scores = self.sim_func(sfs)
             scores = scores[pairs].flatten()
             pairs = np.column_stack(pairs)
+            pairs = clusters[pairs]
             # merge most similar pairs
             k = int(self.top_percent_to_merge * len(scores))
             top_k_inds = np.argpartition(scores, -k)[-k:]
@@ -465,9 +480,13 @@ class ECAgent:
             for i in range(pairs_to_merge.shape[0]):
                 pair = pairs[i]
                 if pair[0] != pair[1]:
-                    self._merge_clusters(clusters[pair[0]], clusters[pair[1]], obs_state)
+                    parent, child = self._merge_clusters(
+                        pair[0], pair[1], obs_state,
+                        check_contradictions=self.check_contradictions
+                    )
                     # replace merged clusters ids
-                    pairs[pairs == pair[1]] = pair[0]
+                    if child is not None:
+                        pairs[pairs == child] = parent
 
             prefix = "sleep/merge/"
             try:
@@ -519,7 +538,7 @@ class ECAgent:
                 pass
 
     def _split_cluster(self, cluster_id):
-        mask = self._test_cluster(cluster_id)
+        mask = self._test_cluster_hidden(cluster_id)
         states = np.array(list(self.cluster_to_states[cluster_id]))
         obs_state = self.cluster_to_obs[cluster_id]
         old_cluster = states[mask]
@@ -540,7 +559,7 @@ class ECAgent:
         self.obs_to_clusters[obs_state].add(new_cluster_id)
         return new_cluster_id
 
-    def _test_cluster(self, cluster_id):
+    def _test_cluster_hidden(self, cluster_id):
         states = self.cluster_to_states[cluster_id]
         test = np.ones(len(states)).astype(np.bool8)
 
@@ -556,22 +575,88 @@ class ECAgent:
                 test = (clusters == cls[np.argmax(counts)]) | empty
         return test
 
-    def _merge_clusters(self, c1, c2, obs_state):
+    def _test_cluster_obs(self, cluster: list) -> (np.ndarray, int):
+        """
+            Returns boolean array of size len(cluster)
+            True/False means that the cluster's element is
+                consistent/inconsistent with the majority of elements
+        """
+        test = np.ones(len(cluster)).astype(np.bool8)
+        t = -1
+        for _ in range(self.n_rollouts):
+            ps_per_i = {pos: {s} for pos, s in enumerate(cluster)}
+            for t in range(self.cluster_test_steps):
+                score_a = np.zeros(self.n_actions)
+                # predict states for each action and initial state
+                ps_per_a = [dict() for _ in range(self.n_actions)]
+                trace_interrupted = np.ones_like(test)
+                for a, d_a in enumerate(self.first_level_transitions):
+                    obs = np.full(len(cluster), fill_value=np.nan)
+                    for pos, ps_i in ps_per_i.items():
+                        ps_a = self._predict(
+                            ps_i, a, expand_clusters=(t != 0) and self.expand_clusters
+                        )
+                        obs_a = {s[0] for s in ps_a}
+                        # contradiction
+                        if len(obs_a) > 1:
+                            test[pos] = False
+                        elif len(obs_a) == 1:
+                            score_a[a] += int(len(ps_a) != 0)
+                            ps_per_a[a][pos] = ps_a
+                            obs[pos] = obs_a.pop()
+                            trace_interrupted[pos] = False
+                    # detect contradiction
+                    empty = np.isnan(obs)
+                    states, counts = np.unique(obs[~empty], return_counts=True)
+                    if len(counts) > 0:
+                        test = test & ((obs == states[np.argmax(counts)]) | empty)
+
+                # discard traces that were interrupted too early
+                if t < self.minimum_test_steps:
+                    test = test & (~trace_interrupted)
+
+                # choose next action
+                action = self._rng.choice(
+                    np.arange(len(score_a)),
+                    p=softmax(score_a, beta=self.test_policy_beta)
+                )
+                ps_per_i = {pos: s for pos, s in ps_per_a[action].items() if test[pos]}
+
+                if (score_a[action] <= 1) or (len(ps_per_i) <= 1):
+                    # no predictions or only one trace is left
+                    break
+        return test, t + 1
+
+    def _merge_clusters(self, c1, c2, obs_state, check_contradictions=False):
         new_states = self.cluster_to_states[c1].union(self.cluster_to_states[c2])
-        self.cluster_to_states[c1] = new_states
 
-        states = self.cluster_to_states.pop(c2)
-        for s in states:
-            self.state_to_cluster[s] = c1
+        if check_contradictions:
+            new_states = list(new_states)
+            mask, _ = self._test_cluster_obs(new_states)
+            new_states = np.array(new_states)
+            c1_states = {tuple(x) for x in new_states[mask]}
+            c2_states = {tuple(x) for x in new_states[~mask]}
+        else:
+            c1_states = new_states
+            c2_states = {}
 
-        self.obs_to_clusters[obs_state].remove(c2)
+        parent, child = None, None
+        for c, states in zip((c1, c2), (c1_states, c2_states)):
+            if len(states) == 0:
+                child = c
+                self._delete_cluster(c, obs_state)
+            else:
+                parent = c
+                self.cluster_to_states[c] = states
+                for s in states:
+                    self.state_to_cluster[s] = c
+        return parent, child
 
-        if c2 in self.cluster_to_entropy:
-            self.cluster_to_entropy.pop(c2)
-
-        for d_a in self.second_level_transitions:
-            if c2 in d_a:
-                d_a.pop(c2)
+    def _delete_cluster(self, cluster_id, obs_state):
+        self.cluster_to_states.pop(cluster_id)
+        self.obs_to_clusters[obs_state].remove(cluster_id)
+        if cluster_id in self.cluster_to_entropy:
+            self.cluster_to_entropy.pop(cluster_id)
 
     def _update_second_level(self):
         for d_a in self.second_level_transitions:
