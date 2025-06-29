@@ -77,6 +77,7 @@ class ECAgent:
             expand_clusters,
             minimum_test_steps,
             test_policy_beta,
+            split_mode,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -111,6 +112,7 @@ class ECAgent:
         self.expand_clusters = expand_clusters
         self.minimum_test_steps = minimum_test_steps
         self.test_policy_beta = test_policy_beta
+        self.split_mode = split_mode
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -518,7 +520,7 @@ class ECAgent:
 
             n_split = 0
             for cluster in clusters_to_split:
-                if self._split_cluster(cluster):
+                if self._split_cluster(cluster, self.split_mode):
                     n_split += 1
 
             if n_split:
@@ -537,9 +539,21 @@ class ECAgent:
             except wandb.errors.Error:
                 pass
 
-    def _split_cluster(self, cluster_id):
+    def _split_cluster(self, cluster_id, mode='random'):
         states = list(self.cluster_to_states[cluster_id])
-        mask = self._test_cluster_hidden(states)
+
+        if mode == 'random':
+            mask = np.random.choice([True, False], size=len(states))
+        elif mode == 'hidden':
+            mask = self._test_cluster_hidden(states)
+        elif mode == 'obs':
+            mask, _ =self._test_cluster_obs(
+                states, 1, 1,
+                0, False, 1.0
+            )
+        else:
+            raise ValueError(f'no such split mode {mode}')
+
         states = np.array(states)
         obs_state = self.cluster_to_obs[cluster_id]
         old_cluster = states[mask]
@@ -575,7 +589,15 @@ class ECAgent:
                 test = test & ((clusters == cls[np.argmax(counts)]) | empty)
         return test
 
-    def _test_cluster_obs(self, cluster: list) -> (np.ndarray, int):
+    def _test_cluster_obs(
+            self,
+            cluster: list,
+            n_rollouts: int,
+            cluster_test_steps: int,
+            minimum_test_steps: int,
+            expand_clusters: bool,
+            test_policy_beta: float = 1.0,
+    ) -> (np.ndarray, int):
         """
             Returns boolean array of size len(cluster)
             True/False means that the cluster's element is
@@ -583,9 +605,9 @@ class ECAgent:
         """
         test = np.ones(len(cluster)).astype(np.bool8)
         t = -1
-        for _ in range(self.n_rollouts):
+        for _ in range(n_rollouts):
             ps_per_i = {pos: {s} for pos, s in enumerate(cluster)}
-            for t in range(self.cluster_test_steps):
+            for t in range(cluster_test_steps):
                 score_a = np.zeros(self.n_actions)
                 # predict states for each action and initial state
                 ps_per_a = [dict() for _ in range(self.n_actions)]
@@ -594,7 +616,7 @@ class ECAgent:
                     obs = np.full(len(cluster), fill_value=np.nan)
                     for pos, ps_i in ps_per_i.items():
                         ps_a = self._predict(
-                            ps_i, a, expand_clusters=(t != 0) and self.expand_clusters
+                            ps_i, a, expand_clusters=(t != 0) and expand_clusters
                         )
                         obs_a = {s[0] for s in ps_a}
                         # contradiction
@@ -612,13 +634,13 @@ class ECAgent:
                         test = test & ((obs == states[np.argmax(counts)]) | empty)
 
                 # discard traces that were interrupted too early
-                if t < self.minimum_test_steps:
+                if t < minimum_test_steps:
                     test = test & (~trace_interrupted)
 
                 # choose next action
                 action = self._rng.choice(
                     np.arange(len(score_a)),
-                    p=softmax(score_a, beta=self.test_policy_beta)
+                    p=softmax(score_a, beta=test_policy_beta)
                 )
                 ps_per_i = {pos: s for pos, s in ps_per_a[action].items() if test[pos]}
 
@@ -632,7 +654,10 @@ class ECAgent:
 
         if check_contradictions:
             new_states = list(new_states)
-            mask, _ = self._test_cluster_obs(new_states)
+            mask, _ = self._test_cluster_obs(
+                new_states, self.n_rollouts, self.cluster_test_steps, self.minimum_test_steps,
+                self.expand_clusters, self.test_policy_beta
+            )
             new_states = np.array(new_states)
             c1_states = {tuple(x) for x in new_states[mask]}
             c2_states = {tuple(x) for x in new_states[~mask]}
