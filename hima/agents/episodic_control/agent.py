@@ -78,6 +78,7 @@ class ECAgent:
             minimum_test_steps,
             test_policy_beta,
             split_mode,
+            merge_mode,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -113,6 +114,7 @@ class ECAgent:
         self.minimum_test_steps = minimum_test_steps
         self.test_policy_beta = test_policy_beta
         self.split_mode = split_mode
+        self.merge_mode = merge_mode
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -460,27 +462,10 @@ class ECAgent:
             obs_state = self._rng.choice(self.n_obs_states, p=probs)
 
             clusters = np.array(list(self.obs_to_clusters[obs_state]))
-
-            sfs = list()
-            for c in clusters:
-                states = self.cluster_to_states[c]
-                sf, _, _ = self.generate_sf(states, early_stop=False)
-                sfs.append(sf)
-
-            sfs = np.vstack(sfs)
-            # merge candidates
-            pairs = np.triu_indices(sfs.shape[0], k=1)
-            scores = self.sim_func(sfs)
-            scores = scores[pairs].flatten()
-            pairs = np.column_stack(pairs)
-            pairs = clusters[pairs]
-            # merge most similar pairs
-            k = int(self.top_percent_to_merge * len(scores))
-            top_k_inds = np.argpartition(scores, -k)[-k:]
-            pairs_to_merge = pairs[top_k_inds]
+            pairs_to_merge = self._get_merge_candidates(clusters, mode=self.merge_mode)
 
             for i in range(pairs_to_merge.shape[0]):
-                pair = pairs[i]
+                pair = pairs_to_merge[i]
                 if pair[0] != pair[1]:
                     parent, child = self._merge_clusters(
                         pair[0], pair[1], obs_state,
@@ -488,16 +473,14 @@ class ECAgent:
                     )
                     # replace merged clusters ids
                     if child is not None:
-                        pairs[pairs == child] = parent
+                        pairs_to_merge[pairs_to_merge == child] = parent
 
             prefix = "sleep/merge/"
             try:
                 wandb.log(
                     {
-                        prefix + 'num_candidate_pairs': k,
-                        prefix + 'delta_num_clusters': self.num_clusters - n_cls,
-                        prefix + 'mean_sf_sim': scores.mean(),
-                        prefix + 'mean_sf_std': scores.std()
+                        prefix + 'num_candidate_pairs': len(pairs_to_merge),
+                        prefix + 'delta_num_clusters': self.num_clusters - n_cls
                     }
                 )
             except wandb.errors.Error:
@@ -539,11 +522,36 @@ class ECAgent:
             except wandb.errors.Error:
                 pass
 
+    def _get_merge_candidates(self, clusters, mode='random'):
+        pairs = np.triu_indices(len(clusters), k=1)
+        cluster_pairs = clusters[np.column_stack(pairs)]
+        k = int(self.top_percent_to_merge * len(cluster_pairs))
+        if mode == 'sf':
+            sfs = list()
+            for c in clusters:
+                states = self.cluster_to_states[c]
+                sf, _, _ = self.generate_sf(states, early_stop=False)
+                sfs.append(sf)
+            sfs = np.vstack(sfs)
+            # merge candidates
+            scores = self.sim_func(sfs)
+            scores = scores[pairs].flatten()
+            # merge most similar pairs
+            top_k_inds = np.argpartition(scores, -k)[-k:]
+            pairs_to_merge = cluster_pairs[top_k_inds]
+        elif mode == 'random':
+            pairs_to_merge = cluster_pairs[
+                self._rng.choice(cluster_pairs.shape[0], size=k, replace=False)
+            ]
+        else:
+            raise ValueError(f'no mode {mode}')
+        return pairs_to_merge
+
     def _split_cluster(self, cluster_id, mode='random'):
         states = list(self.cluster_to_states[cluster_id])
 
         if mode == 'random':
-            mask = np.random.choice([True, False], size=len(states))
+            mask = self._rng.choice([True, False], size=len(states), p=[0.99, 0.01])
         elif mode == 'hidden':
             mask = self._test_cluster_hidden(states)
         elif mode == 'obs':
