@@ -538,8 +538,9 @@ class ECAgent:
                 pass
 
     def _split_cluster(self, cluster_id):
-        mask = self._test_cluster_hidden(cluster_id)
-        states = np.array(list(self.cluster_to_states[cluster_id]))
+        states = list(self.cluster_to_states[cluster_id])
+        mask = self._test_cluster_hidden(states)
+        states = np.array(states)
         obs_state = self.cluster_to_obs[cluster_id]
         old_cluster = states[mask]
         new_cluster = states[~mask]
@@ -559,20 +560,19 @@ class ECAgent:
         self.obs_to_clusters[obs_state].add(new_cluster_id)
         return new_cluster_id
 
-    def _test_cluster_hidden(self, cluster_id):
-        states = self.cluster_to_states[cluster_id]
-        test = np.ones(len(states)).astype(np.bool8)
+    def _test_cluster_hidden(self, cluster: list) -> np.ndarray:
+        test = np.ones(len(cluster)).astype(np.bool8)
 
         for d_a in self.first_level_transitions:
-            clusters = np.full(len(states), fill_value=np.nan)
-            for pos, s in enumerate(states):
+            clusters = np.full(len(cluster), fill_value=np.nan)
+            for pos, s in enumerate(cluster):
                 ps = d_a.get(s)
                 clusters[pos] = self.state_to_cluster.get(ps, np.nan)
             # detect contradiction
             empty = np.isnan(clusters)
             cls, counts = np.unique(clusters[~empty], return_counts=True)
             if len(counts) > 0:
-                test = (clusters == cls[np.argmax(counts)]) | empty
+                test = test & ((clusters == cls[np.argmax(counts)]) | empty)
         return test
 
     def _test_cluster_obs(self, cluster: list) -> (np.ndarray, int):
