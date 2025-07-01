@@ -1063,6 +1063,7 @@ class EClusterPurity(BaseMetric):
         }
 
         cluster_purity = list()
+        cluster_size = list()
         clusters = self.runner.agent.agent.cluster_to_states
         for cluster_id in clusters:
             # skip initial state cluster
@@ -1081,9 +1082,21 @@ class EClusterPurity(BaseMetric):
                 if self.runner.environment.environment.landmarks.flatten()[l]:
                     continue
             score = np.max(counts) / counts.sum()
+            cluster_size.append(len(cluster_labels))
             cluster_purity.append(score)
 
-        log_dict[self.name] = np.mean(np.array(cluster_purity))
+        cluster_size = np.array(cluster_size)
+        cluster_purity = np.array(cluster_purity)
+        log_dict[self.name + '_dist'] = wandb.Image(sns.histplot(cluster_purity))
+        plt.close('all')
+        log_dict[self.name + '_size'] = wandb.Image(sns.histplot(cluster_size))
+        plt.close('all')
+        log_dict[self.name + '_dist_size'] = wandb.Image(sns.scatterplot(x=cluster_size, y=cluster_purity, alpha=0.2))
+        plt.close('all')
+        log_dict[self.name] = np.mean(cluster_purity)
+        log_dict[self.name + '_weighted'] = np.sum(
+            cluster_purity * cluster_size / cluster_size.sum()
+        )
         self.logger.log(log_dict)
 
 class ECTrueClusterSim(BaseMetric):
