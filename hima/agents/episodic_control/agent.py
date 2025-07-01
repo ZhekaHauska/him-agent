@@ -91,6 +91,7 @@ class ECAgent:
         self.cluster_to_obs = dict()
         self.state_to_cluster = dict()
         self.cluster_to_entropy = dict()
+        self.cluster_to_timestamp = dict()
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
         self.mt_merge_thresholds = dict()
         self.joint_norm = SSValue(1.0, jn_lr, mean_ini=1.0)
@@ -109,6 +110,7 @@ class ECAgent:
         self.cluster_to_states[-1] = {(-1, -1)}
         self.state_to_cluster[(-1, -1)] = -1
         self.cluster_to_obs[-1] = -1
+        self.cluster_to_timestamp[-1] = 0
 
         self.clusters_allocated = clusters_per_obs > 0
         if self.clusters_allocated:
@@ -255,6 +257,7 @@ class ECAgent:
                     self.cluster_counter += 1
                     self.cluster_to_states[winner] = set()
                     self.cluster_to_obs[winner] = obs_state
+                    self.cluster_to_timestamp[winner] = self.time_step
                     self.obs_to_clusters[obs_state].add(winner)
 
                 self.cluster_to_states[winner].add(current_state)
@@ -565,6 +568,7 @@ class ECAgent:
 
         self.cluster_to_obs[new_cluster_id] = obs_state
         self.obs_to_clusters[obs_state].add(new_cluster_id)
+        self.cluster_to_timestamp[new_cluster_id] = self.time_step
         return new_cluster_id
 
     def _test_cluster(self, cluster: list, use_obs=False) -> np.ndarray:
@@ -718,6 +722,10 @@ class ECAgent:
     @property
     def num_transitions_second_level(self):
         return sum([len(d_a) for d_a in self.second_level_transitions])
+
+    @property
+    def cluster_to_lifetime(self):
+        return {c: self.time_step - self.cluster_to_timestamp[c] for c in self.cluster_to_states}
 
     @property
     def draw_transition_graph(self, threshold=0.2):
