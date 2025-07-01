@@ -3,8 +3,6 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-import pickle
-
 import numpy as np
 from enum import Enum, auto
 
@@ -72,11 +70,6 @@ class ECAgent:
             clusters_per_obs,
             top_percent_to_merge,
             check_contradictions,
-            n_rollouts,
-            cluster_test_steps,
-            expand_clusters,
-            minimum_test_steps,
-            test_policy_beta,
             split_mode,
             merge_mode,
             seed
@@ -108,11 +101,6 @@ class ECAgent:
         self.top_percent_to_merge = top_percent_to_merge
         # contradictions parameters
         self.check_contradictions = check_contradictions
-        self.n_rollouts = n_rollouts
-        self.cluster_test_steps = cluster_test_steps
-        self.expand_clusters = expand_clusters
-        self.minimum_test_steps = minimum_test_steps
-        self.test_policy_beta = test_policy_beta
         self.split_mode = split_mode
         self.merge_mode = merge_mode
 
@@ -551,14 +539,11 @@ class ECAgent:
         states = list(self.cluster_to_states[cluster_id])
 
         if mode == 'random':
-            mask = self._rng.choice([True, False], size=len(states), p=[0.99, 0.01])
+            mask = self._rng.choice([True, False], size=len(states))
         elif mode == 'hidden':
-            mask = self._test_cluster_hidden(states)
+            mask = self._test_cluster(states, use_obs=False)
         elif mode == 'obs':
-            mask, _ =self._test_cluster_obs(
-                states, 1, 1,
-                0, False, 1.0
-            )
+            mask = self._test_cluster(states, use_obs=True)
         else:
             raise ValueError(f'no such split mode {mode}')
 
@@ -582,90 +567,33 @@ class ECAgent:
         self.obs_to_clusters[obs_state].add(new_cluster_id)
         return new_cluster_id
 
-    def _test_cluster_hidden(self, cluster: list) -> np.ndarray:
-        test = np.ones(len(cluster)).astype(np.bool8)
+    def _test_cluster(self, cluster: list, use_obs=False) -> np.ndarray:
+        if use_obs:
+            mapping = lambda state: state[0] if state else np.nan
+        else:
+            mapping = lambda state: self.state_to_cluster.get(state, np.nan)
 
-        for d_a in self.first_level_transitions:
-            clusters = np.full(len(cluster), fill_value=np.nan)
+        test = np.ones((self.n_actions, len(cluster))).astype(np.bool8)
+        n_empty = []
+        for a, d_a in enumerate(self.first_level_transitions):
+            labels = np.full(len(cluster), fill_value=np.nan)
             for pos, s in enumerate(cluster):
                 ps = d_a.get(s)
-                clusters[pos] = self.state_to_cluster.get(ps, np.nan)
+                labels[pos] = mapping(ps)
             # detect contradiction
-            empty = np.isnan(clusters)
-            cls, counts = np.unique(clusters[~empty], return_counts=True)
+            empty = np.isnan(labels)
+            n_empty.append(np.count_nonzero(empty))
+            cls, counts = np.unique(labels[~empty], return_counts=True)
             if len(counts) > 0:
-                test = test & ((clusters == cls[np.argmax(counts)]) | empty)
-        return test
-
-    def _test_cluster_obs(
-            self,
-            cluster: list,
-            n_rollouts: int,
-            cluster_test_steps: int,
-            minimum_test_steps: int,
-            expand_clusters: bool,
-            test_policy_beta: float = 1.0,
-    ) -> (np.ndarray, int):
-        """
-            Returns boolean array of size len(cluster)
-            True/False means that the cluster's element is
-                consistent/inconsistent with the majority of elements
-        """
-        test = np.ones(len(cluster)).astype(np.bool8)
-        t = -1
-        for _ in range(n_rollouts):
-            ps_per_i = {pos: {s} for pos, s in enumerate(cluster)}
-            for t in range(cluster_test_steps):
-                score_a = np.zeros(self.n_actions)
-                # predict states for each action and initial state
-                ps_per_a = [dict() for _ in range(self.n_actions)]
-                trace_interrupted = np.ones_like(test)
-                for a, d_a in enumerate(self.first_level_transitions):
-                    obs = np.full(len(cluster), fill_value=np.nan)
-                    for pos, ps_i in ps_per_i.items():
-                        ps_a = self._predict(
-                            ps_i, a, expand_clusters=(t != 0) and expand_clusters
-                        )
-                        obs_a = {s[0] for s in ps_a}
-                        # contradiction
-                        if len(obs_a) > 1:
-                            test[pos] = False
-                        elif len(obs_a) == 1:
-                            score_a[a] += int(len(ps_a) != 0)
-                            ps_per_a[a][pos] = ps_a
-                            obs[pos] = obs_a.pop()
-                            trace_interrupted[pos] = False
-                    # detect contradiction
-                    empty = np.isnan(obs)
-                    states, counts = np.unique(obs[~empty], return_counts=True)
-                    if len(counts) > 0:
-                        test = test & ((obs == states[np.argmax(counts)]) | empty)
-
-                # discard traces that were interrupted too early
-                if t < minimum_test_steps:
-                    test = test & (~trace_interrupted)
-
-                # choose next action
-                action = self._rng.choice(
-                    np.arange(len(score_a)),
-                    p=softmax(score_a, beta=test_policy_beta)
-                )
-                ps_per_i = {pos: s for pos, s in ps_per_a[action].items() if test[pos]}
-
-                if (score_a[action] <= 1) or (len(ps_per_i) <= 1):
-                    # no predictions or only one trace is left
-                    break
-        return test, t + 1
+                test[a] = (labels == cls[np.argmax(counts)]) | empty
+        return test[np.argmin(n_empty)]
 
     def _merge_clusters(self, c1, c2, obs_state, check_contradictions=False):
         new_states = self.cluster_to_states[c1].union(self.cluster_to_states[c2])
 
         if check_contradictions:
             new_states = list(new_states)
-            mask, _ = self._test_cluster_obs(
-                new_states, self.n_rollouts, self.cluster_test_steps, self.minimum_test_steps,
-                self.expand_clusters, self.test_policy_beta
-            )
+            mask = self._test_cluster(new_states, use_obs=True)
             new_states = np.array(new_states)
             c1_states = {tuple(x) for x in new_states[mask]}
             c2_states = {tuple(x) for x in new_states[~mask]}
