@@ -1064,6 +1064,8 @@ class EClusterMetrics(BaseMetric):
         cluster_purity = list()
         cluster_size = list()
         cluster_age = list()
+        cluster_error = list()
+        cluster_to_lifetime = self.agent.cluster_to_lifetime
         clusters = self.agent.cluster_to_states
         for cluster_id in clusters:
             # skip initial state cluster
@@ -1084,24 +1086,49 @@ class EClusterMetrics(BaseMetric):
             score = np.max(counts) / counts.sum()
             cluster_size.append(len(cluster_labels))
             cluster_purity.append(score)
-            cluster_age.append(self.agent.cluster_to_lifetime[cluster_id])
+            cluster_age.append(cluster_to_lifetime[cluster_id])
+            cluster_error.append(self.agent.cluster_to_error.get(cluster_id, 0))
 
         cluster_age = np.array(cluster_age)
         cluster_size = np.array(cluster_size)
         cluster_purity = np.array(cluster_purity)
-        log_dict[self.name + '/purity_dist'] = wandb.Image(sns.histplot(cluster_purity))
+        cluster_error = np.array(cluster_error)
+        size_weight = cluster_size / cluster_size.sum()
+
+        log_dict[self.name + '/error_dist'] = wandb.Image(sns.histplot(cluster_error))
+        log_dict[self.name + '/error'] = np.mean(cluster_error)
+        log_dict[self.name + '/error_weighted'] = np.sum(
+            cluster_error * size_weight
+        )
         plt.close()
+
+        log_dict[self.name + '/size'] = np.mean(cluster_size)
         log_dict[self.name + '/size_dist'] = wandb.Image(sns.histplot(cluster_size))
         plt.close()
-        log_dict[self.name + '/purity_size_age'] = wandb.Image(sns.scatterplot(x=cluster_age, y=cluster_purity, size=cluster_size, alpha=0.2))
-        plt.close()
+
+        log_dict[self.name + '/purity_dist'] = wandb.Image(sns.histplot(cluster_purity))
         log_dict[self.name + '/purity'] = np.mean(cluster_purity)
         log_dict[self.name + '/purity_weighted'] = np.sum(
-            cluster_purity * cluster_size / cluster_size.sum()
+            cluster_purity * size_weight
         )
+        plt.close()
+
         log_dict[self.name + '/lifetime'] = np.mean(cluster_age)
         log_dict[self.name + '/lifetime_dist'] = wandb.Image(sns.histplot(cluster_age))
         plt.close()
+
+        log_dict[self.name + '/purity_size_age_error'] = wandb.Image(
+            sns.scatterplot(
+                x=cluster_age,
+                y=cluster_purity,
+                hue=cluster_error,
+                palette='turbo',
+                size=cluster_size,
+                alpha=0.3
+            )
+        )
+        plt.close()
+
         self.logger.log(log_dict)
 
 class ECTrueClusterSim(BaseMetric):

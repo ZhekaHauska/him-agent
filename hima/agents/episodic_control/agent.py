@@ -72,6 +72,7 @@ class ECAgent:
             check_contradictions,
             split_mode,
             merge_mode,
+            cls_error_lr,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -92,6 +93,7 @@ class ECAgent:
         self.state_to_cluster = dict()
         self.cluster_to_entropy = dict()
         self.cluster_to_timestamp = dict()
+        self.cluster_to_error = dict()
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
         self.mt_merge_thresholds = dict()
         self.joint_norm = SSValue(1.0, jn_lr, mean_ini=1.0)
@@ -104,6 +106,7 @@ class ECAgent:
         self.check_contradictions = check_contradictions
         self.split_mode = split_mode
         self.merge_mode = merge_mode
+        self.cls_error_lr = cls_error_lr
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -210,6 +213,7 @@ class ECAgent:
         predicted_clusters = dict()
         obs_probs = np.zeros(self.n_obs_states)
         for c in self.cluster:
+            obs_probs_c = np.zeros(self.n_obs_states)
             pcs = self.second_level_transitions[action].get(c)
             if pcs is not None:
                 for pc in pcs:
@@ -219,11 +223,20 @@ class ECAgent:
                         predicted_clusters[pc] += prob
                     else:
                         predicted_clusters[pc] = prob
-                    obs_probs[pc[0]] += prob
+                    obs_probs_c[pc[0]] += prob
+            obs_probs += obs_probs_c
+            obs_probs_c = normalize(obs_probs_c).squeeze()
+            error = - np.log(obs_probs_c[obs_state] + EPS)
+            old_error = self.cluster_to_error.get(c[1], 0)
+            self.cluster_to_error[c[1]] = old_error + self.cls_error_lr * (
+                    error * self.cluster[c] - old_error
+            )
 
         self.second_level_none = 1 - obs_probs.sum()
+        obs_probs = normalize(obs_probs).squeeze()
         self.second_level_error = - np.log(obs_probs[obs_state] + EPS)
         self.second_level_acc = np.argmax(obs_probs) == obs_state
+
         # posterior update of predicted clusters (IMPORTANT! we didn't do that for previous tests)
         predicted_clusters = {c: p for c, p in predicted_clusters.items() if c[0] == obs_state}
         norm = sum(list(predicted_clusters.values())) + EPS
@@ -622,6 +635,10 @@ class ECAgent:
         self.obs_to_clusters[obs_state].remove(cluster_id)
         if cluster_id in self.cluster_to_entropy:
             self.cluster_to_entropy.pop(cluster_id)
+        if cluster_id in self.cluster_to_error:
+            self.cluster_to_error.pop(cluster_id)
+        if cluster_id in self.cluster_to_timestamp:
+            self.cluster_to_timestamp.pop(cluster_id)
 
     def _update_second_level(self):
         for d_a in self.second_level_transitions:
