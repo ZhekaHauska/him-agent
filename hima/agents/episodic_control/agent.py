@@ -81,6 +81,7 @@ class ECAgent:
             merge_plan_steps,
             merge_gamma,
             cls_error_lr,
+            mt_sim_metric,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -120,6 +121,7 @@ class ECAgent:
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
+        self.winner = None
         self.cluster_to_states[-1] = {(-1, -1)}
         self.state_to_cluster[(-1, -1)] = -1
         self.cluster_to_obs[-1] = -1
@@ -143,6 +145,7 @@ class ECAgent:
         self.gamma = gamma
         self.trace_gamma = trace_gamma
         self.sim_func = self.similarities[sim_metric]
+        self.mt_sim_func = self.similarities[mt_sim_metric]
         self.reward_lr = reward_lr
         self.rewards = np.zeros(self.n_obs_states, dtype=np.float32)
         self.num_clones = np.zeros(self.n_obs_states, dtype=np.uint32)
@@ -184,6 +187,7 @@ class ECAgent:
     def reset(self):
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
+        self.winner = None
         self.goal_found = False
         self.surprise = 0
         self.first_order_error = 0
@@ -273,6 +277,7 @@ class ECAgent:
             if cluster is None:
                 # add state to a cluster with the most similar memory trace
                 winner = self.assign_cluster(obs_state, current_mem_trace, predicted_clusters)
+                self.winner = winner
 
                 # or create a new cluster
                 if winner is None:
@@ -325,7 +330,7 @@ class ECAgent:
             stds = np.array(stds)
 
             traces = np.vstack(traces)
-            scores = self.sim_func(traces, mem_trace[None])[0]
+            scores = self.mt_sim_func(traces, mem_trace[None])[0]
             self.update_thresholds(
                 scores, candidates, self.mt_merge_thresholds, self.mt_lr
             )
