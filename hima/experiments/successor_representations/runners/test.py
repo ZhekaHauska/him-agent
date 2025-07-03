@@ -135,6 +135,19 @@ class ICMLRunner(BaseRunner):
         return values, counts
 
     @property
+    def state_size(self):
+        env = self.environment.environment
+        assert isinstance(env, hima.envs.gridworld.GridWorld)
+        r, c = env.r, env.c
+        values = np.zeros((env.h, env.w))
+        state_size = len(self.agent.agent.cluster)
+        values[r, c] = state_size
+
+        counts = np.zeros_like(values)
+        counts[r, c] = 1
+        return values, counts
+
+    @property
     def state_error(self):
         env = self.environment.environment
         assert isinstance(env, hima.envs.gridworld.GridWorld)

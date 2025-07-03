@@ -12,6 +12,7 @@ from hima.common.sdr import sparse_to_dense
 from hima.common.smooth_values import SSValue
 from hima.common.utils import softmax, safe_divide
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
+from numpy import corrcoef
 from scipy.stats import entropy
 from PIL import Image
 import pygraphviz as pgv
@@ -46,7 +47,12 @@ class ExplorationPolicy(Enum):
 
 
 class ECAgent:
-    similarities = {"cos": cosine_similarity, "euc": euclidian_sim, "dummy": dummy_sim}
+    similarities = {
+        "cos": cosine_similarity,
+        "euc": euclidian_sim,
+        "corr": corrcoef,
+        "dummy": dummy_sim
+    }
     def __init__(
             self,
             n_obs_states,
@@ -72,6 +78,8 @@ class ECAgent:
             check_contradictions,
             split_mode,
             merge_mode,
+            merge_plan_steps,
+            merge_gamma,
             cls_error_lr,
             seed
     ):
@@ -106,6 +114,8 @@ class ECAgent:
         self.check_contradictions = check_contradictions
         self.split_mode = split_mode
         self.merge_mode = merge_mode
+        self.merge_plan_steps = merge_plan_steps
+        self.merge_gamma = merge_gamma
         self.cls_error_lr = cls_error_lr
 
         self.state = (-1, -1)
@@ -408,7 +418,7 @@ class ECAgent:
         self.goal_found = False
         for action in range(self.n_actions):
             predicted_state = self.first_level_transitions[action].get(self.state)
-            sf, steps, gf = self.generate_sf({predicted_state})
+            sf, steps, gf = self.generate_sf({predicted_state}, self.plan_steps, self.gamma)
             self.goal_found = gf or self.goal_found
             planning_steps += steps
             self.action_values[action] = np.sum(sf * self.rewards)
@@ -416,7 +426,14 @@ class ECAgent:
         self.sf_steps = planning_steps / self.n_actions
         return self.action_values
 
-    def generate_sf(self, initial_state: set, early_stop: bool = True, expand_clusters: bool = False):
+    def generate_sf(
+            self,
+            initial_state: set,
+            steps: int,
+            gamma: float,
+            early_stop: bool = True,
+            expand_clusters: bool = False
+    ):
         sf = np.zeros(self.n_obs_states, dtype=np.float32)
         goal_found = False
 
@@ -426,9 +443,9 @@ class ECAgent:
         predicted_states = initial_state
         sf, _ = self._states_obs_dist(initial_state)
 
-        discount = self.gamma
+        discount = gamma
         i = -1
-        for i in range(self.plan_steps):
+        for i in range(steps):
             # uniform strategy
             predicted_states = set().union(
                 *[self._predict(predicted_states, a, expand_clusters) for a in range(self.n_actions)]
@@ -446,7 +463,7 @@ class ECAgent:
                 if early_stop:
                     break
 
-            discount *= self.gamma
+            discount *= gamma
 
         return sf, i+1, goal_found
 
@@ -530,15 +547,17 @@ class ECAgent:
         pairs = np.triu_indices(len(clusters), k=1)
         cluster_pairs = clusters[np.column_stack(pairs)]
         k = int(self.top_percent_to_merge * len(cluster_pairs))
-        if mode == 'sf':
-            sfs = list()
+        if mode in {'sf', 'mt', 'sfmt', 'mtsf'}:
+            embds = list()
             for c in clusters:
                 states = self.cluster_to_states[c]
-                sf, _, _ = self.generate_sf(states, early_stop=False)
-                sfs.append(sf)
-            sfs = np.vstack(sfs)
+                embd = self._cluster_embedding(
+                    states, mode, plan_steps=self.merge_plan_steps, gamma=self.merge_gamma
+                )
+                embds.append(embd)
+            embds = np.vstack(embds)
             # merge candidates
-            scores = self.sim_func(sfs)
+            scores = self.sim_func(embds)
             scores = scores[pairs].flatten()
             # merge most similar pairs
             top_k_inds = np.argpartition(scores, -k)[-k:]
@@ -550,6 +569,31 @@ class ECAgent:
         else:
             raise ValueError(f'no mode {mode}')
         return pairs_to_merge
+
+    def _cluster_embedding(
+            self,
+            states: set,
+            embedding_type: str,
+            plan_steps: int = 0,
+            gamma: float = 0.0
+    ):
+        embd = list()
+        if "mt" in embedding_type:
+            trace = [
+                self.state_to_memory_trace[s]
+                for s in states
+            ]
+            trace = np.vstack(trace).mean(axis=0)
+            embd.append(trace)
+        if "sf" in embedding_type:
+            sf, _, _ = self.generate_sf(
+                states,
+                plan_steps,
+                gamma,
+                early_stop=False
+            )
+            embd.append(sf)
+        return np.concatenate(embd)
 
     def _split_cluster(self, cluster_id, mode='random'):
         states = list(self.cluster_to_states[cluster_id])
