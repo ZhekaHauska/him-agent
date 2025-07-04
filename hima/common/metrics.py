@@ -1050,11 +1050,29 @@ class EClusterMetrics(BaseMetric):
         self.state_labels = dict()
         self.agent: ECAgent = self.runner.agent.agent
         self.agent.state_labels = self.state_labels
+        self.cluster_assignment_acc = list()
+        self.new_cluster_rate = list()
 
     def update(self):
         state = self.get_attr(self.state_att)
         estimated_state = self.runner.agent.agent.state
         self.state_labels[estimated_state] = state
+
+        cluster_winner = self.agent.winner
+        if cluster_winner is not None:
+            if cluster_winner not in self.agent.cluster_to_states:
+                return
+            label = self.cluster_label(self.agent.cluster_to_states[cluster_winner])
+            self.cluster_assignment_acc.append(int(label == state))
+            self.new_cluster_rate.append(0)
+        else:
+            self.new_cluster_rate.append(1)
+
+    def cluster_label(self, states: set):
+        cluster_labels = np.array([self.state_labels[s] for s in states])
+        labels, counts = np.unique(cluster_labels, return_counts=True)
+        if len(labels) > 0:
+            return labels[np.argmax(counts)]
 
     def log(self, step):
         log_dict = {
@@ -1128,6 +1146,9 @@ class EClusterMetrics(BaseMetric):
             )
         )
         plt.close()
+
+        log_dict[self.name + '/new_cluster_rate'] = np.mean(self.new_cluster_rate)
+        log_dict[self.name + '/cluster_assignment_acc'] = np.mean(self.cluster_assignment_acc)
 
         self.logger.log(log_dict)
 
