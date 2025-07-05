@@ -211,7 +211,7 @@ class GridWorldWrapper(BaseEnvironment):
         self.environment = None
 
     @property
-    def current_state(self):
+    def true_state(self):
         return self.environment.c + self.environment.r*self.environment.w
 
     @property

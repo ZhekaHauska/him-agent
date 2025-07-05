@@ -82,6 +82,7 @@ class ECAgent:
             merge_gamma,
             cls_error_lr,
             mt_sim_metric,
+            oracle_mode,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -118,6 +119,7 @@ class ECAgent:
         self.merge_plan_steps = merge_plan_steps
         self.merge_gamma = merge_gamma
         self.cls_error_lr = cls_error_lr
+        self.oracle_mode = oracle_mode
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -126,6 +128,8 @@ class ECAgent:
         self.state_to_cluster[(-1, -1)] = -1
         self.cluster_to_obs[-1] = -1
         self.cluster_to_timestamp[-1] = 0
+        # debug
+        self.true_state = None
 
         self.clusters_allocated = clusters_per_obs > 0
         if self.clusters_allocated:
@@ -185,6 +189,7 @@ class ECAgent:
             self.exploration_eps = exploration_eps
 
     def reset(self):
+        self.true_state = None
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
         self.winner = None
@@ -217,6 +222,10 @@ class ECAgent:
         else:
             self.first_level_acc = 1
             current_state = predicted_state
+
+        # debug
+        if self.true_state is not None:
+            self.state_labels[current_state] = self.true_state
 
         # first order baseline
         obs_probs = self.first_order_transitions[action][self.state[0]]
@@ -306,6 +315,14 @@ class ECAgent:
     def assign_cluster(self, obs_state, mem_trace, predicted_clusters):
         # transition-based predictions
         candidates = list(self.obs_to_clusters[obs_state])
+
+        if self.oracle_mode:
+            cluster_labels = {
+                self.get_cluster_label(self.cluster_to_states[c]): c
+                for c in candidates
+            }
+            return cluster_labels.get(self.true_state)
+
         # TODO check case with one candidate
         if len(candidates) < 2:
             return None
@@ -377,6 +394,11 @@ class ECAgent:
         else:
             winner = None
         return winner
+
+    def get_cluster_label(self, states: set):
+        cluster_labels = np.array([self.state_labels[s] for s in states])
+        labels, counts = np.unique(cluster_labels, return_counts=True)
+        return labels[np.argmax(counts)]
 
     @staticmethod
     def update_thresholds(score, clusters, thresholds, lr):

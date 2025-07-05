@@ -319,6 +319,18 @@ class ECAgentWrapper(BaseAgent):
         self.agent.reset()
 
     @property
+    def true_state(self):
+        if hasattr(self.agent, 'true_state'):
+            return self.agent.true_state
+        else:
+            return None
+
+    @true_state.setter
+    def true_state(self, value):
+        if hasattr(self.agent, 'true_state'):
+            self.agent.true_state = value
+
+    @property
     def state_value(self):
         action_values = self.agent.action_values
         if action_values is None:

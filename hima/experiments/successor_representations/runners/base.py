@@ -8,11 +8,13 @@ from __future__ import annotations
 import numpy as np
 from hima.common.metrics import MetricsRack
 from hima.common.scenario import Scenario
+from typing import Any
 
 
 class BaseAgent:
     initial_action: int | None
     state_value: float
+    true_state: Any
 
     def observe(self, events, action, reward=0):
         raise NotImplementedError
@@ -31,6 +33,7 @@ class BaseEnvironment:
     raw_obs_shape: (int, int)
     actions: tuple
     n_actions: int
+    true_state: Any
 
     def obs(self):
         raise NotImplementedError
@@ -193,6 +196,7 @@ class BaseRunner:
                     if self.action is None:
                         break
 
+                self.agent.true_state = self.environment.true_state
                 # observe events_t, action_{t-1}, reward_{t}
                 self.agent.observe(self.obs, self.action, self.reward)
                 self.agent.reinforce(self.reward)
