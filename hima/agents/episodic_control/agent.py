@@ -83,6 +83,10 @@ class ECAgent:
             cls_error_lr,
             mt_sim_metric,
             oracle_mode,
+            perfect_trace,
+            trace_error,
+            new_cluster_rate,
+            assign_cluster_error_rate,
             seed
     ):
         self.n_obs_states = n_obs_states
@@ -119,7 +123,12 @@ class ECAgent:
         self.merge_plan_steps = merge_plan_steps
         self.merge_gamma = merge_gamma
         self.cls_error_lr = cls_error_lr
+        # debug
         self.oracle_mode = oracle_mode
+        self.perfect_trace = perfect_trace
+        self.new_cluster_rate = new_cluster_rate
+        self.assign_cluster_error_rate = assign_cluster_error_rate
+        self.trace_error = trace_error
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -274,7 +283,7 @@ class ECAgent:
 
         current_clusters = predicted_clusters
 
-        if learn:
+        if learn and self.learn:
             current_mem_trace = self.memory_trace.flatten()
             if current_state is not None:
                 self.state_to_memory_trace[current_state] = current_mem_trace
@@ -317,15 +326,31 @@ class ECAgent:
         candidates = list(self.obs_to_clusters[obs_state])
 
         if self.oracle_mode:
-            cluster_labels = {
-                self.get_cluster_label(self.cluster_to_states[c]): c
-                for c in candidates
-            }
-            return cluster_labels.get(self.true_state)
+            cluster_labels = dict()
 
-        # TODO check case with one candidate
-        if len(candidates) < 2:
-            return None
+            if len(candidates) == 0:
+                return None
+
+            create_new_cluster = self._rng.random() < self.new_cluster_rate
+            if create_new_cluster:
+                return None
+
+            random_choice = self._rng.random() < self.assign_cluster_error_rate
+            if random_choice:
+                return self._rng.choice(candidates)
+
+            for c in candidates:
+                c_label = self.get_cluster_label(self.cluster_to_states[c])
+                if c_label in cluster_labels:
+                    cluster_labels[c_label].add(c)
+                else:
+                    cluster_labels[c_label] = {c}
+
+            if self.true_state in cluster_labels:
+                true_clusters = list(cluster_labels[self.true_state])
+                return self._rng.choice(true_clusters)
+            else:
+                return None
 
         pred_probs = np.array(
             [predicted_clusters.get((obs_state, c), 0.0) for c in candidates]
@@ -333,33 +358,46 @@ class ECAgent:
         candidates = np.array(candidates)
 
         if self.use_memory_trace:
-            # memory-trace-based predictions
-            traces = list()
-            for c in candidates:
-                trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
-                trace = np.vstack(trace).mean(axis=0)
-                traces.append(trace)
+            if self.perfect_trace:
+                cluster_labels = np.array(
+                    [
+                        self.get_cluster_label(self.cluster_to_states[c])
+                        for c in candidates
+                    ]
+                )
+                mt_probs = np.zeros_like(pred_probs)
+                if self._rng.random() < self.trace_error:
+                    mt_probs[cluster_labels != self.true_state] = 1.0
+                else:
+                    mt_probs[cluster_labels == self.true_state] = 1.0
+            else:
+                # memory-trace-based predictions
+                traces = list()
+                for c in candidates:
+                    trace = [self.state_to_memory_trace[s] for s in self.cluster_to_states[c]]
+                    trace = np.vstack(trace).mean(axis=0)
+                    traces.append(trace)
 
-            means, stds = self.extract_thresholds(
-                candidates, self.mt_merge_thresholds
-            )
-            means = np.array(means)
-            stds = np.array(stds)
+                means, stds = self.extract_thresholds(
+                    candidates, self.mt_merge_thresholds
+                )
+                means = np.array(means)
+                stds = np.array(stds)
 
-            traces = np.vstack(traces)
-            scores = self.mt_sim_func(traces, mem_trace[None])[0]
-            self.update_thresholds(
-                scores, candidates, self.mt_merge_thresholds, self.mt_lr
-            )
-            # standardise scores
-            scores = (scores - means) / (stds + EPS)
-            mt_probs = np.exp(self.mt_beta * scores)
+                traces = np.vstack(traces)
+                scores = self.mt_sim_func(traces, mem_trace[None])[0]
+                self.update_thresholds(
+                    scores, candidates, self.mt_merge_thresholds, self.mt_lr
+                )
+                # standardise scores
+                scores = (scores - means) / (stds + EPS)
+                mt_probs = np.exp(self.mt_beta * scores)
 
-            # filter noisy scores
-            filter_scores = norm_cdf(scores)
-            filter_mask = self._rng.random(len(filter_scores)) > filter_scores
-            mt_probs[filter_mask] = 0.0
-            mt_probs = mt_probs / (mt_probs.sum() + EPS)
+                # filter noisy scores
+                filter_scores = norm_cdf(scores)
+                filter_mask = self._rng.random(len(filter_scores)) > filter_scores
+                mt_probs[filter_mask] = 0.0
+                mt_probs = mt_probs / (mt_probs.sum() + EPS)
 
             # main formula
             joint_probs = pred_probs * mt_probs
@@ -373,7 +411,7 @@ class ECAgent:
         else:
             q = pred_probs
 
-        q = normalize(q).squeeze()
+        q = normalize(q).squeeze(axis=0)
 
         if self.use_cluster_size_bias:
             # cluster-size-based prior
@@ -385,7 +423,7 @@ class ECAgent:
             c_prior = lengths / (lengths.sum() + EPS)
             q *= c_prior
 
-        q = normalize(q).squeeze()
+        q = normalize(q).squeeze(axis=0)
 
         # decide if we create a new cluster
         new_cluster_prob = np.exp(entropy(q)) / len(candidates)
