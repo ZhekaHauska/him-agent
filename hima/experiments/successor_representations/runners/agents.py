@@ -287,6 +287,7 @@ class ECAgentWrapper(BaseAgent):
         self.initial_action = 0
         self.conf = conf
         self.encoder_type = conf['encoder_type']
+        self.learn = True
 
         if self.encoder_type is not None:
             self.encoder, n_obs_vars, n_obs_states = self._make_encoder()
@@ -307,7 +308,7 @@ class ECAgentWrapper(BaseAgent):
         if self.encoder is not None:
             events = self.encoder.encode(events, learn=True)
 
-        self.agent.observe((events, action), reward)
+        self.agent.observe((events, action), reward, learn=self.learn)
 
     def sample_action(self):
         return self.agent.sample_action()
