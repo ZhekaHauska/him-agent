@@ -11,8 +11,7 @@ import wandb
 from hima.common.sdr import sparse_to_dense
 from hima.common.smooth_values import SSValue
 from hima.common.utils import softmax, safe_divide
-from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
-from numpy import corrcoef
+from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances, pairwise_distances
 from scipy.stats import entropy
 from PIL import Image
 import pygraphviz as pgv
@@ -35,6 +34,9 @@ def norm_cdf(z):
 def euclidian_sim(X, Y=None):
     return np.exp(-euclidean_distances(X, Y))
 
+def correlation_sim(X, Y=None):
+    return 1 - pairwise_distances(X, Y, metric='correlation')
+
 def dummy_sim(X, Y=None):
     if Y is None:
         return np.zeros((X.shape[0], X.shape[0]))
@@ -50,7 +52,7 @@ class ECAgent:
     similarities = {
         "cos": cosine_similarity,
         "euc": euclidian_sim,
-        "corr": corrcoef,
+        "corr": correlation_sim,
         "dummy": dummy_sim
     }
     def __init__(
@@ -324,6 +326,8 @@ class ECAgent:
     def assign_cluster(self, obs_state, mem_trace, predicted_clusters):
         # transition-based predictions
         candidates = list(self.obs_to_clusters[obs_state])
+        if len(candidates) == 0:
+            return None
 
         if self.oracle_mode:
             cluster_labels = dict()
@@ -385,7 +389,8 @@ class ECAgent:
                 stds = np.array(stds)
 
                 traces = np.vstack(traces)
-                scores = self.mt_sim_func(traces, mem_trace[None])[0]
+                scores = self.mt_sim_func(traces, mem_trace[None])[:, 0]
+                scores[np.isnan(scores)] = 0
                 self.update_thresholds(
                     scores, candidates, self.mt_merge_thresholds, self.mt_lr
                 )
@@ -422,8 +427,7 @@ class ECAgent:
             lengths = np.array(lengths, dtype=np.float32)
             c_prior = lengths / (lengths.sum() + EPS)
             q *= c_prior
-
-        q = normalize(q).squeeze(axis=0)
+            q = normalize(q).squeeze(axis=0)
 
         # decide if we create a new cluster
         new_cluster_prob = np.exp(entropy(q)) / len(candidates)
