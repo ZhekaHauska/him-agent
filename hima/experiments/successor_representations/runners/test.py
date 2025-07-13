@@ -311,7 +311,7 @@ def main(config_path):
         config['metrics'] = read_config(metrics_conf)
 
     if config['run']['seed'] is None:
-        config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
+        config['run']['seed'] = int.from_bytes(os.urandom(8), 'big')
 
     # unfolding subconfigs
     def load_subconfig(entity, conf):
