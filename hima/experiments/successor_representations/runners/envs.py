@@ -210,6 +210,9 @@ class GridWorldWrapper(BaseEnvironment):
     def close(self):
         self.environment = None
 
+    def get_true_matrices(self):
+        return self.environment.get_true_matrices()
+
     @property
     def true_state(self):
         return self.environment.c + self.environment.r*self.environment.w

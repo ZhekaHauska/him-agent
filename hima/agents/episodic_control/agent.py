@@ -140,6 +140,8 @@ class ECAgent:
         self.cluster_to_timestamp[-1] = 0
         # debug
         self.true_state = None
+        self.true_transition_matrix = None
+        self.true_emission_matrix = None
 
         self.clusters_allocated = clusters_per_obs > 0
         if self.clusters_allocated:
@@ -606,7 +608,7 @@ class ECAgent:
         pairs = np.triu_indices(len(clusters), k=1)
         cluster_pairs = clusters[np.column_stack(pairs)]
         k = int(self.top_percent_to_merge * len(cluster_pairs))
-        if mode in {'sf', 'mt', 'sfmt', 'mtsf'}:
+        if mode in {'sf', 'mt', 'sfmt', 'mtsf', 'perfect_sf'}:
             embds = list()
             for c in clusters:
                 states = self.cluster_to_states[c]
@@ -643,23 +645,40 @@ class ECAgent:
             plan_steps: int = 0,
             gamma: float = 0.0
     ):
-        embd = list()
-        if "mt" in embedding_type:
-            trace = [
-                self.state_to_memory_trace[s]
-                for s in states
-            ]
-            trace = np.vstack(trace).mean(axis=0)
-            embd.append(trace)
-        if "sf" in embedding_type:
-            sf, _, _ = self.generate_sf(
-                states,
-                plan_steps,
-                gamma,
-                early_stop=False
-            )
-            embd.append(sf)
-        return np.concatenate(embd)
+        if embedding_type == 'perfect_sf':
+            assert self.true_transition_matrix is not None
+            assert self.true_emission_matrix is not None
+            T = np.mean(self.true_transition_matrix, axis=0)
+            E = self.true_emission_matrix
+
+            init_label = self.get_cluster_label(states)
+            current_state = sparse_to_dense([init_label], size=T.shape[0])
+            sf = E[init_label].copy()
+
+            discount = gamma
+            for i in range(plan_steps):
+                current_state = current_state @ T
+                sf += discount * (current_state @ E)
+                discount *= gamma
+            return sf.copy()
+        else:
+            embd = list()
+            if "mt" in embedding_type:
+                trace = [
+                    self.state_to_memory_trace[s]
+                    for s in states
+                ]
+                trace = np.vstack(trace).mean(axis=0)
+                embd.append(trace)
+            if "sf" in embedding_type:
+                sf, _, _ = self.generate_sf(
+                    states,
+                    plan_steps,
+                    gamma,
+                    early_stop=False
+                )
+                embd.append(sf)
+            return np.concatenate(embd)
 
     def _split_cluster(self, cluster_id, mode='random'):
         states = list(self.cluster_to_states[cluster_id])

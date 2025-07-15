@@ -21,8 +21,7 @@ from hima.modules.baselines.hmm import FCHMMLayer
 
 
 class ICMLRunner(BaseRunner):
-    @staticmethod
-    def make_agent(agent_type, conf):
+    def make_agent(self, agent_type, conf):
         if agent_type == 'bio':
             from hima.experiments.successor_representations.runners.agents\
                 import BioAgentWrapper
@@ -35,6 +34,9 @@ class ICMLRunner(BaseRunner):
             from hima.experiments.successor_representations.runners.agents\
                 import ECAgentWrapper
             agent = ECAgentWrapper(conf)
+            if hasattr(self.environment, 'get_true_matrices'):
+                T, E = self.environment.get_true_matrices()
+                agent.agent.true_transition_matrix, agent.agent.true_emission_matrix = T, E
         else:
             raise NotImplementedError
 

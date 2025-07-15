@@ -228,6 +228,30 @@ class GridWorld:
 
         return true_map
 
+    def get_true_matrices(self):
+        n_states = self.h * self.w
+        d_a = {0: (0, -1), 1: (0, 1), 2: (-1, 0), 3: (1, 0)}
+        T = np.zeros((len(self.actions), n_states, n_states))
+        E = np.zeros((n_states, len(self.unique_colors)))
+        for a in self.actions:
+            d_r, d_c = d_a[a]
+            for r in range(self.h):
+                for c in range(self.w):
+                    x = self.colors[r + self.shift, c + self.shift]
+                    if x < 0:
+                        continue
+                    state = c + r * self.w
+                    E[state, np.flatnonzero(self.unique_colors == x)] = 1
+                    r_next = r + d_r
+                    c_next = c + d_c
+                    # Check whether action is taking to inaccessible states.
+                    next_x = self.colors[r_next + self.shift, c_next + self.shift]
+                    if next_x < 0:
+                        next_state = c + r * self.w
+                    else:
+                        next_state = c_next + r_next * self.w
+                    T[a, state, next_state] = 1
+        return T, E
 
 def generate_map(markov_radius: int, size: tuple[int, int], seed: int = None) -> np.ndarray:
     rng = np.random.default_rng(seed)
