@@ -61,7 +61,6 @@ class ECAgent:
             n_actions,
             plan_steps,
             mt_lr,
-            jn_lr,
             mt_beta,
             use_cluster_size_bias,
             use_memory_trace,
@@ -112,7 +111,6 @@ class ECAgent:
         self.cluster_to_error = dict()
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
         self.mt_merge_thresholds = dict()
-        self.joint_norm = SSValue(1.0, jn_lr, mean_ini=1.0)
         self.mt_lr = mt_lr
         self.mt_beta = mt_beta
         self.use_cluster_size_bias = use_cluster_size_bias
@@ -359,6 +357,7 @@ class ECAgent:
         pred_probs = np.array(
             [predicted_clusters.get((obs_state, c), 0.0) for c in candidates]
         )
+        pred_probs = normalize(pred_probs).squeeze(axis=0)
         candidates = np.array(candidates)
 
         if self.use_memory_trace:
@@ -400,23 +399,13 @@ class ECAgent:
 
                 # filter noisy scores
                 filter_scores = norm_cdf(scores)
-                filter_mask = self._rng.random(len(filter_scores)) > filter_scores
-                mt_probs[filter_mask] = 0.0
-                mt_probs = mt_probs / (mt_probs.sum() + EPS)
+                mt_probs *= filter_scores
 
-            # main formula
-            joint_probs = pred_probs * mt_probs
-            joint_norm = joint_probs.sum()
-            jm = joint_norm / self.joint_norm.mean
-            q = (
-                    np.power(joint_probs, jm) *
-                    np.power(pred_probs + mt_probs, max(0, 1 - jm))
-            )
-            self.joint_norm.update(joint_norm)
+            mt_probs = normalize(mt_probs).squeeze(axis=0)
+            q = pred_probs * mt_probs
+            q = normalize(q).squeeze(axis=0)
         else:
             q = pred_probs
-
-        q = normalize(q).squeeze(axis=0)
 
         if self.use_cluster_size_bias:
             # cluster-size-based prior
