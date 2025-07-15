@@ -670,6 +670,10 @@ class ECAgent:
             mask = self._test_cluster(states, use_obs=False)
         elif mode == 'obs':
             mask = self._test_cluster(states, use_obs=True)
+        elif mode == 'perfect':
+            cluster_label = self.get_cluster_label(states)
+            state_labels = np.array([self.state_labels[s] for s in states])
+            mask = state_labels == cluster_label
         else:
             raise ValueError(f'no such split mode {mode}')
 
