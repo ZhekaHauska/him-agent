@@ -7,6 +7,7 @@ import numpy as np
 from enum import Enum, auto
 
 import wandb
+from torchmetrics.functional import pairwise_cosine_similarity
 
 from hima.common.sdr import sparse_to_dense
 from hima.common.smooth_values import SSValue
@@ -624,8 +625,15 @@ class ECAgent:
             pairs_to_merge = cluster_pairs[
                 self._rng.choice(cluster_pairs.shape[0], size=k, replace=False)
             ]
+        elif mode == 'perfect':
+            labels = np.array([self.get_cluster_label(self.cluster_to_states[c]) for c in clusters])
+            label_pairs = labels[np.column_stack(pairs)]
+            pairs_to_merge = cluster_pairs[
+                np.flatnonzero(~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8)))
+            ]
         else:
             raise ValueError(f'no mode {mode}')
+
         return pairs_to_merge
 
     def _cluster_embedding(
