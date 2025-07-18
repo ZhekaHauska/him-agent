@@ -7,7 +7,6 @@ import numpy as np
 from enum import Enum, auto
 
 import wandb
-from torchmetrics.functional import pairwise_cosine_similarity
 
 from hima.common.sdr import sparse_to_dense
 from hima.common.smooth_values import SSValue
@@ -80,6 +79,7 @@ class ECAgent:
             check_contradictions,
             split_mode,
             merge_mode,
+            perfect_sf_noise,
             merge_plan_steps,
             merge_gamma,
             cls_error_lr,
@@ -130,6 +130,7 @@ class ECAgent:
         self.new_cluster_rate = new_cluster_rate
         self.assign_cluster_error_rate = assign_cluster_error_rate
         self.trace_error = trace_error
+        self.perfect_sf_noise = perfect_sf_noise
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -142,6 +143,10 @@ class ECAgent:
         self.true_state = None
         self.true_transition_matrix = None
         self.true_emission_matrix = None
+        self.diagonal_sim = 0
+        self.off_diagonal_sim = 0
+        self.merge_acc = 0
+        self.state_labels = dict()
 
         self.clusters_allocated = clusters_per_obs > 0
         if self.clusters_allocated:
@@ -187,10 +192,12 @@ class ECAgent:
         self.cluster_counter = 0
         self.time_step = 0
         self.goal_found = False
+        self.top_k_scores = 0
+        self.mean_scores = 0
+
         self.learn = True
         self.seed = seed
         self._rng = np.random.default_rng(self.seed)
-        self.state_labels = dict()
 
         self.inverse_temp = inverse_temp
         if exploration_eps < 0:
@@ -562,7 +569,12 @@ class ECAgent:
                 wandb.log(
                     {
                         prefix + 'num_candidate_pairs': len(pairs_to_merge),
-                        prefix + 'delta_num_clusters': self.num_clusters - n_cls
+                        prefix + 'delta_num_clusters': self.num_clusters - n_cls,
+                        prefix + 'diagonal_perfect_sf_sim': self.diagonal_sim,
+                        prefix + 'off_diagonal_perfect_sf_sim': self.off_diagonal_sim,
+                        prefix + 'acc': self.merge_acc,
+                        prefix + 'top_k_scores': self.top_k_scores,
+                        prefix + 'mean_scores': self.mean_scores
                     }
                 )
             except wandb.errors.Error:
@@ -608,35 +620,78 @@ class ECAgent:
         pairs = np.triu_indices(len(clusters), k=1)
         cluster_pairs = clusters[np.column_stack(pairs)]
         k = int(self.top_percent_to_merge * len(cluster_pairs))
+        if k == 0:
+            return np.empty(0)
+
+        labels = np.array([self.get_cluster_label(self.cluster_to_states[c]) for c in clusters])
+        label_pairs = labels[np.column_stack(pairs)]
+        true_top_indices = np.flatnonzero(~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8)))
+        true_pairs_to_merge = cluster_pairs[true_top_indices]
+
         if mode in {'sf', 'mt', 'sfmt', 'mtsf', 'perfect_sf'}:
             embds = list()
+            perfect_sfs = list()
             for c in clusters:
                 states = self.cluster_to_states[c]
                 embd = self._cluster_embedding(
                     states, mode, plan_steps=self.merge_plan_steps, gamma=self.merge_gamma
                 )
                 embds.append(embd)
+                perfect_sfs.append(
+                    self._get_perfect_sf(
+                        states,
+                        self.merge_plan_steps,
+                        self.merge_gamma,
+                        self.perfect_sf_noise)
+                )
+            perfect_sfs = np.vstack(perfect_sfs)
             embds = np.vstack(embds)
+            # compare to perfect sfs
+            psims = self.sim_func(embds, perfect_sfs)
+            self.diagonal_sim = np.diagonal(psims).mean()
+            self.off_diagonal_sim = psims[np.triu_indices_from(psims, k=1)].mean()
             # merge candidates
+            if mode == 'perfect_sf':
+                embds = perfect_sfs
             scores = self.sim_func(embds)
             scores = scores[pairs].flatten()
             # merge most similar pairs
             top_k_inds = np.argpartition(scores, -k)[-k:]
             pairs_to_merge = cluster_pairs[top_k_inds]
+            self.top_k_scores = scores[top_k_inds].mean()
+            self.mean_scores = scores.mean()
         elif mode == 'random':
-            pairs_to_merge = cluster_pairs[
-                self._rng.choice(cluster_pairs.shape[0], size=k, replace=False)
-            ]
+            top_k_inds = self._rng.choice(cluster_pairs.shape[0], size=k, replace=False)
+            pairs_to_merge = cluster_pairs[top_k_inds]
         elif mode == 'perfect':
-            labels = np.array([self.get_cluster_label(self.cluster_to_states[c]) for c in clusters])
-            label_pairs = labels[np.column_stack(pairs)]
-            pairs_to_merge = cluster_pairs[
-                np.flatnonzero(~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8)))
-            ]
+            top_k_inds = true_top_indices
+            pairs_to_merge = true_pairs_to_merge
         else:
             raise ValueError(f'no mode {mode}')
 
+        self.merge_acc = np.count_nonzero(np.isin(top_k_inds, true_top_indices)) / k
         return pairs_to_merge
+
+    def _get_perfect_sf(self, states, plan_steps, gamma, noise=0):
+        # compare to perfect sf
+        assert self.true_transition_matrix is not None
+        assert self.true_emission_matrix is not None
+        T = np.mean(self.true_transition_matrix, axis=0)
+        E = self.true_emission_matrix
+
+        init_label = self.get_cluster_label(states)
+        current_state = sparse_to_dense([init_label], size=T.shape[0])
+        perfect_sf = E[init_label].copy()
+
+        discount = gamma
+        for i in range(plan_steps):
+            current_state = current_state @ T
+            obs_dist = current_state @ E
+            if noise > 0:
+                obs_dist = self._rng.dirichlet((1 / noise**2) * (obs_dist + EPS))
+            perfect_sf += discount * obs_dist
+            discount *= gamma
+        return perfect_sf
 
     def _cluster_embedding(
             self,
@@ -645,40 +700,23 @@ class ECAgent:
             plan_steps: int = 0,
             gamma: float = 0.0
     ):
-        if embedding_type == 'perfect_sf':
-            assert self.true_transition_matrix is not None
-            assert self.true_emission_matrix is not None
-            T = np.mean(self.true_transition_matrix, axis=0)
-            E = self.true_emission_matrix
-
-            init_label = self.get_cluster_label(states)
-            current_state = sparse_to_dense([init_label], size=T.shape[0])
-            sf = E[init_label].copy()
-
-            discount = gamma
-            for i in range(plan_steps):
-                current_state = current_state @ T
-                sf += discount * (current_state @ E)
-                discount *= gamma
-            return sf.copy()
-        else:
-            embd = list()
-            if "mt" in embedding_type:
-                trace = [
-                    self.state_to_memory_trace[s]
-                    for s in states
-                ]
-                trace = np.vstack(trace).mean(axis=0)
-                embd.append(trace)
-            if "sf" in embedding_type:
-                sf, _, _ = self.generate_sf(
-                    states,
-                    plan_steps,
-                    gamma,
-                    early_stop=False
-                )
-                embd.append(sf)
-            return np.concatenate(embd)
+        embd = list()
+        if "mt" in embedding_type:
+            trace = [
+                self.state_to_memory_trace[s]
+                for s in states
+            ]
+            trace = np.vstack(trace).mean(axis=0)
+            embd.append(trace)
+        if "sf" in embedding_type:
+            sf, _, _ = self.generate_sf(
+                states,
+                plan_steps,
+                gamma,
+                early_stop=False
+            )
+            embd.append(sf)
+        return np.concatenate(embd)
 
     def _split_cluster(self, cluster_id, mode='random'):
         states = list(self.cluster_to_states[cluster_id])
