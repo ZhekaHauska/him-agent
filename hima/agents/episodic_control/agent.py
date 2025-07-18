@@ -72,6 +72,7 @@ class ECAgent:
             trace_gamma,
             sim_metric,
             sleep_period,
+            sleep_iterations,
             merge_iterations,
             split_iterations,
             clusters_per_obs,
@@ -96,6 +97,7 @@ class ECAgent:
         self.plan_steps = plan_steps
         self.update_period = update_period
         self.sleep_period = sleep_period
+        self.sleep_iterations = sleep_iterations
         self.merge_iterations = merge_iterations
         self.split_iterations = split_iterations
         # +1 for the initial state (the last state)
@@ -323,7 +325,8 @@ class ECAgent:
                 self._update_second_level()
 
             if (self.time_step % self.sleep_period) == 0:
-                self.sleep_phase(self.merge_iterations, self.split_iterations)
+                for _ in range(self.sleep_iterations):
+                    self.sleep_phase(self.merge_iterations, self.split_iterations)
 
         self.memory_trace += obs_dense[None]
         self.state = current_state
