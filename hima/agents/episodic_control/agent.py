@@ -148,6 +148,7 @@ class ECAgent:
         self.diagonal_sim = 0
         self.off_diagonal_sim = 0
         self.merge_acc = 0
+        self.split_acc = 0
         self.state_labels = dict()
 
         self.clusters_allocated = clusters_per_obs > 0
@@ -613,7 +614,8 @@ class ECAgent:
                         prefix + 'num_candidates': len(clusters_to_split),
                         prefix + 'delta_num_clusters': self.num_clusters - n_cls,
                         prefix + 'num_split': n_split,
-                        prefix + 'mean_entropy': cluster_entropies.mean()
+                        prefix + 'mean_entropy': cluster_entropies.mean(),
+                        prefix + 'acc': self.split_acc
                     }
                 )
             except wandb.errors.Error:
@@ -724,19 +726,26 @@ class ECAgent:
     def _split_cluster(self, cluster_id, mode='random'):
         states = list(self.cluster_to_states[cluster_id])
 
+        cluster_label = self.get_cluster_label(states)
+        state_labels = np.array([self.state_labels[s] for s in states])
+        true_mask = state_labels == cluster_label
+
         if mode == 'random':
-            mask = self._rng.choice([True, False], size=len(states))
+            fraction = self._rng.random()
+            mask = np.ones(len(states)).astype(np.bool8)
+            n_new = int(np.clip(np.round(len(states) * fraction), 0, len(states)-1))
+            mask[:n_new] = False
+            self._rng.shuffle(mask)
         elif mode == 'hidden':
             mask = self._test_cluster(states, use_obs=False)
         elif mode == 'obs':
             mask = self._test_cluster(states, use_obs=True)
         elif mode == 'perfect':
-            cluster_label = self.get_cluster_label(states)
-            state_labels = np.array([self.state_labels[s] for s in states])
-            mask = state_labels == cluster_label
+            mask = true_mask
         else:
             raise ValueError(f'no such split mode {mode}')
 
+        self.split_acc = np.count_nonzero(~(mask | true_mask)) / len(mask)
         states = np.array(states)
         obs_state = self.cluster_to_obs[cluster_id]
         old_cluster = states[mask]
