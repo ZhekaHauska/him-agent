@@ -76,6 +76,7 @@ class ECAgent:
             merge_iterations,
             split_iterations,
             entropy_scale,
+            error_scale,
             clusters_per_obs,
             top_percent_to_merge,
             check_contradictions,
@@ -83,6 +84,7 @@ class ECAgent:
             merge_mode,
             perfect_sf_noise,
             split_noise,
+            split_candidates_mode,
             merge_plan_steps,
             merge_gamma,
             cls_error_lr,
@@ -124,11 +126,13 @@ class ECAgent:
         # contradictions parameters
         self.check_contradictions = check_contradictions
         self.split_mode = split_mode
+        self.split_candidates_mode = split_candidates_mode
         self.entropy_scale = entropy_scale
         self.merge_mode = merge_mode
         self.merge_plan_steps = merge_plan_steps
         self.merge_gamma = merge_gamma
         self.cls_error_lr = cls_error_lr
+        self.error_scale = error_scale
         # debug
         self.oracle_mode = oracle_mode
         self.perfect_trace = perfect_trace
@@ -145,6 +149,8 @@ class ECAgent:
         self.state_to_cluster[(-1, -1)] = -1
         self.cluster_to_obs[-1] = -1
         self.cluster_to_timestamp[-1] = 0
+        self.should_update_second_level = False
+        self.should_sleep = False
         # debug
         self.true_state = None
         self.true_transition_matrix = None
@@ -233,6 +239,15 @@ class ECAgent:
         self.sf_steps = 0
         self.action_values = np.zeros(self.n_actions)
         self.memory_trace = np.zeros(self.n_obs_states)
+
+        if self.should_update_second_level:
+            self._update_second_level()
+            self.should_update_second_level = False
+
+        if self.should_sleep:
+            for _ in range(self.sleep_iterations):
+                self.sleep_phase(self.merge_iterations, self.split_iterations)
+            self.should_sleep = False
 
     def observe(self, observation, _reward, learn=True):
         # o_t, a_{t-1}
@@ -328,11 +343,10 @@ class ECAgent:
                 self.state_to_cluster[current_state] = winner
 
             if (self.time_step % self.update_period) == 0:
-                self._update_second_level()
+                self.should_update_second_level = True
 
             if (self.time_step % self.sleep_period) == 0:
-                for _ in range(self.sleep_iterations):
-                    self.sleep_phase(self.merge_iterations, self.split_iterations)
+                self.should_sleep = True
 
         self.memory_trace += obs_dense[None]
         self.state = current_state
@@ -593,13 +607,26 @@ class ECAgent:
 
         for _ in range(split_iterations):
             n_cls = self.num_clusters
-            # sample clusters proportionally to
-            # the entropy of their predictions
-            cluster_entropies = np.array(list(self.cluster_to_entropy.values()), dtype=np.float32)
-            clusters = np.array(list(self.cluster_to_entropy.keys()), dtype=np.int32)
-            probs = 1 - np.exp(-cluster_entropies * self.entropy_scale)
-            g = self._rng.random(len(probs))
-            clusters_to_split = clusters[g<probs]
+            clusters_to_split = set()
+
+            if 'entropy' in self.split_candidates_mode:
+                # sample clusters proportionally to
+                # the entropy of their predictions
+                clusters = np.array(list(self.cluster_to_entropy.keys()), dtype=np.int32)
+                cluster_entropies = np.array(
+                    list(self.cluster_to_entropy.values()), dtype=np.float32
+                )
+                probs = 1 - np.exp(-cluster_entropies * self.entropy_scale)
+                g = self._rng.random(len(probs))
+                clusters_to_split = clusters_to_split.union(set(clusters[g < probs]))
+            if 'error' in self.split_candidates_mode:
+                clusters = np.array(list(self.cluster_to_error.keys()), dtype=np.int32)
+                cluster_errors = np.array(
+                    list(self.cluster_to_error.values()), dtype=np.float32
+                )
+                probs = 1 - np.exp(-cluster_errors * self.error_scale)
+                g = self._rng.random(len(probs))
+                clusters_to_split = clusters_to_split.union(set(clusters[g < probs]))
 
             if len(clusters_to_split) == 0:
                 break
@@ -623,7 +650,6 @@ class ECAgent:
                         prefix + 'num_candidates': len(clusters_to_split),
                         prefix + 'delta_num_clusters': self.num_clusters - n_cls,
                         prefix + 'num_split': n_split,
-                        prefix + 'mean_entropy': cluster_entropies.mean(),
                         prefix + 'acc_sep': np.mean(split_acc_sep),
                         prefix + 'acc_keep': np.mean(split_acc_keep)
                     }
