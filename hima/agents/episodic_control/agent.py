@@ -81,6 +81,7 @@ class ECAgent:
             split_mode,
             merge_mode,
             perfect_sf_noise,
+            split_noise,
             merge_plan_steps,
             merge_gamma,
             cls_error_lr,
@@ -133,6 +134,7 @@ class ECAgent:
         self.assign_cluster_error_rate = assign_cluster_error_rate
         self.trace_error = trace_error
         self.perfect_sf_noise = perfect_sf_noise
+        self.split_noise = split_noise
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -148,7 +150,8 @@ class ECAgent:
         self.diagonal_sim = 0
         self.off_diagonal_sim = 0
         self.merge_acc = 0
-        self.split_acc = 0
+        self.split_keep_acc = 0
+        self.split_separate_acc = 0
         self.state_labels = dict()
 
         self.clusters_allocated = clusters_per_obs > 0
@@ -600,9 +603,13 @@ class ECAgent:
                 break
 
             n_split = 0
+            split_acc_sep = []
+            split_acc_keep = []
             for cluster in clusters_to_split:
                 if self._split_cluster(cluster, self.split_mode):
                     n_split += 1
+                split_acc_sep.append(self.split_separate_acc)
+                split_acc_keep.append(self.split_keep_acc)
 
             if n_split:
                 self._update_second_level()
@@ -615,7 +622,8 @@ class ECAgent:
                         prefix + 'delta_num_clusters': self.num_clusters - n_cls,
                         prefix + 'num_split': n_split,
                         prefix + 'mean_entropy': cluster_entropies.mean(),
-                        prefix + 'acc': self.split_acc
+                        prefix + 'acc_sep': np.mean(split_acc_sep),
+                        prefix + 'acc_keep': np.mean(split_acc_keep)
                     }
                 )
             except wandb.errors.Error:
@@ -741,11 +749,25 @@ class ECAgent:
         elif mode == 'obs':
             mask = self._test_cluster(states, use_obs=True)
         elif mode == 'perfect':
-            mask = true_mask
+            if self.split_noise > 0:
+                mask = true_mask ^ (self._rng.random(len(true_mask)) < self.split_noise)
+                if np.count_nonzero(mask) == 0:
+                    mask[self._rng.integers(len(mask))] = True
+            else:
+                mask = true_mask
         else:
             raise ValueError(f'no such split mode {mode}')
 
-        self.split_acc = np.count_nonzero(~(mask | true_mask)) / len(mask)
+        n_keep = np.count_nonzero(mask)
+        n_keep_coincide = np.count_nonzero(mask & true_mask)
+        n_separate = np.count_nonzero(~mask)
+        n_separate_coincide = np.count_nonzero(~(mask | true_mask))
+        self.split_keep_acc = n_keep_coincide / n_keep
+        if n_separate == 0:
+            self.split_separate_acc = 1.0
+        else:
+            self.split_separate_acc = n_separate_coincide / n_separate
+
         states = np.array(states)
         obs_state = self.cluster_to_obs[cluster_id]
         old_cluster = states[mask]
