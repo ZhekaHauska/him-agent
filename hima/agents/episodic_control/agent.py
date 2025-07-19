@@ -75,6 +75,7 @@ class ECAgent:
             sleep_iterations,
             merge_iterations,
             split_iterations,
+            entropy_scale,
             clusters_per_obs,
             top_percent_to_merge,
             check_contradictions,
@@ -123,6 +124,7 @@ class ECAgent:
         # contradictions parameters
         self.check_contradictions = check_contradictions
         self.split_mode = split_mode
+        self.entropy_scale = entropy_scale
         self.merge_mode = merge_mode
         self.merge_plan_steps = merge_plan_steps
         self.merge_gamma = merge_gamma
@@ -595,7 +597,7 @@ class ECAgent:
             # the entropy of their predictions
             cluster_entropies = np.array(list(self.cluster_to_entropy.values()), dtype=np.float32)
             clusters = np.array(list(self.cluster_to_entropy.keys()), dtype=np.int32)
-            probs = 1 - np.exp(-cluster_entropies)
+            probs = 1 - np.exp(-cluster_entropies * self.entropy_scale)
             g = self._rng.random(len(probs))
             clusters_to_split = clusters[g<probs]
 
