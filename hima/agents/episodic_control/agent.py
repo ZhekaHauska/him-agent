@@ -205,6 +205,8 @@ class ECAgent:
         self.sf_steps = 0
         self.cluster_counter = 0
         self.time_step = 0
+        self.merge_step = 0
+        self.split_step = 0
         self.goal_found = False
         self.top_k_scores = 0
         self.mean_scores = 0
@@ -587,7 +589,7 @@ class ECAgent:
                     if child is not None:
                         pairs_to_merge[pairs_to_merge == child] = parent
 
-            prefix = "sleep/merge/"
+            prefix = "merge/"
             try:
                 wandb.log(
                     {
@@ -597,11 +599,14 @@ class ECAgent:
                         prefix + 'off_diagonal_perfect_sf_sim': self.off_diagonal_sim,
                         prefix + 'acc': self.merge_acc,
                         prefix + 'top_k_scores': self.top_k_scores,
-                        prefix + 'mean_scores': self.mean_scores
+                        prefix + 'mean_scores': self.mean_scores,
+                        'merge_step': self.merge_step
                     }
                 )
             except wandb.errors.Error:
                 pass
+
+            self.merge_step += 1
 
         self._update_second_level()
 
@@ -628,6 +633,9 @@ class ECAgent:
                 g = self._rng.random(len(probs))
                 clusters_to_split = clusters_to_split.union(set(clusters[g < probs]))
 
+            if -1 in clusters_to_split:
+                clusters_to_split.remove(-1)
+
             if len(clusters_to_split) == 0:
                 break
 
@@ -643,7 +651,7 @@ class ECAgent:
             if n_split:
                 self._update_second_level()
 
-            prefix = "sleep/split/"
+            prefix = "split/"
             try:
                 wandb.log(
                     {
@@ -651,11 +659,14 @@ class ECAgent:
                         prefix + 'delta_num_clusters': self.num_clusters - n_cls,
                         prefix + 'num_split': n_split,
                         prefix + 'acc_sep': np.mean(split_acc_sep),
-                        prefix + 'acc_keep': np.mean(split_acc_keep)
+                        prefix + 'acc_keep': np.mean(split_acc_keep),
+                        'split_step': self.split_step
                     }
                 )
             except wandb.errors.Error:
                 pass
+
+            self.split_step += 1
 
     def _get_merge_candidates(self, clusters, mode='random'):
         pairs = np.triu_indices(len(clusters), k=1)
