@@ -86,6 +86,8 @@ class ECAgent:
             split_noise,
             split_candidates_mode,
             merge_plan_steps,
+            merge_min_plan_steps,
+            merge_threshold,
             merge_gamma,
             cls_error_lr,
             mt_sim_metric,
@@ -130,6 +132,8 @@ class ECAgent:
         self.entropy_scale = entropy_scale
         self.merge_mode = merge_mode
         self.merge_plan_steps = merge_plan_steps
+        self.merge_min_plan_steps = merge_min_plan_steps
+        self.merge_threshold = merge_threshold
         self.merge_gamma = merge_gamma
         self.cls_error_lr = cls_error_lr
         self.error_scale = error_scale
@@ -686,7 +690,10 @@ class ECAgent:
             for c in clusters:
                 states = self.cluster_to_states[c]
                 embd = self._cluster_embedding(
-                    states, mode, plan_steps=self.merge_plan_steps, gamma=self.merge_gamma
+                    states, mode,
+                    plan_steps=self.merge_plan_steps,
+                    min_plan_steps=self.merge_min_plan_steps,
+                    gamma=self.merge_gamma
                 )
                 embds.append(embd)
                 perfect_sfs.append(
@@ -700,6 +707,7 @@ class ECAgent:
             embds = np.vstack(embds)
             # compare to perfect sfs
             psims = self.sim_func(embds, perfect_sfs)
+            psims[np.isnan(psims)] = 0
             self.diagonal_sim = np.diagonal(psims).mean()
             self.off_diagonal_sim = psims[np.triu_indices_from(psims, k=1)].mean()
             # merge candidates
@@ -707,7 +715,15 @@ class ECAgent:
                 embds = perfect_sfs
             scores = self.sim_func(embds)
             scores = scores[pairs].flatten()
+            scores[np.isnan(scores)] = 0
+            # filter pairs by a threshold
+            filter_mask = scores > self.merge_threshold
+            scores = scores[filter_mask]
+            cluster_pairs = cluster_pairs[filter_mask]
+            if len(cluster_pairs) == 0:
+                return np.empty(0)
             # merge most similar pairs
+            k = min(len(cluster_pairs), k)
             top_k_inds = np.argpartition(scores, -k)[-k:]
             pairs_to_merge = cluster_pairs[top_k_inds]
             self.top_k_scores = scores[top_k_inds].mean()
@@ -750,6 +766,7 @@ class ECAgent:
             states: set,
             embedding_type: str,
             plan_steps: int = 0,
+            min_plan_steps: int = 0,
             gamma: float = 0.0
     ):
         embd = list()
@@ -761,13 +778,16 @@ class ECAgent:
             trace = np.vstack(trace).mean(axis=0)
             embd.append(trace)
         if "sf" in embedding_type:
-            sf, _, _ = self.generate_sf(
+            sf, n_steps, _ = self.generate_sf(
                 states,
                 plan_steps,
                 gamma,
                 early_stop=False
             )
-            embd.append(sf)
+            if n_steps >= min_plan_steps:
+                embd.append(sf)
+            else:
+                embd.append(np.zeros_like(sf))
         return np.concatenate(embd)
 
     def _split_cluster(self, cluster_id, mode='random'):
