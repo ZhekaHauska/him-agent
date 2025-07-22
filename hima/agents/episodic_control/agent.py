@@ -89,6 +89,7 @@ class ECAgent:
             merge_min_plan_steps,
             merge_threshold,
             merge_gamma,
+            merge_sf_use_second_level,
             cls_error_lr,
             mt_sim_metric,
             oracle_mode,
@@ -134,6 +135,7 @@ class ECAgent:
         self.merge_plan_steps = merge_plan_steps
         self.merge_min_plan_steps = merge_min_plan_steps
         self.merge_threshold = merge_threshold
+        self.merge_sf_use_second_level = merge_sf_use_second_level
         self.merge_gamma = merge_gamma
         self.cls_error_lr = cls_error_lr
         self.error_scale = error_scale
@@ -545,7 +547,10 @@ class ECAgent:
         for i in range(steps):
             # uniform strategy
             predicted_states = set().union(
-                *[self._predict(predicted_states, a, expand_clusters) for a in range(self.n_actions)]
+                *[
+                    self._predict_first_level(predicted_states, a, expand_clusters)
+                    for a in range(self.n_actions)
+                ]
             )
             if len(predicted_states) == 0:
                 break
@@ -563,6 +568,52 @@ class ECAgent:
             discount *= gamma
 
         return sf, i+1, goal_found
+
+    def generate_sf_second_level(
+            self,
+            initial_state: dict,
+            steps: int,
+            gamma: float,
+    ):
+        def get_obs_probs(states):
+            probs = np.zeros(self.n_obs_states)
+            for s in states:
+                probs[s[0]] += states[s]
+            return probs
+
+        sf = get_obs_probs(initial_state)
+        predicted_states = initial_state
+        # uniform strategy
+        actions = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
+
+        discount = gamma
+        i = -1
+        for i in range(steps):
+            predicted_states = self._predict_second_level(predicted_states, actions)
+            if len(predicted_states) == 0:
+                break
+            obs_probs = get_obs_probs(predicted_states)
+            sf += discount * obs_probs
+            discount *= gamma
+        return sf, i+1
+
+    def _predict_second_level(self, clusters: dict, actions: dict):
+        predicted_clusters = dict()
+        for a in actions:
+            for c in clusters:
+                pcs = self.second_level_transitions[a].get(c)
+                if pcs is not None:
+                    for pc in pcs:
+                        pc, prob = pc[:2], pc[-1]
+                        prob = actions[a] * clusters[c] * prob
+                        if pc in predicted_clusters:
+                            predicted_clusters[pc] += prob
+                        else:
+                            predicted_clusters[pc] = prob
+        if len(predicted_clusters) != 0:
+            norm = sum(list(predicted_clusters.values())) + EPS
+            predicted_clusters = {c: p / norm for c, p in predicted_clusters.items()}
+        return predicted_clusters
 
     def sleep_phase(self, merge_iterations, split_iterations):
         for _ in range(merge_iterations):
@@ -688,9 +739,8 @@ class ECAgent:
             embds = list()
             perfect_sfs = list()
             for c in clusters:
-                states = self.cluster_to_states[c]
                 embd = self._cluster_embedding(
-                    states, mode,
+                    c, mode,
                     plan_steps=self.merge_plan_steps,
                     min_plan_steps=self.merge_min_plan_steps,
                     gamma=self.merge_gamma
@@ -698,7 +748,7 @@ class ECAgent:
                 embds.append(embd)
                 perfect_sfs.append(
                     self._get_perfect_sf(
-                        states,
+                        self.cluster_to_states[c],
                         self.merge_plan_steps,
                         self.merge_gamma,
                         self.perfect_sf_noise)
@@ -763,12 +813,13 @@ class ECAgent:
 
     def _cluster_embedding(
             self,
-            states: set,
+            cluster_id: int,
             embedding_type: str,
             plan_steps: int = 0,
             min_plan_steps: int = 0,
             gamma: float = 0.0
     ):
+        states = self.cluster_to_states[cluster_id]
         embd = list()
         if "mt" in embedding_type:
             trace = [
@@ -778,12 +829,20 @@ class ECAgent:
             trace = np.vstack(trace).mean(axis=0)
             embd.append(trace)
         if "sf" in embedding_type:
-            sf, n_steps, _ = self.generate_sf(
-                states,
-                plan_steps,
-                gamma,
-                early_stop=False
-            )
+            if self.merge_sf_use_second_level:
+                states = {(self.cluster_to_obs[cluster_id], cluster_id): 1.0}
+                sf, n_steps = self.generate_sf_second_level(
+                    states,
+                    plan_steps,
+                    gamma
+                )
+            else:
+                sf, n_steps, _ = self.generate_sf(
+                    states,
+                    plan_steps,
+                    gamma,
+                    early_stop=False,
+                )
             if n_steps >= min_plan_steps:
                 embd.append(sf)
             else:
@@ -931,7 +990,7 @@ class ECAgent:
 
             self.cluster_to_entropy[cluster_id] = cluster_entropy
 
-    def _predict(self, state: set, action: int, expand_clusters: bool = False) -> set:
+    def _predict_first_level(self, state: set, action: int, expand_clusters: bool = False) -> set:
         state_expanded = state
         if expand_clusters:
             clusters = [self.state_to_cluster.get(s) for s in state]
