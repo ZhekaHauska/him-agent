@@ -282,7 +282,7 @@ class BioAgentWrapper(BaseAgent):
 class ECAgentWrapper(BaseAgent):
     agent: ECAgent
 
-    def __init__(self, conf):
+    def __init__(self, conf, logger=None):
         self.seed = conf['seed']
         self.initial_action = 0
         self.conf = conf
@@ -302,7 +302,7 @@ class ECAgentWrapper(BaseAgent):
         conf['agent']['seed'] = conf['seed']
         conf['agent']['n_actions'] = conf['n_actions']
 
-        self.agent = ECAgent(**conf['agent'])
+        self.agent = ECAgent(**conf['agent'], logger=logger)
 
     def observe(self, events, action, reward=0):
         if self.encoder is not None:

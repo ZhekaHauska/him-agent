@@ -12,6 +12,7 @@ import numpy as np
 
 import hima.envs.gridworld
 from hima.common.config.base import read_config, override_config
+from hima.common.metrics import WandbLogger, AimLogger
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.experiments.successor_representations.runners.base import BaseRunner
@@ -33,7 +34,7 @@ class ICMLRunner(BaseRunner):
         elif agent_type == 'ec':
             from hima.experiments.successor_representations.runners.agents\
                 import ECAgentWrapper
-            agent = ECAgentWrapper(conf)
+            agent = ECAgentWrapper(conf, logger=self.logger)
             if hasattr(self.environment, 'get_true_matrices'):
                 T, E = self.environment.get_true_matrices()
                 agent.agent.true_transition_matrix, agent.agent.true_emission_matrix = T, E
@@ -313,7 +314,7 @@ def main(config_path):
         config['metrics'] = read_config(metrics_conf)
 
     if config['run']['seed'] is None:
-        config['run']['seed'] = int.from_bytes(os.urandom(8), 'big')
+        config['run']['seed'] = int.from_bytes(os.urandom(4), 'big')
 
     # unfolding subconfigs
     def load_subconfig(entity, conf):
@@ -331,14 +332,14 @@ def main(config_path):
     overrides = parse_arg_list(sys.argv[2:])
     override_config(config, overrides)
 
-    if config['run'].pop('log'):
-        import wandb
-        logger = wandb.init(
-            project=config['run'].pop('project_name'), entity=os.environ.get('WANDB_ENTITY', None),
-            config=config
-        )
-    else:
-        logger = None
+    logger = config['run'].pop('logger')
+    if logger is not None:
+        if logger == 'wandb':
+            logger = WandbLogger(config)
+        elif logger == 'aim':
+            logger = AimLogger(config)
+        else:
+            raise NotImplementedError
 
     runner = ICMLRunner(logger, config)
     runner.run()

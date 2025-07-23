@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 import numpy as np
-from hima.common.metrics import MetricsRack
+from hima.common.metrics import MetricsRack, BaseLogger
 from hima.common.scenario import Scenario
 from typing import Any
 
 
 class BaseAgent:
+    logger: BaseLogger | None
     initial_action: int | None
     state_value: float
     true_state: Any

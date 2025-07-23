@@ -6,8 +6,6 @@
 import numpy as np
 from enum import Enum, auto
 
-import wandb
-
 from hima.common.sdr import sparse_to_dense
 from hima.common.smooth_values import SSValue
 from hima.common.utils import softmax, safe_divide
@@ -97,7 +95,8 @@ class ECAgent:
             trace_error,
             new_cluster_rate,
             assign_cluster_error_rate,
-            seed
+            seed,
+            logger=None
     ):
         self.n_obs_states = n_obs_states
         self.n_actions = n_actions
@@ -220,6 +219,8 @@ class ECAgent:
         self.learn = True
         self.seed = seed
         self._rng = np.random.default_rng(self.seed)
+
+        self.logger = logger
 
         self.inverse_temp = inverse_temp
         if exploration_eps < 0:
@@ -585,7 +586,6 @@ class ECAgent:
         predicted_states = initial_state
         # uniform strategy
         actions = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
-
         discount = gamma
         i = -1
         for i in range(steps):
@@ -644,9 +644,9 @@ class ECAgent:
                     if child is not None:
                         pairs_to_merge[pairs_to_merge == child] = parent
 
-            prefix = "merge/"
-            try:
-                wandb.log(
+            if self.logger is not None:
+                prefix = "merge/"
+                self.logger.log(
                     {
                         prefix + 'num_candidate_pairs': len(pairs_to_merge),
                         prefix + 'delta_num_clusters': self.num_clusters - n_cls,
@@ -658,8 +658,6 @@ class ECAgent:
                         'merge_step': self.merge_step
                     }
                 )
-            except wandb.errors.Error:
-                pass
 
             self.merge_step += 1
 
@@ -707,8 +705,8 @@ class ECAgent:
                 self._update_second_level()
 
             prefix = "split/"
-            try:
-                wandb.log(
+            if self.logger is not None:
+                self.logger.log(
                     {
                         prefix + 'num_candidates': len(clusters_to_split),
                         prefix + 'delta_num_clusters': self.num_clusters - n_cls,
@@ -718,8 +716,6 @@ class ECAgent:
                         'split_step': self.split_step
                     }
                 )
-            except wandb.errors.Error:
-                pass
 
             self.split_step += 1
 
