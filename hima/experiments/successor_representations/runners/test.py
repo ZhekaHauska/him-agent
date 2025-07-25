@@ -11,6 +11,7 @@ from typing import Union, Any
 import numpy as np
 
 import hima.envs.gridworld
+from hima.agents.episodic_control.agent import ECAgent
 from hima.common.config.base import read_config, override_config
 from hima.common.metrics import WandbLogger, AimLogger
 from hima.common.run.argparse import parse_arg_list
@@ -113,6 +114,22 @@ class ICMLRunner(BaseRunner):
         assert isinstance(env, hima.envs.gridworld.GridWorld)
         r, c = env.r, env.c
         return r * env.w + c
+
+    @property
+    def first_level_visits(self):
+        agent: ECAgent = self.agent.agent
+        labels = [agent.state_labels[s] for s in agent.state_to_visits]
+        visits = list(agent.state_to_visits.values())
+
+        env = self.environment.environment
+        assert isinstance(env, hima.envs.gridworld.GridWorld)
+        values = np.zeros((env.h, env.w))
+        counts = np.zeros((env.h, env.w))
+        for l, v in zip(labels, visits):
+            r, c = l // env.w, l % env.w
+            values[r, c] += v
+            counts[r, c] += 1
+        return values, counts
 
     @property
     def state_visited(self):

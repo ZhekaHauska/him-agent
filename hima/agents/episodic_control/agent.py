@@ -115,6 +115,7 @@ class ECAgent:
         self.cluster_to_states = dict()
         self.cluster_to_obs = dict()
         self.state_to_cluster = dict()
+        self.state_to_visits = dict()
         self.cluster_to_entropy = dict()
         self.cluster_to_timestamp = dict()
         self.cluster_to_error = dict()
@@ -359,7 +360,10 @@ class ECAgent:
 
         self.memory_trace += obs_dense[None]
         self.state = current_state
-        # TODO cluster and current_cluster may be incongruent
+        if self.state in self.state_to_visits:
+            self.state_to_visits[self.state] += 1
+        else:
+            self.state_to_visits[self.state] = 1
         self.cluster = current_clusters
         self.time_step += 1
 
