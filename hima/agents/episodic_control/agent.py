@@ -58,6 +58,7 @@ class ECAgent:
             n_obs_states,
             n_actions,
             plan_steps,
+            known_trajectory_bias,
             mt_lr,
             mt_beta,
             use_cluster_size_bias,
@@ -101,6 +102,7 @@ class ECAgent:
         self.n_obs_states = n_obs_states
         self.n_actions = n_actions
         self.plan_steps = plan_steps
+        self.known_trajectory_bias = known_trajectory_bias
         self.update_period = update_period
         self.sleep_period = sleep_period
         self.sleep_iterations = sleep_iterations
@@ -526,6 +528,8 @@ class ECAgent:
             self.goal_found = gf or self.goal_found
             planning_steps += steps
             self.action_values[action] = np.sum(sf * self.rewards)
+            if predicted_state is not None:
+                self.action_values[action] += self.known_trajectory_bias
 
         self.sf_steps = planning_steps / self.n_actions
         return self.action_values
