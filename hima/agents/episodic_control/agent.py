@@ -59,6 +59,8 @@ class ECAgent:
             n_actions,
             plan_steps,
             known_trajectory_bias,
+            bias_prob,
+            bias_length,
             mt_lr,
             mt_beta,
             use_cluster_size_bias,
@@ -103,6 +105,8 @@ class ECAgent:
         self.n_actions = n_actions
         self.plan_steps = plan_steps
         self.known_trajectory_bias = known_trajectory_bias
+        self.bias_length = bias_length
+        self.bias_prob = bias_prob
         self.update_period = update_period
         self.sleep_period = sleep_period
         self.sleep_iterations = sleep_iterations
@@ -159,6 +163,7 @@ class ECAgent:
         self.cluster_to_timestamp[-1] = 0
         self.should_update_second_level = False
         self.should_sleep = False
+        self.use_bias = False
         # debug
         self.true_state = None
         self.true_transition_matrix = None
@@ -251,6 +256,8 @@ class ECAgent:
         self.sf_steps = 0
         self.action_values = np.zeros(self.n_actions)
         self.memory_trace = np.zeros(self.n_obs_states)
+
+        self.use_bias = self._rng.random() < self.bias_prob
 
         if self.should_update_second_level:
             self._update_second_level()
@@ -522,6 +529,10 @@ class ECAgent:
 
         planning_steps = 0
         self.goal_found = False
+
+        if self._rng.random() < 1 / (1 + self.bias_length):
+            self.use_bias = False
+
         for action in range(self.n_actions):
             predicted_state = self.first_level_transitions[action].get(self.state)
             sf, steps, gf = self.generate_sf({predicted_state}, self.plan_steps, self.gamma)
@@ -529,7 +540,8 @@ class ECAgent:
             planning_steps += steps
             self.action_values[action] = np.sum(sf * self.rewards)
             if predicted_state is not None:
-                self.action_values[action] += self.known_trajectory_bias
+                if self.use_bias:
+                    self.action_values[action] += self.known_trajectory_bias
 
         self.sf_steps = planning_steps / self.n_actions
         return self.action_values
