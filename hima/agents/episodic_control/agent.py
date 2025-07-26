@@ -1051,7 +1051,8 @@ class ECAgent:
             action_dist = softmax(action_values, beta=self.inverse_temp)
         else:
             # greedy off policy or eps-greedy
-            best_action = np.argmax(action_values)
+            random_tie_breaker = self._rng.random(size=self.n_actions) * EPS
+            best_action = np.argmax(action_values + random_tie_breaker)
             # make greedy policy
             # noinspection PyTypeChecker
             action_dist = sparse_to_dense([best_action], like=action_values)
