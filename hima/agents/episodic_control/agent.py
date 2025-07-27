@@ -89,6 +89,7 @@ class ECAgent:
             merge_plan_steps,
             merge_min_plan_steps,
             merge_threshold,
+            merge_visits_threshold,
             merge_gamma,
             merge_sf_use_second_level,
             cls_error_lr,
@@ -141,6 +142,7 @@ class ECAgent:
         self.merge_plan_steps = merge_plan_steps
         self.merge_min_plan_steps = merge_min_plan_steps
         self.merge_threshold = merge_threshold
+        self.merge_visits_threshold = merge_visits_threshold
         self.merge_sf_use_second_level = merge_sf_use_second_level
         self.merge_gamma = merge_gamma
         self.cls_error_lr = cls_error_lr
@@ -739,28 +741,33 @@ class ECAgent:
 
             self.split_step += 1
 
-    def _get_merge_candidates(self, clusters, mode='random'):
+    def _get_true_merge_candidates(self, clusters):
         pairs = np.triu_indices(len(clusters), k=1)
         cluster_pairs = clusters[np.column_stack(pairs)]
-        k = int(self.top_percent_to_merge * len(cluster_pairs))
-        if k == 0:
-            return np.empty(0)
-
         labels = np.array([self.get_cluster_label(self.cluster_to_states[c]) for c in clusters])
         label_pairs = labels[np.column_stack(pairs)]
-        true_top_indices = np.flatnonzero(~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8)))
+        true_top_indices = np.flatnonzero(
+            ~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8))
+        )
         true_pairs_to_merge = cluster_pairs[true_top_indices]
+        return true_pairs_to_merge
 
-        if mode in {'sf', 'mt', 'sfmt', 'mtsf', 'perfect_sf'}:
+    def _get_merge_candidates(self, clusters, mode='random'):
+        if mode in {'sf', 'perfect_sf'}:
             embds = list()
             perfect_sfs = list()
+            eligible_clusters = list()
             for c in clusters:
                 embd = self._cluster_embedding(
-                    c, mode,
+                    c,
                     plan_steps=self.merge_plan_steps,
                     min_plan_steps=self.merge_min_plan_steps,
                     gamma=self.merge_gamma
                 )
+                if embd is None:
+                    continue
+
+                eligible_clusters.append(c)
                 embds.append(embd)
                 perfect_sfs.append(
                     self._get_perfect_sf(
@@ -769,8 +776,13 @@ class ECAgent:
                         self.merge_gamma,
                         self.perfect_sf_noise)
                 )
+            if len(eligible_clusters) == 0:
+                return np.empty(0)
             perfect_sfs = np.vstack(perfect_sfs)
             embds = np.vstack(embds)
+            clusters = np.array(eligible_clusters)
+            pairs = np.triu_indices(len(clusters), k=1)
+            cluster_pairs = clusters[np.column_stack(pairs)]
             # compare to perfect sfs
             psims = self.sim_func(embds, perfect_sfs)
             psims[np.isnan(psims)] = 0
@@ -786,24 +798,46 @@ class ECAgent:
             filter_mask = scores > self.merge_threshold
             scores = scores[filter_mask]
             cluster_pairs = cluster_pairs[filter_mask]
-            if len(cluster_pairs) == 0:
+            k = int(self.top_percent_to_merge * len(cluster_pairs))
+            if k == 0:
                 return np.empty(0)
             # merge most similar pairs
-            k = min(len(cluster_pairs), k)
             top_k_inds = np.argpartition(scores, -k)[-k:]
             pairs_to_merge = cluster_pairs[top_k_inds]
             self.top_k_scores = scores[top_k_inds].mean()
             self.mean_scores = scores.mean()
-        elif mode == 'random':
+            # compare to perfect pairs
+            labels = np.array([self.get_cluster_label(self.cluster_to_states[c]) for c in clusters])
+            label_pairs = labels[np.column_stack(pairs)]
+            true_indices = np.flatnonzero(
+                ~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8))
+            )
+            self.merge_acc = np.count_nonzero(np.isin(top_k_inds, true_indices)) / k
+        elif mode in {'random', 'perfect'}:
+            pairs = np.triu_indices(len(clusters), k=1)
+            cluster_pairs = clusters[np.column_stack(pairs)]
+            k = int(self.top_percent_to_merge * len(cluster_pairs))
+            if k == 0:
+                return np.empty(0)
+
+            labels = np.array([self.get_cluster_label(self.cluster_to_states[c]) for c in clusters])
+            label_pairs = labels[np.column_stack(pairs)]
+            true_indices = np.flatnonzero(
+                ~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8))
+            )
+            true_pairs_to_merge = cluster_pairs[true_indices]
+
             top_k_inds = self._rng.choice(cluster_pairs.shape[0], size=k, replace=False)
             pairs_to_merge = cluster_pairs[top_k_inds]
-        elif mode == 'perfect':
-            top_k_inds = true_top_indices
-            pairs_to_merge = true_pairs_to_merge
+
+            if mode == 'perfect':
+                top_k_inds = true_indices
+                pairs_to_merge = true_pairs_to_merge
+
+            self.merge_acc = np.count_nonzero(np.isin(top_k_inds, true_indices)) / k
         else:
             raise ValueError(f'no mode {mode}')
 
-        self.merge_acc = np.count_nonzero(np.isin(top_k_inds, true_top_indices)) / k
         return pairs_to_merge
 
     def _get_perfect_sf(self, states, plan_steps, gamma, noise=0):
@@ -830,40 +864,34 @@ class ECAgent:
     def _cluster_embedding(
             self,
             cluster_id: int,
-            embedding_type: str,
             plan_steps: int = 0,
             min_plan_steps: int = 0,
             gamma: float = 0.0
     ):
         states = self.cluster_to_states[cluster_id]
-        embd = list()
-        if "mt" in embedding_type:
-            trace = [
-                self.state_to_memory_trace[s]
-                for s in states
-            ]
-            trace = np.vstack(trace).mean(axis=0)
-            embd.append(trace)
-        if "sf" in embedding_type:
-            if self.merge_sf_use_second_level:
-                states = {(self.cluster_to_obs[cluster_id], cluster_id): 1.0}
-                sf, n_steps = self.generate_sf_second_level(
-                    states,
-                    plan_steps,
-                    gamma
-                )
-            else:
-                sf, n_steps, _ = self.generate_sf(
-                    states,
-                    plan_steps,
-                    gamma,
-                    early_stop=False,
-                )
-            if n_steps >= min_plan_steps:
-                embd.append(sf)
-            else:
-                embd.append(np.zeros_like(sf))
-        return np.concatenate(embd)
+        total_visits = sum([self.state_to_visits[s] for s in states])
+        if total_visits < self.merge_visits_threshold:
+            return None
+
+        if self.merge_sf_use_second_level:
+            states = {(self.cluster_to_obs[cluster_id], cluster_id): 1.0}
+            sf, n_steps = self.generate_sf_second_level(
+                states,
+                plan_steps,
+                gamma
+            )
+        else:
+            sf, n_steps, _ = self.generate_sf(
+                states,
+                plan_steps,
+                gamma,
+                early_stop=False,
+            )
+
+        if n_steps >= min_plan_steps:
+            return sf
+        else:
+            return None
 
     def _split_cluster(self, cluster_id, mode='random'):
         states = list(self.cluster_to_states[cluster_id])
