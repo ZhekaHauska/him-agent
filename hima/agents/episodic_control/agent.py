@@ -175,6 +175,7 @@ class ECAgent:
         self.merge_acc = 0
         self.split_keep_acc = 0
         self.split_separate_acc = 0
+        self.true_scores = 0
         self.state_labels = dict()
 
         self.clusters_allocated = clusters_per_obs > 0
@@ -677,6 +678,7 @@ class ECAgent:
                         prefix + 'acc': self.merge_acc,
                         prefix + 'top_k_scores': self.top_k_scores,
                         prefix + 'mean_scores': self.mean_scores,
+                        prefix + 'true_scores': self.true_scores,
                         'merge_step': self.merge_step
                     }
                 )
@@ -812,7 +814,9 @@ class ECAgent:
             true_indices = np.flatnonzero(
                 ~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8))
             )
-            self.merge_acc = np.count_nonzero(np.isin(top_k_inds, true_indices)) / k
+            coincide_mask = np.isin(top_k_inds, true_indices)
+            self.merge_acc = np.count_nonzero(coincide_mask) / k
+            self.true_scores = scores[coincide_mask].mean()
         elif mode in {'random', 'perfect'}:
             pairs = np.triu_indices(len(clusters), k=1)
             cluster_pairs = clusters[np.column_stack(pairs)]
