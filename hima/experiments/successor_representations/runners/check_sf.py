@@ -9,18 +9,20 @@ from collections import defaultdict
 
 import pandas as pd
 from hima.common.sdr import sparse_to_dense
-from scipy.special import rel_entr
+from scipy.special import kl_div
 from scipy.spatial.distance import euclidean, correlation, cosine
+
+from hima.modules.belief.utils import normalize
+
 EPS = 1e-24
 
 def dummy_sim(x, y):
     return 0
 
-def random_sim(x, y):
-    return np.random.random()
-
 def dkl_sim(x, y):
-    return 1 - rel_entr(x, y)
+    x = normalize(x)
+    y = normalize(y)
+    return np.exp(-kl_div(x, y).sum())
 
 def euc_sim(x, y):
     return np.exp(-euclidean(x, y))
@@ -33,7 +35,6 @@ def corr_sim(x, y):
 
 SIM_FUNCS = {
     'dummy': dummy_sim,
-    'random_sim': random_sim,
     'dkl': dkl_sim,
     'euc': euc_sim,
     'cos': cos_sim,
@@ -140,9 +141,9 @@ def form_clusters(
     # sort states into labels
     inds = np.arange(len(all_states))
     rng.shuffle(inds)
-    label_to_states = {label: set() for label in label_to_obs}
+    label_to_states = {label: list() for label in label_to_obs}
     for i in inds:
-        label_to_states[labels[all_states[i]]].add(all_states[i])
+        label_to_states[labels[all_states[i]]].append(all_states[i])
 
     # output
     label_to_clusters = dict()
@@ -353,14 +354,15 @@ def main(path, seeds):
     noise = 0
     sim_func_name = 'corr'
 
-    result = eval_params(
-        cluster_size, purity, sim_func_name, steps, gamma, seeds,
-        all_states, state_to_label, label_to_obs, obs_to_labels,
-        n_obs_states, n_actions, transitions,
-        true_transition, true_emission, noise
-    )
+    for sim_func_name in SIM_FUNCS:
+        result = eval_params(
+            cluster_size, purity, sim_func_name, steps, gamma, seeds,
+            all_states, state_to_label, label_to_obs, obs_to_labels,
+            n_obs_states, n_actions, transitions,
+            true_transition, true_emission, noise
+        )
 
-    results.append(result)
+        results.append(result)
     data = pd.concat(results, ignore_index=True)
 
     print(data.head(10))
