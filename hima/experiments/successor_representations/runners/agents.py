@@ -5,6 +5,8 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+import pickle
+
 from hima.experiments.successor_representations.runners.base import BaseAgent
 from hima.common.sdr import sparse_to_dense
 from hima.agents.succesor_representations.agent import BioHIMA, LstmBioHima
@@ -373,3 +375,20 @@ class ECAgentWrapper(BaseAgent):
             raise ValueError(f'Encoder type {self.encoder_type} is not supported')
 
         return encoder, n_vars, n_states
+
+    def save_experience(self, path, prefix):
+        label_to_obs = dict()
+        for label in range(self.agent.true_emission_matrix.shape[0]):
+            label_to_obs[label] = np.flatnonzero(self.agent.true_emission_matrix[label])[0]
+
+        with open(os.path.join(path, prefix + 'agent_experience.pkl'), 'wb') as file:
+            pickle.dump(
+                {
+                    'first_level': self.agent.first_level_transitions,
+                    'state_labels': self.agent.state_labels,
+                    'label_to_obs': label_to_obs,
+                    'true_transition': self.agent.true_transition_matrix,
+                    'true_emission': self.agent.true_emission_matrix
+                },
+                file
+            )
