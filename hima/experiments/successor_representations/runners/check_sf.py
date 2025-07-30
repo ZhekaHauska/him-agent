@@ -191,6 +191,7 @@ def eval_clusters(
     accuracy = defaultdict()
     similarities = defaultdict()
     perfect_sf_sim = defaultdict()
+    generated_steps = defaultdict()
 
     for obs in obs_to_labels:
         labels = list(obs_to_labels[obs])
@@ -198,7 +199,7 @@ def eval_clusters(
         candidate_sfs = list()
         for label in labels:
             probe, candidate = list(label_to_clusters[label])
-            probe_sf, _ = generate_sf(
+            probe_sf, gen_steps = generate_sf(
                 n_obs_states,
                 n_actions,
                 cluster_to_states[probe],
@@ -206,6 +207,7 @@ def eval_clusters(
                 gamma,
                 transitions
             )
+            generated_steps[label] = gen_steps
             probe_sfs.append(probe_sf)
             candidate_sf, _ = generate_sf(
                 n_obs_states,
@@ -236,7 +238,7 @@ def eval_clusters(
             true_label = labels[i]
             accuracy[true_label] = int(true_label == predicted_label)
         similarities[obs] = similarities
-    return accuracy, similarities, perfect_sf_sim
+    return accuracy, similarities, perfect_sf_sim, generated_steps
 
 def eval_params(
         cluster_size, purity, sim_func_name, steps, gamma, seeds,
@@ -258,7 +260,7 @@ def eval_params(
             rng
         )
 
-        accuracy, similarities, perfect_sf_sim = eval_clusters(
+        accuracy, similarities, perfect_sf_sim, generated_steps = eval_clusters(
             SIM_FUNCS[sim_func_name],
             n_obs_states,
             n_actions,
@@ -278,6 +280,7 @@ def eval_params(
                 {
                     'acc': list(accuracy.values()),
                     'sim': list(perfect_sf_sim.values()),
+                    'gen_steps': list(generated_steps.values()),
                     'label': list(accuracy.keys()),
                     'cluster_size': cluster_size,
                     'purity': purity,
