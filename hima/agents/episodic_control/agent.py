@@ -87,6 +87,7 @@ class ECAgent:
             split_candidates_mode,
             merge_plan_steps,
             merge_min_plan_steps,
+            merge_sim_threshold,
             merge_visits_threshold,
             merge_gamma,
             merge_sf_use_second_level,
@@ -138,6 +139,7 @@ class ECAgent:
         self.merge_mode = merge_mode
         self.merge_plan_steps = merge_plan_steps
         self.merge_min_plan_steps = merge_min_plan_steps
+        self.merge_sim_threshold = merge_sim_threshold
         self.merge_visits_threshold = merge_visits_threshold
         self.merge_sf_use_second_level = merge_sf_use_second_level
         self.merge_gamma = merge_gamma
@@ -806,7 +808,11 @@ class ECAgent:
             max_scores = scores[(np.arange(scores.shape[0]), index_y)]
             # select only out of distribution pairs
             probs = norm_cdf((max_scores - score_mean)/(score_std + EPS))
-            filter_false_pairs = (self._rng.random(size=len(probs)) < probs) & (score_std > EPS)
+            filter_false_pairs = (
+                (self._rng.random(size=len(probs)) < probs) &
+                (score_std > EPS) &
+                (max_scores > self.merge_sim_threshold)
+            )
             index_x = np.flatnonzero(filter_false_pairs)
             index_y = index_y[filter_false_pairs]
             pairs_to_merge = np.column_stack((clusters_x[index_x], clusters_y[index_y]))
