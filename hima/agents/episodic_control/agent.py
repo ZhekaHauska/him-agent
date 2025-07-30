@@ -6,8 +6,6 @@
 import numpy as np
 from enum import Enum, auto
 
-from comet_ml.experiment_loggers.points_3d.math_3d import scale_xyz
-
 from hima.common.sdr import sparse_to_dense
 from hima.common.smooth_values import SSValue
 from hima.common.utils import softmax, safe_divide
@@ -81,7 +79,6 @@ class ECAgent:
             entropy_scale,
             error_scale,
             clusters_per_obs,
-            top_percent_to_merge,
             check_contradictions,
             split_mode,
             merge_mode,
@@ -90,7 +87,6 @@ class ECAgent:
             split_candidates_mode,
             merge_plan_steps,
             merge_min_plan_steps,
-            merge_threshold,
             merge_visits_threshold,
             merge_gamma,
             merge_sf_use_second_level,
@@ -134,7 +130,6 @@ class ECAgent:
         self.mt_beta = mt_beta
         self.use_cluster_size_bias = use_cluster_size_bias
         self.use_memory_trace = use_memory_trace
-        self.top_percent_to_merge = top_percent_to_merge
         # contradictions parameters
         self.check_contradictions = check_contradictions
         self.split_mode = split_mode
@@ -143,7 +138,6 @@ class ECAgent:
         self.merge_mode = merge_mode
         self.merge_plan_steps = merge_plan_steps
         self.merge_min_plan_steps = merge_min_plan_steps
-        self.merge_threshold = merge_threshold
         self.merge_visits_threshold = merge_visits_threshold
         self.merge_sf_use_second_level = merge_sf_use_second_level
         self.merge_gamma = merge_gamma
@@ -836,12 +830,9 @@ class ECAgent:
             else:
                 self.merge_acc = 1.0
 
-        elif mode in {'random', 'perfect'}:
+        elif mode == 'perfect':
             pairs = np.triu_indices(len(clusters), k=1)
             cluster_pairs = clusters[np.column_stack(pairs)]
-            k = int(self.top_percent_to_merge * len(cluster_pairs))
-            if k == 0:
-                return np.empty(0)
 
             labels = np.array([self.get_cluster_label(self.cluster_to_states[c]) for c in clusters])
             label_pairs = labels[np.column_stack(pairs)]
@@ -849,15 +840,8 @@ class ECAgent:
                 ~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8))
             )
             true_pairs_to_merge = cluster_pairs[true_indices]
-
-            top_k_inds = self._rng.choice(cluster_pairs.shape[0], size=k, replace=False)
-            pairs_to_merge = cluster_pairs[top_k_inds]
-
-            if mode == 'perfect':
-                top_k_inds = true_indices
-                pairs_to_merge = true_pairs_to_merge
-
-            self.merge_acc = np.count_nonzero(np.isin(top_k_inds, true_indices)) / k
+            pairs_to_merge = true_pairs_to_merge
+            self.merge_acc = 1.0
         else:
             raise ValueError(f'no mode {mode}')
 
