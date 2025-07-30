@@ -171,7 +171,6 @@ class ECAgent:
         self.merge_acc = 0
         self.split_keep_acc = 0
         self.split_separate_acc = 0
-        self.true_scores = 0
         self.state_labels = dict()
 
         self.clusters_allocated = clusters_per_obs > 0
@@ -220,8 +219,6 @@ class ECAgent:
         self.merge_step = 0
         self.split_step = 0
         self.goal_found = False
-        self.top_k_scores = 0
-        self.mean_scores = 0
 
         self.learn = True
         self.seed = seed
@@ -652,6 +649,10 @@ class ECAgent:
             clusters = np.array(list(self.obs_to_clusters[obs_state]))
             pairs_to_merge = self._get_merge_candidates(clusters, mode=self.merge_mode)
 
+            if len(pairs_to_merge) == 0:
+                # skip merge step
+                break
+
             for i in range(pairs_to_merge.shape[0]):
                 pair = pairs_to_merge[i]
                 if pair[0] != pair[1]:
@@ -672,9 +673,6 @@ class ECAgent:
                         prefix + 'diagonal_perfect_sf_sim': self.diagonal_sim,
                         prefix + 'off_diagonal_perfect_sf_sim': self.off_diagonal_sim,
                         prefix + 'acc': self.merge_acc,
-                        prefix + 'top_k_scores': self.top_k_scores,
-                        prefix + 'mean_scores': self.mean_scores,
-                        prefix + 'true_scores': self.true_scores,
                         'merge_step': self.merge_step
                     }
                 )
@@ -824,12 +822,7 @@ class ECAgent:
             n_coincide = np.count_nonzero(
                 ~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8))
             )
-
-            if len(pairs_to_merge) > 0:
-                self.merge_acc = n_coincide / len(pairs_to_merge)
-            else:
-                self.merge_acc = 1.0
-
+            self.merge_acc = n_coincide / (len(pairs_to_merge) + EPS)
         elif mode == 'perfect':
             pairs = np.triu_indices(len(clusters), k=1)
             cluster_pairs = clusters[np.column_stack(pairs)]
