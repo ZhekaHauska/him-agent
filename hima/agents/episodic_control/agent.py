@@ -6,6 +6,8 @@
 import numpy as np
 from enum import Enum, auto
 
+from comet_ml.experiment_loggers.points_3d.math_3d import scale_xyz
+
 from hima.common.sdr import sparse_to_dense
 from hima.common.smooth_values import SSValue
 from hima.common.utils import softmax, safe_divide
@@ -778,45 +780,62 @@ class ECAgent:
                         self.merge_gamma,
                         self.perfect_sf_noise)
                 )
-            if len(eligible_clusters) == 0:
+            if len(eligible_clusters) < 2:
                 return np.empty(0)
+
             perfect_sfs = np.vstack(perfect_sfs)
             embds = np.vstack(embds)
             clusters = np.array(eligible_clusters)
-            pairs = np.triu_indices(len(clusters), k=1)
-            cluster_pairs = clusters[np.column_stack(pairs)]
+
             # compare to perfect sfs
             psims = self.sim_func(embds, perfect_sfs)
             psims[np.isnan(psims)] = 0
             self.diagonal_sim = np.diagonal(psims).mean()
             self.off_diagonal_sim = psims[np.triu_indices_from(psims, k=1)].mean()
+
             # merge candidates
             if mode == 'perfect_sf':
                 embds = perfect_sfs
-            scores = self.sim_func(embds)
-            scores = scores[pairs].flatten()
-            scores[np.isnan(scores)] = 0
-            # filter pairs by a threshold
-            filter_mask = scores > self.merge_threshold
-            scores = scores[filter_mask]
-            cluster_pairs = cluster_pairs[filter_mask]
-            k = int(self.top_percent_to_merge * len(cluster_pairs))
-            if k == 0:
-                return np.empty(0)
-            # merge most similar pairs
-            top_k_inds = np.argpartition(scores, -k)[-k:]
-            pairs_to_merge = cluster_pairs[top_k_inds]
-            self.top_k_scores = scores[top_k_inds].mean()
-            self.mean_scores = scores.mean()
-            # compare to perfect pairs
-            labels = np.array([self.get_cluster_label(self.cluster_to_states[c]) for c in clusters])
-            label_pairs = labels[np.column_stack(pairs)]
-            true_indices = np.flatnonzero(
+
+            # split cluster into two groups
+            # avoid duplicates and self-loops
+            split = np.arange(len(embds))
+            self._rng.shuffle(split)
+            clusters_x = clusters[split[:len(embds)//2]]
+            clusters_y = clusters[split[len(embds)//2:]]
+            embds_x = embds[split[:len(embds)//2]]
+            embds_y = embds[split[len(embds)//2:]]
+
+            scores = self.sim_func(embds_x, embds_y)
+            score_mean = np.mean(scores, axis=-1)
+            score_std = np.std(scores, axis=-1)
+
+            index_y = np.argmax(scores, axis=-1)
+            max_scores = scores[(np.arange(scores.shape[0]), index_y)]
+            # select only out of distribution pairs
+            probs = norm_cdf((max_scores - score_mean)/(score_std + EPS))
+            filter_false_pairs = (self._rng.random(size=len(probs)) < probs) & (score_std > EPS)
+            index_x = np.flatnonzero(filter_false_pairs)
+            index_y = index_y[filter_false_pairs]
+            pairs_to_merge = np.column_stack((clusters_x[index_x], clusters_y[index_y]))
+
+            # check true labels for selected pairs
+            labels = np.array(
+                [
+                    self.get_cluster_label(self.cluster_to_states[c])
+                    for c in pairs_to_merge.flatten()
+                ]
+            )
+            label_pairs = labels.reshape(-1, 2)
+            n_coincide = np.count_nonzero(
                 ~((label_pairs[:, 0] - label_pairs[:, 1]).astype(np.bool8))
             )
-            coincide_mask = np.isin(top_k_inds, true_indices)
-            self.merge_acc = np.count_nonzero(coincide_mask) / k
-            self.true_scores = scores[coincide_mask].mean()
+
+            if len(pairs_to_merge) > 0:
+                self.merge_acc = n_coincide / len(pairs_to_merge)
+            else:
+                self.merge_acc = 1.0
+
         elif mode in {'random', 'perfect'}:
             pairs = np.triu_indices(len(clusters), k=1)
             cluster_pairs = clusters[np.column_stack(pairs)]
