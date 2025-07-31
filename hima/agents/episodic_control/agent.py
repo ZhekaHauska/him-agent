@@ -708,7 +708,6 @@ class ECAgent:
                 probs = 1 - np.exp(-cluster_errors * self.error_scale)
                 g = self._rng.random(len(probs))
                 clusters_to_split = clusters_to_split.union(set(clusters[g < probs]))
-
             if -1 in clusters_to_split:
                 clusters_to_split.remove(-1)
 
@@ -719,7 +718,7 @@ class ECAgent:
             split_acc_sep = []
             split_acc_keep = []
             for cluster in clusters_to_split:
-                if self._split_cluster(cluster, self.split_mode):
+                if self._split_cluster(cluster, self.split_mode) is not None:
                     n_split += 1
                 split_acc_sep.append(self.split_separate_acc)
                 split_acc_keep.append(self.split_keep_acc)
@@ -923,6 +922,15 @@ class ECAgent:
             return None
 
     def _split_cluster(self, cluster_id, mode='random'):
+        if mode == 'delete':
+            obs_state = self.cluster_to_obs[cluster_id]
+            states = self.cluster_to_states[cluster_id]
+            self.obs_to_free_states[obs_state].update(states)
+            for s in states:
+                self.state_to_cluster.pop(s)
+            self._delete_cluster(cluster_id, obs_state)
+            return cluster_id
+
         states = list(self.cluster_to_states[cluster_id])
 
         cluster_label = self.get_cluster_label(states)
