@@ -116,40 +116,6 @@ class ICMLRunner(BaseRunner):
         return r * env.w + c
 
     @property
-    def first_level_visits(self):
-        agent: ECAgent = self.agent.agent
-        labels = [agent.state_labels[s] for s in agent.state_to_visits]
-        visits = list(agent.state_to_visits.values())
-
-        env = self.environment.environment
-        assert isinstance(env, hima.envs.gridworld.GridWorld)
-        values = np.zeros((env.h, env.w))
-        counts = np.zeros((env.h, env.w))
-        for l, v in zip(labels, visits):
-            r, c = l // env.w, l % env.w
-            values[r, c] += v
-            counts[r, c] += 1
-        return values, counts
-
-    @property
-    def n_states(self):
-        agent: ECAgent = self.agent.agent
-        labels, n_states = np.unique(
-            [agent.state_labels[s] for s in agent.state_to_visits],
-            return_counts=True
-        )
-
-        env = self.environment.environment
-        assert isinstance(env, hima.envs.gridworld.GridWorld)
-        values = np.zeros((env.h, env.w))
-        counts = np.zeros((env.h, env.w))
-        for l, v in zip(labels, n_states):
-            r, c = l // env.w, l % env.w
-            values[r, c] += v
-            counts[r, c] += 1
-        return values, counts
-
-    @property
     def state_visited(self):
         env = self.environment.environment
         assert isinstance(env, hima.envs.gridworld.GridWorld)
