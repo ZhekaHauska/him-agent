@@ -3,6 +3,9 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from collections import defaultdict
+
+import matplotlib.pyplot as plt
 import numpy as np
 from enum import Enum, auto
 
@@ -11,10 +14,13 @@ from hima.common.smooth_values import SSValue
 from hima.common.utils import softmax, safe_divide
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances, pairwise_distances
 from scipy.stats import entropy
+from copy import copy
 from PIL import Image
 import pygraphviz as pgv
 import io
+import colormap
 
+from hima.experiments.successor_representations.runners.check_sf import dkl_sim
 from hima.modules.belief.utils import normalize
 
 EPS = 1e-24
@@ -63,6 +69,7 @@ class ECAgent:
             use_cluster_size_bias,
             use_memory_trace,
             update_period,
+            link_threshold,
             gamma,
             reward_lr,
             inverse_temp,
@@ -110,10 +117,12 @@ class ECAgent:
         self.split_iterations = split_iterations
         # +1 for the initial state (the last state)
         self.first_order_transitions = np.zeros((n_actions, n_obs_states + 1, n_obs_states + 1))
-        self.first_level_transitions = [dict() for _ in range(n_actions)]
+        self.first_level_transitions = [dict() for _ in range(self.n_actions)]
         self.state_to_memory_trace = dict()
         self.state_to_sf = dict()
-        self.second_level_transitions = [dict() for _ in range(n_actions)]
+        self.second_level_transitions = [dict() for _ in range(self.n_actions)]
+        self.third_level_transitions = [dict() for _ in range(self.n_actions)]
+        self.link_threshold = link_threshold
         self.cluster_to_states = dict()
         self.cluster_to_obs = dict()
         self.state_to_cluster = dict()
@@ -172,6 +181,8 @@ class ECAgent:
         self.split_keep_acc = 0
         self.split_separate_acc = 0
         self.state_labels = dict()
+        self.cluster_labels = dict()
+        self.label_to_clusters = defaultdict(set)
 
         self.clusters_allocated = clusters_per_obs > 0
         if self.clusters_allocated:
@@ -315,10 +326,15 @@ class ECAgent:
         self.second_level_error = - np.log(obs_probs[obs_state] + EPS)
         self.second_level_acc = np.argmax(obs_probs) == obs_state
 
-        # posterior update of predicted clusters (IMPORTANT! we didn't do that for previous tests)
+        # posterior update of predicted clusters
         predicted_clusters = {c: p for c, p in predicted_clusters.items() if c[0] == obs_state}
         norm = sum(list(predicted_clusters.values())) + EPS
         predicted_clusters = {c: p/norm for c, p in predicted_clusters.items()}
+
+        if self.true_state is not None:
+            for c, p in predicted_clusters.items():
+                self.cluster_labels[c[1]][self.true_state] += p
+                self.label_to_clusters[self.true_state].add(c[1])
 
         self.generalised = self.second_level_acc > self.first_level_acc
 
@@ -734,18 +750,10 @@ class ECAgent:
             n_new_clusters = len(free_states) // cluster_size
             i = -1
             for i in range(n_new_clusters):
-                cluster_id = self.cluster_counter
-                self.cluster_counter += 1
                 cluster_states = {
                     tuple(s) for s in free_states[i * cluster_size: (i + 1) * cluster_size]
                 }
-
-                self.cluster_to_states[cluster_id] = cluster_states
-                self.cluster_to_obs[cluster_id] = obs_state
-                self.cluster_to_timestamp[cluster_id] = self.time_step
-                self.obs_to_clusters[obs_state].add(cluster_id)
-                for s in cluster_states:
-                    self.state_to_cluster[s] = cluster_id
+                self._create_cluster(cluster_states, obs_state)
 
             new_obs_to_free_states[obs_state] = {
                     tuple(s) for s in free_states[(i + 1) * cluster_size:]
@@ -959,17 +967,9 @@ class ECAgent:
             return
         # update old cluster
         self.cluster_to_states[cluster_id] = {tuple(s) for s in old_cluster}
+
         # create new cluster
-        new_cluster_id = self.cluster_counter
-        self.cluster_counter += 1
-        self.cluster_to_states[new_cluster_id] = {tuple(s) for s in new_cluster}
-
-        for s in self.cluster_to_states[new_cluster_id]:
-            self.state_to_cluster[s] = new_cluster_id
-
-        self.cluster_to_obs[new_cluster_id] = obs_state
-        self.obs_to_clusters[obs_state].add(new_cluster_id)
-        self.cluster_to_timestamp[new_cluster_id] = self.time_step
+        new_cluster_id = self._create_cluster({tuple(s) for s in new_cluster}, obs_state)
         return new_cluster_id
 
     def _test_cluster(self, cluster: list, use_obs=False) -> np.ndarray:
@@ -1018,15 +1018,34 @@ class ECAgent:
                     self.state_to_cluster[s] = c
         return parent, child
 
+    def _create_cluster(self, states, obs_state):
+        cluster_id = self.cluster_counter
+        self.cluster_counter += 1
+
+        self.cluster_to_states[cluster_id] = states
+        self.cluster_to_obs[cluster_id] = obs_state
+        self.cluster_to_timestamp[cluster_id] = self.time_step
+        self.obs_to_clusters[obs_state].add(cluster_id)
+        self.cluster_labels[cluster_id] = defaultdict(lambda: 0)
+
+        for s in states:
+            self.state_to_cluster[s] = cluster_id
+
+        return cluster_id
+
     def _delete_cluster(self, cluster_id, obs_state):
         self.cluster_to_states.pop(cluster_id)
         self.obs_to_clusters[obs_state].remove(cluster_id)
+        for label in self.label_to_clusters:
+            self.label_to_clusters[label].discard(cluster_id)
         if cluster_id in self.cluster_to_entropy:
             self.cluster_to_entropy.pop(cluster_id)
         if cluster_id in self.cluster_to_error:
             self.cluster_to_error.pop(cluster_id)
         if cluster_id in self.cluster_to_timestamp:
             self.cluster_to_timestamp.pop(cluster_id)
+        if cluster_id in self.cluster_labels:
+            self.cluster_labels.pop(cluster_id)
 
     def _update_second_level(self):
         for d_a in self.second_level_transitions:
@@ -1054,6 +1073,48 @@ class ECAgent:
                     d_a[cluster] = pred_clusters
 
             self.cluster_to_entropy[cluster_id] = cluster_entropy
+
+    def _update_third_level(self):
+        transitions = [dict() for _ in range(self.n_actions)]
+        # normalise cluster activations
+        normalised_cluster_labels = copy(self.cluster_labels)
+        for label, clusters in self.label_to_clusters.items():
+            norm = sum([self.cluster_labels[c][label] for c in clusters])
+            for c in clusters:
+                normalised_cluster_labels[c][label] /= norm
+
+        for label, clusters in self.label_to_clusters.items():
+            for a in range(self.n_actions):
+                label_scores = defaultdict(lambda: 0)
+                for c in clusters:
+                    for next_cluster in self.second_level_transitions[a].get(
+                            (self.cluster_to_obs[c], c), []
+                    ):
+                        obs_state, next_cluster_id, p = next_cluster
+                        for next_label in self.cluster_labels[next_cluster_id]:
+                            label_scores[next_label] += (
+                                    p * normalised_cluster_labels[next_cluster_id][next_label] *
+                                    normalised_cluster_labels[c][label]
+                            )
+                # normalise scores
+                norm = sum(list(label_scores.values()))
+                label_scores = {label: score/norm for label, score in label_scores.items()}
+                transitions[a][label] = label_scores
+
+        self.third_level_transitions = transitions
+
+    @property
+    def structured_index(self):
+        self._update_second_level()
+        self._update_third_level()
+        sindex = 0
+        for a, d_a in enumerate(self.third_level_transitions):
+            for label, next_labels in d_a.items():
+                for next_label, q in next_labels.items():
+                    p = self.true_transition_matrix[a][label][next_label]
+                    if p > 0:
+                        sindex += p * np.log(p / q)
+        return sindex
 
     def _predict_first_level(self, state: set, action: int, expand_clusters: bool = False) -> set:
         state_expanded = state
@@ -1134,15 +1195,30 @@ class ECAgent:
         return {c: self.time_step - self.cluster_to_timestamp[c] for c in self.cluster_to_states}
 
     @property
-    def draw_transition_graph(self, threshold=0.2):
-        g = pgv.AGraph(strict=False, directed=True)
+    def draw_transition_graph(self):
+        self._update_second_level()
+        self._update_third_level()
 
-        for a, d_a in enumerate(self.second_level_transitions):
+        cmap = colormap.cmap_builder('Pastel1')
+        g = pgv.AGraph(strict=False, directed=True)
+        w = np.sqrt(self.true_transition_matrix.shape[-1])
+
+        for a, d_a in enumerate(self.third_level_transitions):
             for c in d_a:
+                obs_state = np.flatnonzero(self.true_emission_matrix[c])[0]
+                g.add_node(
+                    c,
+                    label=f'{obs_state}: ({c//w}, {c%w})',
+                    style='filled',
+                    fillcolor=colormap.rgb2hex(
+                        *(cmap(obs_state)[:-1]),
+                        normalised=True
+                    ),
+                )
                 outs = d_a[c]
-                for out in outs:
-                    if out[-1] > threshold:
-                        g.add_edge(c, out[:2], label=f"{a}:{round(out[-1], 2)}")
+                for out, p in outs.items():
+                    if p > self.link_threshold:
+                        g.add_edge(c, out, label=f"{a}:{round(p, 2)}")
 
         g.layout(prog='dot')
         buf = io.BytesIO()
