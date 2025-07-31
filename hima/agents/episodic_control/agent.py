@@ -58,9 +58,6 @@ class ECAgent:
             n_obs_states,
             n_actions,
             plan_steps,
-            known_trajectory_bias,
-            bias_prob,
-            bias_length,
             mt_lr,
             mt_beta,
             use_cluster_size_bias,
@@ -88,7 +85,7 @@ class ECAgent:
             merge_plan_steps,
             merge_min_plan_steps,
             merge_sim_threshold,
-            merge_visits_threshold,
+            min_cluster_size,
             merge_gamma,
             merge_sf_use_second_level,
             cls_error_lr,
@@ -104,11 +101,10 @@ class ECAgent:
         self.n_obs_states = n_obs_states
         self.n_actions = n_actions
         self.plan_steps = plan_steps
-        self.known_trajectory_bias = known_trajectory_bias
-        self.bias_length = bias_length
-        self.bias_prob = bias_prob
+
         self.update_period = update_period
         self.sleep_period = sleep_period
+        self.min_cluster_size = min_cluster_size
         self.sleep_iterations = sleep_iterations
         self.merge_iterations = merge_iterations
         self.split_iterations = split_iterations
@@ -121,12 +117,12 @@ class ECAgent:
         self.cluster_to_states = dict()
         self.cluster_to_obs = dict()
         self.state_to_cluster = dict()
-        self.state_to_visits = dict()
         self.cluster_to_entropy = dict()
         self.cluster_to_timestamp = dict()
         self.cluster_to_error = dict()
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
         self.mt_merge_thresholds = dict()
+        # memory trace
         self.mt_lr = mt_lr
         self.mt_beta = mt_beta
         self.use_cluster_size_bias = use_cluster_size_bias
@@ -136,13 +132,14 @@ class ECAgent:
         self.split_mode = split_mode
         self.split_candidates_mode = split_candidates_mode
         self.entropy_scale = entropy_scale
+        # merge phase
         self.merge_mode = merge_mode
         self.merge_plan_steps = merge_plan_steps
         self.merge_min_plan_steps = merge_min_plan_steps
         self.merge_sim_threshold = merge_sim_threshold
-        self.merge_visits_threshold = merge_visits_threshold
         self.merge_sf_use_second_level = merge_sf_use_second_level
         self.merge_gamma = merge_gamma
+        # cluster metrics
         self.cls_error_lr = cls_error_lr
         self.error_scale = error_scale
         # debug
@@ -158,6 +155,7 @@ class ECAgent:
         self.cluster = {(-1, -1): 1.0}
         self.winner = None
         self.cluster_to_states[-1] = {(-1, -1)}
+        self.obs_to_free_states = {obs_state: set() for obs_state in range(self.n_obs_states)}
         self.state_to_cluster[(-1, -1)] = -1
         self.cluster_to_obs[-1] = -1
         self.cluster_to_timestamp[-1] = 0
@@ -255,8 +253,6 @@ class ECAgent:
         self.action_values = np.zeros(self.n_actions)
         self.memory_trace = np.zeros(self.n_obs_states)
 
-        self.use_bias = self._rng.random() < self.bias_prob
-
         if self.should_update_second_level:
             self._update_second_level()
             self.should_update_second_level = False
@@ -349,15 +345,12 @@ class ECAgent:
 
                 # or create a new cluster
                 if winner is None:
-                    winner = self.cluster_counter
-                    self.cluster_counter += 1
-                    self.cluster_to_states[winner] = set()
-                    self.cluster_to_obs[winner] = obs_state
-                    self.cluster_to_timestamp[winner] = self.time_step
-                    self.obs_to_clusters[obs_state].add(winner)
-
-                self.cluster_to_states[winner].add(current_state)
-                self.state_to_cluster[current_state] = winner
+                    self.obs_to_free_states[obs_state].add(current_state)
+                else:
+                    if current_state in self.obs_to_free_states[obs_state]:
+                        self.obs_to_free_states[obs_state].discard(current_state)
+                    self.cluster_to_states[winner].add(current_state)
+                    self.state_to_cluster[current_state] = winner
 
             if (self.time_step % self.update_period) == 0:
                 self.should_update_second_level = True
@@ -367,10 +360,6 @@ class ECAgent:
 
         self.memory_trace += obs_dense[None]
         self.state = current_state
-        if self.state in self.state_to_visits:
-            self.state_to_visits[self.state] += 1
-        else:
-            self.state_to_visits[self.state] = 1
         self.cluster = current_clusters
         self.time_step += 1
 
@@ -528,18 +517,12 @@ class ECAgent:
         planning_steps = 0
         self.goal_found = False
 
-        if self._rng.random() < 1 / (1 + self.bias_length):
-            self.use_bias = False
-
         for action in range(self.n_actions):
             predicted_state = self.first_level_transitions[action].get(self.state)
             sf, steps, gf = self.generate_sf({predicted_state}, self.plan_steps, self.gamma)
             self.goal_found = gf or self.goal_found
             planning_steps += steps
             self.action_values[action] = np.sum(sf * self.rewards)
-            if predicted_state is not None:
-                if self.use_bias:
-                    self.action_values[action] += self.known_trajectory_bias
 
         self.sf_steps = planning_steps / self.n_actions
         return self.action_values
@@ -635,6 +618,9 @@ class ECAgent:
 
     def sleep_phase(self, merge_iterations, split_iterations):
         for _ in range(merge_iterations):
+            # initialise clusters from free states
+            self.initialise_clusters(self.min_cluster_size)
+
             n_cls = self.num_clusters
             n_clusters = [len(self.obs_to_clusters[obs]) for obs in range(self.n_obs_states)]
             n_clusters = np.array(n_clusters, dtype=np.float32)
@@ -649,6 +635,7 @@ class ECAgent:
             obs_state = self._rng.choice(self.n_obs_states, p=probs)
 
             clusters = np.array(list(self.obs_to_clusters[obs_state]))
+            # merge clusters based on SF
             pairs_to_merge = self._get_merge_candidates(clusters, mode=self.merge_mode)
 
             if len(pairs_to_merge) == 0:
@@ -738,6 +725,29 @@ class ECAgent:
                 )
 
             self.split_step += 1
+
+    def initialise_clusters(self, cluster_size):
+        new_obs_to_free_states = dict()
+        for obs_state in self.obs_to_free_states:
+            free_states = np.array(list(self.obs_to_free_states[obs_state]))
+            self._rng.shuffle(free_states)
+            n_new_clusters = len(free_states) // cluster_size
+            i = -1
+            for i in range(n_new_clusters):
+                cluster_id = self.cluster_counter
+                self.cluster_counter += 1
+                cluster_states = set(free_states[i * cluster_size: (i + 1) * cluster_size])
+
+                self.cluster_to_states[cluster_id] = cluster_states
+                self.cluster_to_obs[cluster_id] = obs_state
+                self.cluster_to_timestamp[cluster_id] = self.time_step
+                self.obs_to_clusters[obs_state].add(cluster_id)
+                for s in cluster_states:
+                    self.state_to_cluster[s] = cluster_id
+
+            new_obs_to_free_states[obs_state] = set(free_states[(i + 1) * cluster_size:])
+
+        self.obs_to_free_states = new_obs_to_free_states
 
     def _get_true_merge_candidates(self, clusters):
         pairs = np.triu_indices(len(clusters), k=1)
@@ -875,10 +885,6 @@ class ECAgent:
             gamma: float = 0.0
     ):
         states = self.cluster_to_states[cluster_id]
-        total_visits = sum([self.state_to_visits[s] for s in states])
-        if total_visits < self.merge_visits_threshold:
-            return None
-
         if self.merge_sf_use_second_level:
             states = {(self.cluster_to_obs[cluster_id], cluster_id): 1.0}
             sf, n_steps = self.generate_sf_second_level(
