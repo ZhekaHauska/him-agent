@@ -765,7 +765,7 @@ class ECAgent:
         return true_pairs_to_merge
 
     def _get_merge_candidates(self, clusters, mode='random'):
-        if mode in {'sf', 'perfect_sf'}:
+        if mode in {'sf', 'perfect_sf', 'random_sf'}:
             embds = list()
             perfect_sfs = list()
             eligible_clusters = list()
@@ -814,21 +814,26 @@ class ECAgent:
             embds_x = embds[split[:len(embds)//2]]
             embds_y = embds[split[len(embds)//2:]]
 
-            scores = self.sim_func(embds_x, embds_y)
-            score_mean = np.mean(scores, axis=-1)
-            score_std = np.std(scores, axis=-1)
+            if mode == 'random_sf':
+                index_y = self._rng.integers(len(clusters_y), size=len(clusters_x))
+                index_x = np.arange(len(clusters_x))
+            else:
+                scores = self.sim_func(embds_x, embds_y)
+                score_mean = np.mean(scores, axis=-1)
+                score_std = np.std(scores, axis=-1)
 
-            index_y = np.argmax(scores, axis=-1)
-            max_scores = scores[(np.arange(scores.shape[0]), index_y)]
-            # select only out of distribution pairs
-            probs = norm_cdf((max_scores - score_mean)/(score_std + EPS))
-            filter_false_pairs = (
-                (self._rng.random(size=len(probs)) < probs) &
-                (score_std > EPS) &
-                (max_scores > self.merge_sim_threshold)
-            )
-            index_x = np.flatnonzero(filter_false_pairs)
-            index_y = index_y[filter_false_pairs]
+                index_y = np.argmax(scores, axis=-1)
+                max_scores = scores[(np.arange(scores.shape[0]), index_y)]
+                # select only out of distribution pairs
+                probs = norm_cdf((max_scores - score_mean)/(score_std + EPS))
+                filter_false_pairs = (
+                    (self._rng.random(size=len(probs)) < probs) &
+                    (score_std > EPS) &
+                    (max_scores > self.merge_sim_threshold)
+                )
+                index_x = np.flatnonzero(filter_false_pairs)
+                index_y = index_y[filter_false_pairs]
+
             pairs_to_merge = np.column_stack((clusters_x[index_x], clusters_y[index_y]))
 
             # check true labels for selected pairs
