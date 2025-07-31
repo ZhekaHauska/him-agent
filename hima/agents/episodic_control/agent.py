@@ -617,10 +617,10 @@ class ECAgent:
         return predicted_clusters
 
     def sleep_phase(self, merge_iterations, split_iterations):
-        for _ in range(merge_iterations):
-            # initialise clusters from free states
-            self.initialise_clusters(self.min_cluster_size)
+        # initialise clusters from free states
+        self.initialise_clusters(self.min_cluster_size)
 
+        for _ in range(merge_iterations):
             n_cls = self.num_clusters
             n_clusters = [len(self.obs_to_clusters[obs]) for obs in range(self.n_obs_states)]
             n_clusters = np.array(n_clusters, dtype=np.float32)
@@ -736,7 +736,9 @@ class ECAgent:
             for i in range(n_new_clusters):
                 cluster_id = self.cluster_counter
                 self.cluster_counter += 1
-                cluster_states = set(free_states[i * cluster_size: (i + 1) * cluster_size])
+                cluster_states = {
+                    tuple(s) for s in free_states[i * cluster_size: (i + 1) * cluster_size]
+                }
 
                 self.cluster_to_states[cluster_id] = cluster_states
                 self.cluster_to_obs[cluster_id] = obs_state
@@ -745,7 +747,9 @@ class ECAgent:
                 for s in cluster_states:
                     self.state_to_cluster[s] = cluster_id
 
-            new_obs_to_free_states[obs_state] = set(free_states[(i + 1) * cluster_size:])
+            new_obs_to_free_states[obs_state] = {
+                    tuple(s) for s in free_states[(i + 1) * cluster_size:]
+                }
 
         self.obs_to_free_states = new_obs_to_free_states
 
