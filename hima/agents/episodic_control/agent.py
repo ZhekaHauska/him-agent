@@ -19,6 +19,7 @@ from PIL import Image
 import pygraphviz as pgv
 import io
 import colormap
+import seaborn as sns
 
 from hima.experiments.successor_representations.runners.check_sf import dkl_sim
 from hima.modules.belief.utils import normalize
@@ -69,6 +70,10 @@ class ECAgent:
             use_cluster_size_bias,
             use_memory_trace,
             update_period,
+            third_level_mode,
+            clamp_transitions,
+            clamp_labels,
+            normalise_labels,
             link_threshold,
             gamma,
             reward_lr,
@@ -159,6 +164,10 @@ class ECAgent:
         self.trace_error = trace_error
         self.perfect_sf_noise = perfect_sf_noise
         self.split_noise = split_noise
+        self.third_level_mode = third_level_mode
+        self.clamp_transitions = clamp_transitions
+        self.normalise_labels = normalise_labels
+        self.clamp_labels = clamp_labels
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1): 1.0}
@@ -484,10 +493,18 @@ class ECAgent:
             winner = None
         return winner
 
-    def get_cluster_label(self, states: set):
+    def get_cluster_label(self, states: set, return_purity: bool = False):
+        # return cluster label and its purity
         cluster_labels = np.array([self.state_labels[s] for s in states])
         labels, counts = np.unique(cluster_labels, return_counts=True)
-        return labels[np.argmax(counts)]
+        label_id = np.argmax(counts)
+        max_counts = counts[label_id]
+        label = labels[label_id]
+
+        if return_purity:
+            return label, max_counts / counts.sum()
+        else:
+            return label
 
     @staticmethod
     def update_thresholds(score, clusters, thresholds, lr):
@@ -1082,39 +1099,76 @@ class ECAgent:
 
             self.cluster_to_entropy[cluster_id] = cluster_entropy
 
-    def _update_third_level(self):
+    def _update_third_level(self,
+            mode='purity',
+            clamp_transitions=True,
+            clamp_labels=True,
+            normalise_labels=False,
+    ):
+        if mode == 'empirical':
+            cluster_labels = self.cluster_labels
+        elif mode == 'purity':
+            cluster_labels = dict()
+            for c in self.cluster_labels:
+                label, purity = self.get_cluster_label(
+                    self.cluster_to_states[c], return_purity=True
+                )
+                cluster_labels[c] = {label: purity}
+        else:
+            raise NotImplementedError
+
+        if clamp_labels:
+            for c in cluster_labels:
+                max_label = max(cluster_labels[c], key=lambda x: cluster_labels[c][x])
+                clamped_labels = {max_label: 1.0}
+                cluster_labels[c] = clamped_labels
+
         transitions = [dict() for _ in range(self.n_actions)]
-        # normalise cluster activations
-        normalised_cluster_labels = copy(self.cluster_labels)
-        for label, clusters in self.label_to_clusters.items():
-            norm = sum([self.cluster_labels[c][label] for c in clusters])
-            for c in clusters:
-                normalised_cluster_labels[c][label] /= norm
+        if normalise_labels:
+            # normalise cluster labels
+            normalised_cluster_labels = copy(cluster_labels)
+            for label, clusters in self.label_to_clusters.items():
+                norm = sum([cluster_labels[c].get(label, 0) for c in clusters])
+                for c in clusters:
+                    if label in normalised_cluster_labels[c]:
+                        normalised_cluster_labels[c][label] /= norm
+        else:
+            normalised_cluster_labels = cluster_labels
 
         for label, clusters in self.label_to_clusters.items():
             for a in range(self.n_actions):
                 label_scores = defaultdict(lambda: 0)
                 for c in clusters:
-                    for next_cluster in self.second_level_transitions[a].get(
+                    predicted_clusters = self.second_level_transitions[a].get(
                             (self.cluster_to_obs[c], c), []
-                    ):
+                    )
+                    if (len(predicted_clusters) > 0) and clamp_transitions:
+                        cs = max(predicted_clusters, key=lambda x: x[-1])
+                        predicted_clusters = {(*cs[:2], 1.0)}
+                    for next_cluster in predicted_clusters:
                         obs_state, next_cluster_id, p = next_cluster
-                        for next_label in self.cluster_labels[next_cluster_id]:
+                        for next_label in cluster_labels[next_cluster_id]:
                             label_scores[next_label] += (
-                                    p * normalised_cluster_labels[next_cluster_id][next_label] *
-                                    normalised_cluster_labels[c][label]
+                                    p * normalised_cluster_labels[next_cluster_id].get(next_label, 0) *
+                                    normalised_cluster_labels[c].get(label, 0)
                             )
                 # normalise scores
                 norm = sum(list(label_scores.values()))
-                label_scores = {label: score/norm for label, score in label_scores.items()}
-                transitions[a][label] = label_scores
+                if norm > 0:
+                    label_scores = {label: score/norm for label, score in label_scores.items()}
+                    transitions[a][label] = label_scores
 
         self.third_level_transitions = transitions
 
     @property
     def structured_index(self):
         self._update_second_level()
-        self._update_third_level()
+        self._update_third_level(
+            self.third_level_mode,
+            self.clamp_transitions,
+            self.clamp_labels,
+            self.normalise_labels,
+        )
         sindex = 0
         for a, d_a in enumerate(self.third_level_transitions):
             for label, next_labels in d_a.items():
@@ -1204,9 +1258,6 @@ class ECAgent:
 
     @property
     def draw_transition_graph(self):
-        self._update_second_level()
-        self._update_third_level()
-
         cmap = colormap.cmap_builder('Pastel1')
         g = pgv.AGraph(strict=False, directed=True)
         w = np.sqrt(self.true_transition_matrix.shape[-1])
@@ -1222,6 +1273,8 @@ class ECAgent:
                         *(cmap(obs_state)[:-1]),
                         normalised=True
                     ),
+                    pos=f'{c//w},{c%w}',
+                    pin=True
                 )
                 outs = d_a[c]
                 for out, p in outs.items():
@@ -1231,6 +1284,26 @@ class ECAgent:
         g.layout(prog='dot')
         buf = io.BytesIO()
         g.draw(buf, format='png')
+        buf.seek(0)
+        im = Image.open(buf)
+        return im
+
+    @property
+    def render_third_level(self):
+        transitions = np.zeros_like(self.true_transition_matrix)
+        for a, d_a in enumerate(self.third_level_transitions):
+            for c in d_a:
+                outs = d_a[c]
+                for next_c, p in outs.items():
+                    transitions[a][c][next_c] = p
+
+        fig, axs = plt.subplots(nrows=1, ncols=2)
+        sns.heatmap(transitions.mean(axis=0), ax=axs[0])
+        axs[0].set_title('Reconstructed Transitions')
+        sns.heatmap(self.true_transition_matrix.mean(axis=0), ax=axs[1])
+        axs[1].set_title('Ground True Transitions')
+        buf = io.BytesIO()
+        fig.save(buf, format='png')
         buf.seek(0)
         im = Image.open(buf)
         return im
