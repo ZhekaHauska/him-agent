@@ -11,7 +11,7 @@ agent:
   clusters_per_obs: -1
   use_cluster_size_bias: false
   cls_error_lr: 0.1
-  update_period: 200  # (steps) second level matrix updates
+  update_period: 2000000  # (steps) second level matrix updates
   # third level visualisation
   third_level_mode: 'purity'
   clamp_transitions: true
@@ -26,9 +26,9 @@ agent:
   mt_beta: 10.0
   # sleep
   sleep_period: 500
-  sleep_iterations: 1
+  sleep_iterations: 0
   # merge phase
-  merge_iterations: 5
+  merge_iterations: 0
   merge_mode: sf  # random | sf | mt | sfmt | perfect_sf | perfect
   perfect_sf_noise: 0
   sim_metric: 'euc' # 'cos' | 'euc' | 'corr' | 'dummy'

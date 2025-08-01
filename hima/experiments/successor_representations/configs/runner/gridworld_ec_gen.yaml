@@ -1,6 +1,6 @@
-log: true
-project_name: gridworld_ec_gen2
-run_tag: test1
+logger: aim
+project_name: merge_final
+tags: []
 
 action_inertia: 1
 frame_skip: 0
@@ -8,11 +8,16 @@ strategies: null  # None
 observe_actions: true
 reward_free: true
 
-setup: free
+# setup: free
+setup: free_10x10_no_landmarks
 
 scenario: 'configs/scenario/gridworld_pomdp_ec_gen.yaml'
 env_conf: 'configs/environment/gridworld/pomdp.yaml'
-agent_conf: 'configs/agent/ec/gridworld.yaml'
+agent_conf: 'configs/agent/ec/gridworld_sf_merge_test.yaml'
 metrics_conf: 'configs/metrics/ec/gridworld_pomdp_gen.yaml'
 
-seed: 123
+#seed: 4432
+#seed: 123
+#seed: 65783
+#seed: 4382948
+seed: 33281
