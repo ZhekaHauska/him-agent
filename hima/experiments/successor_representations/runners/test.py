@@ -11,7 +11,6 @@ from typing import Union, Any
 import numpy as np
 
 import hima.envs.gridworld
-from hima.agents.episodic_control.agent import ECAgent
 from hima.common.config.base import read_config, override_config
 from hima.common.metrics import WandbLogger, AimLogger
 from hima.common.run.argparse import parse_arg_list

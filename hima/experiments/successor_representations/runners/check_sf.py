@@ -64,6 +64,19 @@ def _predict_first_level(state: set, action: int, transitions) -> set:
             predicted_state.add(d_a[s])
     return predicted_state
 
+def get_cluster_label(states: set, state_to_label: dict, return_purity: bool = False):
+    # return cluster label and its purity
+    cluster_labels = np.array([state_to_label[s] for s in states])
+    labels, counts = np.unique(cluster_labels, return_counts=True)
+    label_id = np.argmax(counts)
+    max_counts = counts[label_id]
+    label = labels[label_id]
+
+    if return_purity:
+        return label, max_counts / counts.sum()
+    else:
+        return label
+
 def generate_sf(
         n_obs_states: int,
         n_actions: int,
@@ -155,11 +168,16 @@ def form_clusters(
         label_to_clusters[label] = set()
         obs = label_to_obs[label]
         obs_labels = set(obs_to_labels[obs])
-        obs_labels.discard(label)
+
+        # use None purity to form clusters randomly
+        if purity is not None:
+            obs_labels.discard(label)
+            pure_states = round(purity * cluster_size)
+        else:
+            pure_states = 0
+
         for _ in range(n_clusters_per_label):
             cluster = set()
-            pure_states = round(purity * cluster_size)
-
             for _ in range(pure_states):
                 cluster.add(label_to_states[label].pop())
             for _ in range(cluster_size - pure_states):
