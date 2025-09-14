@@ -377,6 +377,14 @@ class ECAgentWrapper(BaseAgent):
         return encoder, n_vars, n_states
 
     def save_experience(self, path, prefix):
+        self.agent._update_second_level()
+        self.agent._update_third_level(
+            self.agent.third_level_mode,
+            self.agent.clamp_transitions,
+            self.agent.clamp_labels,
+            self.agent.normalise_labels,
+        )
+
         label_to_obs = dict()
         for label in range(self.agent.true_emission_matrix.shape[0]):
             label_to_obs[label] = np.flatnonzero(self.agent.true_emission_matrix[label])[0]
@@ -388,7 +396,8 @@ class ECAgentWrapper(BaseAgent):
                     'state_labels': self.agent.state_labels,
                     'label_to_obs': label_to_obs,
                     'true_transition': self.agent.true_transition_matrix,
-                    'true_emission': self.agent.true_emission_matrix
+                    'true_emission': self.agent.true_emission_matrix,
+                    'third_level': self.agent.third_level_transitions
                 },
                 file
             )
