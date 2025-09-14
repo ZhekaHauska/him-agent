@@ -1,0 +1,5 @@
+lambda_z: 0
+weight_decay: 1e-4
+rec_activation: relu
+out_activation: softmax
+loss: CE

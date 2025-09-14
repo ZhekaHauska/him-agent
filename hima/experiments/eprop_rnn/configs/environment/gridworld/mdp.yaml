@@ -1,0 +1,7 @@
+default_reward: 0
+observation_radius: 0
+collision_hint: False
+collision_reward: 0
+headless: True
+random_floor_colors: False
+seed: 42

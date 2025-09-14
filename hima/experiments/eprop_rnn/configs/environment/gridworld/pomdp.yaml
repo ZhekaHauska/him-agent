@@ -1,0 +1,18 @@
+# set -1 to return exact current position instead of cell's color
+observation_radius: 0
+# shows color of an obstacle when collide
+collision_hint: true
+# these can be ignored for now
+collision_reward: -0.1
+default_reward: -0.02
+# generates colors randomly (except obstacles <0), otherwise, uses colors from setup
+random_floor_colors: false
+# set false if you want to visualise agent's trajectory
+headless: true
+seed: 42
+
+
+# uncomment seed if you want to fix particular coloring
+# seed: 192410450
+# seed: 257209842
+# seed: 223
