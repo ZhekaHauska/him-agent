@@ -1,0 +1,11 @@
+observation_radius: -1
+collision_hint: true
+collision_reward: -0.1
+default_reward: -0.02
+random_floor_colors: true
+n_random_colors: 4
+markov_radius: 0
+headless: false
+# seed: 192410450
+# seed: 257209842
+seed: 223
