@@ -7,6 +7,7 @@
 import os
 import numpy as np
 
+from hima.agents.episodic_control.agent import ECAgent, euclidian_sim, cosine_similarity
 from hima.common.lazy_imports import lazy_import
 from typing import Dict, Literal, Optional
 
@@ -14,15 +15,113 @@ from hima.common.sdr import sparse_to_dense
 from hima.modules.belief.utils import normalize
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
-
 wandb = lazy_import('wandb')
+aim = lazy_import('aim')
 sns = lazy_import('seaborn')
 imageio = lazy_import('imageio')
 minisom = lazy_import('minisom')
 
+EPS = 1e-24
+
+
+class BaseLogger:
+    def log(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def define_metric(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def process_image(self, image):
+        return image
+
+    def process_video(self, video):
+        return video
+
+    def process_figure(self, figure):
+        return figure
+
+    def process_dist(self, dist):
+        return dist
+
+    @property
+    def name(self):
+        raise NotImplementedError
+
+
+class WandbLogger(BaseLogger):
+    def __init__(self, config):
+        self.run = wandb.init(
+            project=config['run'].pop('project_name'), entity=os.environ.get('WANDB_ENTITY', None),
+            config=config,
+
+        )
+
+    def log(self, *args, **kwargs):
+        self.run.log(*args, **kwargs)
+
+    def define_metric(self, *args, **kwargs):
+        self.run.define_metric(*args, **kwargs)
+
+    def process_image(self, image):
+        return wandb.Image(image)
+
+    def process_video(self, video):
+        return wandb.Video(video)
+
+    def process_figure(self, figure):
+        return self.process_image(figure)
+
+    def process_dist(self, dist):
+        return wandb.Image(sns.histplot(dist))
+
+    @property
+    def name(self):
+        return self.run.name
+
+
+class AimLogger(BaseLogger):
+    def __init__(self, config):
+        self.run = aim.Run(
+            experiment=config['run'].pop('project_name'),
+            log_system_params=True
+        )
+        tags = []
+        if 'tags' in config['run']:
+            t = config['run'].pop('tags')
+            if isinstance(t, list):
+                tags.extend(t)
+            elif t is not None:
+                tags.append(t)
+        for tag in tags:
+            self.run.add_tag(tag)
+        self.run['hparams'] = config
+
+    def log(self, *args, **kwargs):
+        self.run.track(*args, **kwargs)
+
+    def define_metric(self, *args, **kwargs):
+        ...
+
+    def process_image(self, image):
+        return aim.Image(image)
+
+    def process_video(self, video):
+        return aim.Image(video)
+
+    def process_figure(self, figure):
+        return aim.Image(figure.figure)
+
+    def process_dist(self, dist):
+        return aim.Image(sns.histplot(dist).figure)
+
+    @property
+    def name(self):
+        return self.run.run_hash
+
 
 class BaseMetric:
-    def __init__(self, logger, runner,
+    logger: BaseLogger
+    def __init__(self, logger: BaseLogger, runner,
                  update_step, log_step, update_period, log_period):
         self.logger = logger
         self.runner = runner
@@ -120,7 +219,7 @@ class ScalarMetrics(BaseMetric):
 
 
 class HeatmapMetrics(BaseMetric):
-    def __init__(self, metrics, logger, runner,
+    def __init__(self, metrics, logger: BaseLogger, runner,
                  update_step, log_step, update_period, log_period):
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
         self.logger = logger
@@ -146,7 +245,7 @@ class HeatmapMetrics(BaseMetric):
         log_dict = {self.log_step: step}
         for key, value in average_metrics.items():
             plt.figure()
-            log_dict[key] = wandb.Image(sns.heatmap(value))
+            log_dict[key] = self.logger.process_figure(sns.heatmap(value))
 
         self.logger.log(log_dict)
         plt.close('all')
@@ -165,7 +264,7 @@ class HeatmapMetrics(BaseMetric):
 
 
 class ImageMetrics(BaseMetric):
-    def __init__(self, metrics, logger, runner,
+    def __init__(self, metrics, logger: BaseLogger, runner,
                  update_step, log_step, update_period, log_period,
                  log_fps, log_dir='/tmp'):
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
@@ -197,9 +296,9 @@ class ImageMetrics(BaseMetric):
                     # mode 'L': gray 8-bit ints; duration = 1000 / fps; loop == 0: infinitely
                     gif_path, values, mode='L', duration=1000/self.log_fps, loop=0
                 )
-                log_dict[metric] = wandb.Video(gif_path)
+                log_dict[metric] = self.logger.process_video(gif_path)
             elif len(values) == 1:
-                log_dict[metric] = wandb.Image(values[0])
+                log_dict[metric] = self.logger.process_image(values[0])
 
         self.logger.log(log_dict)
         self._reset()
@@ -406,6 +505,41 @@ def get_surprise_2(probs, obs, mode='bernoulli', normalize=True):
     return surprise
 
 
+class Distribution(BaseMetric):
+    def __init__(self, metrics, logger, runner,
+                 update_step, log_step, update_period, log_period, is_cumulative):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.logger = logger
+        self.is_cumulative = is_cumulative
+        self.metrics = {metric: [] for metric in metrics.keys()}
+        self.att_to_log = {
+            metric: params['att']
+            for metric, params in metrics.items()
+        }
+
+    def update(self):
+        for name in self.metrics.keys():
+            value = self.get_attr(self.att_to_log[name])
+            self.metrics[name].append(value)
+
+    def log(self, step):
+        from matplotlib import pyplot as plt
+
+        log_dict = {self.log_step: step}
+        for key, value in self.metrics.items():
+            plt.figure()
+            log_dict[key] = self.logger.process_dist(value)
+
+        self.logger.log(log_dict)
+        plt.close('all')
+
+        if not self.is_cumulative:
+            self._reset()
+
+    def _reset(self):
+        self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+
 class Histogram(BaseMetric):
     def __init__(
             self, name, att, normalized,
@@ -448,7 +582,7 @@ class Histogram(BaseMetric):
         plt.figure()
         self.logger.log(
             {
-                self.name: wandb.Image(sns.heatmap(hist)),
+                self.name: self.logger.process_figure(sns.heatmap(hist)),
                 self.log_step: step
             }
         )
@@ -629,7 +763,7 @@ class SOMClusters(BaseMetric):
 
         log_dict.update(
             {
-                f'{self.name}/clusters': wandb.Image(fig),
+                f'{self.name}/clusters': self.logger.process_figure(fig),
             }
         )
         plt.close('all')
@@ -645,7 +779,7 @@ class SOMClusters(BaseMetric):
         for i in range(classes.size):
             log_dict.update(
                 {
-                    f'{self.name}/activations/class_{classes[i]}': wandb.Image(
+                    f'{self.name}/activations/class_{classes[i]}': self.logger.process_figure(
                         sns.heatmap(activation_map[:, :, i], cmap='viridis')
                     )
                 }
@@ -654,7 +788,7 @@ class SOMClusters(BaseMetric):
 
         log_dict.update(
             {
-                f'{self.name}/soft_clusters': wandb.Image(
+                f'{self.name}/soft_clusters': self.logger.process_figure(
                     plt.imshow(color_map.astype('uint8'))
                 )
             }
@@ -799,7 +933,7 @@ class GridworldSR(BaseMetric):
             log_dict[f'{self.name}/av_states_per_pos'] = np.mean(pcounts)
 
             if self.preparing_step == self.preparing_period:
-                log_dict[f'{self.name}/state_per_pos'] = wandb.Image(sns.heatmap(
+                log_dict[f'{self.name}/state_per_pos'] = self.logger.process_figure(sns.heatmap(
                     pcounts.reshape(self.grid_shape)
                 ))
                 plt.close('all')
@@ -811,7 +945,7 @@ class GridworldSR(BaseMetric):
                 f'{self.logger.name}_{self.name}_{step}.gif'
             )
             self._save_to_gif(gif_path, sr)
-            log_dict[f'{self.name}/trajectory_sr'] = wandb.Video(gif_path)
+            log_dict[f'{self.name}/trajectory_sr'] = self.logger.process_video(gif_path)
 
             self.decoded_patterns.clear()
             self.preparing = True
@@ -906,7 +1040,7 @@ class GridworldStateImage(BaseMetric):
         log_dict = dict()
         for i in range(self.n_states):
             plt.figure()
-            log_dict[f"{self.name}_state_{i}"] = wandb.Image(sns.heatmap(hist[i]))
+            log_dict[f"{self.name}_state_{i}"] = self.logger.process_figure(sns.heatmap(hist[i]))
             plt.close()
 
         log_dict[self.log_step] = step
@@ -953,42 +1087,325 @@ class ArrayMetrics(BaseMetric):
         self.metrics = {metric: [] for metric in self.metrics.keys()}
 
 
-class EClusterPurity(BaseMetric):
+class EClusterSimilarity(BaseMetric):
+    agent: ECAgent
+    similarities = {"cos": cosine_similarity, "euc": euclidian_sim}
     def __init__(
-            self, name, state_att,
+            self, name, metric,
             logger, runner,
             update_step, log_step, update_period, log_period,
     ):
         """
-            Effective number of state labels per cluster
+            Cluster pairwise similarity within one observational state.
         """
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
         self.name = name
-        self.state_att = state_att
-        self.state_labels = dict()
-        self.logger.define_metric(f'{self.name}', step_metric=self.log_step)
-        agent = self.runner.agent.agent
-        agent.state_labels = self.state_labels
+        self.agent = self.runner.agent.agent
+        self.sim_func = self.similarities[metric]
 
     def update(self):
-        state = self.get_attr(self.state_att)
-        estimated_state = self.runner.agent.agent.state
-        self.state_labels[estimated_state] = state
+        pass
 
     def log(self, step):
         log_dict = {
             self.log_step: step
         }
 
-        cluster_error = list()
-        clusters = self.runner.agent.agent.cluster_to_states
-        for cluster_id in clusters:
-            cluster = clusters[cluster_id]
-            cluster_labels = np.array([self.state_labels[s] for s in cluster])
-            labels, counts = np.unique(cluster_labels, return_counts=True)
-            score = counts / np.max(counts)
-            cluster_error.append(score.sum())
+        for obs_state in self.agent.obs_to_clusters:
+            clusters = self.agent.obs_to_clusters[obs_state]
+            if len(clusters) == 0:
+                continue
 
-        log_dict[self.name] = np.median(np.array(cluster_error))
+            traces = list()
+            for c in clusters:
+                trace = [
+                    self.agent.state_to_memory_trace[s]
+                    for s in self.agent.cluster_to_states[c]
+                ]
+                trace = np.vstack(trace).mean(axis=0)
+                traces.append(trace)
+            traces = np.vstack(traces)
+            pws = self.sim_func(traces)
+            log_dict[self.name + f'/obs_state_{obs_state}'] = self.logger.process_figure(sns.heatmap(pws))
+            plt.close()
+
         self.logger.log(log_dict)
 
+
+class EClusterMetrics(BaseMetric):
+    def __init__(
+            self, name, state_att,
+            logger, runner,
+            update_step, log_step, update_period, log_period,
+    ):
+        """
+            Relative weight of cluster's the most common label
+        """
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.state_att = state_att
+        self.state_labels = dict()
+        self.agent: ECAgent = self.runner.agent.agent
+        self.agent.state_labels = self.state_labels
+        self.cluster_assignment_acc = list()
+        self.new_cluster_rate = list()
+
+    def update(self):
+        state = self.get_attr(self.state_att)
+        estimated_state = self.runner.agent.agent.state
+        self.state_labels[estimated_state] = state
+
+        cluster_winner = self.agent.winner
+        if cluster_winner is not None:
+            if cluster_winner not in self.agent.cluster_to_states:
+                return
+            label = self.cluster_label(self.agent.cluster_to_states[cluster_winner])
+            self.cluster_assignment_acc.append(int(label == state))
+            self.new_cluster_rate.append(0)
+        else:
+            self.new_cluster_rate.append(1)
+
+    def cluster_label(self, states: set):
+        cluster_labels = np.array([self.state_labels[s] for s in states])
+        labels, counts = np.unique(cluster_labels, return_counts=True)
+        if len(labels) > 0:
+            return labels[np.argmax(counts)]
+
+    def log(self, step):
+        log_dict = {
+            self.log_step: step
+        }
+
+        cluster_purity = list()
+        cluster_size = list()
+        cluster_age = list()
+        cluster_error = list()
+        cluster_to_lifetime = self.agent.cluster_to_lifetime
+        clusters = self.agent.cluster_to_states
+        for cluster_id in clusters:
+            # skip initial state cluster
+            if cluster_id == -1:
+                continue
+            cluster = clusters[cluster_id]
+            cluster_labels = np.array([self.state_labels[s] for s in cluster])
+            # skip one-state and empty clusters
+            if len(cluster_labels) <= 1:
+                continue
+            labels, counts = np.unique(cluster_labels, return_counts=True)
+            if len(labels) == 1:
+                l = labels[0]
+                # don't take into account landmarks
+                # they always have purity == 1
+                if self.runner.environment.environment.landmarks.flatten()[l]:
+                    continue
+            score = np.max(counts) / counts.sum()
+            cluster_size.append(len(cluster_labels))
+            cluster_purity.append(score)
+            cluster_age.append(cluster_to_lifetime[cluster_id])
+            cluster_error.append(self.agent.cluster_to_error.get(cluster_id, 0))
+
+        cluster_age = np.array(cluster_age)
+        cluster_size = np.array(cluster_size)
+        cluster_purity = np.array(cluster_purity)
+        cluster_error = np.array(cluster_error)
+        size_weight = cluster_size / cluster_size.sum()
+
+        # log_dict[self.name + '/error_dist'] = self.logger.process_dist(cluster_error)
+        log_dict[self.name + '/error'] = np.mean(cluster_error)
+        log_dict[self.name + '/error_weighted'] = np.sum(
+            cluster_error * size_weight
+        )
+        plt.close()
+
+        log_dict[self.name + '/size'] = np.mean(cluster_size)
+        log_dict[self.name + '/size_dist'] = self.logger.process_dist(cluster_size)
+        plt.close()
+
+        log_dict[self.name + '/purity_dist'] = self.logger.process_dist(cluster_purity)
+        log_dict[self.name + '/purity'] = np.mean(cluster_purity)
+        log_dict[self.name + '/purity_weighted'] = np.sum(
+            cluster_purity * size_weight
+        )
+        plt.close()
+
+        log_dict[self.name + '/lifetime'] = np.mean(cluster_age)
+        log_dict[self.name + '/lifetime_dist'] = self.logger.process_dist(cluster_age)
+        plt.close()
+
+        log_dict[self.name + '/purity_size_age_error'] = self.logger.process_figure(
+            sns.scatterplot(
+                x=cluster_age,
+                y=cluster_purity,
+                hue=cluster_error,
+                palette='turbo',
+                size=cluster_size,
+                alpha=0.3
+            )
+        )
+        plt.close()
+
+        log_dict[self.name + '/new_cluster_rate'] = np.mean(self.new_cluster_rate)
+        log_dict[self.name + '/cluster_assignment_acc'] = np.mean(self.cluster_assignment_acc)
+
+        self.logger.log(log_dict)
+
+class ECTrueClusterSim(BaseMetric):
+    agent: ECAgent
+    similarities = {"cos": cosine_similarity, "euc": euclidian_sim}
+    mode: Literal['sampled', 'average', 'sampled_averaged']
+
+    def __init__(
+            self, name, state_att, metric, mode,
+            iterations,
+            embedding_type,
+            plan_steps,
+            gamma,
+            logger, runner,
+            update_step, log_step, update_period, log_period,
+    ):
+        """
+            Relative weight of cluster's the most common label
+        """
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.state_att = state_att
+        self.true_clusters = dict()
+        self.obs_to_clusters = dict()
+        self.agent = self.runner.agent.agent
+        self.sim_func = self.similarities[metric]
+        self.mode = mode
+        self.embedding_type = embedding_type
+        self.plan_steps = plan_steps
+        self.gamma = gamma
+        self.iterations = iterations
+
+    def update(self):
+        state = self.get_attr(self.state_att)
+        estimated_state = self.runner.agent.agent.state
+        obs = estimated_state[0]
+
+        if state not in self.true_clusters:
+            self.true_clusters[state] = set()
+        if obs not in self.obs_to_clusters:
+            self.obs_to_clusters[obs] = set()
+
+        self.true_clusters[state].add(estimated_state)
+        self.obs_to_clusters[obs].add(state)
+
+    def log(self, step):
+        log_dict = {
+            self.log_step: step
+        }
+        separability = []
+        for obs_state in self.obs_to_clusters:
+            clusters = self.obs_to_clusters[obs_state]
+            if len(clusters) == 0:
+                continue
+
+            if self.mode == 'sampled':
+                pws = self.sampled(clusters)
+            elif self.mode == 'averaged':
+                pws = self.averaged(clusters)
+            else:
+                pws = self.sampled_averaged(clusters)
+            # measure true cluster separability
+            if pws.size > 1:
+                diff = (
+                    np.diagonal(pws) -
+                    np.max(
+                            pws, axis=-1,
+                            where=~np.eye(pws.shape[0], dtype=np.bool8),
+                            initial=-np.inf
+                        )
+                )
+                sep = diff / (np.max(pws, axis=-1) - np.min(pws, axis=-1) + EPS)
+                sep = np.mean(sep)
+                separability.append(sep)
+                log_dict[self.name + f'/obs_state_{obs_state}_sep'] = sep
+            log_dict[self.name + f'/obs_state_{obs_state}'] = self.logger.process_figure(sns.heatmap(pws))
+            plt.close()
+        separability = np.array(separability)
+        separability = separability[separability != 0]
+        if len(separability) > 0:
+            log_dict[self.name + '/average_sep'] = np.mean(separability)
+        self.logger.log(log_dict)
+
+    def sampled(self, clusters):
+        """
+            Computes sampled similarity between clusters.
+        """
+        av_pws = np.zeros((len(clusters), len(clusters)))
+        for _ in range(self.iterations):
+            traces_x = list()
+            traces_y = list()
+            for c in clusters:
+                states = list(self.true_clusters[c])
+                s_ids = np.random.choice(
+                    np.arange(len(states)),
+                    size=2
+                )
+                s = states[s_ids[0]]
+                trace = self.embedding({s})
+                traces_x.append(trace)
+                s = states[s_ids[1]]
+                trace = self.embedding({s})
+                traces_y.append(trace)
+            av_pws += self.sim_func(np.vstack(traces_x), np.vstack(traces_y))
+        return av_pws / self.iterations
+
+    def sampled_averaged(self, clusters):
+        """
+            Computes sampled similarity between clusters.
+        """
+        embds = list()
+        for c in clusters:
+            embd = self.embedding(self.true_clusters[c])
+            embds.append(embd)
+        av_traces = np.vstack(embds)
+
+        av_pws = np.zeros((len(clusters), len(clusters)))
+        for _ in range(self.iterations):
+            traces = list()
+            for c in clusters:
+                states = list(self.true_clusters[c])
+                s_id = np.random.choice(
+                    np.arange(len(states))
+                )
+                s = states[s_id]
+                trace = self.embedding({s})
+                traces.append(trace)
+            av_pws += self.sim_func(av_traces, np.vstack(traces))
+        return av_pws / self.iterations
+
+    def averaged(self, clusters):
+        """
+            Average similarity of clusters.
+        """
+        embds = list()
+        for c in clusters:
+            embd = self.embedding(self.true_clusters[c])
+            embds.append(embd)
+        traces = np.vstack(embds)
+        pws = self.sim_func(traces)
+        return pws
+
+    def embedding(self, states):
+        embd = list()
+        if "mt" in self.embedding_type:
+            trace = [
+                self.agent.state_to_memory_trace[s]
+                for s in states
+            ]
+            trace = np.vstack(trace).mean(axis=0)
+            embd.append(trace)
+        if "sf" in self.embedding_type:
+            sf, _, _ = self.agent.generate_sf(
+                states,
+                self.plan_steps,
+                self.gamma,
+                early_stop=False,
+                expand_clusters=False
+            )
+            embd.append(sf)
+
+        return np.concatenate(embd)

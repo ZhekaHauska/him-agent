@@ -10,14 +10,20 @@
   check_every: 'episodes'
   action: switch_logging
   params: {}
-- condition: ['episodes', 'equal', 500, 'norepeat']
-  check_every: 'episodes'
-  action: agent.agent.sleep_phase
-  params:
-    clustering_iterations: 10000
 
-#- condition: ['steps', 'mod', 1000, 'repeat']
-#  check_every: 'steps'
-#  action: agent.agent.sleep_phase
+# switch learning off
+#- condition: ['episodes', 'equal', 200, 'norepeat']
+#  check_every: 'episodes'
+#  action: set_parameters
 #  params:
-#    sleep_iterations: 100
+#    agent.learn: false
+
+#- condition: ['episodes', 'equal', 500, 'norepeat']
+#  check_every: 'episodes'
+#  action: save_agent
+#  params: {'dir_path': 'logs'}
+
+#- condition: ['episodes', 'equal', 1000, 'norepeat']
+#  check_every: 'episodes'
+#  action: agent.save_experience
+#  params: {'path': 'logs', 'prefix': '1k_ep_10x10_10col_free_pos_s2_'}

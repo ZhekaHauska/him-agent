@@ -12,6 +12,7 @@ import numpy as np
 
 import hima.envs.gridworld
 from hima.common.config.base import read_config, override_config
+from hima.common.metrics import WandbLogger, AimLogger
 from hima.common.run.argparse import parse_arg_list
 from hima.common.sdr import sparse_to_dense
 from hima.experiments.successor_representations.runners.base import BaseRunner
@@ -21,8 +22,7 @@ from hima.modules.baselines.hmm import FCHMMLayer
 
 
 class ICMLRunner(BaseRunner):
-    @staticmethod
-    def make_agent(agent_type, conf):
+    def make_agent(self, agent_type, conf):
         if agent_type == 'bio':
             from hima.experiments.successor_representations.runners.agents\
                 import BioAgentWrapper
@@ -34,7 +34,10 @@ class ICMLRunner(BaseRunner):
         elif agent_type == 'ec':
             from hima.experiments.successor_representations.runners.agents\
                 import ECAgentWrapper
-            agent = ECAgentWrapper(conf)
+            agent = ECAgentWrapper(conf, logger=self.logger)
+            if hasattr(self.environment, 'get_true_matrices'):
+                T, E = self.environment.get_true_matrices()
+                agent.agent.true_transition_matrix, agent.agent.true_emission_matrix = T, E
         else:
             raise NotImplementedError
 
@@ -80,6 +83,16 @@ class ICMLRunner(BaseRunner):
         if isinstance(layer, LstmLayer):
             layer.save_model(os.path.join(dir_path, f'{self.logger.name}_{self.episodes}.pt'))
 
+    def save_agent(self, dir_path):
+        if self.logger is not None:
+            name = self.logger.name
+        else:
+            from names_generator import generate_name
+            name = generate_name()
+
+        with open(os.path.join(dir_path, f'agent_{name}.pkl'), 'wb') as file:
+            pickle.dump(self.agent.agent, file)
+
     @property
     def real_reward(self):
         if self.agent.camera is not None:
@@ -119,6 +132,19 @@ class ICMLRunner(BaseRunner):
         values = np.zeros((env.h, env.w))
         state_value = self.agent.state_value
         values[r, c] = state_value
+
+        counts = np.zeros_like(values)
+        counts[r, c] = 1
+        return values, counts
+
+    @property
+    def state_size(self):
+        env = self.environment.environment
+        assert isinstance(env, hima.envs.gridworld.GridWorld)
+        r, c = env.r, env.c
+        values = np.zeros((env.h, env.w))
+        state_size = len(self.agent.agent.cluster)
+        values[r, c] = state_size
 
         counts = np.zeros_like(values)
         counts[r, c] = 1
@@ -288,7 +314,7 @@ def main(config_path):
         config['metrics'] = read_config(metrics_conf)
 
     if config['run']['seed'] is None:
-        config['run']['seed'] = np.random.randint(0, np.iinfo(np.int32).max)
+        config['run']['seed'] = int.from_bytes(os.urandom(4), 'big')
 
     # unfolding subconfigs
     def load_subconfig(entity, conf):
@@ -306,14 +332,14 @@ def main(config_path):
     overrides = parse_arg_list(sys.argv[2:])
     override_config(config, overrides)
 
-    if config['run'].pop('log'):
-        import wandb
-        logger = wandb.init(
-            project=config['run'].pop('project_name'), entity=os.environ.get('WANDB_ENTITY', None),
-            config=config
-        )
-    else:
-        logger = None
+    logger = config['run'].pop('logger')
+    if logger is not None:
+        if logger == 'wandb':
+            logger = WandbLogger(config)
+        elif logger == 'aim':
+            logger = AimLogger(config)
+        else:
+            raise NotImplementedError
 
     runner = ICMLRunner(logger, config)
     runner.run()

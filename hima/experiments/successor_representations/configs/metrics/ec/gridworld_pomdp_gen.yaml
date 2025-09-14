@@ -4,8 +4,6 @@ setup:
     metrics:
       agent/setup:
         att: environment.render
-      layer/second_level_transitions:
-        att: agent.agent.draw_transition_graph
     update_step: current_setup_id
     update_period: 1
     log_step: current_setup_id
@@ -28,18 +26,27 @@ step_scalar_metrics:
   class: ScalarMetrics
   params:
     metrics:
-      sf/steps:
+#      sf/steps:
+#        agg: np.mean
+#        att: agent.agent.sf_steps
+#      sf/goal_found:
+#        agg: np.mean
+#        att: agent.goal_found
+      layer/first_order_error:
         agg: np.mean
-        att: agent.agent.sf_steps
-      sf/goal_found:
+        att: agent.agent.first_order_error
+      layer/first_order_acc:
         agg: np.mean
-        att: agent.goal_found
-      layer/first_level_err:
+        att: agent.agent.first_order_acc
+      layer/first_level_acc:
         agg: np.mean
-        att: agent.agent.first_level_error
+        att: agent.agent.first_level_acc
       layer/second_level_err:
         agg: np.mean
         att: agent.agent.second_level_error
+      layer/second_level_acc:
+        agg: np.mean
+        att: agent.agent.second_level_acc
       layer/first_level_none:
         agg: np.mean
         att: agent.agent.first_level_none
@@ -61,28 +68,37 @@ episodic_scalar_metrics:
   class: ScalarMetrics
   params:
     metrics:
-      main_metrics/steps:
-        agg: np.mean
-        att: steps
-      main_metrics/episodic_reward:
-        agg: np.mean
-        att: episodic_reward
-      main_metrics/total_reward:
-        agg: np.mean
-        att: total_reward
-      main_metrics/total_steps:
-        agg: np.mean
-        att: total_steps
+#      main_metrics/steps:
+#        agg: np.mean
+#        att: steps
+#      main_metrics/episodic_reward:
+#        agg: np.mean
+#        att: episodic_reward
+#      main_metrics/total_reward:
+#        agg: np.mean
+#        att: total_reward
+#      main_metrics/total_steps:
+#        agg: np.mean
+#        att: total_steps
       layer/num_clones:
         agg: np.mean
         att: agent.agent.total_num_clones
-      layer/num_free_states:
-        agg: np.mean
-        att: agent.agent.num_free_states
     update_step: episodes
     update_period: 1
     log_step: episodes
     log_period: 1
+
+#rare_scalar_metrics:
+#  class: ScalarMetrics
+#  params:
+#    metrics:
+#      layer/structure_index:
+#        agg: np.mean
+#        att: agent.agent.structured_index
+#    update_step: episodes
+#    update_period: 100
+#    log_step: episodes
+#    log_period: 100
 
 cluster_metrics:
   class: ScalarMetrics
@@ -95,20 +111,20 @@ cluster_metrics:
         agg: np.mean
         att: agent.agent.average_cluster_size
     update_step: episodes
-    update_period: 10
-    log_step: episodes
-    log_period: 10
-
-trajectory:
-  class: Histogram
-  params:
-    name: agent/trajectory
-    att: state_visited
-    normalized: true
-    update_step: steps
     update_period: 1
     log_step: episodes
-    log_period: 100
+    log_period: 1
+
+#trajectory:
+#  class: Histogram
+#  params:
+#    name: agent/trajectory
+#    att: state_visited
+#    normalized: true
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 200
 
 state_error:
   class: Histogram
@@ -119,28 +135,89 @@ state_error:
     update_step: steps
     update_period: 1
     log_step: episodes
-    log_period: 100
+    log_period: 200
+
+#state_size:
+#  class: Histogram
+#  params:
+#    name: layer/state_size
+#    att: state_size
+#    normalized: true
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 200
 
 state_prediction:
   class: Histogram
   params:
-    name: layer/prediction_size
+    name: layer/prediction_none
     att: state_prediction
     normalized: true
     update_step: steps
     update_period: 1
     log_step: episodes
-    log_period: 100
+    log_period: 200
 
 cluster_purity:
-  class: EClusterPurity
+  class: EClusterMetrics
   params:
-    name: agent/cluster_error
+    name: clusters
     state_att: state
     update_step: steps
     update_period: 1
     log_step: episodes
-    log_period: 10
+    log_period: 50
+
+#sim_dists:
+#  class: Distribution
+#  params:
+#    metrics:
+#      layer/sf_sim_dist:
+#        att: agent.agent.sf_merge_threshold.current_value
+#    update_step: episodes
+#    update_period: 10
+#    log_step: episodes
+#    log_period: 200
+#    is_cumulative: True
+
+#cluster_true_sim:
+#  class: ECTrueClusterSim
+#  params:
+#    name: cluster_true_sim
+#    state_att: state
+#    metric: euc
+#    embedding_type: sf
+#    mode: sampled
+#    iterations: 1000
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 200
+#
+#cluster_true_sim_att:
+#  class: ECTrueClusterSim
+#  params:
+#    name: cluster_true_sim_att
+#    state_att: state
+#    metric: euc
+#    embedding_type: sf
+#    mode: sampled_averaged
+#    iterations: 1000
+#    update_step: steps
+#    update_period: 1
+#    log_step: episodes
+#    log_period: 200
+#
+#cluster_similarity:
+#  class: EClusterSimilarity
+#  params:
+#    name: cluster_similarity
+#    metric: euc
+#    update_step: episodes
+#    update_period: 100
+#    log_step: episodes
+#    log_period: 200
 
 #value_function:
 #  class: Histogram

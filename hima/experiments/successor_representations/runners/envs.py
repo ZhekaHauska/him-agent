@@ -210,25 +210,22 @@ class GridWorldWrapper(BaseEnvironment):
     def close(self):
         self.environment = None
 
+    def get_true_matrices(self):
+        return self.environment.get_true_matrices()
+
     @property
-    def current_state(self):
+    def true_state(self):
         return self.environment.c + self.environment.r*self.environment.w
 
     @property
     def render(self):
-        import matplotlib.pyplot as plt
         from PIL import Image
-        shift = self.environment.shift
-        im = self.environment.colors.copy()
-        agent_color = max(self.environment.unique_colors) + 0.5
+        import matplotlib.pyplot as plt
+        import seaborn as sns
 
-        if shift > 0:
-            im = im[shift:-shift, shift:-shift]
-
-        im[self.environment.r, self.environment.c] = agent_color
-
+        im = self.environment.colors - self.environment.unique_colors.min()
         plt.figure()
-        plt.imshow(im, cmap='Pastel1', aspect=1, vmin=self.min_vis_color)
+        sns.heatmap(im, annot=True, cmap='Pastel1', square=True, cbar=False)
         plt.axis('off')
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches="tight")

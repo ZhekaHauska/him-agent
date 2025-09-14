@@ -22,18 +22,27 @@ class SSValue:
 
         self.mean = mean_ini
         self.std = std_ini
-        self.disp = std_ini**2
+        self.var = std_ini ** 2
         self.current_value = mean_ini
 
-    def update(self, value):
+    def update(self, value, std=None):
         self.current_value = lin_sum(self.current_value, self.lr, value)
         self.mean = lin_sum(self.mean, self.lr_norm, value)
-        self.disp = lin_sum(
-            self.disp,
-            self.lr_norm,
-            (value - self.mean)**2
-        )
-        self.std = self.disp**0.5
+
+        if std is None:
+            self.var = lin_sum(
+                self.var,
+                self.lr_norm,
+                (value - self.mean)**2
+            )
+        else:
+            self.var = lin_sum(
+                self.var,
+                self.lr_norm,
+                std ** 2
+            )
+
+        self.std = self.var ** 0.5
 
     @property
     def norm_value(self):

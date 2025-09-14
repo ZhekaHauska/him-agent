@@ -7,7 +7,7 @@ agent:
   inverse_temp: 1
   exploration_eps: 0.0
   # second level
-  min_cluster_size: 30
+  min_cluster_size: 1  # 5, 10, 20, 30, 50, 100
   clusters_per_obs: -1
   use_cluster_size_bias: false
   cls_error_lr: 0.1
@@ -28,8 +28,8 @@ agent:
   sleep_period: 500
   sleep_iterations: 1
   # merge phase
-  merge_iterations: 5
-  merge_mode: sf  # random | sf | mt | sfmt | perfect_sf | perfect
+  merge_iterations: 0
+  merge_mode: random_sf  # random_sf | sf | mt | sfmt | perfect_sf | perfect
   perfect_sf_noise: 0
   sim_metric: 'euc' # 'cos' | 'euc' | 'corr' | 'dummy'
   merge_plan_steps: 25

@@ -23,22 +23,41 @@ class GridWorld:
             collision_reward=0,
             headless=True,
             random_floor_colors=False,
+            n_random_colors=0,
+            markov_radius=0,
             seed=None,
     ):
         self._rng = np.random.default_rng(seed)
 
         room = np.asarray(room)
-        self.colors, self.rewards, self.terminals = (
-            room[0, :, :], room[1, :, :], room[2, :, :]
+        self.colors, self.rewards, self.terminals, self.landmarks = (
+            room[0, :, :], room[1, :, :], room[2, :, :], room[3, :, :]
         )
 
         self.random_floor_colors = random_floor_colors
         if self.random_floor_colors:
             # last color reserved for terminal state
             # negative colors reserved for obstacles
-            colors = self._rng.integers(0, np.max(self.colors), size=self.colors.shape)
-            floor_mask = ~((self.colors < 0) | (self.terminals == 1))
+            if markov_radius == 0:
+                colors = np.tile(
+                    np.arange(n_random_colors),
+                    (
+                        int(self.colors.size//n_random_colors) +
+                        int((self.colors.size % n_random_colors) > 0)
+                    )
+                )
+                self._rng.shuffle(colors)
+                colors = colors[:self.colors.size].reshape(self.colors.shape)
+            else:
+                colors = generate_map(markov_radius, self.colors.shape, seed)
+
+            floor_mask = self.colors >= 0
             self.colors[floor_mask] = colors[floor_mask]
+            self.colors[self.terminals == 1] = np.max(colors) + 1
+
+        self.colors[self.landmarks == 1] = (
+                np.max(self.colors) + np.arange(np.count_nonzero(self.landmarks)) + 1
+        )
 
         self.h, self.w = self.colors.shape
 
@@ -187,7 +206,10 @@ class GridWorld:
         plt.figure()
         sns.heatmap(im, annot=True, cmap='Pastel1', square=True, vmin=min_vis_color, cbar=False)
         if (self.r is not None) and (self.c is not None):
-            plt.text(self.c, self.r+1, 'A')
+            plt.text(self.c, self.r+1, 'A', size='x-large')
+
+        for s in np.flatnonzero(self.terminals):
+            plt.text(s % self.w, s // self.w + 1, 'G', size='x-large')
         plt.axis('off')
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches="tight")
@@ -205,3 +227,61 @@ class GridWorld:
             true_map[true_map == color] = i
 
         return true_map
+
+    def get_true_matrices(self):
+        n_states = self.h * self.w
+        d_a = {0: (0, -1), 1: (0, 1), 2: (-1, 0), 3: (1, 0)}
+        T = np.zeros((len(self.actions), n_states, n_states))
+        E = np.zeros((n_states, len(self.unique_colors)))
+        for a in self.actions:
+            d_r, d_c = d_a[a]
+            for r in range(self.h):
+                for c in range(self.w):
+                    x = self.colors[r + self.shift, c + self.shift]
+                    if x < 0:
+                        continue
+                    state = c + r * self.w
+                    E[state, np.flatnonzero(self.unique_colors == x)] = 1
+                    r_next = r + d_r
+                    c_next = c + d_c
+                    # Check whether action is taking to inaccessible states.
+                    next_x = self.colors[r_next + self.shift, c_next + self.shift]
+                    if next_x < 0:
+                        next_state = c + r * self.w
+                    else:
+                        next_state = c_next + r_next * self.w
+                    T[a, state, next_state] = 1
+        return T, E
+
+def generate_map(markov_radius: int, size: tuple[int, int], seed: int = None) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    colors = np.full(size, fill_value=-1, dtype=np.int32)
+
+    for _ in range(2):
+        for r in range(markov_radius, size[0] - markov_radius):
+            for c in range(markov_radius, size[1] - markov_radius):
+                start_r, start_c = max(0, r - markov_radius), max(0, c - markov_radius)
+                end_r, end_c = r + markov_radius + 1, c + markov_radius + 1
+
+                window = colors[start_r:end_r, start_c:end_c]
+                shape = window.shape
+                window = window.flatten()
+
+                # remove duplicates
+                unique, positions = np.unique(window, return_index=True)
+                window = np.full_like(window, fill_value=-1)
+                window[positions] = unique
+
+                # fill empty space
+                empty_mask = window == -1
+                n_nonzero = np.count_nonzero(empty_mask)
+                if n_nonzero == 0:
+                    continue
+
+                candidates = np.arange(window.size)
+                candidates = candidates[np.isin(candidates, window, invert=True)]
+                candidates = candidates[:n_nonzero]
+                rng.shuffle(candidates)
+                window[empty_mask] = candidates
+                colors[start_r:end_r, start_c:end_c] = window.reshape(shape)
+    return colors
