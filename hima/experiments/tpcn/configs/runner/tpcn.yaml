@@ -7,7 +7,7 @@ frame_skip: 0
 strategies: null
 setup: free
 setup_period: 1
-agent_conf: 'configs/agent/agent_conf.yaml'
+agent_conf: 'configs/agent/tpcn/agent_conf.yaml'
 env_conf: 'configs/environment/gridworld/pomdp.yaml'
 seed: null
 metrics_conf: 'configs/metrics/gridworld_mdp.yaml'
