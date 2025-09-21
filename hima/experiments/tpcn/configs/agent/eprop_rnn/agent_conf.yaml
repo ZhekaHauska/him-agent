@@ -1,7 +1,7 @@
 agent: 
   n_obs_states: 49
   n_actions: 4
-  model_config: 'configs/agent/model_config.yaml'
+  model_config: 'configs/agent/eprop_rnn/model_config.yaml'
   batch_size: 64
   learning_rate: 0.005
   gamma: 0.9

@@ -87,6 +87,9 @@ class RNNWithEPropAgent:
     def predict(self, x):
         return self.model.decode(self.prev_hidden)
     
+    def get_state_representation(self):
+        return self.prev_hidden.squueze()
+
     def generate_sf(self, init_hidden, initial_prediction, n_steps=5, gamma=0.95, learn_sr=False):
         
         hiddens = [init_hidden]

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from enum import Enum, auto
-from hima.modules.tpcn.tpcn import TemporalPCN, HierarchicalPCN
+from hima.modules.tpcn.tpcn import TemporalPCN
 from hima.experiments.successor_representations.runners.base import BaseAgent
 from hima.common.utils import safe_divide, softmax
 from hima.common.sdr import sparse_to_dense
@@ -15,15 +15,13 @@ class tPCNAgent(BaseAgent):
     def __init__(self, 
                 n_obs_states: int,
                 n_actions: int,
-                tpc_model: TemporalPCN | None = None, 
-                init_model: HierarchicalPCN | None = None,
-                init_model_config: dict | None = None,
-                tpc_model_config: dict | None = None,
+                model: TemporalPCN | None = None, 
+                model_config: dict | None = None,
                 test_inf_iters: int = 5,
                 inf_iters: int = 5,
                 inf_lr: int = 0.001,
                 device: str = 'cpu',
-                hidden_dim: int = 512,
+                hidden_size: int = 512,
                 batch_size: int = 64,
                 learning_rate: float = 0.005,
                 gamma: float = 0.9,
@@ -38,30 +36,24 @@ class tPCNAgent(BaseAgent):
                 sr_early_stop_goal: float | None = None,
                 seed: int = 42):
 
-        if init_model is None:
-            if init_model_config is not None:
-                self.init_model = HierarchicalPCN(**init_model_config)
+        if model is None:
+            if model_config is not None:
+                self.model = TemporalPCN(**model_config)
             else:
-                raise ValueError('One of the arguments {init_model, init_model_config} must not be None')
+                raise ValueError('One of the arguments {model, model_config} must not be None')
         else:
-            self.init_model = init_model
-        if tpc_model is None:
-            if tpc_model_config is not None:
-                self.tpc_model = TemporalPCN(**tpc_model_config)
-            else:
-                raise ValueError('One of the arguments {tpc_model, tpc_model_config} must not be None')
-        else:
-            self.tpc_model = tpc_model
+            self.model = model
 
         self.lr = learning_rate
         self.cum_reward = 0
         self.n_actions = n_actions
         self.n_obs_states = n_obs_states
-        self.hidden_dim = hidden_dim
+        self.hidden_size = hidden_size
         self.exploration_eps = exploration_eps
         self.device = device
         self.observations = [[]]
         self.actions = [[]]
+        self.init_encoded_obs = []
         self.episode = 1
         self.is_first = True
         self.learn = learn
@@ -77,17 +69,13 @@ class tPCNAgent(BaseAgent):
         self.inf_lr = inf_lr
         self.inf_iters = inf_iters
         self.tpc_optimizer = torch.optim.Adam(
-            self.tpc_model.parameters(), 
-            lr=self.lr,
-        )
-        self.init_optimizer = torch.optim.Adam(
-            self.init_model.parameters(),
+            self.model.parameters(), 
             lr=self.lr,
         )
 
         self.learn_rewards_from_state = learn_rewards_from_state
         if self.learn_rewards_from_state:
-            rewards = np.zeros((self.hidden_dim))
+            rewards = np.zeros((self.hidden_size))
         else:
             rewards = np.zeros((self.n_obs_states))
         
@@ -110,36 +98,33 @@ class tPCNAgent(BaseAgent):
         self._rng = np.random.default_rng(seed=seed)
         
     def observe(self, obs, action, reward):
-        
+        encoded_obs, onehot_obs = obs
         self.encoded_action = torch.tensor(action, dtype=torch.float32).reshape(1, 1, -1)
-        encoded_obs = torch.tensor(obs, dtype=torch.float32).reshape(1, 1, -1)
-        self.observations[-1].append(encoded_obs)
+        encoded_obs = torch.tensor(encoded_obs, dtype=torch.float32).reshape(1, 1, -1)
+        self.observations[-1].append(onehot_obs)
+
         if self.encoded_action is not None:
             self.actions[-1].append(self.encoded_action)
 
-        if self.is_first:
-            self.init_model.eval()
+        if not self.is_first:
+            self.model.eval()
             with torch.no_grad():
-                self.init_model.inference(self.inf_iters, self.inf_lr, encoded_obs)
-            
-            self.is_first = False
-            self.prev_hidden = self.init_model.z.clone().detach()
-
-        else:
-            self.tpc_model.eval()
-            with torch.no_grad():
-                self.tpc_model.inference(self.inf_iters, self.inf_lr, 
-                                        self.encoded_action, self.prev_hidden, encoded_obs)
+                self.model.inference(self.inf_iters, self.inf_lr, 
+                                        self.encoded_action, self.prev_hidden, onehot_obs)
             
             # update the hidden state
-            self.prev_hidden = self.tpc_model.z.clone().detach()
+            self.prev_hidden = self.model.z.clone().detach()
+        else:
+            self.init_encoded_obs.append(encoded_obs)
+            self.prev_hidden = encoded_obs
+            self.is_first = False
 
     def generate_sf(self, init_hidden, n_steps=5, gamma=0.95, learn_sr=False):
         zs = [init_hidden]
         sr = init_hidden
         discounts = [1.0]
-        v = (torch.ones([self.tpc_model.Win.weight.shape[1]]) / self.tpc_model.Win.weight.shape[1]).reshape(1, -1)
-        sf = self.init_model.decode(zs[-1])
+        v = (torch.ones([self.model.Win.weight.shape[1]]) / self.model.Win.weight.shape[1]).reshape(1, -1)
+        sf = self.model.decode(zs[-1])
         self.sf_steps = 1
         for _ in range(n_steps):
             if self.learn_rewards_from_state:
@@ -151,12 +136,12 @@ class tPCNAgent(BaseAgent):
                     sf.reshape(-1, 1)
                 )
             
-            zs.append(self.tpc_model.g(v, zs[-1]))
+            zs.append(self.model.g(v, zs[-1]))
 
             if learn_sr:
                 sr += discounts[-1] * zs[-1]
             
-            sf += discounts[-1] * self.tpc_model.decode(zs[-1])
+            sf += discounts[-1] * self.model.decode(zs[-1])
 
             discounts.append(discounts[-1] * gamma)
 
@@ -175,8 +160,8 @@ class tPCNAgent(BaseAgent):
         action_tensor = torch.zeros(self.n_actions, dtype=torch.float32)
         action_tensor[action] = 1.0
         action_tensor = action_tensor.reshape(1, 1, -1)
-        pred_hidden = self.tpc_model.g(action_tensor, self.prev_hidden)
-        return self.tpc_model.decode(pred_hidden), pred_hidden
+        pred_hidden = self.model.g(action_tensor, self.prev_hidden)
+        return self.model.decode(pred_hidden), pred_hidden
     
     def sample_action(self):
         """Evaluate and sample actions."""
@@ -195,7 +180,7 @@ class tPCNAgent(BaseAgent):
         if self.learn_rewards_from_state:
             deltas = self.prev_hidden.detach().numpy().squeeze() * (reward - self.rewards)
         else:
-            deltas = self.tpc_model.decode(self.prev_hidden).detach().numpy().squeeze() * (reward - self.rewards)
+            deltas = self.model.decode(self.prev_hidden).detach().numpy().squeeze() * (reward - self.rewards)
         
         self.rewards += self.reward_lr * deltas
     
@@ -209,7 +194,7 @@ class tPCNAgent(BaseAgent):
             dense_action[action - 1] = 0
             dense_action[action] = 1
 
-            pred_hidden = self.tpc_model.g(dense_action, self.prev_hidden)
+            pred_hidden = self.model.g(dense_action, self.prev_hidden)
             if self.learn_rewards_from_state:
                 sf, sr = self.generate_sf(
                     init_hidden=pred_hidden, 
@@ -219,7 +204,7 @@ class tPCNAgent(BaseAgent):
 
                 action_values[action] = np.sum(
                         sr * self.rewards
-                    ) / self.hidden_dim
+                    ) / self.hidden_size
             else:
                 sf = self.generate_sf(
                 init_hidden=pred_hidden, 
@@ -240,24 +225,14 @@ class tPCNAgent(BaseAgent):
             self.actions = self._list_to_tensor(self.actions)
             self.observations = self._list_to_tensor(self.observations)
         
-        self.tpc_model.train()
-        self.init_model.train()
+        self.model.train()
         total_loss = 0 # average loss across time steps
         total_energy = 0 # average energy across time steps
 
-        self.init_optimizer.zero_grad()
-
         init_actv = self.observations[:, 0, :]
-        self.init_model.inference(self.inf_iters, self.inf_lr, init_actv)
-        energy, obs_loss = self.init_model.get_energy()
-        energy.backward()
-        self.init_optimizer.step()
-        
-        total_loss += obs_loss.item()
-        total_energy += energy.item()
 
         prev_inds = torch.all(~init_actv.isnan(), dim=1).nonzero().flatten()
-        prev_hidden = self.init_model.z.clone().detach()
+        prev_hidden = torch.stack(self.init_encoded_obs, dim=0)
         for k in range(self.actions.shape[1]):
             p = self.observations[:, k+1].to(self.device)
             mask = torch.all(~p.isnan(), dim=1)
@@ -269,13 +244,13 @@ class tPCNAgent(BaseAgent):
             v = v[~v.isnan()].reshape(-1, self.n_actions)
 
             self.tpc_optimizer.zero_grad()
-            self.tpc_model.inference(self.inf_iters, self.inf_lr, v, prev_hidden, p)
-            energy, obs_loss = self.tpc_model.get_energy()
+            self.model.inference(self.inf_iters, self.inf_lr, v, prev_hidden, p)
+            energy, obs_loss = self.model.get_energy()
             energy.backward()
             self.tpc_optimizer.step()
 
             # update the hidden state
-            prev_hidden = self.tpc_model.z.clone().detach()
+            prev_hidden = self.model.z.clone().detach()
 
             # add up the loss value at each time step
             total_loss += obs_loss.item()
@@ -351,6 +326,9 @@ class tPCNAgent(BaseAgent):
         
         # Объединяем все тензоры в один
         return torch.cat(padded_tensors, dim=0)
+
+    def get_state_representation(self):
+        return self.prev_hidden.detach().numpy().squueze()
 
     def _list_to_tensor(self, tensors: list) -> torch.Tensor:
         

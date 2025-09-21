@@ -7,7 +7,6 @@ from typing import Union, Any
 
 from hima.envs.gridworld import GridWorld
 from hima.experiments.successor_representations.runners.base import BaseRunner
-from hima.modules.tpcn.tpcn import HierarchicalPCN, TemporalPCN
 from hima.common.config.base import read_config, override_config
 from hima.common.run.argparse import parse_arg_list
 
@@ -28,7 +27,10 @@ class TPCNRunner(BaseRunner):
         if agent_type == 'tpcn':
             from hima.experiments.tpcn.runner.agent import TPCNWrapper
             agent = TPCNWrapper(conf)
-
+        if agent_type == 'eprop_rnn':
+            from hima.experiments.tpcn.runner.agent import RNNWithEPropWrapper
+            agent = RNNWithEPropWrapper(conf)
+        
         return agent
 
     def switch_strategy(self, strategy):
@@ -48,13 +50,15 @@ class TPCNRunner(BaseRunner):
             pkl.dump(self.agent.agent, file)
         
     def save_model(self, dir_path):
-        init_model = self.agent.agent.init_model
-        model = self.agent.agent.tpc_model
-        if isinstance(model, TemporalPCN):
-            torch.save(model, os.path.join(dir_path, f'{self.logger.name}_{self.episodes}.pt'))
         
-        if isinstance(init_model, HierarchicalPCN):
-            torch.save(init_model, os.path.join(dir_path, f'{self.logger.name}_{self.episodes}_init.pt'))
+        model = self.agent.agent.model
+        
+        if model.name == 'tpcn':
+            torch.save(model, os.path.join(dir_path, f'{self.logger.name}_{self.episodes}.pt'))
+        elif model.name == 'eprop_rnn':
+            import pickle
+            with open(os.path.join(dir_path, f'{self.logger.name}_{self.episodes}.pkl', 'wb')) as f:
+                pickle.dump(model, f)
     
     @property
     def state(self):
@@ -101,7 +105,7 @@ class TPCNRunner(BaseRunner):
     
     @property
     def state_representation(self):
-        internal_messages = self.agent.agent.prev_hidden.detach().numpy().squueze()
+        internal_messages = self.agent.agent.get_state_representation()
         return internal_messages
     
     @property
@@ -147,34 +151,28 @@ def main(config_path):
     config['run'] = read_config(config_path)
 
     env_conf_path = config['run'].pop('env_conf')
-    # config['env_type'] = env_conf_path.split('/')[-2]
-    config['env_type'] = 'gridworld'
+    config['env_type'] = env_conf_path.split('/')[-2]
     config['env'] = read_config(env_conf_path)
 
     agent_conf_path = config['run'].pop('agent_conf')
-    # config['agent_type'] = agent_conf_path.split('/')[-2]
-    config['agent_type'] = 'tpcn'
+    config['agent_type'] = agent_conf_path.split('/')[-2]
     config['agent'] = read_config(agent_conf_path)
-
 
     metrics_conf = config['run'].pop('metrics_conf')
     if metrics_conf is not None:
         config['metrics'] = read_config(metrics_conf)
 
-    init_model_config = config['agent']['agent'].pop('init_model_config')
-    if init_model_config is not None:
-        config['agent']['agent']['init_model_config'] = read_config(init_model_config)
-
-    tpc_model_config = config['agent']['agent'].pop('tpc_model_config')
-    if tpc_model_config is not None:
-        config['agent']['agent']['tpc_model_config'] = read_config(tpc_model_config)
-
-    config['agent']['agent']['tpc_model_config']['n_obs_states'] = config['agent']['agent']['n_obs_states']
-    config['agent']['agent']['tpc_model_config']['hidden_size'] = config['agent']['agent']['hidden_dim']
-    config['agent']['agent']['tpc_model_config']['n_actions'] = config['agent']['agent']['n_actions']
-
-    config['agent']['agent']['init_model_config']['n_obs_states'] = config['agent']['agent']['n_obs_states']
-    config['agent']['agent']['init_model_config']['hidden_size'] = config['agent']['agent']['hidden_dim']
+    model_config = config['agent']['agent'].pop('model_config')
+    if model_config is not None:
+        config['agent']['agent']['model_config'] = read_config(model_config)
+    
+    if config['agent_type'] == 'tpcn':
+        config['agent']['agent']['model_config']['n_obs_states'] = config['agent']['agent']['n_obs_states']
+        config['agent']['agent']['model_config']['hidden_size'] = config['agent']['agent']['hidden_size']
+        config['agent']['agent']['model_config']['n_actions'] = config['agent']['agent']['n_actions']
+    
+    if config['agent']['encoder_type'] == 'pcn':
+        config['agent']['encoder'] = read_config(config['agent']['encoder'])
 
     if config['run']['seed'] is None:
         config['run']['seed'] = int.from_bytes(os.urandom(4), 'big')
@@ -188,7 +186,8 @@ def main(config_path):
     logger = config['run'].pop('logger')
     if logger is not None:
         if logger == 'aim':
-            logger = AimLogger(config)
+            # logger = AimLogger(config)
+            pass
         else:
             raise NotImplementedError
 
@@ -197,5 +196,5 @@ def main(config_path):
 
 
 if __name__ == '__main__':
-    default_config = 'configs/runner_conf.yaml'
+    default_config = 'configs/runner/eprop_rnn.yaml'
     main(os.environ.get('RUN_CONF', default_config))
