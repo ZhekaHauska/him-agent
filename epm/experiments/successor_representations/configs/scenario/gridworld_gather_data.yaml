@@ -1,0 +1,17 @@
+- condition: ['episodes', 'equal', 1000, 'norepeat']
+  check_every: 'episodes'
+  action: stop_runner
+  params: {}
+- condition: ['steps', 'equal', 50, 'repeat']
+  check_every: 'steps'
+  action: stop_episode
+  params: {}
+- condition: ['episodes', 'equal', 0, 'norepeat']
+  check_every: 'episodes'
+  action: switch_logging
+  params: {}
+# /////// Saving experience (comment if not needed)
+- condition: ['episodes', 'equal', 1000, 'norepeat']
+  check_every: 'episodes'
+  action: agent.save_experience
+  params: {'path': 'logs', 'prefix': '1k_ep_10x10_10col_free_pos_s2_'}

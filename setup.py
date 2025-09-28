@@ -1,12 +1,12 @@
 from setuptools import setup
 
 setup(
-    name='hima',
+    name='epm',
     version='1.1',
-    description='Hierarchical intrinsically motivated agent, HIMA',
+    description='Structuring episodic memory',
     url='https://github.com/AIRI-Institute/him-agent',
-    author='Petr Kuderov',
-    author_email='kuderov@airi.net',
+    author='Evgenii Dzhivelikian',
+    author_email='zhekauran@gmail.com',
     license='AGPLv3',
-    packages=['hima'],
+    packages=['epm'],
 )

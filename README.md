@@ -49,8 +49,8 @@ Before cloning the repository, make sure Git LFS is installed (see [help](./inst
 
 ```bash
 # create new env with the required packages via conda, then activate it
-conda create --name hima python=3.9 numpy matplotlib jupyterlab ruamel.yaml tqdm wandb mock imageio seaborn
-conda activate hima
+conda create --name epm python=3.9 numpy matplotlib jupyterlab ruamel.yaml tqdm wandb mock imageio seaborn
+conda activate epm
 
 # install with pip the packages that cannot be installed with conda
 pip install hexy prettytable "pytest>=4.6.5"
@@ -62,7 +62,7 @@ git clone https://github.com/ZhekaHauska/htm.core.git
 cd htm.core
 pip install .
 
-#  cd to the hima subdirectory in the project root and install hima package
+#  cd to the epm subdirectory in the project root and install epm package
 cd <hima_project_root>
 pip install -e .
 ```
@@ -98,10 +98,10 @@ Wandb [sweep](https://docs.wandb.ai/guides/sweeps) runs series of experiments wi
 
 ```bash
 # cd to the package sources root
-cd <hima_project_root>/hima
+cd <hima_project_root>/epm
 
-# cd to the hima experiments directory
-cd experiments/hima
+# cd to the epm experiments directory
+cd experiments/epm
 
 # replace <sweep config name> with the sweep config filename without extension
 wandb sweep sweep/<sweep config name>

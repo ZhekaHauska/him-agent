@@ -1,6 +1,0 @@
-lambda_z_init: 0
-out_activation: softmax
-loss: CE
-inf_iters: 10
-inf_lr: 1e-5
-need_onehot: True

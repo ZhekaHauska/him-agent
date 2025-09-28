@@ -40,5 +40,5 @@ __pycache__/
 
 # VS Code settings
 .vscode/
-/hima/experiments/successor_representations/configs/agent/bio/encoder/vae/checkpoints/
-/hima/experiments/successor_representations/configs/agent/bio/encoder/kmeans/checkpoints/
+/epm/experiments/successor_representations/configs/agent/bio/encoder/vae/checkpoints/
+/epm/experiments/successor_representations/configs/agent/bio/encoder/kmeans/checkpoints/

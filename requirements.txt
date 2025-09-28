@@ -1,25 +1,16 @@
 numpy
+pandas
 matplotlib
 jupyterlab
 PyYAML
 ruamel.yaml==0.17.21
 tqdm
-wandb
 imageio
 seaborn
 pygame
 scipy
-pygraphviz
-torch
-torchvision
-torchaudio
-hmmlearn
-MiniSom
 colormap
-numba
 
-# Install also (see `install.md`):
-#   1. Our fork of the htm.core
-#   2. [Optional] CoppeliaSim + PyRep
-#   3. [Optional] AnimalAI
-#   4. [Optional] Pinball
+# logging system
+wandb
+aim
