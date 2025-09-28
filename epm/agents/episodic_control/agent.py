@@ -15,9 +15,7 @@ from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances, pai
 from scipy.stats import entropy
 from copy import copy
 from PIL import Image
-import pygraphviz as pgv
 import io
-import colormap
 import seaborn as sns
 
 from epm.common.utils import normalize
@@ -1253,38 +1251,6 @@ class ECAgent:
     @property
     def cluster_to_lifetime(self):
         return {c: self.time_step - self.cluster_to_timestamp[c] for c in self.cluster_to_states}
-
-    @property
-    def draw_transition_graph(self):
-        cmap = colormap.cmap_builder('Pastel1')
-        g = pgv.AGraph(strict=False, directed=True)
-        w = np.sqrt(self.true_transition_matrix.shape[-1])
-
-        for a, d_a in enumerate(self.third_level_transitions):
-            for c in d_a:
-                obs_state = np.flatnonzero(self.true_emission_matrix[c])[0]
-                g.add_node(
-                    c,
-                    label=f'{obs_state}: ({c//w}, {c%w})',
-                    style='filled',
-                    fillcolor=colormap.rgb2hex(
-                        *(cmap(obs_state)[:-1]),
-                        normalised=True
-                    ),
-                    pos=f'{c//w},{c%w}',
-                    pin=True
-                )
-                outs = d_a[c]
-                for out, p in outs.items():
-                    if p > self.link_threshold:
-                        g.add_edge(c, out, label=f"{a}:{round(p, 2)}")
-
-        g.layout(prog='dot')
-        buf = io.BytesIO()
-        g.draw(buf, format='png')
-        buf.seek(0)
-        im = Image.open(buf)
-        return im
 
     @property
     def render_third_level(self):

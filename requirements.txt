@@ -10,6 +10,7 @@ seaborn
 pygame
 scipy
 colormap
+pillow
 
 # logging system
 wandb
