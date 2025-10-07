@@ -1,5 +1,5 @@
 # A Biologically Interpretable Cognitive Architecture for Online Structuring of Episodic Memories into Cognitive Maps
-This is experiments code for "A Biologically Interpretable Cognitive Architecture for Online Structuring of Episodic Memories into Cognitive Maps" paper.
+This is experiments code for ["A Biologically Interpretable Cognitive Architecture for Online Structuring of Episodic Memories into Cognitive Maps"](https://arxiv.org/abs/2510.03286) paper.
 
 ## Installation
 1. Install `requirements.txt`, `python>=3.9` is required.
@@ -41,3 +41,15 @@ and 3 seed values in `configs/environment/gridworld/pomdp.yaml` (which specify c
 4. run command: `python runners/test.py` (to run one parameter combination)
 5. Follow `results/sf_tests.ipynb` to further process and plot the results (aim needed) (Section Main Experiments)
 
+## Cite this work
+```
+@misc{dzhivelikian2025biologicallyinterpretablecognitivearchitecture,
+      title={A Biologically Interpretable Cognitive Architecture for Online Structuring of Episodic Memories into Cognitive Maps}, 
+      author={E. A. Dzhivelikian and A. I. Panov},
+      year={2025},
+      eprint={2510.03286},
+      archivePrefix={arXiv},
+      primaryClass={q-bio.NC},
+      url={https://arxiv.org/abs/2510.03286}, 
+}
+```
